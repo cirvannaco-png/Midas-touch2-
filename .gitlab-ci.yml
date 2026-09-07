@@ -1,0 +1,180 @@
+# Medis Touch GitLab CI/CD
+#
+# Trading logic is intentionally NOT changed by this migration.
+# This file replaces the former GitHub Actions automation with native
+# GitLab CI jobs.
+#
+# Scheduled maintenance uses GitLab pipeline schedules with:
+#   SCHEDULE_TASK=daily-subscriptions
+#   SCHEDULE_TASK=biweekly-recalibration
+#
+# Required CI/CD variables for scheduled maintenance:
+#   BRIDGE_BASE_URL
+#   BRIDGE_API_KEY
+#
+# Optional/manual Render secret sync:
+#   RENDER_API_KEY
+#   RENDER_SERVICE_ID
+#   BOT_TOKEN
+#   CHAT_ID
+#   ADMIN_CHAT_ID
+#   SECRET_KEY
+#   WEBHOOK_SECRET_TOKEN
+
+stages:
+  - validate
+  - test
+  - maintenance
+  - deploy-support
+
+default:
+  interruptible: true
+
+mql5-structure:
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - python tools/validate_mql5.py EA
+  rules:
+    - changes:
+        - EA/**/*
+        - tools/validate_mql5.py
+        - .gitlab-ci.yml
+    - when: manual
+      allow_failure: false
+
+medis-touch-python:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - cd medis_touch
+    - python -m pip install --disable-pip-version-check -r requirements-dev.txt
+  script:
+    - ruff check app/ tests/
+    - bandit -r app/ -q
+    - pytest -v
+  rules:
+    - changes:
+        - medis_touch/**/*
+        - .gitlab-ci.yml
+    - when: manual
+      allow_failure: false
+
+telegram-bridge:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - cd telegram-bridge
+    - python -m pip install --disable-pip-version-check -r requirements-dev.txt
+  script:
+    - ruff check app/ migrations/ scripts/ tests/
+    - bandit -r app/ scripts/ -q
+    - pip-audit -r requirements.txt
+    - |
+      BOT_TOKEN="123456:ci-placeholder" \
+      CHAT_ID="-1000000000" \
+      ADMIN_CHAT_ID="777000777" \
+      SECRET_KEY="ci-placeholder-secret" \
+      python scripts/render_sync_secrets.py --dry-run
+    - |
+      BOT_TOKEN="123456:ci-placeholder" \
+      CHAT_ID="-1000000000" \
+      ADMIN_CHAT_ID="777000777" \
+      SECRET_KEY="ci-placeholder-secret" \
+      WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" \
+      DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" \
+      RATE_LIMIT_ENABLED="false" \
+      pytest -v
+  rules:
+    - changes:
+        - telegram-bridge/**/*
+        - .gitlab-ci.yml
+    - when: manual
+      allow_failure: false
+
+tools-tests:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - cd telegram-bridge
+    - python -m pip install --disable-pip-version-check -r requirements-dev.txt
+  script:
+    - cd ..
+    - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
+  rules:
+    - changes:
+        - tools/**/*
+        - telegram-bridge/**/*
+        - .gitlab-ci.yml
+    - when: manual
+      allow_failure: false
+
+daily-subscriptions:
+  stage: maintenance
+  image: alpine:3.22
+  before_script:
+    - apk add --no-cache curl coreutils
+  script:
+    - |
+      test -n "$BRIDGE_BASE_URL" || { echo "BRIDGE_BASE_URL is required"; exit 1; }
+      test -n "$BRIDGE_API_KEY" || { echo "BRIDGE_API_KEY is required"; exit 1; }
+      response="$(curl -sS -w '\n%{http_code}' -X POST \
+        "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" \
+        -H "X-API-Key: ${BRIDGE_API_KEY}" \
+        --max-time 120)"
+      http_code="$(printf '%s\n' "$response" | tail -n1)"
+      body="$(printf '%s\n' "$response" | sed '$d')"
+      echo "HTTP $http_code"
+      echo "$body"
+      test "$http_code" -lt 300
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TASK == "daily-subscriptions"'
+    - if: '$CI_PIPELINE_SOURCE == "web" && $SCHEDULE_TASK == "daily-subscriptions"'
+      when: manual
+    - when: never
+
+biweekly-recalibration:
+  stage: maintenance
+  image: alpine:3.22
+  before_script:
+    - apk add --no-cache curl coreutils
+  script:
+    - |
+      test -n "$BRIDGE_BASE_URL" || { echo "BRIDGE_BASE_URL is required"; exit 1; }
+      test -n "$BRIDGE_API_KEY" || { echo "BRIDGE_API_KEY is required"; exit 1; }
+
+      FIRST_SATURDAY="2026-01-03"
+      TODAY="$(date -u +%Y-%m-%d)"
+      DAYS_SINCE="$(( ( $(date -u -d "$TODAY" +%s) - $(date -u -d "$FIRST_SATURDAY" +%s) ) / 86400 ))"
+      WEEKS_SINCE="$(( DAYS_SINCE / 7 ))"
+
+      if [ "$CI_PIPELINE_SOURCE" = "web" ] || [ $((WEEKS_SINCE % 2)) -eq 0 ]; then
+        response="$(curl -sS -w '\n%{http_code}' -X POST \
+          "${BRIDGE_BASE_URL%/}/admin/run-cycle" \
+          -H "X-API-Key: ${BRIDGE_API_KEY}" \
+          --max-time 120)"
+        http_code="$(printf '%s\n' "$response" | tail -n1)"
+        body="$(printf '%s\n' "$response" | sed '$d')"
+        echo "HTTP $http_code"
+        echo "$body"
+        test "$http_code" -lt 300
+      else
+        echo "Skipping: off-week for the biweekly schedule."
+      fi
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TASK == "biweekly-recalibration"'
+    - if: '$CI_PIPELINE_SOURCE == "web" && $SCHEDULE_TASK == "biweekly-recalibration"'
+      when: manual
+    - when: never
+
+render-sync-secrets:
+  stage: deploy-support
+  image: python:3.11-slim
+  before_script:
+    - cd telegram-bridge
+  script:
+    - python scripts/render_sync_secrets.py
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $RUN_RENDER_SYNC == "true"'
+      when: manual
+    - when: never
