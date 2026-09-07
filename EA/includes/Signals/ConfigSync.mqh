@@ -1,60 +1,42 @@
 //+------------------------------------------------------------------+
 //| ConfigSync.mqh                                                    |
 //|                                                                    |
-//| v2.11. Polls the bridge's GET /config/{symbol} on a timer and      |
-//| compares whatever weight_version it reports as "approved" against  |
-//| this instance's compiled InpWeightSetVersion.                      |
-//|                                                                    |
-//| DELIBERATELY OBSERVATION-ONLY. This does NOT change confidence      |
-//| thresholds, FVG proximity, or any other live parameter — there is  |
-//| no numeric-parameter-proposal engine yet (see the bridge's         |
-//| ConfigResponse.params, always null today), so there is nothing     |
-//| correct to auto-apply. What this DOES do: close the loop on "did   |
-//| the approval I tapped in Telegram actually reach every running EA  |
-//| instance," which today is a manual recompile-and-redeploy step per |
-//| chart with no feedback if you miss one.                            |
-//|                                                                    |
-//| DORMANT BY CONSTRUCTION: until a human approves a weight_version   |
-//| via the Telegram tap-to-approve card (see app/bot_promotions.py),  |
-//| GET /config/{symbol} returns approved_weight_version=null and this |
-//| class does nothing but log a one-line heartbeat. The moment a real |
-//| promotion happens, the exact same polling loop — no code change —  |
-//| starts detecting drift. This mirrors the same "dummy data now,     |
-//| real data activates it later" property tools/gating.py's           |
-//| source-tagging gives the recalibration cycle, applied to config    |
-//| sync instead of promotion decisions.                                |
+//| v2.11+ observes the bridge configuration endpoint. The original    |
+//| weight-version drift warning remains intentionally intact. The     |
+//| EA-side contract is now bound here as a fail-closed validation      |
+//| boundary: metadata/hash/ACK can never activate a configuration     |
+//| unless every required field agrees. Numeric trading inputs are not  |
+//| mutated by this module.                                           |
 //+------------------------------------------------------------------+
 #ifndef CONFIGSYNC_MQH
 #define CONFIGSYNC_MQH
+
+#include "ConfigSyncContract.mqh"
 
 class CConfigSync
   {
 private:
    string   m_symbol;
-   string   m_endpoint;      // "<bridge base>/config/<symbol>"
+   string   m_endpoint;
    string   m_apiKey;
    string   m_compiledWeightVersion;
    int      m_timeoutMs;
-   string   m_lastSeenApproved; // "" until first successful poll; then whatever the bridge last reported (may be "")
-   bool     m_everWarned;       // avoid re-logging the same drift every single poll — see Poll()
+   string   m_lastSeenApproved;
+   bool     m_everWarned;
+   CConfigSyncContract m_contract;
 
    bool     ExtractJsonStringField(const string &json, string field, string &out);
 
 public:
             CConfigSync(void) : m_timeoutMs(5000), m_lastSeenApproved(""), m_everWarned(false) {}
 
-   // signalEndpoint is the same base URL already configured for /signal
-   // (a subscriber endpoint) — this derives /config/<symbol> from it by
-   // the same "strip trailing /signal" convention SignalPublisher's
-   // PublishStatusUpdate()/PublishOutcome() already use, so there is only
-   // ONE place (SubscriberPlatform's endpoint config) that needs the
-   // bridge's base URL, not a second copy of it for this class.
    void     Init(string symbol, string signalEndpoint, string apiKey, string compiledWeightVersion, int timeoutMs = 5000)
      {
       m_symbol = symbol;
       m_apiKey = apiKey;
       m_compiledWeightVersion = compiledWeightVersion;
       m_timeoutMs = timeoutMs;
+      m_contract.Reset();
 
       int pos = StringFind(signalEndpoint, "/signal");
       if(pos < 0)
@@ -66,20 +48,40 @@ public:
       m_endpoint = StringSubstr(signalEndpoint, 0, pos) + "/config/" + symbol;
      }
 
-   // Call from OnTimer(). No-op if Init() couldn't derive a valid
-   // endpoint. Every poll is a single GET; failures are logged once via
-   // WebRequest's own error path and otherwise ignored — a transient
-   // network blip here is not worth retry/backoff machinery, since the
-   // next timer tick tries again anyway and nothing time-sensitive
-   // depends on this succeeding on any particular tick.
+   // The transport currently exposes the legacy approved weight-version
+   // field. That remains observation-only. A future full envelope may be
+   // loaded into m_contract, but activation must pass CanActivate() first.
    void     Poll(void);
+
+   bool     ValidateCandidate(const string configHash,
+                              const string strategy,
+                              const string instrument,
+                              const string timeframe,
+                              const string dataVersion,
+                              const string optimizerVersion,
+                              const string lifecycle,
+                              const int version,
+                              string &reason)
+     {
+      m_contract.SetEnvelope(configHash, strategy, instrument, timeframe,
+                             dataVersion, optimizerVersion, lifecycle, version);
+      return m_contract.ValidateMetadata(instrument, timeframe, strategy, reason);
+     }
+
+   bool     ValidateAcknowledgement(const string acknowledgedHash,
+                                    const string expectedHash,
+                                    const bool metadataValid,
+                                    string &reason) const
+     {
+      return m_contract.CanActivate(acknowledgedHash, expectedHash, metadataValid, reason);
+     }
   };
 
 void CConfigSync::Poll(void)
   {
    if(StringLen(m_endpoint) == 0) return;
 
-   char data[]; // GET has no body
+   char data[];
    char result[];
    string resultHeaders;
    string headers = "Content-Type: application/json\r\n";
@@ -93,8 +95,6 @@ void CConfigSync::Poll(void)
       int err = GetLastError();
       if(err == 4060)
          PrintFormat("MedisTouch ConfigSync: WebRequest blocked for %s — add it under Tools > Options > Expert Advisors > Allow WebRequest for listed URL.", m_endpoint);
-      // Other errors: silent per-poll, per the class comment above — the
-      // next timer tick retries on its own.
       return;
      }
    if(status < 200 || status >= 300) return;
@@ -102,34 +102,21 @@ void CConfigSync::Poll(void)
    string body = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
    string approved;
    if(!ExtractJsonStringField(body, "approved_weight_version", approved))
-      return; // malformed/unexpected response shape — nothing to act on
+      return;
 
    m_lastSeenApproved = approved;
-
-   if(StringLen(approved) == 0)
-      return; // nothing ever approved yet — the expected, dormant state
+   if(StringLen(approved) == 0) return;
 
    if(approved != m_compiledWeightVersion && !m_everWarned)
      {
-      PrintFormat("MedisTouch ConfigSync: bridge reports '%s' as the latest approved weight_version, "
-                  "but this %s instance is compiled with InpWeightSetVersion='%s'. Recompile/redeploy "
-                  "this chart to match, or this instance keeps running its own weights — nothing is "
-                  "applied automatically (see ConfigSync.mqh header).",
+      PrintFormat("MedisTouch ConfigSync: bridge reports '%s' as the latest approved weight_version, but this %s instance is compiled with InpWeightSetVersion='%s'. Recompile/redeploy this chart to match, or this instance keeps running its own weights — nothing is applied automatically.",
                   approved, m_symbol, m_compiledWeightVersion);
-      m_everWarned = true; // one warning per drift episode, not one per poll — see Poll()'s own comment
+      m_everWarned = true;
      }
    else if(approved == m_compiledWeightVersion)
-     {
-      m_everWarned = false; // drift resolved (redeployed, or a new approval matched this instance) — rearm
-     }
+      m_everWarned = false;
   }
 
-// Deliberately NOT a general JSON parser — the bridge's ConfigResponse
-// shape is fixed and small (see routes.py:ConfigResponse), so a targeted
-// string search for `"field":"value"` or `"field":null` is enough and
-// avoids pulling in a full parser for one endpoint. If this class ever
-// needs to read more than a couple of top-level string fields, that's
-// the signal to introduce a real JSON library instead of extending this.
 bool CConfigSync::ExtractJsonStringField(const string &json, string field, string &out)
   {
    string needle = "\"" + field + "\":";
@@ -142,8 +129,8 @@ bool CConfigSync::ExtractJsonStringField(const string &json, string field, strin
       out = "";
       return true;
      }
-   if(StringGetCharacter(json, valueStart) != '"') return false; // unexpected shape
-   valueStart++; // skip opening quote
+   if(StringGetCharacter(json, valueStart) != '"') return false;
+   valueStart++;
    int valueEnd = StringFind(json, "\"", valueStart);
    if(valueEnd < 0) return false;
    out = StringSubstr(json, valueStart, valueEnd - valueStart);
