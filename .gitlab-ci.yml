@@ -23,6 +23,14 @@ mql5-structure:
   rules:
     - if: '$CI_PIPELINE_SOURCE != "schedule"'
 
+architecture-gates:
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - python tools/phase_a_d_manifest.py
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+
 medis-touch-python:
   stage: test
   image: python:3.11-slim
