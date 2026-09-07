@@ -88,12 +88,7 @@ void CConfigSync::Poll(void)
                           optimizerVersion, lifecycle, version);
 
    string reason;
-   // The current EA's live strategy is the existing SMC analysis engine.
-   // This validation is deliberately independent of the numeric scoring inputs.
-   bool valid = m_contract.ValidateMetadata(m_symbol, EnumToString(PERIOD_CURRENT), "SMC", reason);
-   // ConfigSync's endpoint is symbol-scoped; timeframe is validated against
-   // the chart context below rather than assuming M15/H1/etc in the bridge.
-   valid = m_contract.ValidateMetadata(m_symbol, EnumToString(_Period), "SMC", reason);
+   bool valid = m_contract.ValidateMetadata(m_symbol, EnumToString(_Period), "SMC", reason);
    if(!valid)
      {
       if(!m_everWarned || m_lastSeenHash != configHash)
@@ -105,6 +100,7 @@ void CConfigSync::Poll(void)
       return;
      }
 
+   // Do not repeatedly ACK the same envelope on every timer tick.
    if(m_lastSeenHash == configHash && m_everWarned == false)
       return;
 
@@ -114,7 +110,7 @@ void CConfigSync::Poll(void)
      {
       PrintFormat("MedisTouch ConfigSync: validated and acknowledged config %s; live numeric inputs remain unchanged.", configHash);
       m_everWarned = false;
-   }
+     }
    m_lastSeenHash = configHash;
   }
 
@@ -175,7 +171,7 @@ bool CConfigSync::ExtractJsonIntField(const string &json, const string field, in
      {
       ushort ch = StringGetCharacter(json, i);
       if(ch < '0' || ch > '9') break;
-      digits += ShortToString((short)ch);
+      digits += StringSubstr(json, i, 1);
      }
    if(StringLen(digits) == 0) return false;
    out = (int)StringToInteger(digits);
