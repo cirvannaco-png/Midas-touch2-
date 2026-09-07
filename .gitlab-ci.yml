@@ -3,23 +3,6 @@
 # Trading logic is intentionally NOT changed by this migration.
 # This file replaces the former GitHub Actions automation with native
 # GitLab CI jobs.
-#
-# Scheduled maintenance uses GitLab pipeline schedules with:
-#   SCHEDULE_TASK=daily-subscriptions
-#   SCHEDULE_TASK=biweekly-recalibration
-#
-# Required CI/CD variables for scheduled maintenance:
-#   BRIDGE_BASE_URL
-#   BRIDGE_API_KEY
-#
-# Optional/manual Render secret sync:
-#   RENDER_API_KEY
-#   RENDER_SERVICE_ID
-#   BOT_TOKEN
-#   CHAT_ID
-#   ADMIN_CHAT_ID
-#   SECRET_KEY
-#   WEBHOOK_SECRET_TOKEN
 
 stages:
   - validate
@@ -30,18 +13,15 @@ stages:
 default:
   interruptible: true
 
-# Validation/test jobs must execute automatically on code pipelines.
-# Manual gating is reserved for operational/deployment actions below.
-validation_rules: &validation_rules
-  rules:
-    - if: '$CI_PIPELINE_SOURCE != "schedule"'
-
+# Validation/test jobs execute automatically on code pipelines.
+# Manual gating remains reserved for operational/deployment actions.
 mql5-structure:
   stage: validate
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
-  <<: *validation_rules
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
 
 medis-touch-python:
   stage: test
@@ -53,7 +33,8 @@ medis-touch-python:
     - ruff check app/ tests/
     - bandit -r app/ -q
     - pytest -v
-  <<: *validation_rules
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
 
 telegram-bridge:
   stage: test
@@ -80,7 +61,8 @@ telegram-bridge:
       DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" \
       RATE_LIMIT_ENABLED="false" \
       pytest -v
-  <<: *validation_rules
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
 
 tools-tests:
   stage: test
@@ -91,7 +73,8 @@ tools-tests:
   script:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
-  <<: *validation_rules
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
 
 daily-subscriptions:
   stage: maintenance
@@ -102,10 +85,7 @@ daily-subscriptions:
     - |
       test -n "$BRIDGE_BASE_URL" || { echo "BRIDGE_BASE_URL is required"; exit 1; }
       test -n "$BRIDGE_API_KEY" || { echo "BRIDGE_API_KEY is required"; exit 1; }
-      response="$(curl -sS -w '\n%{http_code}' -X POST \
-        "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" \
-        -H "X-API-Key: ${BRIDGE_API_KEY}" \
-        --max-time 120)"
+      response="$(curl -sS -w '\n%{http_code}' -X POST "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120)"
       http_code="$(printf '%s\n' "$response" | tail -n1)"
       body="$(printf '%s\n' "$response" | sed '$d')"
       echo "HTTP $http_code"
@@ -126,17 +106,12 @@ biweekly-recalibration:
     - |
       test -n "$BRIDGE_BASE_URL" || { echo "BRIDGE_BASE_URL is required"; exit 1; }
       test -n "$BRIDGE_API_KEY" || { echo "BRIDGE_API_KEY is required"; exit 1; }
-
       FIRST_SATURDAY="2026-01-03"
       TODAY="$(date -u +%Y-%m-%d)"
       DAYS_SINCE="$(( ( $(date -u -d "$TODAY" +%s) - $(date -u -d "$FIRST_SATURDAY" +%s) ) / 86400 ))"
       WEEKS_SINCE="$(( DAYS_SINCE / 7 ))"
-
       if [ "$CI_PIPELINE_SOURCE" = "web" ] || [ $((WEEKS_SINCE % 2)) -eq 0 ]; then
-        response="$(curl -sS -w '\n%{http_code}' -X POST \
-          "${BRIDGE_BASE_URL%/}/admin/run-cycle" \
-          -H "X-API-Key: ${BRIDGE_API_KEY}" \
-          --max-time 120)"
+        response="$(curl -sS -w '\n%{http_code}' -X POST "${BRIDGE_BASE_URL%/}/admin/run-cycle" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120)"
         http_code="$(printf '%s\n' "$response" | tail -n1)"
         body="$(printf '%s\n' "$response" | sed '$d')"
         echo "HTTP $http_code"
