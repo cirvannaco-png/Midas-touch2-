@@ -5,7 +5,7 @@ completed. This seam deliberately contains no alternate persistence logic,
 so there is no second outcome implementation to drift from the legacy path.
 """
 
-import app.models as models
+from app import models
 
 
 OUTCOME_MODEL = models.SignalOutcome
