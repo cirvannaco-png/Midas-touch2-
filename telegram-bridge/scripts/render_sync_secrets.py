@@ -2,7 +2,7 @@
 """Sync secret env vars to a Render service and (optionally) redeploy.
 
 Why this exists
----------------
+------------
 `render.yaml` declares BOT_TOKEN / CHAT_ID / ADMIN_CHAT_ID / SECRET_KEY /
 WEBHOOK_SECRET_TOKEN
 with `sync: false`, which means Render never manages their values - somebody
@@ -44,7 +44,7 @@ GENERATED_SECRETS = ("WEBHOOK_SECRET_TOKEN",)
 
 
 class RenderSyncError(RuntimeError):
-    """Raised for any unrecoverable configuration or API failure."""
+    """Raised for any unresoverable configuration or API failure."""
 
 
 def generate_webhook_secret_token() -> str:
@@ -59,123 +59,51 @@ def generate_webhook_secret_token() -> str:
 def validate_webhook_secret_token(value: str) -> str:
     if not TELEGRAM_SECRET_TOKEN_RE.fullmatch(value):
         raise RenderSyncError(
-            "WEBHOOK_SECRET_TOKEN must match ^[A-Za-z0-9_-]{1,256}$ "
-            "(Telegram's requirement for secret_token). "
-            "Regenerate with: openssl rand -hex 32"
-        )
-    return value
+            "WEBHOOK_QPÔ‘UÕÒÑSˆ]\İX]Ú–ĞKV˜K^ŒNWËW^ÌKMŸI‚ˆŠ[YÜ˜[IÜÈ™\]Z\™[Y[›ÜˆÙXÜ™]İÚÙ[ŠKˆ‚ˆ”™YÙ[™\˜]HÚ]ˆÜ[œÜÛ˜[™Z^Ìˆ‚ˆ
+Bˆ™]\›ˆ˜[YB‚‚™YˆÛÛXİÜÙXÜ™]Ê[ˆXİÜİ‹İ—JHOˆXİÜİ‹İ—N‚ˆˆˆZ[H[‹]˜\ˆ^[ØYœ›ÛHH›ØÙ\ÜÈ[š\›Û›Y[ˆˆˆ‚ˆZ\ÜÚ[™ÈHÚÈ›ÜˆÈ[ˆ‘TURT‘QÔÑPÔ‘UÈYˆ›İ[‹™Ù]
+ÊWBˆYˆZ\ÜÚ[™Î‚ˆ˜Z\ÙH™[™\”Ş[˜Ñ\œ›ÜŠˆ“Z\ÜÚ[™È™\]Z\™YÙXÜ™]
+ÊNˆ‚ˆ
+È‹‹š›Ú[ŠZ\ÜÚ[™ÊBˆ
+È‹ˆY[H\È›İXİYÛX\ÚÙYÚ]X˜Ğ’KĞÑˆ˜\šXX›\Ëˆ‚ˆ
+B‚ˆ^[ØYHÜNˆ[–Ú×H›ÜˆH[ˆ‘TURT‘QÔÑPÔ‘UßB‚ˆ›ÜˆÙ^H[ˆÑS‘TUQÔÑPÔ‘UÎ‚ˆ˜[YHH[‹™Ù]
+Ù^JHÜˆÙ[™\˜]WİÙXšÛÚ×ÜÙXÜ™]İÚÙ[Š
+Bˆ^[ØYÚÙ^WHH˜[Y]WİÙXšÛÚ×ÜÙXÜ™]İÚÙ[Š˜[YJB‚ˆ™]\›ˆ^[ØY‚‚™YˆÜ™\]Y\İ
+Y]Ùˆİ‹]ˆİ‹\WÚÙ^Nˆİ‹›ÙNˆØš™Xİ›Û™HH›Û™JHOˆØš™Xİ‚ˆ]HHœÛÛ‹™[\Ê›ÙJK™[˜ÛÙJ
+HYˆ›ÙH\È›İ›Û™H[ÙH›Û™Bˆ™\HH\›X‹™\]Y\İ”™\]Y\İ
+ˆˆÔ‘S‘T—ĞT_^Ü]H‹ˆ]OY]KˆY]Ù[Y]ÙˆXY\œÏ^Âˆ]]Üš^˜][Ûˆˆˆ™X\™\ˆØ\WÚÙ^_H‹ˆXØÙ\ˆ˜\XØ][Û‹ÚœÛÛˆ‹ˆÛÛ[U\Hˆ˜\XØ][Û‹ÚœÛÛˆ‹ˆKˆ
+BˆN‚ˆÚ]\›X‹œ™\]Y\İ\›Ü[Š™\K[Y[İ]LÌ
+H\È™\Ü‚ˆ˜]ÈH™\Üœ™XY
 
+K™XÛÙJ
+HÜˆ›[‚ˆ^Ù\\›X‹™\œ›Ü‹’\œ›Üˆ\È^Î‚ˆ]Z[H^Ëœ™XY
 
-def collect_secrets(env: dict[str, str]) -> dict[str, str]:
-    """Build the env-var payload from the process environment."""
-    missing = [k for k in REQUIRED_SECRETS if not env.get(k)]
-    if missing:
-        raise RenderSyncError(
-            "Missing required secret(s): "
-            + ", ".join(missing)
-            + ". Add them as protected/masked GitLab CI/CD variables."
-        )
-
-    payload = {k: env[k] for k in REQUIRED_SECRETS}
-
-    for key in GENERATED_SECRETS:
-        value = env.get(key) or generate_webhook_secret_token()
-        payload[key] = validate_webhook_secret_token(value)
-
-    return payload
-
-
-def _request(method: str, path: str, api_key: str, body: object | None = None) -> object:
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(  # nosec B310 - fixed https host
-        f"{RENDER_API}{path}",
-        data=data,
-        method=method,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310
-            raw = resp.read().decode() or "null"
-    except urllib.error.HTTPError as exc:  # surface Render's message verbatim
-        detail = exc.read().decode(errors="replace")
-        raise RenderSyncError(f"Render API {method} {path} failed [{exc.code}]: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise RenderSyncError(f"Render API {method} {path} unreachable: {exc.reason}") from exc
-    return json.loads(raw)
-
-
-def put_env_vars(service_id: str, api_key: str, values: dict[str, str]) -> None:
-    """Replace the service's secret env vars.
-
-    Render's PUT /services/{id}/env-vars replaces the whole list, so the
-    non-secret vars declared in render.yaml are re-sent unchanged by reading
-    the current list first and merging.
-    """
-    current = _request("GET", f"/services/{service_id}/env-vars", api_key)
-    existing: dict[str, str] = {}
-    if isinstance(current, list):
-        for item in current:
-            ev = item.get("envVar", item) if isinstance(item, dict) else {}
-            key = ev.get("key")
-            if key and "value" in ev:
-                existing[key] = ev["value"]
-
-    merged = {**existing, **values}
-    _request(
-        "PUT",
-        f"/services/{service_id}/env-vars",
-        api_key,
-        [{"key": k, "value": v} for k, v in sorted(merged.items())],
-    )
-
-
-def trigger_deploy(service_id: str, api_key: str) -> str:
-    result = _request("POST", f"/services/{service_id}/deploys", api_key, {"clearCache": "do_not_clear"})
-    if isinstance(result, dict):
-        return str(result.get("id", "unknown"))
-    return "unknown"
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="validate only, call no APIs")
-    parser.add_argument("--no-deploy", action="store_true", help="update env vars but skip redeploy")
-    args = parser.parse_args(argv)
-
-    env = dict(os.environ)
-    try:
-        values = collect_secrets(env)
-    except RenderSyncError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-
-    # Never print values - only key names.
-    print("secrets prepared:", ", ".join(sorted(values)))
-
-    if args.dry_run:
-        print("dry run: no Render API calls made")
-        return 0
-
-    api_key = env.get("RENDER_API_KEY")
-    service_id = env.get("RENDER_SERVICE_ID")
-    if not api_key or not service_id:
-        print("error: RENDER_API_KEY and RENDER_SERVICE_ID must be set", file=sys.stderr)
-        return 1
-
-    try:
-        put_env_vars(service_id, api_key, values)
-        print(f"env vars synced to {service_id}")
-        if not args.no_deploy:
-            print(f"deploy triggered: {trigger_deploy(service_id, api_key)}")
-    except RenderSyncError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+K™XÛÙJ\œ›ÜœÏHœ™\XÙHŠBˆ˜Z\ÙH™[™\”Ş[˜Ñ\œ›ÜŠˆ”™[™\ˆTHÛY]ÙHÜ]H˜Z[YŞÙ^Ë˜ÛÙ_WNˆÙ]Z[HŠHœ›ÛH^Âˆ^Ù\\›X‹™\œ›Ü‹•T“\œ›Üˆ\È^Î‚ˆ˜Z\ÙH™[™\”Ş[˜Ñ\œ›ÜŠˆ”™[™\ˆTHÛY]ÙHÜ]H[œ™XXÚX›NˆÙ^Ëœ™X\ÛÛŸHŠHœ›ÛH^Âˆ™]\›ˆœÛÛ‹›ØYÊ˜]ÊB‚‚™Yˆ]Ù[—İ˜\œÊÙ\šXÙWÚYˆİ‹\WÚÙ^Nˆİ‹XY[Y\ÎˆXİÜİ‹İ—JHOˆ›Û™N‚ˆˆˆ”™\XÙHHÙ\šXÙIÜÈÙXÜ™][ˆ˜\œË‚‚ˆ™[™\‰ÜÈUÜÙ\šXÙ\ËŞÚYKÙ[‹]˜\œÈ™\XÙ\ÈHÚÛH\İÛÈBˆ›Û‹\ÙXÜ™]˜\œÈXÛ\™Y[ˆ™[™\‹X[[\™H™K\Ù[[˜Ú[™ÙYH™XY[™ÂˆHİ\œ™[\İš\œİ[™Y\™Ú[™Ë‚ˆˆˆ‚ˆİ\œ™[HÜ™\]Y\İ
+‘ÑU‹ˆ‹ÜÙ\šXÙ\ËŞÜÙ\šXÙWÚYKÙ[‹]˜\œÈ‹\WÚÙ^JBˆ^\İ[™ÎˆXİÜİ‹İ—HHßBˆYˆ\Ú[œİ[˜ÙJİ\œ™[\İ
+N‚ˆ›Üˆ][H[ˆİ\œ™[‚ˆ]ˆH][K™Ù]
+™[•˜\ˆ‹][JHYˆ\Ú[œİ[˜ÙJ][KXİ
+H[ÙHßBˆÙ^HH]‹™Ù]
+šÙ^H‚ˆYˆÙ^H[™˜[YHˆ[ˆ]‚ˆ^\İ[™ÖÚÙ^WHH]–È˜[YH—B‚ˆY\™ÙYHÊŠ™^\İ[™Ë
+Š˜[Y\ßBˆÜ™\]Y\İ
+ˆ”U‹ˆˆ‹ÜÙ\šXÙ\ËŞÜÙ\šXÙWÚYKÙ[‹]˜\œÈ‹ˆ\WÚÙ^KˆŞÈšÙ^HˆË˜[YHˆŸH›ÜˆËˆ[ˆÛÜY
+Y\™ÙYš][\Ê
+JWKˆ
+B‚‚™YˆšYÙÙ\—Ù\ŞJÙ\šXÙWÚYˆİ‹\WÚÙ^NˆİŠHOˆİ‚ˆ™\İ[HÜ™\]Y\İ
+”ÔÕ‹ˆ‹ÜÙ\šXÙ\ËŞÜÙ\šXÙWÚYKÙ\Ş\È‹\WÚÙ^KÈ˜ÛX\ØXÚHˆ™×Û›İØÛX\ˆŸJBˆYˆ\Ú[œİ[˜ÙJ™\İ[Xİ
+N‚ˆ™]\›ˆİŠ™\İ[™Ù]
+šY‹[šÛ›İÛˆŠJBˆ™]\›ˆ[šÛ›İÛˆ‚‚‚™YˆXZ[Š\™İˆ\İÜİ—H›Û™HH›Û™JHOˆ[‚ˆ\œÙ\ˆH\™Ü\œÙK\™İ[Y[\œÙ\Š\ØÜš\[ÛW×ÙØ××ÊBˆ\œÙ\‹˜YØ\™İ[Y[
+‹KYK\[ˆ‹Xİ[ÛHœİÜ™WİYH‹[H˜[Y]HÛ›KØ[›ÈT\ÈŠBˆ\œÙ\‹˜YØ\™İ[Y[
+‹K[›ËY\ŞH‹Xİ[ÛHœİÜ™WİYH‹[H\]H[ˆ˜\œÈ]ÚÚ\™Y\ŞHŠBˆ\™ÜÈH\œÙ\‹œ\œÙWØ\™ÜÊ\™İŠB‚ˆ[ˆHXİ
+ÜË™[š\›Û›Y[
+BˆN‚ˆ˜[Y\ÈHÛÛXİÜÙXÜ™]Ê[ŠBˆ^Ù\™[™\”Ş[˜Ñ\œ›Üˆ\È^Î‚ˆš[
+ˆ™\œ›ÜˆÙ^ßH‹š[O\Ş\Ëœİ\œŠBˆ™]\›ˆB‚ˆÈ™]™\ˆš[˜[Y\ÈHÛ›HÙ^H˜[Y\Ë‚ˆš[
+œÙXÜ™]È™\\™Yˆ‹‹‹š›Ú[ŠÛÜY
+˜[Y\ÊJJBˆYˆ\™ÜË™WÜ[‚ˆš[
+™H[ˆ›È™[™\ˆTHØ[ÈXYHŠBˆ™]\›ˆ‚ˆ\WÚÙ^HH[‹™Ù]
+”‘S‘T—ĞTWÒÑVHŠBˆÙ\šXÙWÚYH[‹™Ù]
+”‘S‘T—ÔÑT•’PÑWÒQŠBˆYˆ›İ\WÚÙ^HÜˆ›İÙ\šXÙWÚY‚ˆš[
+™\œ›Üˆ‘S‘T—ĞTWÒÑVH[™‘S‘T—ÔÑT•’PÑWÒQ]\İ™HÙ]‹š[O\Ş\Ëœİ\œŠBˆ™]\›ˆB‚ˆN‚ˆ]Ù[—İ˜\œÊÙ\šXÙWÚY\WÚÙ^K˜[Y\ÊBˆš[
+ˆ™[ˆ˜\œÈŞ[˜ÙYÈÜÙ\šXÙWÚYHŠBˆYˆ›İ\™ÜË››×Ù\ŞN‚ˆš[
+ˆ™\ŞHšYÙÙ\™YˆİšYÙÙ\—Ù\ŞJÙ\šXÙWÚY\WÚÙ^J_HŠBˆ^Ù\™[™\”Ş[˜Ñ\œ›Üˆ\È^Î‚ˆš[
+ˆ™\œ›ÜˆÙ^ßH‹š[O\Ş\Ëœİ\œŠBˆ™]\›ˆBˆ™]\›ˆ‚‚šYˆ×Û˜[YW×ÈOH—×ÛXZ[—×È‚ˆ˜Z\ÙHŞ\İ[Q^]
+XZ[Š
+JB
