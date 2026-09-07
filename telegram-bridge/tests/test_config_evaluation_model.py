@@ -1,6 +1,6 @@
-import pytest
-
 from app.config_evaluation_model import ConfigurationEvaluation
+
+import pytest
 
 
 HASH = "a" * 64
