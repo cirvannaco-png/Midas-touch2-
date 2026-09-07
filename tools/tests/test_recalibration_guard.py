@@ -1,4 +1,4 @@
-from tools.recalibration_guard import (
+from recalibration_guard import (
     ConfigurationStatus,
     MinimumSamples,
     ObjectiveWeights,
@@ -35,7 +35,12 @@ def test_minimum_samples_are_bucket_specific_and_fail_closed():
 
 def test_purged_walk_forward_keeps_holdout_out_of_folds():
     plan = build_purged_walk_forward_plan(
-        500, train_size=200, validation_size=50, step_size=50, purge_size=10, holdout_size=50
+        500,
+        train_size=200,
+        validation_size=50,
+        step_size=50,
+        purge_size=10,
+        holdout_size=50,
     )
     assert plan.holdout_start == 450
     assert all(f.validation_end <= plan.holdout_start for f in plan.folds)
@@ -43,9 +48,13 @@ def test_purged_walk_forward_keeps_holdout_out_of_folds():
 
 
 def test_parameter_plateau_rejects_isolated_spike():
-    result = assess_parameter_stability(1.0, [0.99, 0.98, 0.97], max_degradation=0.05, min_neighbors=3)
+    result = assess_parameter_stability(
+        1.0, [0.99, 0.98, 0.97], max_degradation=0.05, min_neighbors=3
+    )
     assert result.plateau
-    result = assess_parameter_stability(1.0, [0.70, 0.72, 0.75], max_degradation=0.05, min_neighbors=3)
+    result = assess_parameter_stability(
+        1.0, [0.70, 0.72, 0.75], max_degradation=0.05, min_neighbors=3
+    )
     assert not result.plateau
 
 
@@ -75,10 +84,30 @@ def test_challenger_requires_margin_and_robustness():
 
 
 def test_regime_response_can_reduce_risk_faster_than_recalibration():
-    assert classify_regime_response(0.90, normal_min=0.80, reduced_min=0.50, defensive_min=0.30) == RiskResponse.NORMAL
-    assert classify_regime_response(0.60, normal_min=0.80, reduced_min=0.50, defensive_min=0.30) == RiskResponse.REDUCED_RISK
-    assert classify_regime_response(0.40, normal_min=0.80, reduced_min=0.50, defensive_min=0.30) == RiskResponse.DEFENSIVE
-    assert classify_regime_response(0.20, normal_min=0.80, reduced_min=0.50, defensive_min=0.30) == RiskResponse.NO_NEW_TRADES
+    assert (
+        classify_regime_response(
+            0.90, normal_min=0.80, reduced_min=0.50, defensive_min=0.30
+        )
+        == RiskResponse.NORMAL
+    )
+    assert (
+        classify_regime_response(
+            0.60, normal_min=0.80, reduced_min=0.50, defensive_min=0.30
+        )
+        == RiskResponse.REDUCED_RISK
+    )
+    assert (
+        classify_regime_response(
+            0.40, normal_min=0.80, reduced_min=0.50, defensive_min=0.30
+        )
+        == RiskResponse.DEFENSIVE
+    )
+    assert (
+        classify_regime_response(
+            0.20, normal_min=0.80, reduced_min=0.50, defensive_min=0.30
+        )
+        == RiskResponse.NO_NEW_TRADES
+    )
 
 
 def test_regime_ensemble_is_weightable_and_bounded():
