@@ -15,7 +15,7 @@ class ConfigSyncState(Base):
     __table_args__ = (Index("ix_config_sync_states_symbol", "symbol", unique=True),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    symbol = Column(String, nullable=False, unique=True)
+    symbol = Column(String, nullable=False)
     active_config_hash = Column(String, nullable=True)
     acknowledged_config_hash = Column(String, nullable=True)
     state = Column(String, nullable=False, default="HOLD")
