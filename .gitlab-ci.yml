@@ -30,18 +30,18 @@ stages:
 default:
   interruptible: true
 
+# Validation/test jobs must execute automatically on code pipelines.
+# Manual gating is reserved for operational/deployment actions below.
+validation_rules: &validation_rules
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+
 mql5-structure:
   stage: validate
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
-  rules:
-    - changes:
-        - EA/**/*
-        - tools/validate_mql5.py
-        - .gitlab-ci.yml
-    - when: manual
-      allow_failure: false
+  <<: *validation_rules
 
 medis-touch-python:
   stage: test
@@ -53,12 +53,7 @@ medis-touch-python:
     - ruff check app/ tests/
     - bandit -r app/ -q
     - pytest -v
-  rules:
-    - changes:
-        - medis_touch/**/*
-        - .gitlab-ci.yml
-    - when: manual
-      allow_failure: false
+  <<: *validation_rules
 
 telegram-bridge:
   stage: test
@@ -85,12 +80,7 @@ telegram-bridge:
       DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" \
       RATE_LIMIT_ENABLED="false" \
       pytest -v
-  rules:
-    - changes:
-        - telegram-bridge/**/*
-        - .gitlab-ci.yml
-    - when: manual
-      allow_failure: false
+  <<: *validation_rules
 
 tools-tests:
   stage: test
@@ -101,13 +91,7 @@ tools-tests:
   script:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
-  rules:
-    - changes:
-        - tools/**/*
-        - telegram-bridge/**/*
-        - .gitlab-ci.yml
-    - when: manual
-      allow_failure: false
+  <<: *validation_rules
 
 daily-subscriptions:
   stage: maintenance
