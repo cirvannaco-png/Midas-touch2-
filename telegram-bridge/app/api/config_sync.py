@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config_registry import ConfigurationIdentity
 from app.config_registry_model import ConfigurationRegistry
 from app.config_sync_contract import activation_decision, envelope_from_mapping, validate_envelope
 from app.config_sync_state_model import ConfigSyncState
@@ -58,14 +59,26 @@ class RuntimeReportResponse(BaseModel):
 
 
 async def _get_state(session: AsyncSession, symbol: str) -> ConfigSyncState:
-    state = await session.scalar(
-        select(ConfigSyncState).where(ConfigSyncState.symbol == symbol)
-    )
+    state = await session.scalar(select(ConfigSyncState).where(ConfigSyncState.symbol == symbol))
     if state is None:
         state = ConfigSyncState(symbol=symbol, state="HOLD")
         session.add(state)
         await session.flush()
     return state
+
+
+def _verify_registry_hash(registry: ConfigurationRegistry) -> None:
+    """Fail closed if persisted identity fields no longer reproduce its hash."""
+    expected = ConfigurationIdentity(
+        strategy=registry.strategy,
+        instrument=registry.instrument,
+        timeframe=registry.timeframe,
+        parameters=registry.parameters or {},
+        data_version=registry.data_version,
+        optimizer_version=registry.optimizer_version,
+    ).config_hash
+    if expected != registry.config_hash:
+        raise HTTPException(status_code=500, detail="Registered configuration identity/hash mismatch")
 
 
 @router.get("/config/{symbol}", response_model=ConfigEnvelopeResponse)
@@ -86,6 +99,7 @@ async def get_approved_config(
     )
     if registry is None:
         raise HTTPException(status_code=404, detail="No champion configuration is available")
+    _verify_registry_hash(registry)
 
     state = await _get_state(session, symbol)
     state.last_seen_at = datetime.now(timezone.utc)
@@ -121,6 +135,7 @@ async def acknowledge_config(
     )
     if registry is None:
         raise HTTPException(status_code=404, detail="Configuration hash is not registered for this symbol")
+    _verify_registry_hash(registry)
 
     envelope = envelope_from_mapping({
         "config_hash": registry.config_hash,
@@ -182,7 +197,11 @@ async def report_runtime(
         .order_by(ConfigurationRegistry.created_at.desc())
         .limit(1)
     )
-    champion_hash = champion.config_hash if champion else ""
+    champion_hash = ""
+    if champion is not None:
+        _verify_registry_hash(champion)
+        champion_hash = champion.config_hash
+
     from app.config_sync_contract import rollback_decision
 
     decision = rollback_decision(
