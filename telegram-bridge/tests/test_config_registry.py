@@ -1,8 +1,10 @@
+import itertools
+
 import pytest
 
 from app.config_registry import (
-    ConfigurationIdentity,
     LIFECYCLE,
+    ConfigurationIdentity,
     assert_identity_unchanged,
     canonical_config,
     configuration_hash,
@@ -75,7 +77,7 @@ def test_lifecycle_is_strict_and_fail_closed() -> None:
         "CHALLENGER",
         "CHAMPION",
     )
-    for current, target in zip(LIFECYCLE, LIFECYCLE[1:]):
+    for current, target in itertools.pairwise(LIFECYCLE):
         validate_transition(current, target)
 
     with pytest.raises(ValueError, match="illegal lifecycle transition"):

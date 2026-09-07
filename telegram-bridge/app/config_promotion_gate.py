@@ -6,8 +6,9 @@ explicit decision. Missing or malformed evidence never becomes a promotion.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from tools.recalibration_guard import PromotionPolicy, challenger_passes
 
@@ -37,13 +38,22 @@ class PromotionDecision:
 
 def _require_mapping(value: Any, name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise ValueError(f"{name} must be a mapping")
+        raise TypeError(f"{name} must be a mapping")
     return value
 
 
-def _complete_evidence(evaluation: Any, *, require_statistics: bool) -> tuple[bool, list[str]]:
+def _complete_evidence(
+    evaluation: Any, *, require_statistics: bool
+) -> tuple[bool, list[str]]:
     reasons: list[str] = []
-    for field in ("objective_score", "performance_metrics", "risk_metrics", "validation_evidence", "regime_conditions", "provenance"):
+    for field in (
+        "objective_score",
+        "performance_metrics",
+        "risk_metrics",
+        "validation_evidence",
+        "regime_conditions",
+        "provenance",
+    ):
         if getattr(evaluation, field, None) in (None, {}):
             reasons.append(f"missing persisted evidence: {field}")
 
@@ -53,18 +63,24 @@ def _complete_evidence(evaluation: Any, *, require_statistics: bool) -> tuple[bo
         if not isinstance(components, Mapping):
             reasons.append("objective_score.components must be a mapping")
         else:
-            missing = [name for name in REQUIRED_OBJECTIVE_COMPONENTS if name not in components]
+            missing = [
+                name for name in REQUIRED_OBJECTIVE_COMPONENTS if name not in components
+            ]
             if missing:
                 reasons.append(f"missing objective components: {', '.join(missing)}")
+
     validation = getattr(evaluation, "validation_evidence", {})
     if isinstance(validation, Mapping):
-        missing = [name for name in REQUIRED_VALIDATION_FIELDS if name not in validation]
+        missing = [
+            name for name in REQUIRED_VALIDATION_FIELDS if name not in validation
+        ]
         if missing:
             reasons.append(f"missing validation evidence: {', '.join(missing)}")
         if validation.get("independent_holdout") is not True:
             reasons.append("independent holdout evidence is required and must be true")
         if validation.get("purged_walk_forward") is not True:
             reasons.append("purged walk-forward evidence is required and must be true")
+
     statistics = getattr(evaluation, "statistical_evidence", {})
     if require_statistics:
         if not isinstance(statistics, Mapping):
@@ -83,22 +99,34 @@ def evaluate_challenger(
     policy: PromotionPolicy,
 ) -> PromotionDecision:
     """Evaluate persisted evidence; never infer missing values or mutate state."""
-    ok_champion, champion_reasons = _complete_evidence(champion, require_statistics=False)
+    ok_champion, champion_reasons = _complete_evidence(
+        champion, require_statistics=False
+    )
     ok_challenger, challenger_reasons = _complete_evidence(
         challenger,
         require_statistics=policy.maximum_p_value is not None,
     )
     if not ok_champion:
-        return PromotionDecision("HOLD", tuple(["champion evidence incomplete", *champion_reasons]))
+        return PromotionDecision(
+            "HOLD", ("champion evidence incomplete", *champion_reasons)
+        )
     if not ok_challenger:
-        return PromotionDecision("HOLD", tuple(["challenger evidence incomplete", *challenger_reasons]))
+        return PromotionDecision(
+            "HOLD", ("challenger evidence incomplete", *challenger_reasons)
+        )
 
     objective = _require_mapping(challenger.objective_score, "challenger.objective_score")
-    champion_objective = _require_mapping(champion.objective_score, "champion.objective_score")
+    champion_objective = _require_mapping(
+        champion.objective_score, "champion.objective_score"
+    )
     challenger_score = float(objective.get("score", -1.0))
     champion_score = float(champion_objective.get("score", -1.0))
-    validation = _require_mapping(challenger.validation_evidence, "challenger.validation_evidence")
-    statistics = _require_mapping(challenger.statistical_evidence, "challenger.statistical_evidence")
+    validation = _require_mapping(
+        challenger.validation_evidence, "challenger.validation_evidence"
+    )
+    statistics = _require_mapping(
+        challenger.statistical_evidence, "challenger.statistical_evidence"
+    )
 
     passed = challenger_passes(
         champion_score=champion_score,
@@ -110,4 +138,6 @@ def evaluate_challenger(
     )
     if not passed:
         return PromotionDecision("HOLD", ("challenger failed persisted promotion policy",))
-    return PromotionDecision("PROMOTE", ("persisted evidence satisfies challenger-to-champion policy",))
+    return PromotionDecision(
+        "PROMOTE", ("persisted evidence satisfies challenger-to-champion policy",)
+    )

@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Index, Integer, JSON, String
+from sqlalchemy import JSON, Column, DateTime, Index, Integer, String
 
-from app.database import Base
 from app.config_registry import LIFECYCLE, validate_transition
+from app.database import Base
 
 
 class ConfigurationRegistry(Base):
@@ -53,8 +53,16 @@ class ConfigurationRegistry(Base):
     )
 
     @classmethod
-    def from_identity(cls, identity, *, provenance=None, performance_metrics=None,
-                      risk_metrics=None, regime_conditions=None, **periods):
+    def from_identity(
+        cls,
+        identity,
+        *,
+        provenance=None,
+        performance_metrics=None,
+        risk_metrics=None,
+        regime_conditions=None,
+        **periods,
+    ):
         """Build a registry row without mutating an existing identity."""
         return cls(
             config_hash=identity.config_hash,

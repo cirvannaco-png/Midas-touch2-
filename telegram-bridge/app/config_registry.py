@@ -1,6 +1,6 @@
 """Immutable candidate-configuration identity and promotion lifecycle guards.
 
-This module deliberately does not mutate EA configuration.  It records the
+This module deliberately does not mutate EA configuration. It records the
 identity/evidence boundary that a candidate must cross before deployment.
 """
 from __future__ import annotations
@@ -9,7 +9,6 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-
 
 LIFECYCLE = (
     "OPTIMIZED",
@@ -52,10 +51,14 @@ def validate_transition(current: str, target: str) -> None:
         raise ValueError(f"illegal lifecycle transition: {current} -> {target}")
 
 
-def assert_identity_unchanged(original: Mapping[str, object], replacement: Mapping[str, object]) -> None:
+def assert_identity_unchanged(
+    original: Mapping[str, object], replacement: Mapping[str, object]
+) -> None:
     """Reject edits to fields that define immutable configuration identity."""
     if canonical_config(original) != canonical_config(replacement):
-        raise ValueError("immutable configuration identity cannot be overwritten; create a new candidate")
+        raise ValueError(
+            "immutable configuration identity cannot be overwritten; create a new candidate"
+        )
 
 
 @dataclass(frozen=True)

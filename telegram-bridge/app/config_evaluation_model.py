@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String
 
 from app.database import Base
 
@@ -11,7 +11,7 @@ from app.database import Base
 class ConfigurationEvaluation(Base):
     """One immutable evidence snapshot for one registered configuration.
 
-    A new evaluation is always a new row.  The configuration registry identity
+    A new evaluation is always a new row. The configuration registry identity
     is never overwritten when later validation evidence becomes available.
     """
 
@@ -56,7 +56,7 @@ class ConfigurationEvaluation(Base):
         regime_conditions: dict,
         provenance: dict,
         decision: str,
-    ) -> "ConfigurationEvaluation":
+    ) -> ConfigurationEvaluation:
         """Materialize one evidence snapshot; never mutate an older snapshot."""
         if evidence_version < 1:
             raise ValueError("evidence_version must be positive")
