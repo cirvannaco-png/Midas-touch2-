@@ -4,7 +4,7 @@ This is a contract/seam only. Broker order placement remains outside the
 Telegram bridge. No broker credentials or trading logic belong here.
 """
 
-from .architecture import ArchitectureViolation, EXECUTION_GATE_ORDER
+from .architecture import EXECUTION_GATE_ORDER, ArchitectureViolation
 
 
 def require_authoritative_portfolio_admission(*, admitted: bool, authoritative: bool) -> None:
