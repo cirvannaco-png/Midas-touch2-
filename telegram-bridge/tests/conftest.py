@@ -116,10 +116,9 @@ def forced_rate_limit():
 def client():
     """TestClient with Telegram sends mocked out - no real network calls.
 
-    Each test gets a clean `signals` table: the app uses a single shared
-    SQLite file for the whole test session, so without this a signal
-    inserted by one test (e.g. a FAILED one) would leak into the next
-    test's assertions about table state.
+    Each test gets a clean persisted state: the app uses a single shared
+    SQLite file for the whole test session, so registry/config-sync rows must
+    be cleared along with the legacy signals and trade rows.
     """
     with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)):
         from fastapi.testclient import TestClient
@@ -127,6 +126,9 @@ def client():
         from app.database import engine
         from app.main import app
         from app.models import BotSetting, Payment, Signal, Subscriber, TradeEvent
+        from app.config_evaluation_model import ConfigurationEvaluation
+        from app.config_registry_model import ConfigurationRegistry
+        from app.config_sync_state_model import ConfigSyncState
 
         with TestClient(app) as c:
             yield c
@@ -136,9 +138,12 @@ def client():
             # loop (e.g. from asyncio.run() seeding helpers in the test
             # body).  Without this, aiosqlite may silently "connect" to an
             # empty in-memory DB rather than the test file, causing
-            # "no such table: signals" on every DELETE in teardown.
+            # "no such table" on teardown.
             await engine.dispose()
             async with engine.begin() as conn:
+                await conn.run_sync(lambda sync_conn: sync_conn.execute(ConfigurationEvaluation.__table__.delete()))
+                await conn.run_sync(lambda sync_conn: sync_conn.execute(ConfigSyncState.__table__.delete()))
+                await conn.run_sync(lambda sync_conn: sync_conn.execute(ConfigurationRegistry.__table__.delete()))
                 await conn.run_sync(lambda sync_conn: sync_conn.execute(Signal.__table__.delete()))
                 await conn.run_sync(lambda sync_conn: sync_conn.execute(TradeEvent.__table__.delete()))
                 await conn.run_sync(lambda sync_conn: sync_conn.execute(BotSetting.__table__.delete()))
