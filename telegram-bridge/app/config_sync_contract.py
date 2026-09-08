@@ -5,13 +5,13 @@ logic or decide which parameters should be optimized. A configuration may be
 activated only when its immutable identity, hash, and expected deployment
 metadata agree and an explicit EA acknowledgement is received.
 """
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from app.config_registry import ConfigurationIdentity  # noqa: I001
+from app.config_registry import ConfigurationIdentity
 
 
 CONFIG_SYNC_PROTOCOL_VERSION = 1
