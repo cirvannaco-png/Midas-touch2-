@@ -86,6 +86,11 @@ def _verify_registry_hash(registry: ConfigurationRegistry) -> None:
         raise HTTPException(status_code=500, detail="Registered configuration identity/hash mismatch")
 
 
+def _is_deployable(registry: ConfigurationRegistry) -> bool:
+    """Only configurations that crossed the deployment lifecycle boundary may run."""
+    return registry.lifecycle_status in {"SHADOW", "CHALLENGER", "CHAMPION"}
+
+
 @router.get("/config/{symbol}", response_model=ConfigEnvelopeResponse)
 async def get_approved_config(
     symbol: str,
@@ -122,7 +127,7 @@ async def get_approved_config(
             raise HTTPException(status_code=404, detail="No champion configuration is available")
 
     _verify_registry_hash(registry)
-    if registry.lifecycle_status not in {"SHADOW", "CHALLENGER", "CHAMPION"}:
+    if not _is_deployable(registry):
         state.state = "HALT"
         state.last_error = "Persisted active configuration is not deployable"
         await session.commit()
@@ -229,6 +234,12 @@ async def report_runtime(
         raise HTTPException(status_code=404, detail="Runtime configuration hash is not registered for this symbol")
     _verify_registry_hash(active_registry)
 
+    if not _is_deployable(active_registry):
+        state.state = "HALT"
+        state.last_error = "Runtime report references a non-deployable configuration"
+        await session.commit()
+        raise HTTPException(status_code=409, detail="Runtime configuration is not deployable")
+
     if state.active_config_hash is None:
         state.state = "HALT"
         state.last_error = "Runtime report received before configuration activation"
@@ -265,7 +276,8 @@ async def report_runtime(
         state.state = "ACTIVE"
         state.last_error = None
     elif decision.action == "ROLLBACK":
-        state.active_config_hash = champion_hash
+        state.acknowledged_config_hash = champion_hash or None
+        state.active_config_hash = champion_hash or None
         state.state = "ROLLBACK"
         state.last_error = "; ".join(decision.reasons)
     elif decision.action == "DEFENSIVE":
