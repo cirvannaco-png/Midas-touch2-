@@ -53,7 +53,7 @@ class ConfigurationEvaluation(Base):
         regime_conditions: dict,
         provenance: dict,
         decision: str,
-    ) -> "ConfigurationEvaluation":
+    ) -> ConfigurationEvaluation:
         """Materialize one evidence snapshot; never mutate an older snapshot."""
         if evidence_version < 1:
             raise ValueError("evidence_version must be positive")
