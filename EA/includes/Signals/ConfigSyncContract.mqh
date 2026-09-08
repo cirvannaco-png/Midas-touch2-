@@ -58,11 +58,6 @@ public:
       m_version = version;
      }
 
-   // The EA refuses the deployment boundary unless every identity field
-   // agrees with the chart/runtime context. Parameter application is NOT
-   // part of this class: until a concrete parameter transport and an
-   // independently tested mapping exist, the live compiled inputs remain
-   // the source of truth.
    bool ValidateMetadata(const string expectedInstrument,
                          const string expectedTimeframe,
                          const string expectedStrategy,
@@ -104,16 +99,16 @@ public:
          reason = "optimizer version is missing";
          return false;
         }
-      if(m_lifecycle != "SHADOW" && m_lifecycle != "CHALLENGER" && m_lifecycle != "CHAMPION")
+      // Evaluation states are not activation states. Only the bridge's
+      // CHAMPION envelope may cross the exact-ACK activation boundary.
+      if(m_lifecycle != "CHAMPION")
         {
-         reason = "configuration lifecycle is not deployable";
+         reason = "configuration lifecycle is not CHAMPION";
          return false;
         }
       return true;
      }
 
-   // Exact-hash acknowledgement is the activation barrier. A timeout or
-   // missing ACK therefore cannot accidentally activate a candidate.
    bool CanActivate(const string acknowledgedHash,
                     const string expectedHash,
                     const bool metadataValid,
