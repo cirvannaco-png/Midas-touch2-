@@ -18,7 +18,7 @@ class ConfigSyncState(Base):
     symbol = Column(String, nullable=False)
     active_config_hash = Column(String, nullable=True)
     acknowledged_config_hash = Column(String, nullable=True)
-    state = Column(String, nullable=False, default="HOLD")
+    state = Column(String, nullable=False, default="HOLD", server_default="HOLD")
     last_ack_at = Column(DateTime(timezone=True), nullable=True)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(Text, nullable=True)
