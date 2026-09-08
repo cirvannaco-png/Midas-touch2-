@@ -25,7 +25,6 @@ def upgrade() -> None:
         sa.Column("last_error", sa.Text(), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("symbol", name="uq_config_sync_states_symbol"),
     )
     op.create_index("ix_config_sync_states_symbol", "config_sync_states", ["symbol"], unique=True)
 
