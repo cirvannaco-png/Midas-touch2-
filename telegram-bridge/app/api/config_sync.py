@@ -97,6 +97,18 @@ def _expected_activation_hash(state: ConfigSyncState) -> str | None:
     return state.active_config_hash
 
 
+async def _latest_champion(session: AsyncSession, symbol: str) -> ConfigurationRegistry | None:
+    return await session.scalar(
+        select(ConfigurationRegistry)
+        .where(
+            ConfigurationRegistry.instrument == symbol,
+            ConfigurationRegistry.lifecycle_status == "CHAMPION",
+        )
+        .order_by(ConfigurationRegistry.created_at.desc())
+        .limit(1)
+    )
+
+
 @router.get("/config/{symbol}", response_model=ConfigEnvelopeResponse)
 async def get_approved_config(
     symbol: str,
@@ -119,15 +131,7 @@ async def get_approved_config(
             await session.commit()
             raise HTTPException(status_code=409, detail="Persisted target configuration is unavailable")
     else:
-        registry = await session.scalar(
-            select(ConfigurationRegistry)
-            .where(
-                ConfigurationRegistry.instrument == symbol,
-                ConfigurationRegistry.lifecycle_status == "CHAMPION",
-            )
-            .order_by(ConfigurationRegistry.created_at.desc())
-            .limit(1)
-        )
+        registry = await _latest_champion(session, symbol)
         if registry is None:
             raise HTTPException(status_code=404, detail="No champion configuration is available")
 
@@ -165,7 +169,12 @@ async def acknowledge_config(
     state = await _get_state(session, symbol)
     expected_hash = _expected_activation_hash(state)
     if expected_hash is None:
-        raise HTTPException(status_code=409, detail="No configuration is awaiting activation")
+        # Initial activation has no persisted pending target yet. The only
+        # acceptable target is the exact latest CHAMPION for this symbol.
+        champion = await _latest_champion(session, symbol)
+        if champion is None:
+            raise HTTPException(status_code=409, detail="No champion configuration is awaiting activation")
+        expected_hash = champion.config_hash
     if payload.config_hash != expected_hash:
         state.last_error = "EA ACK hash does not match the persisted activation target"
         await session.commit()
