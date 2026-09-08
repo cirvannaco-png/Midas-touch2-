@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from app.config_registry import ConfigurationIdentity
+from app.config_registry import ConfigurationIdentity  # noqa: I001
 
 
 CONFIG_SYNC_PROTOCOL_VERSION = 1
