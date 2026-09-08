@@ -45,7 +45,12 @@ class ConfigurationRegistry(Base):
     performance_metrics = Column(JSON, nullable=True)
     risk_metrics = Column(JSON, nullable=False)
     regime_conditions = Column(JSON, nullable=True)
-    lifecycle_status = Column(String, nullable=False, default=LIFECYCLE[0])
+    lifecycle_status = Column(
+        String,
+        nullable=False,
+        default=LIFECYCLE[0],
+        server_default=LIFECYCLE[0],
+    )
     provenance = Column(JSON, nullable=True)
     created_at = Column(
         DateTime(timezone=True),
@@ -77,6 +82,7 @@ class ConfigurationRegistry(Base):
             performance_metrics=performance_metrics,
             risk_metrics=risk_metrics or {},
             regime_conditions=regime_conditions,
+            lifecycle_status=LIFECYCLE[0],
             **periods,
         )
 
