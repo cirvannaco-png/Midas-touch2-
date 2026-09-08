@@ -76,7 +76,7 @@ def test_ack_requires_exact_registered_hash_and_metadata(client, auth_headers):
             "version": 1,
         },
     )
-    assert wrong.status_code == 404
+    assert wrong.status_code == 409
     mismatch = client.post(
         "/config/XAUUSD/ack",
         headers=auth_headers,
@@ -103,18 +103,16 @@ def test_exact_ack_activates_and_get_reports_active(client, auth_headers):
     assert response.json()["active"] is True
 
 
-def test_active_challenger_remains_delivered_after_poll(client, auth_headers):
+def test_challenger_cannot_be_activated_directly(client, auth_headers):
     champion = make_identity(threshold=90)
     challenger = make_identity(threshold=91)
     seed_registry((champion, "CHAMPION"), (challenger, "CHALLENGER"))
     ack = activate(client, auth_headers, challenger)
-    assert ack.status_code == 200
+    assert ack.status_code == 409
     response = client.get("/config/XAUUSD", headers=auth_headers)
     assert response.status_code == 200
-    body = response.json()
-    assert body["config_hash"] == challenger.config_hash
-    assert body["lifecycle_status"] == "CHALLENGER"
-    assert body["active"] is True
+    assert response.json()["config_hash"] == champion.config_hash
+    assert response.json()["active"] is False
 
 
 def test_runtime_rejects_unknown_or_non_active_hash(client, auth_headers):
@@ -145,16 +143,17 @@ def test_runtime_rejects_registered_but_non_deployable_hash(client, auth_headers
     assert response.status_code == 409
 
 
-def test_unhealthy_challenger_rolls_back_to_champion_only_after_new_ack(client, auth_headers):
-    champion = make_identity(threshold=90)
-    challenger = make_identity(threshold=91)
-    seed_registry((champion, "CHAMPION"), (challenger, "CHALLENGER"))
-    ack = activate(client, auth_headers, challenger)
-    assert ack.status_code == 200
+def test_unhealthy_champion_stages_previous_champion_and_requires_new_ack(client, auth_headers):
+    old_champion = make_identity(threshold=90)
+    new_champion = make_identity(threshold=91)
+    seed_registry((old_champion, "CHAMPION"), (new_champion, "CHAMPION"))
+    first_ack = activate(client, auth_headers, new_champion)
+    assert first_ack.status_code == 200
+
     runtime = client.post(
         "/config/XAUUSD/runtime",
         headers=auth_headers,
-        json={"config_hash": challenger.config_hash, "healthy": False},
+        json={"config_hash": new_champion.config_hash, "healthy": False},
     )
     assert runtime.status_code == 200
     assert runtime.json()["action"] == "ROLLBACK"
@@ -163,13 +162,13 @@ def test_unhealthy_challenger_rolls_back_to_champion_only_after_new_ack(client, 
 
     response = client.get("/config/XAUUSD", headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["config_hash"] == champion.config_hash
+    assert response.json()["config_hash"] == old_champion.config_hash
     assert response.json()["active"] is False
 
-    champion_ack = activate(client, auth_headers, champion)
-    assert champion_ack.status_code == 200
-    assert champion_ack.json()["action"] == "ACTIVATE"
-    assert champion_ack.json()["state"] == "ACTIVE"
+    old_ack = activate(client, auth_headers, old_champion)
+    assert old_ack.status_code == 200
+    assert old_ack.json()["action"] == "ACTIVATE"
+    assert old_ack.json()["state"] == "ACTIVE"
 
 
 def test_unhealthy_champion_enters_defensive_state(client, auth_headers):
