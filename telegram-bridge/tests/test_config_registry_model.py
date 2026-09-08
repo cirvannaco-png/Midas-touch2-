@@ -44,3 +44,30 @@ def test_registry_model_cannot_skip_lifecycle_evidence():
         row.transition_to("CHAMPION")
 
     assert row.lifecycle_status == "QUARANTINE"
+
+
+def test_registry_identity_fields_are_immutable():
+    identity = ConfigurationIdentity(
+        strategy="momentum_breakout",
+        instrument="XAUUSD",
+        timeframe="M15",
+        parameters={"atr_period": 14},
+        data_version="market-data-v1",
+        optimizer_version="optimizer-v1",
+    )
+    row = ConfigurationRegistry.from_identity(identity)
+
+    row.strategy = "mean_reversion"
+
+    with pytest.raises(ValueError, match="configuration identity fields are immutable"):
+        from sqlalchemy import event
+        from sqlalchemy.orm import configure_mappers
+
+        configure_mappers()
+        event.registry = None
+        # Trigger the mapper's before_update listener without requiring a DB.
+        from sqlalchemy import inspect
+
+        assert inspect(row).attrs.strategy.history.has_changes()
+        for listener in row.__mapper__.dispatch.before_update:
+            listener(row.__mapper__, None, row)
