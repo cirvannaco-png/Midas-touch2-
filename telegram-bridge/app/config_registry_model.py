@@ -29,7 +29,7 @@ class ConfigurationRegistry(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    config_hash = Column(String(64), unique=True, nullable=False, index=True)
+    config_hash = Column(String(64), unique=True, nullable=False)
     strategy = Column(String, nullable=False)
     instrument = Column(String, nullable=False)
     timeframe = Column(String, nullable=False)
