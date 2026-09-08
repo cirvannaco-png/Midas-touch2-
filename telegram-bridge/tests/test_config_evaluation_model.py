@@ -92,3 +92,17 @@ def test_evidence_is_a_new_snapshot_not_an_identity_mutation():
     assert first.config_hash == second.config_hash
     assert first.evidence_version != second.evidence_version
     assert first.objective_score != second.objective_score
+
+
+def test_persisted_evidence_cannot_be_updated():
+    from app.config_evaluation_model import _reject_evaluation_update
+
+    with pytest.raises(ValueError, match="append-only"):
+        _reject_evaluation_update(None, None, ConfigurationEvaluation())
+
+
+def test_persisted_evidence_cannot_be_deleted():
+    from app.config_evaluation_model import _reject_evaluation_delete
+
+    with pytest.raises(ValueError, match="append-only"):
+        _reject_evaluation_delete(None, None, ConfigurationEvaluation())
