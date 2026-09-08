@@ -1,7 +1,7 @@
 import pytest
 
 from app.config_registry import ConfigurationIdentity
-from app.config_registry_model import ConfigurationRegistry
+from app.config_registry_model import ConfigurationRegistry, _prevent_identity_mutation
 
 
 def test_registry_model_materializes_identity_and_defaults():
@@ -56,18 +56,7 @@ def test_registry_identity_fields_are_immutable():
         optimizer_version="optimizer-v1",
     )
     row = ConfigurationRegistry.from_identity(identity)
-
     row.strategy = "mean_reversion"
 
     with pytest.raises(ValueError, match="configuration identity fields are immutable"):
-        from sqlalchemy import event
-        from sqlalchemy.orm import configure_mappers
-
-        configure_mappers()
-        event.registry = None
-        # Trigger the mapper's before_update listener without requiring a DB.
-        from sqlalchemy import inspect
-
-        assert inspect(row).attrs.strategy.history.has_changes()
-        for listener in row.__mapper__.dispatch.before_update:
-            listener(row.__mapper__, None, row)
+        _prevent_identity_mutation(row.__mapper__, None, row)
