@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String, event
 
 from app.database import Base
 
@@ -76,3 +76,15 @@ class ConfigurationEvaluation(Base):
             provenance=dict(provenance),
             decision=decision,
         )
+
+
+@event.listens_for(ConfigurationEvaluation, "before_update")
+def _reject_evaluation_update(mapper, connection, target) -> None:
+    """Evidence snapshots cannot be edited after persistence."""
+    raise ValueError("configuration evaluation evidence is append-only")
+
+
+@event.listens_for(ConfigurationEvaluation, "before_delete")
+def _reject_evaluation_delete(mapper, connection, target) -> None:
+    """Evidence snapshots cannot be deleted after persistence."""
+    raise ValueError("configuration evaluation evidence is append-only")
