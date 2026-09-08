@@ -145,7 +145,7 @@ def test_runtime_rejects_registered_but_non_deployable_hash(client, auth_headers
     assert response.status_code == 409
 
 
-def test_unhealthy_challenger_rolls_back_to_champion(client, auth_headers):
+def test_unhealthy_challenger_rolls_back_to_champion_only_after_new_ack(client, auth_headers):
     champion = make_identity(threshold=90)
     challenger = make_identity(threshold=91)
     seed_registry((champion, "CHAMPION"), (challenger, "CHALLENGER"))
@@ -158,10 +158,18 @@ def test_unhealthy_challenger_rolls_back_to_champion(client, auth_headers):
     )
     assert runtime.status_code == 200
     assert runtime.json()["action"] == "ROLLBACK"
-    assert runtime.json()["active_config_hash"] == champion.config_hash
+    assert runtime.json()["active_config_hash"] is None
+    assert runtime.json()["state"] == "ROLLBACK"
+
     response = client.get("/config/XAUUSD", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["config_hash"] == champion.config_hash
+    assert response.json()["active"] is False
+
+    champion_ack = activate(client, auth_headers, champion)
+    assert champion_ack.status_code == 200
+    assert champion_ack.json()["action"] == "ACTIVATE"
+    assert champion_ack.json()["state"] == "ACTIVE"
 
 
 def test_unhealthy_champion_enters_defensive_state(client, auth_headers):
