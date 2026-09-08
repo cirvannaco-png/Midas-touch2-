@@ -7,6 +7,8 @@
 #ifndef CONFIGSYNC_CONTRACT_MQH
 #define CONFIGSYNC_CONTRACT_MQH
 
+#define CONFIG_SYNC_PROTOCOL_VERSION 1
+
 class CConfigSyncContract
   {
 private:
@@ -67,9 +69,9 @@ public:
                          string &reason) const
      {
       reason = "";
-      if(m_version < 1)
+      if(m_version != CONFIG_SYNC_PROTOCOL_VERSION)
         {
-         reason = "configuration version must be positive";
+         reason = "unsupported configuration protocol version";
          return false;
         }
       if(m_configHash == "")
