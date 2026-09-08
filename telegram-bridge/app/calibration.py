@@ -1,32 +1,4 @@
-"""
-telegram-bridge/app/calibration.py — step 6's actual scheduled work, and
-the seam where step 5's Telegram card gets attached to step 4's decision.
-
-run_cycle() is what POST /admin/run-cycle (routes.py) calls. It:
-  1. Pulls tools/metrics_engine.compute_report() over a trailing window
-     (RECENT_WEEKS — matches tools/calibration_matrix.py's own framing:
-     the interesting comparison is "recent vs baseline," not
-     "since the beginning of time").
-  2. Persists it as a CalibrationCycle row (source="live") — this is the
-     Postgres replacement for tools/cycle_store.py's JSON files.
-  3. For every weight_version that cycle's report has expectancy data
-     for, loads that weight_version's live cycle history from Postgres
-     and runs it through tools/gating.decide().
-  4. PROMOTE -> creates a PromotionRequest (status="pending") and posts
-     a tap-to-approve card to the admin chat (bot_promotions.py handles
-     the tap). ROLLBACK -> creates a PromotionRequest
-     (status="auto_executed") immediately and posts a plain notice — per
-     the spec, a genuine contradiction is never gated behind a tap, only
-     flagged. HOLD/INSUFFICIENT_DATA -> logged, not messaged; a cycle
-     with nothing actionable shouldn't page you.
-
-This module deliberately imports tools/metrics_engine.py and
-tools/gating.py rather than re-implementing their logic — see
-telegram-bridge/Dockerfile (tools/ is now copied into the image
-specifically so this import works in production) and
-tools/_pathutil.py (how the two different on-disk layouts, repo
-checkout vs. deployed container, both resolve to the same import).
-"""
+"""Scheduled recalibration work and the config-promotion lifecycle seam."""
 from __future__ import annotations
 
 import os
@@ -41,12 +13,12 @@ from app.config import settings
 from app.database import async_session
 from app.logger import logger
 from app.models import CalibrationCycle, PromotionRequest, SignalOutcome
+from app.recalibration_lifecycle import evaluate_registered_challengers
 
-# See tools/_pathutil.py's docstring for why two candidates are tried.
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 for _candidate in (
-    os.path.normpath(os.path.join(_APP_DIR, "..", "tools")),        # deployed container (app/ and tools/ siblings)
-    os.path.normpath(os.path.join(_APP_DIR, "..", "..", "tools")),  # repo checkout (telegram-bridge/app/../../tools)
+    os.path.normpath(os.path.join(_APP_DIR, "..", "tools")),
+    os.path.normpath(os.path.join(_APP_DIR, "..", "..", "tools")),
 ):
     if os.path.exists(os.path.join(_candidate, "metrics_engine.py")) and _candidate not in sys.path:
         sys.path.insert(0, _candidate)
@@ -55,14 +27,13 @@ else:
     logger.warning(
         "app.calibration: couldn't locate tools/ (metrics_engine.py/gating.py) "
         "from either the deployed container layout or a repo checkout — "
-        "POST /admin/run-cycle will fail until this is fixed. See "
-        "telegram-bridge/Dockerfile's COPY tools/ line."
+        "POST /admin/run-cycle will fail until this is fixed."
     )
 
 from gating import GatingError, decide, load_cycles_from_db
 from metrics_engine import compute_report
 
-CYCLE_WINDOW_WEEKS = 2  # matches the spec's biweekly cadence
+CYCLE_WINDOW_WEEKS = 2
 
 
 async def _fetch_window_rows(since: datetime) -> list:
@@ -87,13 +58,6 @@ async def _persist_cycle(report: dict) -> CalibrationCycle:
 
 
 def _format_summary(weight_version: str, decision, cycle_report: dict) -> str:
-    """
-    Per the spec: coverage delta, expectancy delta by tag, sample size,
-    confidence interval — not just a verdict. Pulled straight off the
-    gating Decision's metric_verdicts (already the CI objects
-    tools/stats.py produced) so this can't drift from what the decision
-    was actually based on.
-    """
     lines = [
         f"📊 MEDIS TOUCH — Calibration cycle ({weight_version})",
         "",
@@ -122,6 +86,43 @@ def _format_summary(weight_version: str, decision, cycle_report: dict) -> str:
     return "\n".join(lines)
 
 
+async def _send_config_promotion_cards(promotion_ids: list[int]) -> None:
+    """Attach the same human approval surface to config-bound promotions."""
+    if not promotion_ids:
+        return
+    if bot_module.application is None or bot_module.application.bot is None:
+        logger.warning("app.calibration: bot application not initialized — config promotion cards not sent")
+        return
+
+    for promotion_id in promotion_ids:
+        async with async_session() as session:
+            promo = await session.get(PromotionRequest, promotion_id)
+            if promo is None or promo.status != "pending":
+                continue
+            text = (
+                "🧪 MEDIS TOUCH — Challenger promotion\n\n"
+                f"Instrument: {promo.instrument}\n"
+                f"Timeframe: {promo.timeframe}\n"
+                f"Configuration: {promo.config_hash}\n"
+                f"Optimizer version: {promo.weight_version}\n\n"
+                "Approval stages CHALLENGER → CHAMPION. It does NOT activate the EA. "
+                "The EA must subsequently ACK this exact configuration hash."
+            )
+            try:
+                msg = await bot_module.application.bot.send_message(
+                    chat_id=settings.ADMIN_CHAT_ID,
+                    text=text,
+                    reply_markup=build_promotion_keyboard(promo.id),
+                )
+                promo.telegram_message_id = msg.message_id
+                await session.commit()
+            except Exception as e:
+                logger.error(
+                    f"app.calibration: failed to send config promotion card {promotion_id} "
+                    f"({type(e).__name__}): {e}"
+                )
+
+
 async def run_cycle() -> dict:
     now = datetime.now(timezone.utc)
     since = now - timedelta(weeks=CYCLE_WINDOW_WEEKS)
@@ -133,8 +134,10 @@ async def run_cycle() -> dict:
 
     report = compute_report(rows)
     cycle = await _persist_cycle(report)
-    logger.info(f"app.calibration.run_cycle: persisted cycle {cycle.cycle_id} "
-                f"({len(rows)} rows, {report['expectancy']['resolved_count']} resolved).")
+    logger.info(
+        f"app.calibration.run_cycle: persisted cycle {cycle.cycle_id} "
+        f"({len(rows)} rows, {report['expectancy']['resolved_count']} resolved)."
+    )
 
     weight_versions = list(report.get("expectancy", {}).get("by_weight_version_stats", {}).keys())
     decisions = []
@@ -167,8 +170,7 @@ async def run_cycle() -> dict:
 
         summary = _format_summary(wv, decision, report)
         if decision.action == "ROLLBACK":
-            summary += "\n\n⚠️ AUTO-ROLLBACK — this was not gated behind approval; a genuine " \
-                       "contradiction between cycles is never auto-reconciled. Flagging for review."
+            summary += "\n\n⚠️ AUTO-ROLLBACK — contradiction is never silently reconciled; runtime config-sync still requires an exact EA ACK before any champion becomes active."
 
         try:
             if bot_module.application is None or bot_module.application.bot is None:
@@ -183,12 +185,23 @@ async def run_cycle() -> dict:
                     db_promo.telegram_message_id = msg.message_id
                     await session.commit()
         except Exception as e:
-            logger.error(f"app.calibration.run_cycle: failed to send promotion card for {wv} "
-                         f"({type(e).__name__}): {e}")
+            logger.error(
+                f"app.calibration.run_cycle: failed to send promotion card for {wv} "
+                f"({type(e).__name__}): {e}"
+            )
+
+    # Config-linked recalibration is deliberately separate from the legacy
+    # weight-version gate above. It evaluates immutable CHALLENGER rows
+    # against their latest persisted evidence and creates a PromotionRequest
+    # that is bound to an exact config_hash. No trading code is involved.
+    async with async_session() as session:
+        config_lifecycle = await evaluate_registered_challengers(session)
+    await _send_config_promotion_cards(config_lifecycle.get("promotion_ids", []))
 
     return {
         "status": "ok",
         "cycle_id": cycle.cycle_id,
         "resolved_count": report["expectancy"]["resolved_count"],
         "decisions": decisions,
+        "config_lifecycle": config_lifecycle,
     }
