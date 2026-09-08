@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.config_evaluation_model import ConfigurationEvaluation
-from app.database import async_session
+from app.database import Base, async_session
 
 HASH = "a" * 64
 
@@ -21,6 +21,13 @@ def make_row(version=1):
         provenance={},
         decision="HOLD",
     )
+
+
+def test_evaluation_table_is_registered_in_sqlalchemy_metadata():
+    assert "configuration_evaluations" in Base.metadata.tables
+    table = Base.metadata.tables["configuration_evaluations"]
+    assert "config_hash" in table.c
+    assert "evidence_version" in table.c
 
 
 def test_evaluation_materializes_complete_evidence_snapshot():
@@ -69,7 +76,7 @@ def test_invalid_config_hash_fails_closed():
         )
 
 
-def test_evidence_is_a_new_snapshot_not_an_identity_mutation():
+def test_evidence_version_creates_a_new_snapshot():
     first = make_row(1)
     second = make_row(2)
     second.objective_score = {"composite": 0.82}
