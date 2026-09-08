@@ -14,6 +14,9 @@ from typing import Any
 from app.config_registry import ConfigurationIdentity
 
 
+CONFIG_SYNC_PROTOCOL_VERSION = 1
+
+
 @dataclass(frozen=True)
 class ConfigSyncEnvelope:
     """Immutable configuration envelope delivered to one EA instance."""
@@ -55,8 +58,8 @@ def validate_envelope(
     """Validate identity and deployment metadata without applying anything."""
     reasons: list[str] = []
 
-    if envelope.version < 1:
-        reasons.append("configuration version must be positive")
+    if envelope.version != CONFIG_SYNC_PROTOCOL_VERSION:
+        reasons.append("unsupported configuration protocol version")
     if envelope.lifecycle_status not in {"SHADOW", "CHALLENGER", "CHAMPION"}:
         reasons.append("configuration is not deployable at its lifecycle status")
     if envelope.instrument != expected_symbol:
