@@ -18,6 +18,12 @@ class ConfigSyncState(Base):
     symbol = Column(String, nullable=False)
     active_config_hash = Column(String, nullable=True)
     acknowledged_config_hash = Column(String, nullable=True)
+    # Candidate that has crossed the human promotion gate but is not active
+    # until this exact hash is acknowledged by the EA.
+    pending_activation_hash = Column(String, nullable=True)
+    # Last known-good active configuration. Rollback points here and still
+    # requires a fresh exact-hash EA ACK before activation.
+    rollback_config_hash = Column(String, nullable=True)
     state = Column(String, nullable=False, default="HOLD", server_default="HOLD")
     last_ack_at = Column(DateTime(timezone=True), nullable=True)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
