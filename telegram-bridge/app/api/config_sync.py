@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config_registry import ConfigurationIdentity
 from app.config_registry_model import ConfigurationRegistry
-from app.config_sync_contract import activation_decision, envelope_from_mapping, validate_envelope
+from app.config_sync_contract import activation_decision, envelope_from_mapping, rollback_decision, validate_envelope
 from app.config_sync_state_model import ConfigSyncState
 from app.database import get_session
 from app.routes import verify_api_key
@@ -188,6 +188,25 @@ async def report_runtime(
 ):
     """Record runtime health and fail closed to the current CHAMPION."""
     state = await _get_state(session, symbol)
+    active_registry = await session.scalar(
+        select(ConfigurationRegistry).where(
+            ConfigurationRegistry.config_hash == payload.config_hash,
+            ConfigurationRegistry.instrument == symbol,
+        )
+    )
+    if active_registry is None:
+        state.state = "HALT"
+        state.last_error = "Runtime report references an unknown configuration hash"
+        await session.commit()
+        raise HTTPException(status_code=404, detail="Runtime configuration hash is not registered for this symbol")
+    _verify_registry_hash(active_registry)
+
+    if state.active_config_hash is not None and state.active_config_hash != payload.config_hash:
+        state.state = "HALT"
+        state.last_error = "Runtime report does not match the persisted active configuration"
+        await session.commit()
+        raise HTTPException(status_code=409, detail="Runtime configuration does not match persisted active configuration")
+
     champion = await session.scalar(
         select(ConfigurationRegistry)
         .where(
@@ -201,8 +220,6 @@ async def report_runtime(
     if champion is not None:
         _verify_registry_hash(champion)
         champion_hash = champion.config_hash
-
-    from app.config_sync_contract import rollback_decision
 
     decision = rollback_decision(
         active_hash=payload.config_hash,
