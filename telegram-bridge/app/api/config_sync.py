@@ -276,8 +276,10 @@ async def report_runtime(
         state.state = "ACTIVE"
         state.last_error = None
     elif decision.action == "ROLLBACK":
-        state.acknowledged_config_hash = champion_hash or None
-        state.active_config_hash = champion_hash or None
+        # Do not silently activate the champion. The EA must poll the champion,
+        # validate it, and ACK its exact hash before it becomes active.
+        state.acknowledged_config_hash = None
+        state.active_config_hash = None
         state.state = "ROLLBACK"
         state.last_error = "; ".join(decision.reasons)
     elif decision.action == "DEFENSIVE":
