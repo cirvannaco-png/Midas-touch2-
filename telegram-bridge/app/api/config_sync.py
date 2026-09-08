@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config_registry import ConfigurationIdentity
 from app.config_registry_model import ConfigurationRegistry
-from app.config_sync_contract import activation_decision, envelope_from_mapping, rollback_decision, validate_envelope
+from app.config_sync_contract import (
+    activation_decision,
+    envelope_from_mapping,
+    rollback_decision,
+    validate_envelope,
+)
 from app.config_sync_state_model import ConfigSyncState
 from app.database import get_session
 from app.routes import verify_api_key
