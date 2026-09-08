@@ -1,11 +1,4 @@
-"""Database-backed recalibration lifecycle for immutable configurations.
-
-This service consumes candidate configurations and immutable evaluation evidence
-already produced by the optimizer/evaluation tooling. It never edits EA inputs.
-A successful gate creates a config-bound PromotionRequest; the Telegram approval
-moves CHALLENGER -> CHAMPION, and ConfigSync requires the EA's exact hash ACK
-before activation.
-"""
+"""Database-backed recalibration lifecycle for immutable configurations."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -45,7 +38,7 @@ async def evaluate_registered_challengers(session: AsyncSession) -> dict:
     policy = _policy_from_settings()
     if policy is None:
         logger.info("recalibration lifecycle: promotion policy is not configured; holding all candidates")
-        return {"status": "policy_not_configured", "promotions": 0, "holds": 0}
+        return {"status": "policy_not_configured", "promotions": 0, "holds": 0, "promotion_ids": []}
 
     candidates = list(
         (
@@ -59,6 +52,7 @@ async def evaluate_registered_challengers(session: AsyncSession) -> dict:
 
     promotions = 0
     holds = 0
+    promotion_ids: list[int] = []
     for challenger in candidates:
         champion = await session.scalar(
             select(ConfigurationRegistry)
@@ -124,7 +118,15 @@ async def evaluate_registered_challengers(session: AsyncSession) -> dict:
             status="pending",
         )
         session.add(promo)
+        await session.flush()
+        promotion_ids.append(promo.id)
         promotions += 1
 
     await session.commit()
-    return {"status": "ok", "candidates": len(candidates), "promotions": promotions, "holds": holds}
+    return {
+        "status": "ok",
+        "candidates": len(candidates),
+        "promotions": promotions,
+        "holds": holds,
+        "promotion_ids": promotion_ids,
+    }
