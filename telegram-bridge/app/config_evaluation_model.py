@@ -80,11 +80,11 @@ class ConfigurationEvaluation(Base):
 
 @event.listens_for(ConfigurationEvaluation, "before_update")
 def _reject_evaluation_update(mapper, connection, target) -> None:
-    """Evidence snapshots cannot be edited after persistence."""
+    """Evidence snapshots are immutable; append a new version instead."""
     raise ValueError("configuration evaluation evidence is append-only")
 
 
 @event.listens_for(ConfigurationEvaluation, "before_delete")
 def _reject_evaluation_delete(mapper, connection, target) -> None:
-    """Evidence snapshots cannot be deleted after persistence."""
-    raise ValueError("configuration evaluation evidence is append-only")
+    """Evidence history cannot be deleted through the ORM."""
+    raise ValueError("configuration evaluation evidence cannot be deleted")
