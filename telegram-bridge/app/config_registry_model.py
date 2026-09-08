@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, event
+from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, event, inspect
 
 from app.config_registry import LIFECYCLE, validate_transition
 from app.database import Base
@@ -103,10 +103,6 @@ _IMMUTABLE_IDENTITY_FIELDS = (
 @event.listens_for(ConfigurationRegistry, "before_update")
 def _prevent_identity_mutation(mapper, connection, target) -> None:
     """Reject in-place identity changes; lifecycle/evidence updates remain legal."""
-    state = mapper.class_manager.get_impl("config_hash").get_history(target, passive=True)
-    if state.has_changes():
+    state = inspect(target)
+    if any(state.attrs[field].history.has_changes() for field in _IMMUTABLE_IDENTITY_FIELDS):
         raise ValueError("configuration identity fields are immutable")
-    for field in _IMMUTABLE_IDENTITY_FIELDS[1:]:
-        history = mapper.class_manager.get_impl(field).get_history(target, passive=True)
-        if history.has_changes():
-            raise ValueError("configuration identity fields are immutable")
