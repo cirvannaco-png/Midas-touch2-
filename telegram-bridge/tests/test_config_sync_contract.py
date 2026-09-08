@@ -21,15 +21,20 @@ def make_envelope(**overrides):
         "lifecycle_status": "CHALLENGER",
         "version": 1,
     }
+    explicit_hash = overrides.pop("config_hash", None)
     values.update(overrides)
-    values["config_hash"] = ConfigurationIdentity(
-        strategy=values["strategy"],
-        instrument=values["instrument"],
-        timeframe=values["timeframe"],
-        parameters=values["parameters"],
-        data_version=values["data_version"],
-        optimizer_version=values["optimizer_version"],
-    ).config_hash
+    values["config_hash"] = (
+        explicit_hash
+        if explicit_hash is not None
+        else ConfigurationIdentity(
+            strategy=values["strategy"],
+            instrument=values["instrument"],
+            timeframe=values["timeframe"],
+            parameters=values["parameters"],
+            data_version=values["data_version"],
+            optimizer_version=values["optimizer_version"],
+        ).config_hash
+    )
     return ConfigSyncEnvelope(**values)
 
 

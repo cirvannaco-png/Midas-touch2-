@@ -17,8 +17,13 @@ def make_registry(**overrides):
         "data_version": "data-2026-09-01",
         "optimizer_version": "optimizer-1",
     }
+    explicit_hash = overrides.pop("config_hash", None)
     values.update(overrides)
-    values["config_hash"] = ConfigurationIdentity(**values).config_hash
+    values["config_hash"] = (
+        explicit_hash
+        if explicit_hash is not None
+        else ConfigurationIdentity(**values).config_hash
+    )
     return SimpleNamespace(**values)
 
 
