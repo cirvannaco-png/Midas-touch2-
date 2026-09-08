@@ -123,6 +123,24 @@ def test_unhealthy_champion_enters_defensive_state():
     assert decision.action == "DEFENSIVE"
 
 
+def test_no_champion_halts_unhealthy_runtime():
+    decision = rollback_decision(
+        active_hash="a" * 64,
+        champion_hash="",
+        runtime_healthy=False,
+    )
+    assert decision.action == "HALT"
+
+
+def test_no_champion_does_not_approve_healthy_runtime():
+    decision = rollback_decision(
+        active_hash="a" * 64,
+        champion_hash="",
+        runtime_healthy=True,
+    )
+    assert decision.action != "ROLLBACK"
+
+
 def test_mapping_parser_rejects_missing_identity_fields():
     with pytest.raises(ValueError, match="missing configuration fields"):
         envelope_from_mapping({"config_hash": "a" * 64})
