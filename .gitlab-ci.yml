@@ -3,6 +3,49 @@
 # Trading logic is intentionally NOT changed by this migration.
 # This file replaces the former GitHub Actions automation with native
 # GitLab CI jobs.
+#
+# CI efficiency policy:
+# - Merge-request pipelines validate feature branches.
+# - Main is validated after merge.
+# - Feature-branch push pipelines are suppressed when an MR exists.
+# - Python package downloads use content-addressed pip caches.
+# - Job-level changes rules keep unrelated suites out of a pipeline.
+#
+# Scheduled maintenance uses GitLab pipeline schedules with:
+#   SCHEDULE_TASK=daily-subscriptions
+#   SCHEDULE_TASK=biweekly-recalibration
+#
+# Required CI/CD variables for scheduled maintenance:
+#   BRIDGE_BASE_URL
+#   BRIDGE_API_KEY
+#
+# Optional/manual Render secret sync:
+#   RENDER_API_KEY
+#   RENDER_SERVICE_ID
+#   BOT_TOKEN
+#   CHAT_ID
+#   ADMIN_CHAT_ID
+#   SECRET_KEY
+#   WEBHOOK_SECRET_TOKEN
+
+workflow:
+  rules:
+    # One authoritative validation pipeline for an open merge request.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+    # Validate the protected/default branch after changes land.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+
+    # Preserve scheduled maintenance and deliberate manual/API/triggered runs.
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+
+    # Do not create feature-branch push pipelines or any unspecified pipeline.
+    - when: never
 
 stages:
   - validate
@@ -13,15 +56,32 @@ stages:
 default:
   interruptible: true
 
-# Validation/test jobs execute automatically on code pipelines.
-# Manual gating remains reserved for operational/deployment actions.
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
 mql5-structure:
   stage: validate
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
   rules:
-    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - EA/**/*
+        - tools/validate_mql5.py
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - EA/**/*
+        - tools/validate_mql5.py
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 architecture-gates:
   stage: validate
@@ -29,11 +89,27 @@ architecture-gates:
   script:
     - python tools/phase_a_d_manifest.py
   rules:
-    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 medis-touch-python:
   stage: test
   image: python:3.11-slim
+  cache:
+    key:
+      files:
+        - medis_touch/requirements-dev.txt
+      prefix: pip-medis-touch
+    paths:
+      - .cache/pip
+    policy: pull-push
   before_script:
     - cd medis_touch
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -42,11 +118,33 @@ medis-touch-python:
     - bandit -r app/ -q
     - pytest -v
   rules:
-    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - medis_touch/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - medis_touch/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 telegram-bridge:
   stage: test
   image: python:3.11-slim
+  cache:
+    key:
+      files:
+        - telegram-bridge/requirements-dev.txt
+      prefix: pip-telegram-bridge
+    paths:
+      - .cache/pip
+    policy: pull-push
   before_script:
     - cd telegram-bridge
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -70,11 +168,33 @@ telegram-bridge:
       RATE_LIMIT_ENABLED="false" \
       pytest -v
   rules:
-    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - telegram-bridge/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - telegram-bridge/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 tools-tests:
   stage: test
   image: python:3.11-slim
+  cache:
+    key:
+      files:
+        - telegram-bridge/requirements-dev.txt
+      prefix: pip-telegram-tools
+    paths:
+      - .cache/pip
+    policy: pull-push
   before_script:
     - cd telegram-bridge
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -82,7 +202,23 @@ tools-tests:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
   rules:
-    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - tools/**/*
+        - telegram-bridge/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - tools/**/*
+        - telegram-bridge/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 daily-subscriptions:
   stage: maintenance
@@ -93,7 +229,10 @@ daily-subscriptions:
     - |
       test -n "$BRIDGE_BASE_URL" || { echo "BRIDGE_BASE_URL is required"; exit 1; }
       test -n "$BRIDGE_API_KEY" || { echo "BRIDGE_API_KEY is required"; exit 1; }
-      response="$(curl -sS -w '\n%{http_code}' -X POST "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120)"
+      response="$(curl -sS -w '\n%{http_code}' -X POST \
+        "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" \
+        -H "X-API-Key: ${BRIDGE_API_KEY}" \
+        --max-time 120)"
       http_code="$(printf '%s\n' "$response" | tail -n1)"
       body="$(printf '%s\n' "$response" | sed '$d')"
       echo "HTTP $http_code"
@@ -114,12 +253,17 @@ biweekly-recalibration:
     - |
       test -n "$BRIDGE_BASE_URL" || { echo "BRIDGE_BASE_URL is required"; exit 1; }
       test -n "$BRIDGE_API_KEY" || { echo "BRIDGE_API_KEY is required"; exit 1; }
+
       FIRST_SATURDAY="2026-01-03"
       TODAY="$(date -u +%Y-%m-%d)"
       DAYS_SINCE="$(( ( $(date -u -d "$TODAY" +%s) - $(date -u -d "$FIRST_SATURDAY" +%s) ) / 86400 ))"
       WEEKS_SINCE="$(( DAYS_SINCE / 7 ))"
+
       if [ "$CI_PIPELINE_SOURCE" = "web" ] || [ $((WEEKS_SINCE % 2)) -eq 0 ]; then
-        response="$(curl -sS -w '\n%{http_code}' -X POST "${BRIDGE_BASE_URL%/}/admin/run-cycle" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120)"
+        response="$(curl -sS -w '\n%{http_code}' -X POST \
+          "${BRIDGE_BASE_URL%/}/admin/run-cycle" \
+          -H "X-API-Key: ${BRIDGE_API_KEY}" \
+          --max-time 120)"
         http_code="$(printf '%s\n' "$response" | tail -n1)"
         body="$(printf '%s\n' "$response" | sed '$d')"
         echo "HTTP $http_code"
