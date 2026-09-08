@@ -22,11 +22,9 @@ def seed_registry(*identities_and_statuses):
             for identity, status in identities_and_statuses:
                 row = ConfigurationRegistry.from_identity(identity)
                 for target in ("BACKTESTED", "VALIDATED", "QUARANTINE", "SHADOW", "CHALLENGER", "CHAMPION"):
-                    if target == status:
-                        if target != "OPTIMIZED":
-                            row.transition_to(target)
-                        break
                     row.transition_to(target)
+                    if target == status:
+                        break
                 session.add(row)
             await session.commit()
 
@@ -108,6 +106,31 @@ def test_exact_ack_activates_and_get_reports_active(client, auth_headers):
     response = client.get("/config/XAUUSD", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["active"] is True
+
+
+def test_active_challenger_remains_delivered_after_poll(client, auth_headers):
+    champion = make_identity(threshold=90)
+    challenger = make_identity(threshold=91)
+    seed_registry((champion, "CHAMPION"), (challenger, "CHALLENGER"))
+
+    ack = client.post(
+        "/config/XAUUSD/ack",
+        headers=auth_headers,
+        json={
+            "config_hash": challenger.config_hash,
+            "strategy": challenger.strategy,
+            "timeframe": challenger.timeframe,
+            "version": 1,
+        },
+    )
+    assert ack.status_code == 200
+
+    response = client.get("/config/XAUUSD", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["config_hash"] == challenger.config_hash
+    assert body["lifecycle_status"] == "CHALLENGER"
+    assert body["active"] is True
 
 
 def test_runtime_rejects_unknown_or_non_active_hash(client, auth_headers):
