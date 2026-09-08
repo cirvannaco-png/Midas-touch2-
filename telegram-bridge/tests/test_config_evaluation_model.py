@@ -8,9 +8,9 @@ from app.database import Base, async_session
 HASH = "a" * 64
 
 
-def make_row(version=1):
+def make_row(version=1, config_hash=HASH):
     return ConfigurationEvaluation.from_evidence(
-        HASH,
+        config_hash,
         version,
         objective_score={"composite": 0.70},
         performance_metrics={"profit_factor": 1.4},
@@ -88,7 +88,7 @@ def test_evidence_version_creates_a_new_snapshot():
 def test_persisted_evidence_cannot_be_updated():
     async def _exercise():
         async with async_session() as session:
-            row = make_row(1)
+            row = make_row(1, "b" * 64)
             session.add(row)
             await session.commit()
             row.decision = "CHALLENGER"
@@ -102,7 +102,7 @@ def test_persisted_evidence_cannot_be_updated():
 def test_persisted_evidence_cannot_be_deleted():
     async def _exercise():
         async with async_session() as session:
-            row = make_row(1)
+            row = make_row(1, "c" * 64)
             session.add(row)
             await session.commit()
             await session.delete(row)
