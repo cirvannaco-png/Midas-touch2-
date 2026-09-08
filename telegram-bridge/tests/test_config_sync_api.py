@@ -1,7 +1,10 @@
 import asyncio
 
+from sqlalchemy import delete
+
 from app.config_registry import ConfigurationIdentity
 from app.config_registry_model import ConfigurationRegistry
+from app.config_sync_state_model import ConfigSyncState
 from app.database import async_session
 
 
@@ -19,6 +22,7 @@ def make_identity(*, strategy="SMC", instrument="XAUUSD", timeframe="M15", thres
 def seed_registry(*identities_and_statuses):
     async def _seed():
         async with async_session() as session:
+            await session.execute(delete(ConfigSyncState).where(ConfigSyncState.symbol == "XAUUSD"))
             for identity, status in identities_and_statuses:
                 row = ConfigurationRegistry.from_identity(identity)
                 for target in ("BACKTESTED", "VALIDATED", "QUARANTINE", "SHADOW", "CHALLENGER", "CHAMPION"):
@@ -87,7 +91,8 @@ def test_ack_requires_exact_registered_hash_and_metadata(client, auth_headers):
             "version": 1,
         },
     )
-    assert mismatch.status_code == 409
+    assert mismatch.status_code == 200
+    assert mismatch.json()["action"] == "HOLD"
 
 
 def test_exact_ack_activates_and_get_reports_active(client, auth_headers):
