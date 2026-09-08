@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config_registry import ConfigurationIdentity
 from app.config_registry_model import ConfigurationRegistry
-from app.config_sync_contract import activation_decision, envelope_from_mapping, rollback_decision, validate_envelope
+from app.config_sync_contract import (
+    activation_decision,
+    envelope_from_mapping,
+    rollback_decision,
+    validate_envelope,
+)
 from app.config_sync_state_model import ConfigSyncState
 from app.database import get_session
 from app.routes import verify_api_key
@@ -137,17 +142,19 @@ async def acknowledge_config(
         raise HTTPException(status_code=404, detail="Configuration hash is not registered for this symbol")
     _verify_registry_hash(registry)
 
-    envelope = envelope_from_mapping({
-        "config_hash": registry.config_hash,
-        "strategy": registry.strategy,
-        "instrument": registry.instrument,
-        "timeframe": registry.timeframe,
-        "parameters": registry.parameters or {},
-        "data_version": registry.data_version,
-        "optimizer_version": registry.optimizer_version,
-        "lifecycle_status": registry.lifecycle_status,
-        "version": payload.version,
-    })
+    envelope = envelope_from_mapping(
+        {
+            "config_hash": registry.config_hash,
+            "strategy": registry.strategy,
+            "instrument": registry.instrument,
+            "timeframe": registry.timeframe,
+            "parameters": registry.parameters or {},
+            "data_version": registry.data_version,
+            "optimizer_version": registry.optimizer_version,
+            "lifecycle_status": registry.lifecycle_status,
+            "version": payload.version,
+        }
+    )
     validation = validate_envelope(
         envelope,
         expected_symbol=symbol,
@@ -201,7 +208,12 @@ async def report_runtime(
         raise HTTPException(status_code=404, detail="Runtime configuration hash is not registered for this symbol")
     _verify_registry_hash(active_registry)
 
-    if state.active_config_hash is not None and state.active_config_hash != payload.config_hash:
+    if state.active_config_hash is None:
+        state.state = "HALT"
+        state.last_error = "Runtime report received before configuration activation"
+        await session.commit()
+        raise HTTPException(status_code=409, detail="No persisted active configuration is available")
+    if state.active_config_hash != payload.config_hash:
         state.state = "HALT"
         state.last_error = "Runtime report does not match the persisted active configuration"
         await session.commit()
