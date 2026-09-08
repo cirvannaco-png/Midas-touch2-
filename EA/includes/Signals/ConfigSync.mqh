@@ -1,55 +1,35 @@
 //+------------------------------------------------------------------+
-//| ConfigSync.mqh                                                    |
-//|                                                                    |
-//| v2.11. Polls the bridge's GET /config/{symbol} on a timer and      |
-//| compares whatever weight_version it reports as "approved" against  |
-//| this instance's compiled InpWeightSetVersion.                      |
-//|                                                                    |
-//| DELIBERATELY OBSERVATION-ONLY. This does NOT change confidence      |
-//| thresholds, FVG proximity, or any other live parameter — there is  |
-//| no numeric-parameter-proposal engine yet (see the bridge's         |
-//| ConfigResponse.params, always null today), so there is nothing     |
-//| correct to auto-apply. What this DOES do: close the loop on "did   |
-//| the approval I tapped in Telegram actually reach every running EA  |
-//| instance," which today is a manual recompile-and-redeploy step per |
-//| chart with no feedback if you miss one.                            |
-//|                                                                    |
-//| DORMANT BY CONSTRUCTION: until a human approves a weight_version   |
-//| via the Telegram tap-to-approve card (see app/bot_promotions.py),  |
-//| GET /config/{symbol} returns approved_weight_version=null and this |
-//| class does nothing but log a one-line heartbeat. The moment a real |
-//| promotion happens, the exact same polling loop — no code change —  |
-//| starts detecting drift. This mirrors the same "dummy data now,     |
-//| real data activates it later" property tools/gating.py's           |
-//| source-tagging gives the recalibration cycle, applied to config    |
-//| sync instead of promotion decisions.                                |
+//| ConfigSync.mqh                                                   |
+//| Fail-closed EA transport for the immutable configuration envelope. |
+//| This does NOT apply numeric parameters to the live strategy.       |
 //+------------------------------------------------------------------+
 #ifndef CONFIGSYNC_MQH
 #define CONFIGSYNC_MQH
 
+#include "ConfigSyncContract.mqh"
+
 class CConfigSync
   {
 private:
-   string   m_symbol;
-   string   m_endpoint;      // "<bridge base>/config/<symbol>"
-   string   m_apiKey;
-   string   m_compiledWeightVersion;
-   int      m_timeoutMs;
-   string   m_lastSeenApproved; // "" until first successful poll; then whatever the bridge last reported (may be "")
-   bool     m_everWarned;       // avoid re-logging the same drift every single poll — see Poll()
+   string m_symbol;
+   string m_endpoint;
+   string m_apiKey;
+   string m_compiledWeightVersion;
+   int    m_timeoutMs;
+   string m_lastSeenHash;
+   bool   m_everWarned;
+   CConfigSyncContract m_contract;
 
-   bool     ExtractJsonStringField(const string &json, string field, string &out);
+   bool ExtractJsonStringField(const string &json, const string field, string &out);
+   bool ExtractJsonIntField(const string &json, const string field, int &out);
+   bool PostAcknowledgement(const string configHash, const string strategy,
+                            const string timeframe, const int version);
 
 public:
-            CConfigSync(void) : m_timeoutMs(5000), m_lastSeenApproved(""), m_everWarned(false) {}
+   CConfigSync(void) : m_timeoutMs(5000), m_lastSeenHash(""), m_everWarned(false) {}
 
-   // signalEndpoint is the same base URL already configured for /signal
-   // (a subscriber endpoint) — this derives /config/<symbol> from it by
-   // the same "strip trailing /signal" convention SignalPublisher's
-   // PublishStatusUpdate()/PublishOutcome() already use, so there is only
-   // ONE place (SubscriberPlatform's endpoint config) that needs the
-   // bridge's base URL, not a second copy of it for this class.
-   void     Init(string symbol, string signalEndpoint, string apiKey, string compiledWeightVersion, int timeoutMs = 5000)
+   void Init(const string symbol, const string signalEndpoint, const string apiKey,
+             const string compiledWeightVersion, const int timeoutMs = 5000)
      {
       m_symbol = symbol;
       m_apiKey = apiKey;
@@ -59,27 +39,21 @@ public:
       int pos = StringFind(signalEndpoint, "/signal");
       if(pos < 0)
         {
-         PrintFormat("MedisTouch ConfigSync: endpoint %s doesn't end in /signal — config sync disabled for this instance.", signalEndpoint);
+         PrintFormat("MedisTouch ConfigSync: endpoint %s doesn't end in /signal — disabled.", signalEndpoint);
          m_endpoint = "";
          return;
         }
       m_endpoint = StringSubstr(signalEndpoint, 0, pos) + "/config/" + symbol;
      }
 
-   // Call from OnTimer(). No-op if Init() couldn't derive a valid
-   // endpoint. Every poll is a single GET; failures are logged once via
-   // WebRequest's own error path and otherwise ignored — a transient
-   // network blip here is not worth retry/backoff machinery, since the
-   // next timer tick tries again anyway and nothing time-sensitive
-   // depends on this succeeding on any particular tick.
-   void     Poll(void);
+   void Poll(void);
   };
 
 void CConfigSync::Poll(void)
   {
    if(StringLen(m_endpoint) == 0) return;
 
-   char data[]; // GET has no body
+   char data[];
    char result[];
    string resultHeaders;
    string headers = "Content-Type: application/json\r\n";
@@ -93,60 +67,114 @@ void CConfigSync::Poll(void)
       int err = GetLastError();
       if(err == 4060)
          PrintFormat("MedisTouch ConfigSync: WebRequest blocked for %s — add it under Tools > Options > Expert Advisors > Allow WebRequest for listed URL.", m_endpoint);
-      // Other errors: silent per-poll, per the class comment above — the
-      // next timer tick retries on its own.
       return;
      }
    if(status < 200 || status >= 300) return;
 
    string body = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
-   string approved;
-   if(!ExtractJsonStringField(body, "approved_weight_version", approved))
-      return; // malformed/unexpected response shape — nothing to act on
+   string configHash, strategy, instrument, timeframe, dataVersion, optimizerVersion, lifecycle;
+   int version = 0;
+   if(!ExtractJsonStringField(body, "config_hash", configHash) ||
+      !ExtractJsonStringField(body, "strategy", strategy) ||
+      !ExtractJsonStringField(body, "instrument", instrument) ||
+      !ExtractJsonStringField(body, "timeframe", timeframe) ||
+      !ExtractJsonStringField(body, "data_version", dataVersion) ||
+      !ExtractJsonStringField(body, "optimizer_version", optimizerVersion) ||
+      !ExtractJsonStringField(body, "lifecycle_status", lifecycle) ||
+      !ExtractJsonIntField(body, "version", version))
+      return;
 
-   m_lastSeenApproved = approved;
+   m_contract.SetEnvelope(configHash, strategy, instrument, timeframe, dataVersion,
+                          optimizerVersion, lifecycle, version);
 
-   if(StringLen(approved) == 0)
-      return; // nothing ever approved yet — the expected, dormant state
-
-   if(approved != m_compiledWeightVersion && !m_everWarned)
+   string reason;
+   bool valid = m_contract.ValidateMetadata(m_symbol, EnumToString(_Period), "SMC", reason);
+   if(!valid)
      {
-      PrintFormat("MedisTouch ConfigSync: bridge reports '%s' as the latest approved weight_version, "
-                  "but this %s instance is compiled with InpWeightSetVersion='%s'. Recompile/redeploy "
-                  "this chart to match, or this instance keeps running its own weights — nothing is "
-                  "applied automatically (see ConfigSync.mqh header).",
-                  approved, m_symbol, m_compiledWeightVersion);
-      m_everWarned = true; // one warning per drift episode, not one per poll — see Poll()'s own comment
+      if(!m_everWarned || m_lastSeenHash != configHash)
+        {
+         PrintFormat("MedisTouch ConfigSync: configuration %s rejected — %s", configHash, reason);
+         m_everWarned = true;
+        }
+      m_lastSeenHash = configHash;
+      return;
      }
-   else if(approved == m_compiledWeightVersion)
+
+   // Do not repeatedly ACK the same envelope on every timer tick.
+   if(m_lastSeenHash == configHash && m_everWarned == false)
+      return;
+
+   // ACK is an explicit protocol event, not permission to mutate live inputs.
+   // The bridge activates only after this exact hash is acknowledged.
+   if(PostAcknowledgement(configHash, strategy, timeframe, version))
      {
-      m_everWarned = false; // drift resolved (redeployed, or a new approval matched this instance) — rearm
+      PrintFormat("MedisTouch ConfigSync: validated and acknowledged config %s; live numeric inputs remain unchanged.", configHash);
+      m_everWarned = false;
      }
+   m_lastSeenHash = configHash;
   }
 
-// Deliberately NOT a general JSON parser — the bridge's ConfigResponse
-// shape is fixed and small (see routes.py:ConfigResponse), so a targeted
-// string search for `"field":"value"` or `"field":null` is enough and
-// avoids pulling in a full parser for one endpoint. If this class ever
-// needs to read more than a couple of top-level string fields, that's
-// the signal to introduce a real JSON library instead of extending this.
-bool CConfigSync::ExtractJsonStringField(const string &json, string field, string &out)
+bool CConfigSync::PostAcknowledgement(const string configHash, const string strategy,
+                                       const string timeframe, const int version)
+  {
+   string body = StringFormat("{\"config_hash\":\"%s\",\"strategy\":\"%s\",\"timeframe\":\"%s\",\"version\":%d}",
+                              configHash, strategy, timeframe, version);
+   char postData[];
+   int copied = StringToCharArray(body, postData, 0, WHOLE_ARRAY, CP_UTF8);
+   if(copied > 0) ArrayResize(postData, copied - 1);
+
+   char result[];
+   string resultHeaders;
+   string headers = "Content-Type: application/json\r\n";
+   if(StringLen(m_apiKey) > 0)
+      headers += "X-API-Key: " + m_apiKey + "\r\n";
+
+   ResetLastError();
+   int status = WebRequest("POST", m_endpoint + "/ack", headers, m_timeoutMs,
+                           postData, result, resultHeaders);
+   if(status == -1)
+     {
+      PrintFormat("MedisTouch ConfigSync: ACK WebRequest failed for %s (error %d).", m_endpoint, GetLastError());
+      return false;
+     }
+   if(status < 200 || status >= 300)
+     {
+      PrintFormat("MedisTouch ConfigSync: ACK rejected for %s (HTTP %d).", configHash, status);
+      return false;
+     }
+   return true;
+  }
+
+bool CConfigSync::ExtractJsonStringField(const string &json, const string field, string &out)
   {
    string needle = "\"" + field + "\":";
    int pos = StringFind(json, needle);
    if(pos < 0) return false;
    int valueStart = pos + StringLen(needle);
-
-   if(StringSubstr(json, valueStart, 4) == "null")
-     {
-      out = "";
-      return true;
-     }
-   if(StringGetCharacter(json, valueStart) != '"') return false; // unexpected shape
-   valueStart++; // skip opening quote
+   if(StringSubstr(json, valueStart, 4) == "null") { out = ""; return true; }
+   if(StringGetCharacter(json, valueStart) != '"') return false;
+   valueStart++;
    int valueEnd = StringFind(json, "\"", valueStart);
    if(valueEnd < 0) return false;
    out = StringSubstr(json, valueStart, valueEnd - valueStart);
+   return true;
+  }
+
+bool CConfigSync::ExtractJsonIntField(const string &json, const string field, int &out)
+  {
+   string needle = "\"" + field + "\":";
+   int pos = StringFind(json, needle);
+   if(pos < 0) return false;
+   int start = pos + StringLen(needle);
+   string digits = "";
+   for(int i = start; i < StringLen(json); i++)
+     {
+      ushort ch = StringGetCharacter(json, i);
+      if(ch < '0' || ch > '9') break;
+      digits += StringSubstr(json, i, 1);
+     }
+   if(StringLen(digits) == 0) return false;
+   out = (int)StringToInteger(digits);
    return true;
   }
 

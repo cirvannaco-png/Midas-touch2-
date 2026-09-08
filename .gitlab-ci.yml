@@ -4,6 +4,13 @@
 # This file replaces the former GitHub Actions automation with native
 # GitLab CI jobs.
 #
+# CI efficiency policy:
+# - Merge-request pipelines validate feature branches.
+# - Main is validated after merge.
+# - Feature-branch push pipelines are suppressed when an MR exists.
+# - Python package downloads use content-addressed pip caches.
+# - Job-level changes rules keep unrelated suites out of a pipeline.
+#
 # Scheduled maintenance uses GitLab pipeline schedules with:
 #   SCHEDULE_TASK=daily-subscriptions
 #   SCHEDULE_TASK=biweekly-recalibration
@@ -21,6 +28,25 @@
 #   SECRET_KEY
 #   WEBHOOK_SECRET_TOKEN
 
+workflow:
+  rules:
+    # One authoritative validation pipeline for an open merge request.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+    # Validate the protected/default branch after changes land.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+
+    # Preserve scheduled maintenance and deliberate manual/API/triggered runs.
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+
+    # Do not create feature-branch push pipelines or any unspecified pipeline.
+    - when: never
+
 stages:
   - validate
   - test
@@ -30,22 +56,60 @@ stages:
 default:
   interruptible: true
 
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
 mql5-structure:
   stage: validate
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
   rules:
-    - changes:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
         - EA/**/*
         - tools/validate_mql5.py
         - .gitlab-ci.yml
-    - when: manual
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - EA/**/*
+        - tools/validate_mql5.py
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
       allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
+
+architecture-gates:
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - python tools/phase_a_d_manifest.py
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 medis-touch-python:
   stage: test
   image: python:3.11-slim
+  cache:
+    key:
+      files:
+        - medis_touch/requirements-dev.txt
+      prefix: pip-medis-touch
+    paths:
+      - .cache/pip
+    policy: pull-push
   before_script:
     - cd medis_touch
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -54,15 +118,33 @@ medis-touch-python:
     - bandit -r app/ -q
     - pytest -v
   rules:
-    - changes:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
         - medis_touch/**/*
         - .gitlab-ci.yml
-    - when: manual
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - medis_touch/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
       allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 telegram-bridge:
   stage: test
   image: python:3.11-slim
+  cache:
+    key:
+      files:
+        - telegram-bridge/requirements-dev.txt
+      prefix: pip-telegram-bridge
+    paths:
+      - .cache/pip
+    policy: pull-push
   before_script:
     - cd telegram-bridge
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -86,15 +168,33 @@ telegram-bridge:
       RATE_LIMIT_ENABLED="false" \
       pytest -v
   rules:
-    - changes:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
         - telegram-bridge/**/*
         - .gitlab-ci.yml
-    - when: manual
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - telegram-bridge/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
       allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 tools-tests:
   stage: test
   image: python:3.11-slim
+  cache:
+    key:
+      files:
+        - telegram-bridge/requirements-dev.txt
+      prefix: pip-telegram-tools
+    paths:
+      - .cache/pip
+    policy: pull-push
   before_script:
     - cd telegram-bridge
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -102,12 +202,23 @@ tools-tests:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
   rules:
-    - changes:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
         - tools/**/*
         - telegram-bridge/**/*
         - .gitlab-ci.yml
-    - when: manual
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - tools/**/*
+        - telegram-bridge/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
       allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: manual
+      allow_failure: false
+    - when: never
 
 daily-subscriptions:
   stage: maintenance
