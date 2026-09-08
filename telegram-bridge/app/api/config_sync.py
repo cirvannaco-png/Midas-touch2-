@@ -92,21 +92,42 @@ async def get_approved_config(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
 ):
-    """Return the latest CHAMPION immutable configuration for this symbol."""
-    registry = await session.scalar(
-        select(ConfigurationRegistry)
-        .where(
-            ConfigurationRegistry.instrument == symbol,
-            ConfigurationRegistry.lifecycle_status == "CHAMPION",
-        )
-        .order_by(ConfigurationRegistry.created_at.desc())
-        .limit(1)
-    )
-    if registry is None:
-        raise HTTPException(status_code=404, detail="No champion configuration is available")
-    _verify_registry_hash(registry)
-
+    """Return the persisted active config, or the latest CHAMPION if none is active."""
     state = await _get_state(session, symbol)
+
+    registry = None
+    if state.active_config_hash is not None:
+        registry = await session.scalar(
+            select(ConfigurationRegistry).where(
+                ConfigurationRegistry.config_hash == state.active_config_hash,
+                ConfigurationRegistry.instrument == symbol,
+            )
+        )
+        if registry is None:
+            state.state = "HALT"
+            state.last_error = "Persisted active configuration no longer exists"
+            await session.commit()
+            raise HTTPException(status_code=409, detail="Persisted active configuration is unavailable")
+    else:
+        registry = await session.scalar(
+            select(ConfigurationRegistry)
+            .where(
+                ConfigurationRegistry.instrument == symbol,
+                ConfigurationRegistry.lifecycle_status == "CHAMPION",
+            )
+            .order_by(ConfigurationRegistry.created_at.desc())
+            .limit(1)
+        )
+        if registry is None:
+            raise HTTPException(status_code=404, detail="No champion configuration is available")
+
+    _verify_registry_hash(registry)
+    if registry.lifecycle_status not in {"SHADOW", "CHALLENGER", "CHAMPION"}:
+        state.state = "HALT"
+        state.last_error = "Persisted active configuration is not deployable"
+        await session.commit()
+        raise HTTPException(status_code=409, detail="Persisted active configuration is not deployable")
+
     state.last_seen_at = datetime.now(timezone.utc)
     await session.commit()
 
