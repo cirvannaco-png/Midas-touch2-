@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column, DateTime, Index, Integer, String
+from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, event
 
 from app.config_registry import LIFECYCLE, validate_transition
 from app.database import Base
@@ -13,7 +13,8 @@ class ConfigurationRegistry(Base):
     """One immutable identity record per candidate configuration.
 
     Identity fields are never updated in-place. A changed configuration must
-    receive a new row and therefore a new SHA-256 config_hash.
+    receive a new row and therefore a new SHA-256 config_hash. Lifecycle and
+    evidence fields may change as the candidate moves through its workflow.
     """
 
     __tablename__ = "configuration_registry"
@@ -86,3 +87,26 @@ class ConfigurationRegistry(Base):
 
     def is_terminal(self) -> bool:
         return self.lifecycle_status == LIFECYCLE[-1]
+
+
+_IMMUTABLE_IDENTITY_FIELDS = (
+    "config_hash",
+    "strategy",
+    "instrument",
+    "timeframe",
+    "parameters",
+    "data_version",
+    "optimizer_version",
+)
+
+
+@event.listens_for(ConfigurationRegistry, "before_update")
+def _prevent_identity_mutation(mapper, connection, target) -> None:
+    """Reject in-place identity changes; lifecycle/evidence updates remain legal."""
+    state = mapper.class_manager.get_impl("config_hash").get_history(target, passive=True)
+    if state.has_changes():
+        raise ValueError("configuration identity fields are immutable")
+    for field in _IMMUTABLE_IDENTITY_FIELDS[1:]:
+        history = mapper.class_manager.get_impl(field).get_history(target, passive=True)
+        if history.has_changes():
+            raise ValueError("configuration identity fields are immutable")
