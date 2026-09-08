@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from tools.recalibration_guard import PromotionPolicy
 
 from app.config import settings
 from app.config_evaluation_model import ConfigurationEvaluation
@@ -12,7 +13,6 @@ from app.config_promotion_gate import evaluate_challenger
 from app.config_registry_model import ConfigurationRegistry
 from app.logger import logger
 from app.models import PromotionRequest
-from tools.recalibration_guard import PromotionPolicy
 
 
 def _policy_from_settings() -> PromotionPolicy | None:
