@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any
 
 from tools.recalibration_guard import PromotionPolicy, challenger_passes
@@ -63,17 +64,15 @@ def _complete_evidence(
         if not isinstance(components, Mapping):
             reasons.append("objective_score.components must be a mapping")
         else:
-            missing = [
-                name for name in REQUIRED_OBJECTIVE_COMPONENTS if name not in components
-            ]
+            missing = [name for name in REQUIRED_OBJECTIVE_COMPONENTS if name not in components]
             if missing:
                 reasons.append(f"missing objective components: {', '.join(missing)}")
+            if "score" not in objective:
+                reasons.append("missing persisted composite objective score")
 
     validation = getattr(evaluation, "validation_evidence", {})
     if isinstance(validation, Mapping):
-        missing = [
-            name for name in REQUIRED_VALIDATION_FIELDS if name not in validation
-        ]
+        missing = [name for name in REQUIRED_VALIDATION_FIELDS if name not in validation]
         if missing:
             reasons.append(f"missing validation evidence: {', '.join(missing)}")
         if validation.get("independent_holdout") is not True:
@@ -89,6 +88,8 @@ def _complete_evidence(
             missing = [name for name in REQUIRED_STATISTICAL_FIELDS if name not in statistics]
             if missing:
                 reasons.append(f"missing statistical evidence: {', '.join(missing)}")
+            elif not isinstance(statistics.get("p_value"), (int, float)) or not isfinite(float(statistics["p_value"])):
+                reasons.append("statistical p_value must be a finite number")
     return not reasons, reasons
 
 
@@ -99,41 +100,39 @@ def evaluate_challenger(
     policy: PromotionPolicy,
 ) -> PromotionDecision:
     """Evaluate persisted evidence; never infer missing values or mutate state."""
-    ok_champion, champion_reasons = _complete_evidence(
-        champion, require_statistics=False
-    )
+    ok_champion, champion_reasons = _complete_evidence(champion, require_statistics=False)
     ok_challenger, challenger_reasons = _complete_evidence(
         challenger,
         require_statistics=policy.maximum_p_value is not None,
     )
     if not ok_champion:
-        return PromotionDecision(
-            "HOLD", ("champion evidence incomplete", *champion_reasons)
-        )
+        return PromotionDecision("HOLD", ("champion evidence incomplete", *champion_reasons))
     if not ok_challenger:
-        return PromotionDecision(
-            "HOLD", ("challenger evidence incomplete", *challenger_reasons)
-        )
+        return PromotionDecision("HOLD", ("challenger evidence incomplete", *challenger_reasons))
 
-    objective = _require_mapping(challenger.objective_score, "challenger.objective_score")
-    champion_objective = _require_mapping(
-        champion.objective_score, "champion.objective_score"
-    )
-    challenger_score = float(objective.get("score", -1.0))
-    champion_score = float(champion_objective.get("score", -1.0))
-    validation = _require_mapping(
-        challenger.validation_evidence, "challenger.validation_evidence"
-    )
-    statistics = _require_mapping(
-        challenger.statistical_evidence, "challenger.statistical_evidence"
-    )
+    try:
+        objective = _require_mapping(challenger.objective_score, "challenger.objective_score")
+        champion_objective = _require_mapping(champion.objective_score, "champion.objective_score")
+        challenger_score = float(objective["score"])
+        champion_score = float(champion_objective["score"])
+        validation = _require_mapping(challenger.validation_evidence, "challenger.validation_evidence")
+        statistics = _require_mapping(challenger.statistical_evidence, "challenger.statistical_evidence")
+        if not all(isfinite(value) for value in (challenger_score, champion_score)):
+            return PromotionDecision("HOLD", ("persisted objective score is not finite",))
+        oos_degradation = float(validation.get("oos_degradation", 1.0))
+        parameter_degradation = float(validation.get("parameter_degradation", 1.0))
+        p_value = statistics.get("p_value")
+        if not all(isfinite(value) for value in (oos_degradation, parameter_degradation)):
+            return PromotionDecision("HOLD", ("persisted degradation evidence is not finite",))
+    except (KeyError, TypeError, ValueError):
+        return PromotionDecision("HOLD", ("persisted promotion evidence has invalid numeric fields",))
 
     passed = challenger_passes(
         champion_score=champion_score,
         challenger_score=challenger_score,
-        oos_degradation=float(validation.get("oos_degradation", 1.0)),
-        parameter_degradation=float(validation.get("parameter_degradation", 1.0)),
-        statistical_p_value=statistics.get("p_value"),
+        oos_degradation=oos_degradation,
+        parameter_degradation=parameter_degradation,
+        statistical_p_value=p_value,
         policy=policy,
     )
     if not passed:
