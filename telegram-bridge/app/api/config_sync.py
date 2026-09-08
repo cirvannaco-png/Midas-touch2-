@@ -169,8 +169,6 @@ async def acknowledge_config(
     state = await _get_state(session, symbol)
     expected_hash = _expected_activation_hash(state)
     if expected_hash is None:
-        # Initial activation has no persisted pending target yet. The only
-        # acceptable target is the exact latest CHAMPION for this symbol.
         champion = await _latest_champion(session, symbol)
         if champion is None:
             raise HTTPException(status_code=409, detail="No champion configuration is awaiting activation")
@@ -301,10 +299,12 @@ async def report_runtime(
             .limit(1)
         )
 
-    champion_hash = ""
+    # If the active Champion is the only known Champion, there is no safe
+    # alternate configuration. The correct action is DEFENSIVE: stop opening
+    # new trades rather than inventing a rollback target.
+    champion_hash = champion.config_hash if champion is not None else active_registry.config_hash
     if champion is not None:
         _verify_registry_hash(champion)
-        champion_hash = champion.config_hash
 
     decision = rollback_decision(
         active_hash=payload.config_hash,
