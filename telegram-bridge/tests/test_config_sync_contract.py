@@ -49,6 +49,18 @@ def test_matching_identity_is_ready():
     assert decision.action == "READY"
 
 
+def test_unsupported_protocol_version_rejects():
+    envelope = make_envelope(version=2)
+    decision = validate_envelope(
+        envelope,
+        expected_symbol="XAUUSD",
+        expected_timeframe="M15",
+        expected_strategy="SMC",
+    )
+    assert decision.action == "REJECT"
+    assert "unsupported configuration protocol version" in decision.reasons
+
+
 @pytest.mark.parametrize(
     ("field", "expected"),
     [
