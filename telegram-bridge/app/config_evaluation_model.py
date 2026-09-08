@@ -3,22 +3,19 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String, event
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, event
 
 from app.database import Base
 
 
 class ConfigurationEvaluation(Base):
-    """One immutable evidence snapshot for one registered configuration.
-
-    A new evaluation is always a new row. The configuration registry identity
-    is never overwritten when later validation evidence becomes available.
-    """
+    """One immutable evidence snapshot for one registered configuration."""
 
     __tablename__ = "configuration_evaluations"
     __table_args__ = (
         Index("ix_configuration_evaluations_config_hash", "config_hash"),
         Index("ix_configuration_evaluations_status", "decision"),
+        UniqueConstraint("config_hash", "evidence_version", name="uq_configuration_evaluations_hash_version"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)

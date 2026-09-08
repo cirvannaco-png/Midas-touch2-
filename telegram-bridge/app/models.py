@@ -124,12 +124,9 @@ class TradeEvent(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    # Caller-supplied idempotency key, one per physical event (NOT per trade -
-    # the same trade_id legitimately recurs across opened -> closed_tp1 etc).
-    # Recommended convention: f"{trade_id}:{event}" or ticket+timestamp.
     event_id = Column(String, unique=True, nullable=False, index=True)
-    trade_id = Column(String, nullable=False)          # broker ticket / position id
-    signal_id = Column(String, nullable=True, index=True)  # links back to originating Signal, if any
+    trade_id = Column(String, nullable=False)
+    signal_id = Column(String, nullable=True, index=True)
     symbol = Column(String, nullable=False)
     direction = Column(String, nullable=False)
     event = Column(_trade_event_type_type, nullable=False)
@@ -138,7 +135,7 @@ class TradeEvent(Base):
     sl = Column(Float, nullable=True)
     tp1 = Column(Float, nullable=True)
     tp2 = Column(Float, nullable=True)
-    profit = Column(Float, nullable=True)               # realized P/L, set on close events
+    profit = Column(Float, nullable=True)
     balance = Column(Float, nullable=True)
     equity = Column(Float, nullable=True)
     comment = Column(String, nullable=True)
@@ -151,9 +148,7 @@ class TradeEvent(Base):
 
 class Signal(Base):
     __tablename__ = "signals"
-    __table_args__ = (
-        Index("ix_signals_status", "status"),
-    )
+    __table_args__ = (Index("ix_signals_status", "status"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     signal_id = Column(String, unique=True, nullable=False, index=True)
@@ -168,82 +163,36 @@ class Signal(Base):
     timeframe = Column(String, nullable=False)
     received_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     telegram_message_id = Column(Integer, nullable=True)
-    # Default to PENDING: the route inserts a PENDING row first to reserve
-    # the signal_id, then resolves it to ACTIVE/FAILED after the Telegram call.
-    # This Python-level default matches that intent; the migration's
-    # server_default is aligned to "pending" for the same reason.
     status = Column(_signal_status_type, nullable=False, default=SignalStatus.PENDING)
     error_message = Column(Text, nullable=True)
     latency_ms = Column(Integer, nullable=True)
-    # --- v2.9 additions -----------------------------------------------
     lifecycle_status = Column(_signal_lifecycle_status_type, nullable=False, default=SignalLifecycleStatus.VALID)
-    lifecycle_reason = Column(String, nullable=True)          # human-readable, mirrors NewsFilter/chase-filter style reasons
+    lifecycle_reason = Column(String, nullable=True)
     lifecycle_updated_at = Column(DateTime(timezone=True), nullable=True)
-    expires_at = Column(DateTime(timezone=True), nullable=True)  # EA-computed hard expiry; NULL = no expiry set
-    # Freeform diagnostics that don't warrant their own column yet: sweep
-    # grade, BOS strength, decay %, chase distance, news risk tier,
-    # calibrated probability + sample size, pip distances. Kept as JSON
-    # (not `reasons`, which is a fixed list[str] the validator/formatter
-    # already depend on) so the schema can absorb new EA-side fields
-    # without a migration each time. NULL for signals from an EA build
-    # older than v2.9 — formatter.py must degrade gracefully, not assume
-    # this is always populated.
+    expires_at = Column(DateTime(timezone=True), nullable=True)
     extra = Column(JSON, nullable=True)
-    # --- v2.11 additions: promoted out of `extra` into first-class,
-    # indexed columns because these are exactly what the two-track
-    # metrics engine (tools/metrics_engine.py) groups and filters by.
-    # Anything left buried in a JSON blob can't be queried without a
-    # per-key JSON extraction on every report run — regime/session/sweep
-    # grade/HTF alignment/weight version are the tag set the whole
-    # tagging system exists to make queryable, so they get real columns.
-    # All nullable: a pre-v2.11 EA build still posts a valid Signal, it
-    # just won't be tag-breakdown-able until it's rebuilt against the new
-    # SignalPublisher payload.
-    regime = Column(String, nullable=True, index=True)          # ENUM_VOL_REGIME as string: Low/Normal/High/Undefined
-    session = Column(String, nullable=True, index=True)         # ENUM_TRADING_SESSION as string
-    sweep_grade = Column(String, nullable=True, index=True)     # ENUM_SWEEP_GRADE as string: None/C/B/A
-    htf_ob_aligned = Column(sa.Boolean, nullable=True)           # SetupReasons.htf_ob_confluence at signal time
-    weight_version = Column(String, nullable=True, index=True)  # InpWeightSetVersion — which scoring weight set produced this signal
+    regime = Column(String, nullable=True, index=True)
+    session = Column(String, nullable=True, index=True)
+    sweep_grade = Column(String, nullable=True, index=True)
+    htf_ob_aligned = Column(sa.Boolean, nullable=True)
+    weight_version = Column(String, nullable=True, index=True)
 
 
-# One row per RESOLVED setup from the EA's simulated OutcomeTracker (see
-# EA/includes/Trading/OutcomeTracker.mqh) — win/loss/scratch/no_fill,
-# realized R, and the full tag context at signal time, denormalized onto
-# this row rather than requiring a join back to Signal. This is the
-# table the two-track metrics engine (tools/metrics_engine.py) actually
-# queries: coverage metrics group by tag regardless of outcome
-# (including no_fill rows), expectancy metrics filter to resolved rows
-# and break down realized R by every tag. Before this table existed,
-# this data only ever reached a local CSV on the MT5 terminal
-# (SignalLogger::LogOutcome) and never touched Postgres — "why did we
-# lose" was a CSV grep, not a query.
 class SignalOutcome(Base):
     __tablename__ = "signal_outcomes"
-    __table_args__ = (
-        Index("ix_signal_outcomes_regime_session", "regime", "session"),
-    )
+    __table_args__ = (Index("ix_signal_outcomes_regime_session", "regime", "session"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    # Same convention as Signal.signal_id (f"{symbol}_{dir}_{epoch}") —
-    # one outcome per signal, enforced unique so a duplicate POST (retry
-    # after a dropped ack) upserts instead of double-counting.
     signal_id = Column(String, unique=True, nullable=False, index=True)
     symbol = Column(String, nullable=False)
     direction = Column(String, nullable=False)
-    # "win" | "loss" | "scratch" | "no_fill" | "ambiguous" — no_fill and
-    # ambiguous are NOT dropped: a signal that never got a chance to
-    # prove itself is exactly what the coverage-metrics half of step 2
-    # needs (missed-long rate, directional bias) even though it
-    # contributes nothing to the expectancy half.
     outcome = Column(String, nullable=False, index=True)
-    realized_r = Column(Float, nullable=True)     # NULL for no_fill/ambiguous
+    realized_r = Column(Float, nullable=True)
     mfe_r = Column(Float, nullable=True)
     mae_r = Column(Float, nullable=True)
     bars_held = Column(Integer, nullable=True)
     bars_to_fill = Column(Integer, nullable=True)
     filled = Column(sa.Boolean, nullable=False, default=False)
-    # --- tag context, snapshotted at signal time (copied from Signal,
-    # not joined, so a report never depends on Signal retention policy) ---
     regime = Column(String, nullable=True, index=True)
     session = Column(String, nullable=True, index=True)
     sweep_grade = Column(String, nullable=True, index=True)
@@ -255,56 +204,36 @@ class SignalOutcome(Base):
     received_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
-# v2.11 step 6. One row per scheduled recalibration cycle's metrics_engine
-# report — the Postgres replacement for tools/cycle_store.py's JSON files.
-# report_json is the EXACT dict tools/metrics_engine.py's compute_report()
-# produces; gating.py's decide() doesn't care whether a cycle came from a
-# file or this table (see gating.py:load_cycles_from_db), which is what
-# keeps the synthetic-rehearsal tooling and the real scheduled pipeline
-# running the same decision logic.
 class CalibrationCycle(Base):
     __tablename__ = "calibration_cycles"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     cycle_id = Column(String, unique=True, nullable=False, index=True)
-    # "live" (produced by the scheduled POST /admin/run-cycle) or
-    # "synthetic" (never written here — synthetic cycles stay local
-    # JSON-file-only via tools/generate_synthetic_cycles.py, precisely so
-    # a rehearsal cycle can never end up in the table a real promotion
-    # decision reads from).
     source = Column(String, nullable=False, index=True, default="live")
     generated_at = Column(DateTime(timezone=True), nullable=False)
     report_json = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
-# v2.11 step 5/6. One row per gating.py decision that was either a
-# promotion candidate (requires the human tap) or an auto-rollback
-# (executes immediately, logged here for the audit trail — never
-# silently reconciled, per the spec).
 class PromotionRequest(Base):
     __tablename__ = "promotion_requests"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     weight_version = Column(String, nullable=False, index=True)
     action = Column(String, nullable=False)  # "PROMOTE" | "ROLLBACK"
-    decision_json = Column(JSON, nullable=False)  # gating.Decision.to_dict()
-    # "pending" (awaiting a tap) | "approved" | "rejected" | "auto_executed"
-    # (ROLLBACK only — never waits for a tap, per the spec)
+    decision_json = Column(JSON, nullable=False)
+    # Config-linked requests are the authoritative recalibration lifecycle.
+    # Legacy weight-only requests remain nullable for backward compatibility.
+    config_hash = Column(String(64), nullable=True, index=True)
+    instrument = Column(String, nullable=True, index=True)
+    timeframe = Column(String, nullable=True)
     status = Column(String, nullable=False, default="pending", index=True)
-    telegram_message_id = Column(Integer, nullable=True)  # lets the callback edit the original card
+    telegram_message_id = Column(Integer, nullable=True)
     requested_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     decided_at = Column(DateTime(timezone=True), nullable=True)
-    decided_by = Column(String, nullable=True)  # Telegram user id of whoever tapped
+    decided_by = Column(String, nullable=True)
 
 
-# v2.11 step 5. An approval log, not a live "which weights are running"
-# registry — this table does NOT assign a weight_version to a symbol or
-# push anything to the EA. A weight_version landing here means a human
-# tapped Approve on it; whatever eventually reads this to decide what
-# the EA should run next (the config-sync endpoint discussed but not yet
-# built) is separate work. See PromotionRequest for the request/response
-# trail this is derived from.
 class ApprovedWeightVersion(Base):
     __tablename__ = "approved_weight_versions"
 
@@ -315,97 +244,41 @@ class ApprovedWeightVersion(Base):
     promotion_request_id = Column(Integer, nullable=True)
 
 
-# --- Payments / copy-trading entitlement ------------------------------
-#
-# Deliberately plain String status columns here, NOT PG_ENUM. See
-# models.py's own comment above _signal_status_type for the exact
-# DuplicateObjectError this repo already hit once with PG_ENUM +
-# Alembic; promotion_requests.status (above) made the same call for the
-# same reason. A typo'd status string is a bug caught by the app-level
-# STATUS constants below and by tests, not by the database - that's the
-# trade-off, and it's the one already made elsewhere in this file.
-#
-# "Copy trading" in this architecture means: a paying subscriber runs
-# their own copier script/EA against their own broker account, and that
-# copier polls GET /copy/feed (app/routes.py) using a per-subscriber key.
-# This service never places a trade on anyone's behalf and never touches
-# a subscriber's broker credentials - it only decides, on each poll,
-# whether that subscriber is currently entitled to see the feed. See
-# app/copy_trading.py for why signal ingestion (POST /signal) has zero
-# code path into this file: entitlement is evaluated at read-time only.
-SUBSCRIBER_STATUS_PENDING = "pending"    # known to the bot, never paid
-SUBSCRIBER_STATUS_ACTIVE = "active"      # paid, current_period_end in the future
-SUBSCRIBER_STATUS_EXPIRED = "expired"    # was active, period lapsed, inside grace period
-SUBSCRIBER_STATUS_REMOVED = "removed"    # grace period lapsed too, kicked from GROUP_CHAT_ID
+SUBSCRIBER_STATUS_PENDING = "pending"
+SUBSCRIBER_STATUS_ACTIVE = "active"
+SUBSCRIBER_STATUS_EXPIRED = "expired"
+SUBSCRIBER_STATUS_REMOVED = "removed"
 
 PAYMENT_STATUS_SUCCEEDED = "succeeded"
-PAYMENT_STATUS_REFUNDED = "refunded"     # set by an admin action, not automated
+PAYMENT_STATUS_REFUNDED = "refunded"
 
 
 class Subscriber(Base):
-    """
-    One row per Telegram user who has ever run /subscribe. telegram_user_id
-    (not chat_id) is the identity key throughout this module - the same
-    person's user id is stable whether they're DMing the bot or sitting
-    inside GROUP_CHAT_ID, which is exactly what group_enforcement.py needs
-    to look someone up by their group membership and what payments_bot.py
-    needs to look them up by who sent /subscribe.
-    """
     __tablename__ = "subscribers"
-    __table_args__ = (
-        Index("ix_subscribers_status", "status"),
-    )
+    __table_args__ = (Index("ix_subscribers_status", "status"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_user_id = Column(String, unique=True, nullable=False, index=True)
     telegram_username = Column(String, nullable=True)
     status = Column(String, nullable=False, default=SUBSCRIBER_STATUS_PENDING)
     current_period_end = Column(DateTime(timezone=True), nullable=True)
-    # Bearer token for GET /copy/feed (app/routes.py). Regenerated (not
-    # reused) on every successful payment - see subscriptions.py - so a
-    # leaked old key from a lapsed period stops working the moment a new
-    # one is issued, rather than silently continuing to grant access.
     copy_feed_api_key = Column(String, unique=True, nullable=True, index=True)
-    # Set when the T-minus-warning DM (group_enforcement.py) goes out, so
-    # a subscriber isn't warned twice for the same expiry if the sweep
-    # endpoint is hit more than once before the grace period ends.
     warned_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class Payment(Base):
-    """
-    One row per successful Telegram Payments transaction (Bot API
-    `successful_payment` update - see app/payments_bot.py). This is
-    Telegram-native payment handling, not a third-party webhook gateway:
-    Telegram itself runs checkout, and confirmation arrives as an
-    ordinary bot update through the existing webhook pipeline
-    (POST /telegram/webhook -> app/bot.py -> process_update()), the same
-    path every other inbound command already goes through. No separate
-    payment webhook route, no separate signature scheme to verify.
-    telegram_payment_charge_id is Telegram's own idempotency key for the
-    transaction; unique+indexed so a duplicate delivery of the same
-    successful_payment update (Telegram redelivers webhooks that don't
-    ack fast enough) records once, mirroring the IntegrityError-as-
-    duplicate pattern already used for Signal.signal_id in routes.py.
-    """
     __tablename__ = "payments"
-    __table_args__ = (
-        Index("ix_payments_subscriber_id", "subscriber_id"),
-    )
+    __table_args__ = (Index("ix_payments_subscriber_id", "subscriber_id"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_payment_charge_id = Column(String, unique=True, nullable=False, index=True)
     subscriber_id = Column(Integer, nullable=False)
-    amount = Column(Integer, nullable=False)      # smallest unit of `currency` (e.g. whole Stars for XTR)
-    currency = Column(String, nullable=False)      # "XTR" (Telegram Stars) unless a provider_token is configured
-    period_days = Column(Integer, nullable=False)  # entitlement period this payment purchased
+    amount = Column(Integer, nullable=False)
+    currency = Column(String, nullable=False)
+    period_days = Column(Integer, nullable=False)
     invoice_payload = Column(String, nullable=False)
     status = Column(String, nullable=False, default=PAYMENT_STATUS_SUCCEEDED)
-    raw_payload = Column(JSON, nullable=True)       # full successful_payment dict, for audit/dispute lookups
+    raw_payload = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

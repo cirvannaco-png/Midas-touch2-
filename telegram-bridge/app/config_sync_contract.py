@@ -1,18 +1,11 @@
-"""Fail-closed contract for approved configuration delivery to an EA.
-
-This module defines the protocol boundary only. It does not mutate trading
-logic or decide which parameters should be optimized. A configuration may be
-activated only when its immutable identity, hash, and expected deployment
-metadata agree and an explicit EA acknowledgement is received.
-"""
-from __future__ import annotations  # noqa: I001
+"""Fail-closed contract for approved configuration delivery to an EA."""
+from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from app.config_registry import ConfigurationIdentity
-
 
 CONFIG_SYNC_PROTOCOL_VERSION = 1
 
@@ -60,8 +53,10 @@ def validate_envelope(
 
     if envelope.version != CONFIG_SYNC_PROTOCOL_VERSION:
         reasons.append("unsupported configuration protocol version")
-    if envelope.lifecycle_status not in {"SHADOW", "CHALLENGER", "CHAMPION"}:
-        reasons.append("configuration is not deployable at its lifecycle status")
+    # SHADOW/CHALLENGER are evaluation states, not activation states. The
+    # bridge may persist them, but the EA can only acknowledge a CHAMPION.
+    if envelope.lifecycle_status != "CHAMPION":
+        reasons.append("configuration is not a champion and cannot be activated")
     if envelope.instrument != expected_symbol:
         reasons.append("instrument mismatch")
     if envelope.timeframe != expected_timeframe:
@@ -98,14 +93,14 @@ def activation_decision(
 
 
 def rollback_decision(*, active_hash: str, champion_hash: str, runtime_healthy: bool) -> ConfigSyncDecision:
-    """Fail safe to the last known-good champion after runtime degradation."""
+    """Fail safe to a known-good champion after runtime degradation."""
     if runtime_healthy:
         return ConfigSyncDecision("KEEP_ACTIVE", ("active configuration remains healthy",))
     if not champion_hash:
-        return ConfigSyncDecision("HALT", ("runtime unhealthy and no champion configuration is available",))
+        return ConfigSyncDecision("HALT", ("runtime unhealthy and no rollback target is available",))
     if active_hash == champion_hash:
-        return ConfigSyncDecision("DEFENSIVE", ("champion is unhealthy; enter defensive/no-new-trades state",))
-    return ConfigSyncDecision("ROLLBACK", ("runtime degradation requires rollback to champion",))
+        return ConfigSyncDecision("DEFENSIVE", ("active champion is unhealthy; enter defensive/no-new-trades state",))
+    return ConfigSyncDecision("ROLLBACK", ("runtime degradation requires rollback to the known-good champion",))
 
 
 def envelope_from_mapping(payload: Mapping[str, Any]) -> ConfigSyncEnvelope:

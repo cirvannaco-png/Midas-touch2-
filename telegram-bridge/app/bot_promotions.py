@@ -1,13 +1,4 @@
-"""
-telegram-bridge/app/bot_promotions.py — step 5's tap-to-approve gate.
-
-Handles taps on the inline Approve/Reject buttons app/calibration.py
-attaches to a PROMOTE decision's summary message. Deliberately separate
-from bot_handlers.py (which is entirely CommandHandler-based) since this
-is the one CallbackQueryHandler in the app and has a different update
-shape (callback_query, not message) and a different authorization check
-(query.from_user, not update.effective_user from a message).
-"""
+"""Telegram tap-to-approve gate for recalibration promotions."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -17,11 +8,13 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from app.config import settings
+from app.config_registry_model import ConfigurationRegistry
+from app.config_sync_state_model import ConfigSyncState
 from app.database import async_session
 from app.logger import logger
 from app.models import ApprovedWeightVersion, PromotionRequest
 
-CALLBACK_PREFIX = "promo"  # "promo:approve:<id>" / "promo:reject:<id>"
+CALLBACK_PREFIX = "promo"
 
 
 def build_promotion_keyboard(promotion_request_id: int) -> InlineKeyboardMarkup:
@@ -35,13 +28,6 @@ async def handle_promotion_callback(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     user = query.from_user
 
-    # Same authorization boundary as _authorized_only in bot_handlers.py,
-    # reimplemented here rather than imported: that decorator wraps a
-    # (update, context) command handler and reads update.effective_user,
-    # which for a callback_query update resolves to the same person but
-    # via a different Update field — the decorator's shape doesn't fit a
-    # CallbackQueryHandler cleanly, so this is a deliberate small
-    # duplication of the *check*, not a different *policy*.
     if user is None or str(user.id) != settings.authorized_user_id:
         logger.warning(f"Ignored promotion callback from unauthorized user_id={user.id if user else None}")
         await query.answer("Not authorized.", show_alert=True)
@@ -60,9 +46,6 @@ async def handle_promotion_callback(update: Update, context: ContextTypes.DEFAUL
             await query.answer("This promotion request no longer exists.", show_alert=True)
             return
 
-        # Idempotency: a second tap (double-tap, or a tap after the
-        # request was already decided by another path) must never
-        # double-execute — just tell the user what already happened.
         if promo.status != "pending":
             await query.answer(f"Already {promo.status} — no action taken.", show_alert=True)
             return
@@ -72,7 +55,49 @@ async def handle_promotion_callback(update: Update, context: ContextTypes.DEFAUL
         promo.decided_by = str(user.id)
 
         if action == "approve":
-            promo.status = "approved"
+            if promo.config_hash:
+                registry = await session.scalar(
+                    select(ConfigurationRegistry).where(
+                        ConfigurationRegistry.config_hash == promo.config_hash,
+                        ConfigurationRegistry.instrument == promo.instrument,
+                    )
+                )
+                if registry is None:
+                    promo.status = "rejected"
+                    await session.commit()
+                    await query.answer("Candidate configuration is missing.", show_alert=True)
+                    return
+                if registry.lifecycle_status != "CHALLENGER":
+                    promo.status = "rejected"
+                    await session.commit()
+                    await query.answer(
+                        f"Candidate is {registry.lifecycle_status}; only CHALLENGER can become CHAMPION.",
+                        show_alert=True,
+                    )
+                    return
+
+                state = await session.scalar(
+                    select(ConfigSyncState).where(ConfigSyncState.symbol == promo.instrument)
+                )
+                if state is None:
+                    state = ConfigSyncState(symbol=promo.instrument, state="HOLD")
+                    session.add(state)
+                    await session.flush()
+
+                # The human approval advances lifecycle state only. It does
+                # NOT set active_config_hash. The EA must poll the exact
+                # champion and ACK that exact hash before activation.
+                registry.transition_to("CHAMPION")
+                state.pending_activation_hash = registry.config_hash
+                state.rollback_config_hash = state.active_config_hash
+                state.state = "PENDING_ACK"
+                state.last_error = None
+                promo.status = "approved"
+            else:
+                # Legacy weight-only approvals remain an audit record. They
+                # are intentionally unable to activate a concrete config.
+                promo.status = "approved"
+
             existing = await session.scalar(
                 select(ApprovedWeightVersion).where(ApprovedWeightVersion.weight_version == promo.weight_version)
             )
@@ -83,6 +108,8 @@ async def handle_promotion_callback(update: Update, context: ContextTypes.DEFAUL
                     promotion_request_id=promo.id,
                 ))
             verdict_line = f"✅ Approved by {user.first_name or user.id} at {now.strftime('%Y-%m-%d %H:%M UTC')}"
+            if promo.config_hash:
+                verdict_line += "\n⏳ Champion staged; waiting for exact EA ACK before activation."
         elif action == "reject":
             promo.status = "rejected"
             verdict_line = f"❌ Rejected by {user.first_name or user.id} at {now.strftime('%Y-%m-%d %H:%M UTC')}"
@@ -93,13 +120,10 @@ async def handle_promotion_callback(update: Update, context: ContextTypes.DEFAUL
         await session.commit()
 
     await query.answer("Recorded.")
-    # Edit the original card in place: remove the buttons, append the
-    # verdict — the message becomes its own permanent record of what was
-    # decided and by whom, rather than a card that still invites a tap.
     original_text = query.message.text or ""
     try:
         await query.edit_message_text(f"{original_text}\n\n{verdict_line}")
-    except Exception as e:  # message too old to edit, or already edited — non-fatal
+    except Exception as e:
         logger.warning(f"Couldn't edit promotion card after decision ({type(e).__name__}): {e}")
 
     logger.info(f"Promotion request {promotion_request_id} ({promo.weight_version}): {promo.status} by user_id={user.id}")

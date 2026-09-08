@@ -18,7 +18,7 @@ def make_envelope(**overrides):
         "parameters": {"confidence_threshold": 90},
         "data_version": "data-2026-09-01",
         "optimizer_version": "optimizer-1",
-        "lifecycle_status": "CHALLENGER",
+        "lifecycle_status": "CHAMPION",
         "version": 1,
     }
     explicit_hash = overrides.pop("config_hash", None)
@@ -38,7 +38,7 @@ def make_envelope(**overrides):
     return ConfigSyncEnvelope(**values)
 
 
-def test_matching_identity_is_ready():
+def test_matching_champion_identity_is_ready():
     envelope = make_envelope()
     decision = validate_envelope(
         envelope,
@@ -47,6 +47,18 @@ def test_matching_identity_is_ready():
         expected_strategy="SMC",
     )
     assert decision.action == "READY"
+
+
+def test_challenger_cannot_cross_activation_boundary():
+    envelope = make_envelope(lifecycle_status="CHALLENGER")
+    decision = validate_envelope(
+        envelope,
+        expected_symbol="XAUUSD",
+        expected_timeframe="M15",
+        expected_strategy="SMC",
+    )
+    assert decision.action == "REJECT"
+    assert "not a champion" in decision.reasons[0]
 
 
 def test_unsupported_protocol_version_rejects():

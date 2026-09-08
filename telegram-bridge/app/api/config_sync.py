@@ -73,7 +73,6 @@ async def _get_state(session: AsyncSession, symbol: str) -> ConfigSyncState:
 
 
 def _verify_registry_hash(registry: ConfigurationRegistry) -> None:
-    """Fail closed if persisted identity fields no longer reproduce its hash."""
     expected = ConfigurationIdentity(
         strategy=registry.strategy,
         instrument=registry.instrument,
@@ -87,8 +86,27 @@ def _verify_registry_hash(registry: ConfigurationRegistry) -> None:
 
 
 def _is_deployable(registry: ConfigurationRegistry) -> bool:
-    """Only configurations that crossed the deployment lifecycle boundary may run."""
-    return registry.lifecycle_status in {"SHADOW", "CHALLENGER", "CHAMPION"}
+    return registry.lifecycle_status == "CHAMPION"
+
+
+def _expected_activation_hash(state: ConfigSyncState) -> str | None:
+    if state.pending_activation_hash:
+        return state.pending_activation_hash
+    if state.state == "ROLLBACK" and state.rollback_config_hash:
+        return state.rollback_config_hash
+    return state.active_config_hash
+
+
+async def _latest_champion(session: AsyncSession, symbol: str) -> ConfigurationRegistry | None:
+    return await session.scalar(
+        select(ConfigurationRegistry)
+        .where(
+            ConfigurationRegistry.instrument == symbol,
+            ConfigurationRegistry.lifecycle_status == "CHAMPION",
+        )
+        .order_by(ConfigurationRegistry.created_at.desc())
+        .limit(1)
+    )
 
 
 @router.get("/config/{symbol}", response_model=ConfigEnvelopeResponse)
@@ -97,41 +115,32 @@ async def get_approved_config(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
 ):
-    """Return the persisted active config, or the latest CHAMPION if none is active."""
     state = await _get_state(session, symbol)
+    target_hash = _expected_activation_hash(state)
 
-    registry = None
-    if state.active_config_hash is not None:
+    if target_hash is not None:
         registry = await session.scalar(
             select(ConfigurationRegistry).where(
-                ConfigurationRegistry.config_hash == state.active_config_hash,
+                ConfigurationRegistry.config_hash == target_hash,
                 ConfigurationRegistry.instrument == symbol,
             )
         )
         if registry is None:
             state.state = "HALT"
-            state.last_error = "Persisted active configuration no longer exists"
+            state.last_error = "Persisted target configuration no longer exists"
             await session.commit()
-            raise HTTPException(status_code=409, detail="Persisted active configuration is unavailable")
+            raise HTTPException(status_code=409, detail="Persisted target configuration is unavailable")
     else:
-        registry = await session.scalar(
-            select(ConfigurationRegistry)
-            .where(
-                ConfigurationRegistry.instrument == symbol,
-                ConfigurationRegistry.lifecycle_status == "CHAMPION",
-            )
-            .order_by(ConfigurationRegistry.created_at.desc())
-            .limit(1)
-        )
+        registry = await _latest_champion(session, symbol)
         if registry is None:
             raise HTTPException(status_code=404, detail="No champion configuration is available")
 
     _verify_registry_hash(registry)
     if not _is_deployable(registry):
         state.state = "HALT"
-        state.last_error = "Persisted active configuration is not deployable"
+        state.last_error = "Persisted target configuration is not a champion"
         await session.commit()
-        raise HTTPException(status_code=409, detail="Persisted active configuration is not deployable")
+        raise HTTPException(status_code=409, detail="Persisted target configuration is not a champion")
 
     state.last_seen_at = datetime.now(timezone.utc)
     await session.commit()
@@ -157,7 +166,18 @@ async def acknowledge_config(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
 ):
-    """Validate the EA's exact hash/metadata and persist activation."""
+    state = await _get_state(session, symbol)
+    expected_hash = _expected_activation_hash(state)
+    if expected_hash is None:
+        champion = await _latest_champion(session, symbol)
+        if champion is None:
+            raise HTTPException(status_code=409, detail="No champion configuration is awaiting activation")
+        expected_hash = champion.config_hash
+    if payload.config_hash != expected_hash:
+        state.last_error = "EA ACK hash does not match the persisted activation target"
+        await session.commit()
+        raise HTTPException(status_code=409, detail="EA ACK hash does not match activation target")
+
     registry = await session.scalar(
         select(ConfigurationRegistry).where(
             ConfigurationRegistry.config_hash == payload.config_hash,
@@ -190,17 +210,24 @@ async def acknowledge_config(
     decision = activation_decision(
         validation,
         acknowledged_hash=payload.config_hash,
-        expected_hash=registry.config_hash,
+        expected_hash=expected_hash,
     )
 
-    state = await _get_state(session, symbol)
     state.last_ack_at = datetime.now(timezone.utc)
-    state.last_error = None if decision.action == "ACTIVATE" else "; ".join(decision.reasons)
     if decision.action == "ACTIVATE":
+        was_rollback = state.state == "ROLLBACK" and state.pending_activation_hash == payload.config_hash
+        previous_active = state.active_config_hash
         state.acknowledged_config_hash = payload.config_hash
         state.active_config_hash = payload.config_hash
+        if was_rollback:
+            state.rollback_config_hash = None
+        else:
+            state.rollback_config_hash = previous_active
+        state.pending_activation_hash = None
         state.state = "ACTIVE"
+        state.last_error = None
     else:
+        state.last_error = "; ".join(decision.reasons)
         state.state = "HOLD"
     await session.commit()
 
@@ -219,7 +246,6 @@ async def report_runtime(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
 ):
-    """Record runtime health and fail closed to the current CHAMPION."""
     state = await _get_state(session, symbol)
     active_registry = await session.scalar(
         select(ConfigurationRegistry).where(
@@ -236,9 +262,9 @@ async def report_runtime(
 
     if not _is_deployable(active_registry):
         state.state = "HALT"
-        state.last_error = "Runtime report references a non-deployable configuration"
+        state.last_error = "Runtime report references a non-champion configuration"
         await session.commit()
-        raise HTTPException(status_code=409, detail="Runtime configuration is not deployable")
+        raise HTTPException(status_code=409, detail="Runtime configuration is not a champion")
 
     if state.active_config_hash is None:
         state.state = "HALT"
@@ -251,19 +277,34 @@ async def report_runtime(
         await session.commit()
         raise HTTPException(status_code=409, detail="Runtime configuration does not match persisted active configuration")
 
-    champion = await session.scalar(
-        select(ConfigurationRegistry)
-        .where(
-            ConfigurationRegistry.instrument == symbol,
-            ConfigurationRegistry.lifecycle_status == "CHAMPION",
+    champion = None
+    if state.rollback_config_hash:
+        champion = await session.scalar(
+            select(ConfigurationRegistry).where(
+                ConfigurationRegistry.config_hash == state.rollback_config_hash,
+                ConfigurationRegistry.instrument == symbol,
+                ConfigurationRegistry.lifecycle_status == "CHAMPION",
+            )
         )
-        .order_by(ConfigurationRegistry.created_at.desc())
-        .limit(1)
-    )
-    champion_hash = ""
+    if champion is None:
+        champion = await session.scalar(
+            select(ConfigurationRegistry)
+            .where(
+                ConfigurationRegistry.instrument == symbol,
+                ConfigurationRegistry.lifecycle_status == "CHAMPION",
+                ConfigurationRegistry.config_hash != payload.config_hash,
+                ConfigurationRegistry.created_at < active_registry.created_at,
+            )
+            .order_by(ConfigurationRegistry.created_at.desc())
+            .limit(1)
+        )
+
+    # If the active Champion is the only known Champion, there is no safe
+    # alternate configuration. The correct action is DEFENSIVE: stop opening
+    # new trades rather than inventing a rollback target.
+    champion_hash = champion.config_hash if champion is not None else active_registry.config_hash
     if champion is not None:
         _verify_registry_hash(champion)
-        champion_hash = champion.config_hash
 
     decision = rollback_decision(
         active_hash=payload.config_hash,
@@ -276,10 +317,9 @@ async def report_runtime(
         state.state = "ACTIVE"
         state.last_error = None
     elif decision.action == "ROLLBACK":
-        # Do not silently activate the champion. The EA must poll the champion,
-        # validate it, and ACK its exact hash before it becomes active.
-        state.acknowledged_config_hash = None
+        state.pending_activation_hash = champion_hash
         state.active_config_hash = None
+        state.acknowledged_config_hash = None
         state.state = "ROLLBACK"
         state.last_error = "; ".join(decision.reasons)
     elif decision.action == "DEFENSIVE":
