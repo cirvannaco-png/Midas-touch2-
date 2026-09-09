@@ -1,36 +1,37 @@
 //+------------------------------------------------------------------+
 //| Execution/DynamicStopEngine.mqh                                  |
-//| Dynamic Stop Engine v1 — decision policy only.                   |
+//| Dynamic Stop Engine v1 — deterministic stop-policy layer.        |
 //+------------------------------------------------------------------+
 #ifndef DYNAMICSTOPENGINE_MQH
 #define DYNAMICSTOPENGINE_MQH
 
-// The engine deliberately separates STOP POLICY from broker execution.
-// PositionManager/BrokerAdapter remain responsible for position lookup,
-// broker distance/freeze validation, and the actual modification call.
-// This makes the policy deterministic and backtest-friendly.
-
 enum ENUM_DYNAMIC_STOP_STAGE
   {
    DSE_STRUCTURAL = 0,
-   DSE_PROTECTION = 1,   // +0.75R: trailing protection becomes eligible
-   DSE_BREAKEVEN  = 2,   // +1.00R: move toward breakeven
+   DSE_PROTECTION = 1,
+   DSE_BREAKEVEN  = 2,
    DSE_TRAILING   = 3
   };
 
 struct DynamicStopConfig
   {
-   double activateAtR;       // 0.75
-   double breakevenAtR;      // 1.00
-   double atrMultiplier;     // subsequent trailing distance
-   double minImprovementPts; // suppress meaningless broker modifications
+   double activateAtR;          // +0.75R
+   double breakevenAtR;         // +1.00R
+   double atrMultiplier;        // structural/ATR trailing distance
+   double minImprovementPts;    // suppress meaningless modifications
+   int    maxSpreadPoints;      // 0 = disabled
+   double minATR;               // 0 = disabled
+   double maxATR;               // 0 = disabled
 
    void SetDefaults()
      {
-      activateAtR      = 0.75;
-      breakevenAtR     = 1.00;
-      atrMultiplier    = 1.50;
+      activateAtR       = 0.75;
+      breakevenAtR      = 1.00;
+      atrMultiplier     = 1.50;
       minImprovementPts = 2.0;
+      maxSpreadPoints   = 0;
+      minATR            = 0.0;
+      maxATR            = 0.0;
      }
   };
 
@@ -47,72 +48,78 @@ class CDynamicStopEngine
 private:
    DynamicStopConfig m_cfg;
 
-   bool IsTighter(bool isBuy, double candidate, double current) const
+   bool IsTighter(bool isBuy,double candidate,double current) const
      {
-      if(current <= 0.0) return candidate > 0.0;
-      return isBuy ? candidate > current : candidate < current;
+      if(candidate<=0.0) return false;
+      if(current<=0.0) return true;
+      return isBuy ? candidate>current : candidate<current;
      }
 
-   bool ImprovementLargeEnough(string symbol, double candidate, double current) const
+   bool ImprovementLargeEnough(string symbol,double candidate,double current) const
      {
-      double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
-      if(point <= 0.0) return true;
-      return MathAbs(candidate - current) >= m_cfg.minImprovementPts * point;
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      if(point<=0.0) return true;
+      return MathAbs(candidate-current)>=m_cfg.minImprovementPts*point;
      }
 
 public:
-   void Configure(const DynamicStopConfig &cfg) { m_cfg = cfg; }
+   void Configure(const DynamicStopConfig &cfg) { m_cfg=cfg; }
    DynamicStopConfig Config() const { return m_cfg; }
 
-   // Pure policy calculation. It never widens an existing SL.
-   DynamicStopDecision Evaluate(string symbol, bool isBuy, double entry,
-                                double structuralSL, double currentSL,
-                                double currentPrice, double atr) const
+   // Pure policy calculation. Broker checks and PositionModify remain
+   // outside this class so the same decision can be replayed in a test.
+   DynamicStopDecision Evaluate(string symbol,bool isBuy,double entry,
+                                double structuralSL,double currentSL,
+                                double currentPrice,double atr,
+                                double spreadPoints=0.0) const
      {
       DynamicStopDecision d;
-      d.stage = DSE_STRUCTURAL;
-      d.proposedSL = structuralSL;
-      d.modify = false;
-      d.reason = "structural stop retained";
+      d.stage=DSE_STRUCTURAL;
+      d.proposedSL=structuralSL;
+      d.modify=false;
+      d.reason="structural stop retained";
 
-      double risk = MathAbs(entry - structuralSL);
-      if(risk <= 0.0 || currentPrice <= 0.0)
+      if(entry<=0.0 || structuralSL<=0.0 || currentPrice<=0.0)
+        { d.reason="invalid entry/structural stop/price"; return d; }
+      if(m_cfg.maxSpreadPoints>0 && spreadPoints>m_cfg.maxSpreadPoints)
+        { d.reason="spread protection"; return d; }
+      if(m_cfg.minATR>0.0 && atr<m_cfg.minATR)
+        { d.reason="volatility below floor"; return d; }
+      if(m_cfg.maxATR>0.0 && atr>m_cfg.maxATR)
+        { d.reason="volatility above ceiling"; return d; }
+
+      double risk=MathAbs(entry-structuralSL);
+      if(risk<=0.0) { d.reason="zero structural risk"; return d; }
+      double favorableMove=isBuy ? currentPrice-entry : entry-currentPrice;
+      double r=favorableMove/risk;
+      if(r<m_cfg.activateAtR) return d;
+
+      d.stage=DSE_PROTECTION;
+      double candidate=isBuy
+                        ? currentPrice-MathMax(atr,0.0)*m_cfg.atrMultiplier
+                        : currentPrice+MathMax(atr,0.0)*m_cfg.atrMultiplier;
+
+      if(r>=m_cfg.breakevenAtR)
         {
-         d.reason = "invalid entry/structural risk";
-         return d;
+         d.stage=(atr>0.0 ? DSE_TRAILING : DSE_BREAKEVEN);
+         if(isBuy) candidate=MathMax(candidate,entry);
+         else      candidate=MathMin(candidate,entry);
         }
 
-      double favorableMove = isBuy ? currentPrice - entry : entry - currentPrice;
-      double r = favorableMove / risk;
-
-      if(r < m_cfg.activateAtR)
-         return d;
-
-      d.stage = DSE_PROTECTION;
-      double candidate = isBuy
-                         ? currentPrice - MathMax(atr, 0.0) * m_cfg.atrMultiplier
-                         : currentPrice + MathMax(atr, 0.0) * m_cfg.atrMultiplier;
-
-      if(r >= m_cfg.breakevenAtR)
+      if(IsTighter(isBuy,candidate,currentSL) && ImprovementLargeEnough(symbol,candidate,currentSL))
         {
-         d.stage = (atr > 0.0 ? DSE_TRAILING : DSE_BREAKEVEN);
-         // Never place the candidate on the losing side of entry once
-         // +1R has been reached. ATR trailing may be tighter than entry.
-         if(isBuy) candidate = MathMax(candidate, entry);
-         else      candidate = MathMin(candidate, entry);
+         d.proposedSL=candidate;
+         d.modify=true;
+         d.reason=(d.stage==DSE_BREAKEVEN)
+                   ? "+1R breakeven protection"
+                   : (d.stage==DSE_PROTECTION ? "+0.75R protection" : "ATR trailing tightened");
         }
-
-      if(IsTighter(isBuy, candidate, currentSL) && ImprovementLargeEnough(symbol, candidate, currentSL))
-        {
-         d.proposedSL = candidate;
-         d.modify = true;
-         d.reason = (d.stage == DSE_BREAKEVEN)
-                    ? "+1.00R breakeven protection"
-                    : (d.stage == DSE_PROTECTION ? "+0.75R trailing protection" : "ATR trailing tightened");
-        }
+      else if(!IsTighter(isBuy,candidate,currentSL))
+         d.reason="candidate would widen or equal current stop";
+      else
+         d.reason="improvement below modification threshold";
       return d;
      }
   };
-
 #endif
 //+------------------------------------------------------------------+
