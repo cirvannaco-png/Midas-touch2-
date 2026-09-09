@@ -7,6 +7,7 @@
 #include "OrderManager.mqh"
 #include "BrokerAdapter.mqh"
 #include "DynamicStopEngine.mqh"
+#include "DynamicStopInputs.mqh"
 #include "../Monitoring/SLModificationAudit.mqh"
 
 class CPositionManager
@@ -50,11 +51,14 @@ void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
 
    DynamicStopConfig cfg;
    cfg.SetDefaults();
-   cfg.breakevenAtR=breakEvenAtR;
-   cfg.atrMultiplier=trailAtrMult;
-   cfg.maxSpreadPoints=maxSpreadPoints;
-   cfg.minATR=minATR;
-   cfg.maxATR=maxATR;
+   cfg.activateAtR=InpDynamicStopActivateAtR;
+   cfg.breakevenAtR=InpDynamicStopBreakevenAtR;
+   cfg.atrMultiplier=InpDynamicStopATRMult;
+   cfg.minImprovementPts=InpDynamicStopMinImprovementPoints;
+   cfg.maxSpreadPoints=InpDynamicStopMaxSpreadPoints;
+   cfg.minATR=InpDynamicStopMinATR;
+   cfg.maxATR=InpDynamicStopMaxATR;
+   m_minModifyIntervalSec=MathMax(0,InpDynamicStopModifyIntervalSec);
    m_dynamicStop.Configure(cfg);
   }
 
@@ -119,15 +123,15 @@ void CPositionManager::OnTick(double currentAtr)
       double r=RMultiple(dec,entry,price);
       double curSL=PositionGetDouble(POSITION_SL);
 
-      // IMPORTANT: this function runs before the new-entry news lock in
-      // MedisTouch_v2.8.mq5. News therefore blocks new entries only; it
-      // cannot disable protective stop tightening on an open position.
+      // Protective management is independent of the new-entry news lock.
+      // News can prevent NEW entries but never prevents tightening an
+      // already-open position's stop.
       MqlTick tick;
       if(!SymbolInfoTick(dec.symbol,tick)) continue;
       double point=SymbolInfoDouble(dec.symbol,SYMBOL_POINT);
       double spreadPoints=(point>0.0 ? (tick.ask-tick.bid)/point : 0.0);
 
-      if(CanModifyNow(ticket))
+      if(InpEnableDynamicStop && CanModifyNow(ticket))
         {
          DynamicStopDecision ds=m_dynamicStop.Evaluate(dec.symbol,isBuy,entry,dec.setup.stop_loss,
                                                         curSL,price,currentAtr,spreadPoints);
