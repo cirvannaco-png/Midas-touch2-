@@ -62,16 +62,16 @@ def canonical_dynamic_stop_policy(
 
 def dynamic_stop_policy_hash(policy: Mapping[str, object]) -> str:
     """Hash only a validated, canonical Dynamic Stop policy payload."""
-    canonical = canonical_dynamic_stop_policy(**{
-        "activate_at_r": policy["activate_at_r"],
-        "breakeven_at_r": policy["breakeven_at_r"],
-        "atr_multiplier": policy["atr_multiplier"],
-        "min_improvement_points": policy["min_improvement_points"],
-        "max_spread_points": policy["max_spread_points"],
-        "min_atr": policy["min_atr"],
-        "max_atr": policy["max_atr"],
-        "min_modify_interval_sec": policy["min_modify_interval_sec"],
-    })
+    canonical = canonical_dynamic_stop_policy(
+        activate_at_r=policy["activate_at_r"],
+        breakeven_at_r=policy["breakeven_at_r"],
+        atr_multiplier=policy["atr_multiplier"],
+        min_improvement_points=policy["min_improvement_points"],
+        max_spread_points=policy["max_spread_points"],
+        min_atr=policy["min_atr"],
+        max_atr=policy["max_atr"],
+        min_modify_interval_sec=policy["min_modify_interval_sec"],
+    )
     if policy.get("version") != DYNAMIC_STOP_POLICY_VERSION:
         raise ValueError("unsupported Dynamic Stop policy version")
     return configuration_hash(canonical)
