@@ -1,6 +1,5 @@
 //+------------------------------------------------------------------+
 //| Execution/PositionManager.mqh                                    |
-//| Post-fill lifecycle + Dynamic Stop Engine v1 integration.         |
 //+------------------------------------------------------------------+
 #ifndef POSITIONMANAGER_MQH
 #define POSITIONMANAGER_MQH
@@ -13,15 +12,15 @@
 class CPositionManager
   {
 private:
-   COrderManager*       m_orders;
-   CBrokerAdapter*      m_broker;
-   CSLModificationAudit* m_audit;
-   CDynamicStopEngine   m_dynamicStop;
-   double               m_partialAtR;
-   double               m_partialFraction;
-   int                  m_minModifyIntervalSec;
-   ulong                m_lastModifyTickets[];
-   datetime             m_lastModifyTimes[];
+   COrderManager*        m_orders;
+   CBrokerAdapter*       m_broker;
+   CSLModificationAudit  m_audit;
+   CDynamicStopEngine    m_dynamicStop;
+   double                m_partialAtR;
+   double                m_partialFraction;
+   int                   m_minModifyIntervalSec;
+   ulong                 m_lastModifyTickets[];
+   datetime              m_lastModifyTimes[];
 
    double CurrentExitPrice(string symbol,bool isBuy);
    double RMultiple(const TradeDecisionRecord &dec,double entry,double price);
@@ -32,23 +31,22 @@ public:
    void Init(COrderManager* orders,CBrokerAdapter* broker,
              double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
              int maxSpreadPoints=0,double minATR=0.0,double maxATR=0.0,
-             int minModifyIntervalSec=5,CSLModificationAudit* audit=NULL);
+             int minModifyIntervalSec=5);
    void OnTick(double currentAtr);
   };
 
 void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
                             double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
-                            int maxSpreadPoints,double minATR,double maxATR,
-                            int minModifyIntervalSec,CSLModificationAudit* audit)
+                            int maxSpreadPoints,double minATR,double maxATR,int minModifyIntervalSec)
   {
    m_orders=orders;
    m_broker=broker;
-   m_audit=audit;
    m_partialAtR=partialAtR;
    m_partialFraction=partialFraction;
    m_minModifyIntervalSec=MathMax(0,minModifyIntervalSec);
    ArrayResize(m_lastModifyTickets,0);
    ArrayResize(m_lastModifyTimes,0);
+   m_audit.Init();
 
    DynamicStopConfig cfg;
    cfg.SetDefaults();
@@ -121,9 +119,9 @@ void CPositionManager::OnTick(double currentAtr)
       double r=RMultiple(dec,entry,price);
       double curSL=PositionGetDouble(POSITION_SL);
 
-      // Dynamic stop is deliberately evaluated BEFORE the entry news gate
-      // in MedisTouch_v2.8.mq5. A news lock blocks NEW entries; it must
-      // never suspend protection of an already-open position.
+      // IMPORTANT: this function runs before the new-entry news lock in
+      // MedisTouch_v2.8.mq5. News therefore blocks new entries only; it
+      // cannot disable protective stop tightening on an open position.
       MqlTick tick;
       if(!SymbolInfoTick(dec.symbol,tick)) continue;
       double point=SymbolInfoDouble(dec.symbol,SYMBOL_POINT);
@@ -133,23 +131,14 @@ void CPositionManager::OnTick(double currentAtr)
         {
          DynamicStopDecision ds=m_dynamicStop.Evaluate(dec.symbol,isBuy,entry,dec.setup.stop_loss,
                                                         curSL,price,currentAtr,spreadPoints);
-         if(ds.modify)
+         if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
            {
-            // BrokerAdapter performs the final authoritative stops/freeze
-            // distance check immediately before PositionModify().
-            if(m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
-              {
-               if(m_audit!=NULL)
-                  m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,ds.proposedSL,price,r,ds.reason);
-               RecordModification(ticket);
-               if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);
-               curSL=ds.proposedSL;
-              }
+            m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,ds.proposedSL,price,r,ds.reason);
+            RecordModification(ticket);
+            if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);
            }
         }
 
-      // Partial exit remains a separate lifecycle rule and still occurs
-      // only after the position has reached the configured R threshold.
       ENUM_TRADE_STATE stateAfterStop=m_orders.StateAt(i);
       if(stateAfterStop==TS_PROTECTED && r>=m_partialAtR)
         {
@@ -158,7 +147,6 @@ void CPositionManager::OnTick(double currentAtr)
          if(vol>=minVol && m_broker.ClosePartial(ticket,vol))
             m_orders.TransitionAt(i,TS_PARTIAL);
         }
-
       if(m_orders.StateAt(i)==TS_PARTIAL)
          m_orders.TransitionAt(i,TS_RUNNER);
      }
