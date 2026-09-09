@@ -1,130 +1,158 @@
 //+------------------------------------------------------------------+
-//|                                     Execution/PositionManager.mqh |
+//| Execution/PositionManager.mqh                                    |
 //+------------------------------------------------------------------+
 #ifndef POSITIONMANAGER_MQH
 #define POSITIONMANAGER_MQH
 
 #include "OrderManager.mqh"
 #include "BrokerAdapter.mqh"
+#include "DynamicStopEngine.mqh"
+#include "DynamicStopInputs.mqh"
+#include "../Monitoring/SLModificationAudit.mqh"
 
-// Everything that happens to a trade AFTER OrderManager gets it to
-// FILLED: break-even, partial close at TP1, trailing the runner, and
-// detecting closure. State order matches the documented lifecycle:
-// Filled -> Protected -> Partial -> Runner -> Closed -> Archived.
 class CPositionManager
   {
 private:
-   COrderManager*    m_orders;
-   CBrokerAdapter*   m_broker;
-   double            m_breakEvenAtR;      // move SL to entry once price is this many R in favor
-   double            m_partialAtR;        // take TP1 partial once price is this many R in favor
-   double            m_partialFraction;   // fraction of volume closed at TP1 (e.g. 0.5)
-   double            m_trailAtrMult;      // runner trail distance, as an ATR multiple
+   COrderManager*        m_orders;
+   CBrokerAdapter*       m_broker;
+   CSLModificationAudit  m_audit;
+   CDynamicStopEngine    m_dynamicStop;
+   double                m_partialAtR;
+   double                m_partialFraction;
+   int                   m_minModifyIntervalSec;
+   ulong                 m_lastModifyTickets[];
+   datetime              m_lastModifyTimes[];
 
-   double            CurrentExitPrice(string symbol, bool isBuy);
-   // FIX (#25): now takes the actual entry price explicitly (real fill,
-   // via COrderManager::FillPriceAt) instead of deriving it from
-   // dec.setup -- the theoretical FVG-edge entry is not what the
-   // position is actually sitting on.
-   double            RMultiple(const TradeDecisionRecord &dec, double entry, double price);
+   double CurrentExitPrice(string symbol,bool isBuy);
+   double RMultiple(const TradeDecisionRecord &dec,double entry,double price);
+   bool   CanModifyNow(ulong ticket);
+   void   RecordModification(ulong ticket);
 
 public:
-   void              Init(COrderManager* orders, CBrokerAdapter* broker,
-                          double breakEvenAtR, double partialAtR, double partialFraction, double trailAtrMult);
-   void              OnTick(double currentAtr);
+   void Init(COrderManager* orders,CBrokerAdapter* broker,
+             double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
+             int maxSpreadPoints=0,double minATR=0.0,double maxATR=0.0,
+             int minModifyIntervalSec=5);
+   void OnTick(double currentAtr);
   };
-//+------------------------------------------------------------------+
-void CPositionManager::Init(COrderManager* orders, CBrokerAdapter* broker,
-                            double breakEvenAtR, double partialAtR, double partialFraction, double trailAtrMult)
+
+void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
+                            double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
+                            int maxSpreadPoints,double minATR,double maxATR,int minModifyIntervalSec)
   {
-   m_orders = orders;
-   m_broker = broker;
-   m_breakEvenAtR = breakEvenAtR;
-   m_partialAtR = partialAtR;
-   m_partialFraction = partialFraction;
-   m_trailAtrMult = trailAtrMult;
+   m_orders=orders;
+   m_broker=broker;
+   m_partialAtR=partialAtR;
+   m_partialFraction=partialFraction;
+   m_minModifyIntervalSec=MathMax(0,minModifyIntervalSec);
+   ArrayResize(m_lastModifyTickets,0);
+   ArrayResize(m_lastModifyTimes,0);
+   m_audit.Init();
+
+   DynamicStopConfig cfg;
+   cfg.SetDefaults();
+   cfg.activateAtR=InpDynamicStopActivateAtR;
+   cfg.breakevenAtR=InpDynamicStopBreakevenAtR;
+   cfg.atrMultiplier=InpDynamicStopATRMult;
+   cfg.minImprovementPts=InpDynamicStopMinImprovementPoints;
+   cfg.maxSpreadPoints=InpDynamicStopMaxSpreadPoints;
+   cfg.minATR=InpDynamicStopMinATR;
+   cfg.maxATR=InpDynamicStopMaxATR;
+   m_minModifyIntervalSec=MathMax(0,InpDynamicStopModifyIntervalSec);
+   m_dynamicStop.Configure(cfg);
   }
-//+------------------------------------------------------------------+
-double CPositionManager::CurrentExitPrice(string symbol, bool isBuy)
+
+double CPositionManager::CurrentExitPrice(string symbol,bool isBuy)
   {
    MqlTick tick;
-   if(!SymbolInfoTick(symbol, tick)) return 0.0;
-   // Closing a long sells at bid; closing a short buys at ask.
+   if(!SymbolInfoTick(symbol,tick)) return 0.0;
    return isBuy ? tick.bid : tick.ask;
   }
-//+------------------------------------------------------------------+
-double CPositionManager::RMultiple(const TradeDecisionRecord &dec, double entry, double price)
+
+double CPositionManager::RMultiple(const TradeDecisionRecord &dec,double entry,double price)
   {
-   bool isBuy = (dec.setup.type == ORDER_TYPE_BUY);
-   double riskDist = MathAbs(entry - dec.setup.stop_loss);
-   if(riskDist <= 0) return 0.0;
-   double moveInFavor = isBuy ? (price - entry) : (entry - price);
-   return moveInFavor / riskDist;
+   bool isBuy=(dec.setup.type==ORDER_TYPE_BUY);
+   double riskDist=MathAbs(entry-dec.setup.stop_loss);
+   if(riskDist<=0.0) return 0.0;
+   double moveInFavor=isBuy ? price-entry : entry-price;
+   return moveInFavor/riskDist;
   }
-//+------------------------------------------------------------------+
+
+bool CPositionManager::CanModifyNow(ulong ticket)
+  {
+   if(m_minModifyIntervalSec<=0) return true;
+   for(int i=0;i<ArraySize(m_lastModifyTickets);i++)
+      if(m_lastModifyTickets[i]==ticket)
+         return (TimeCurrent()-m_lastModifyTimes[i])>=m_minModifyIntervalSec;
+   return true;
+  }
+
+void CPositionManager::RecordModification(ulong ticket)
+  {
+   for(int i=0;i<ArraySize(m_lastModifyTickets);i++)
+      if(m_lastModifyTickets[i]==ticket)
+        { m_lastModifyTimes[i]=TimeCurrent(); return; }
+   int n=ArraySize(m_lastModifyTickets);
+   ArrayResize(m_lastModifyTickets,n+1);
+   ArrayResize(m_lastModifyTimes,n+1);
+   m_lastModifyTickets[n]=ticket;
+   m_lastModifyTimes[n]=TimeCurrent();
+  }
+
 void CPositionManager::OnTick(double currentAtr)
   {
-   for(int i = 0; i < m_orders.Total(); i++)
+   for(int i=0;i<m_orders.Total();i++)
      {
-      ENUM_TRADE_STATE state = m_orders.StateAt(i);
-      if(state != TS_FILLED && state != TS_PROTECTED && state != TS_PARTIAL && state != TS_RUNNER)
+      ENUM_TRADE_STATE state=m_orders.StateAt(i);
+      if(state!=TS_FILLED && state!=TS_PROTECTED && state!=TS_PARTIAL && state!=TS_RUNNER)
          continue;
 
-      ulong ticket = m_orders.TicketAt(i);
+      ulong ticket=m_orders.TicketAt(i);
       if(!PositionSelectByTicket(ticket))
         {
-         // Position is gone (SL/TP/manual close) — archive it and move on.
-         m_orders.TransitionAt(i, TS_CLOSED);
-         m_orders.TransitionAt(i, TS_ARCHIVED);
+         m_orders.TransitionAt(i,TS_CLOSED);
+         m_orders.TransitionAt(i,TS_ARCHIVED);
          continue;
         }
 
-      TradeDecisionRecord dec = m_orders.DecisionAt(i);
-      bool isBuy = (dec.setup.type == ORDER_TYPE_BUY);
-      double entry = m_orders.FillPriceAt(i); // FIX (#25): actual fill, not the theoretical FVG edge
-      double price = CurrentExitPrice(dec.symbol, isBuy);
-      if(price <= 0) continue;
-      double r = RMultiple(dec, entry, price);
+      TradeDecisionRecord dec=m_orders.DecisionAt(i);
+      bool isBuy=(dec.setup.type==ORDER_TYPE_BUY);
+      double entry=m_orders.FillPriceAt(i);
+      double price=CurrentExitPrice(dec.symbol,isBuy);
+      if(price<=0.0 || entry<=0.0) continue;
+      double r=RMultiple(dec,entry,price);
+      double curSL=PositionGetDouble(POSITION_SL);
 
-      // 1. Break-even -- moves SL to the price this position ACTUALLY
-      // entered at. Moving it to the theoretical entry instead (the old
-      // behavior) could leave a "protected" trade still sitting at a
-      // real loss if the fill was worse than the signal's theoretical
-      // price.
-      if(state == TS_FILLED && r >= m_breakEvenAtR)
+      // Protective management is independent of the new-entry news lock.
+      // News can prevent NEW entries but never prevents tightening an
+      // already-open position's stop.
+      MqlTick tick;
+      if(!SymbolInfoTick(dec.symbol,tick)) continue;
+      double point=SymbolInfoDouble(dec.symbol,SYMBOL_POINT);
+      double spreadPoints=(point>0.0 ? (tick.ask-tick.bid)/point : 0.0);
+
+      if(InpEnableDynamicStop && CanModifyNow(ticket))
         {
-         if(m_broker.ModifySLTP(ticket, entry, dec.setup.final_tp))
-            m_orders.TransitionAt(i, TS_PROTECTED);
+         DynamicStopDecision ds=m_dynamicStop.Evaluate(dec.symbol,isBuy,entry,dec.setup.stop_loss,
+                                                        curSL,price,currentAtr,spreadPoints);
+         if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
+           {
+            m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,ds.proposedSL,price,r,ds.reason);
+            RecordModification(ticket);
+            if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);
+           }
         }
 
-      // 2. Partial (only after break-even, matching the documented order).
-      // NOTE (#26, flagged not "fixed"): this fires at m_partialAtR (e.g.
-      // 2R), a fixed R-multiple -- not at dec.setup.tp1. TP1/TP2 are
-      // liquidity-derived DISPLAY targets for the dashboard/signal feed;
-      // they were never the live partial-close trigger, and a liquidity
-      // level isn't guaranteed to be a good partial-exit point on every
-      // setup. Real distinction, not a bug to silently paper over.
-      if(state == TS_PROTECTED && r >= m_partialAtR)
+      ENUM_TRADE_STATE stateAfterStop=m_orders.StateAt(i);
+      if(stateAfterStop==TS_PROTECTED && r>=m_partialAtR)
         {
-         double vol = m_orders.VolumeAt(i) * m_partialFraction;
-         double minVol = SymbolInfoDouble(dec.symbol, SYMBOL_VOLUME_MIN);
-         if(vol >= minVol && m_broker.ClosePartial(ticket, vol))
-            m_orders.TransitionAt(i, TS_PARTIAL);
+         double vol=m_orders.VolumeAt(i)*m_partialFraction;
+         double minVol=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_MIN);
+         if(vol>=minVol && m_broker.ClosePartial(ticket,vol))
+            m_orders.TransitionAt(i,TS_PARTIAL);
         }
-
-      // 3. Hand the remainder off as a trailing runner
-      if(state == TS_PARTIAL)
-         m_orders.TransitionAt(i, TS_RUNNER);
-
-      // 4. Trail the runner — only ever tighten, never widen, the stop
-      if(state == TS_RUNNER && currentAtr > 0)
-        {
-         double newSL = isBuy ? price - m_trailAtrMult * currentAtr : price + m_trailAtrMult * currentAtr;
-         double curSL = PositionGetDouble(POSITION_SL);
-         bool improved = isBuy ? (newSL > curSL) : (newSL < curSL);
-         if(improved)
-            m_broker.ModifySLTP(ticket, newSL, dec.setup.final_tp);
-        }
+      if(m_orders.StateAt(i)==TS_PARTIAL)
+         m_orders.TransitionAt(i,TS_RUNNER);
      }
   }
 #endif
