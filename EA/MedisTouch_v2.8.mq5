@@ -274,11 +274,12 @@ int OnInit()
    g_broker.Init(InpMagicNumber);
    g_monitor.Init(_Symbol, InpHeartbeatIntervalSec, InpMaxDrawdownAlertPercent);
    g_orders.Init(&g_broker, InpMaxOpenTrades, &g_monitor);
-   // The position manager consumes the same entry-timeframe swing detector
-   // that feeds the SMC analysis. This is the authoritative structure
-   // source for dynamic-stop anchors; no synthetic price series is used.
+   // Dynamic-stop structural anchors must come from the EA execution/chart
+   // timeframe. g_fvgCtx is a concept-specific timeframe (default M15) and
+   // must not silently become the stop engine's structural source when the EA
+   // is attached to H1/H4/etc. No synthetic structure is introduced.
    g_positions.Init(&g_orders, &g_broker, InpBreakEvenAtR, InpPartialAtR, InpPartialFraction, InpTrailATRMult,
-                    0, 0.0, 0.0, 5, &g_fvgCtx.swings);
+                    0, 0.0, 0.0, 5, &g_chartCtx.swings);
    g_store.Init(_Symbol);
    g_subscribers.Init();
    g_publisher.Init(_Symbol, &g_subscribers, InpWebRequestTimeoutMs, InpBridgeApiKey);
