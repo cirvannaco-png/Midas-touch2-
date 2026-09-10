@@ -1,25 +1,22 @@
 # Medis Touch GitLab CI/CD
 #
 # Trading logic is intentionally NOT changed by this migration.
+# CI is temporarily manual-only to preserve the remaining GitLab compute minutes.
+# Push, merge-request, schedule, API, trigger, and parent/child pipelines are
+# suppressed at the workflow level. A pipeline can still be started explicitly
+# from GitLab's Run pipeline UI (CI_PIPELINE_SOURCE=web).
+#
 # CI efficiency policy:
-# - Merge-request pipelines validate feature branches.
-# - Main is validated after merge.
-# - Feature-branch push pipelines are suppressed when an MR exists.
-# - Python package downloads use content-addressed pip caches.
+# - Manual pipelines remain available for deliberate validation.
 # - Job-level changes rules keep unrelated suites out of a pipeline.
-# - Telegram dependency auditing runs only when dependency manifests change;
-#   ordinary code iterations do not pay the network/security-scan cost.
+# - Python package downloads use content-addressed pip caches.
+# - Telegram dependency auditing runs only when dependency manifests change.
 
 workflow:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    # Explicitly started from GitLab UI: allowed.
     - if: '$CI_PIPELINE_SOURCE == "web"'
-    - if: '$CI_PIPELINE_SOURCE == "api"'
-    - if: '$CI_PIPELINE_SOURCE == "trigger"'
-    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    # Everything else is intentionally disabled while compute minutes are scarce.
     - when: never
 
 stages:
@@ -41,20 +38,7 @@ mql5-structure:
   script:
     - python tools/validate_mql5.py EA
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - EA/**/*
-        - tools/validate_mql5.py
-        - .gitlab-ci.yml
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
-      changes:
-        - EA/**/*
-        - tools/validate_mql5.py
-        - .gitlab-ci.yml
     - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: false
-    - if: '$CI_PIPELINE_SOURCE == "api"'
       when: manual
       allow_failure: false
     - when: never
@@ -65,12 +49,7 @@ architecture-gates:
   script:
     - python tools/phase_a_d_manifest.py
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: false
-    - if: '$CI_PIPELINE_SOURCE == "api"'
       when: manual
       allow_failure: false
     - when: never
@@ -94,18 +73,7 @@ medis-touch-python:
     - bandit -r app/ -q
     - pytest -v
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - medis_touch/**/*
-        - .gitlab-ci.yml
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
-      changes:
-        - medis_touch/**/*
-        - .gitlab-ci.yml
     - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: false
-    - if: '$CI_PIPELINE_SOURCE == "api"'
       when: manual
       allow_failure: false
     - when: never
@@ -143,25 +111,13 @@ telegram-bridge:
       RATE_LIMIT_ENABLED="false" \
       pytest -v
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - telegram-bridge/**/*
-        - .gitlab-ci.yml
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
-      changes:
-        - telegram-bridge/**/*
-        - .gitlab-ci.yml
     - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: false
-    - if: '$CI_PIPELINE_SOURCE == "api"'
       when: manual
       allow_failure: false
     - when: never
 
 # Security audit is expensive relative to ordinary lint/test iterations.
-# Keep it mandatory when dependency manifests change, but do not spend a
-# compute minute on it for every recalibration code edit.
+# Keep it available only in an explicitly started manual pipeline.
 telegram-bridge-dependency-audit:
   stage: test
   image: python:3.11-slim
@@ -179,16 +135,9 @@ telegram-bridge-dependency-audit:
   script:
     - pip-audit -r requirements.txt
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - telegram-bridge/requirements.txt
-        - telegram-bridge/requirements-dev.txt
-        - .gitlab-ci.yml
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
-      changes:
-        - telegram-bridge/requirements.txt
-        - telegram-bridge/requirements-dev.txt
-        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: false
     - when: never
 
 tools-tests:
@@ -209,21 +158,7 @@ tools-tests:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
   rules:
-    # Do not run the tools suite on every Telegram Bridge edit. This was a
-    # duplicate ~38s job in the last successful pipeline and added no
-    # coverage when only bridge code changed.
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - tools/**/*
-        - .gitlab-ci.yml
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
-      changes:
-        - tools/**/*
-        - .gitlab-ci.yml
     - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: false
-    - if: '$CI_PIPELINE_SOURCE == "api"'
       when: manual
       allow_failure: false
     - when: never
@@ -247,7 +182,6 @@ daily-subscriptions:
       echo "$body"
       test "$http_code" -lt 300
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TASK == "daily-subscriptions"'
     - if: '$CI_PIPELINE_SOURCE == "web" && $SCHEDULE_TASK == "daily-subscriptions"'
       when: manual
     - when: never
@@ -281,7 +215,6 @@ biweekly-recalibration:
         echo "Skipping: off-week for the biweekly schedule."
       fi
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TASK == "biweekly-recalibration"'
     - if: '$CI_PIPELINE_SOURCE == "web" && $SCHEDULE_TASK == "biweekly-recalibration"'
       when: manual
     - when: never
