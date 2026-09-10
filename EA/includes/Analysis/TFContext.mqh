@@ -26,7 +26,7 @@
 class CTFContext
   {
 private:
-   datetime          m_lastBarTime; // FIX: per-context new-bar gate — see Detect() below
+   datetime          m_lastBarTime;
 
 public:
    ENUM_TIMEFRAMES   tf;
@@ -38,29 +38,17 @@ public:
    CLiquidity        liquidity;
    CSupportResistance sr;
    CTrendEngine      trend;
-   CVolumeEngine     volume;      // v2.6 — RVOL / breakout-volume confirmation on this TF
-   CFibonacciEngine  fibonacci;   // v2.6 — swing-anchored retracement zone on this TF
-   CValueAreaEngine  valueArea;   // v2.6 — volume-profile POC/VAH/VAL location filter on this TF
-   COrderBlock       orderBlock;  // v2.8 — HTF Order Block zones; meaningful when this context's tf is a higher TF than the entry FVG context
+   CVolumeEngine     volume;
+   CFibonacciEngine  fibonacci;
+   CValueAreaEngine  valueArea;
+   COrderBlock       orderBlock;
 
    bool              Init(string symbol, ENUM_TIMEFRAMES timeframe, int maxBars,
                           int swingStrength, double fvgMinSizeATR, double liqThresholdATR,
                           int rvolLookback = 20, int vaLookbackBars = 100, int vaNumBins = 24,
                           double vaPercent = 0.70, double obDisplacementATRMult = 1.5, double obMinBodyRatio = 0.5);
-   // FIX (perf trap flagged during the v2.8 audit): "refreshes the entire
-   // historical buffer on every tick... acceptable for 500 bars [but] not
-   // a scalable architecture." Detect() now only actually does the
-   // Refresh()+redetect work when THIS context's own timeframe has
-   // printed a new bar since the last call — a context on H4 doesn't
-   // need CopyRates/swings/BOS/liquidity/etc. recomputed on every M15
-   // tick just because the chart TF ticked. force=true bypasses the gate
-   // (used once at EA/indicator startup so the first pass always runs).
    void              Detect(bool force = false);
-  }; // FIX: this closing brace was dropped during the event-driven-refresh edit —
-     // everything below (both method bodies, plus the entire CTFContextPool class)
-     // was accidentally left nested inside CTFContext. Caught by manual brace-balance
-     // review since no MQL5 compiler is available in this environment; would have been
-     // a hard compile failure in MetaEditor.
+  };
 //+------------------------------------------------------------------+
 bool CTFContext::Init(string symbol, ENUM_TIMEFRAMES timeframe, int maxBars,
                       int swingStrength, double fvgMinSizeATR, double liqThresholdATR,
@@ -68,7 +56,7 @@ bool CTFContext::Init(string symbol, ENUM_TIMEFRAMES timeframe, int maxBars,
                       double obDisplacementATRMult, double obMinBodyRatio)
   {
    tf = timeframe;
-   m_lastBarTime = 0; // 0 guarantees the very first Detect() call always runs, force or not
+   m_lastBarTime = 0;
    if(!candles.Init(symbol, tf, maxBars))
       return false;
    swings.SetParameters(&candles, swingStrength);
@@ -89,7 +77,7 @@ void CTFContext::Detect(bool force)
   {
    datetime barTime = iTime(candles.Symbol(), tf, 0);
    if(!force && barTime != 0 && barTime == m_lastBarTime)
-      return; // no new bar on THIS context's own timeframe — nothing has changed since the last full pass
+      return;
    m_lastBarTime = barTime;
 
    candles.Refresh();
@@ -107,9 +95,10 @@ void CTFContext::Detect(bool force)
 //+------------------------------------------------------------------+
 #define TFPOOL_MAX 8
 
-// Dedupes contexts by timeframe: if Trend=D1 and someone else also asks
-// for D1, they get the SAME context (and the same, single Detect() call
-// per bar) rather than two redundant pipelines computing identical data.
+// Dedupes contexts by timeframe. If the pool is exhausted, Get() now
+// fails closed instead of silently returning an unrelated timeframe.
+// Returning the wrong context is materially worse than refusing startup:
+// it can make an H4 analysis read M15 data while all labels still claim H4.
 class CTFContextPool
   {
 private:
@@ -134,7 +123,7 @@ public:
                                double fvgMinSizeATR, double liqThresholdATR, int rvolLookback = 20,
                                int vaLookbackBars = 100, int vaNumBins = 24, double vaPercent = 0.70,
                                double obDisplacementATRMult = 1.5, double obMinBodyRatio = 0.5);
-   CTFContext*       Get(ENUM_TIMEFRAMES tf); // creates on first request, reuses after
+   CTFContext*       Get(ENUM_TIMEFRAMES tf);
    void              DetectAll(bool force = false);
   };
 //+------------------------------------------------------------------+
@@ -176,8 +165,9 @@ CTFContext* CTFContextPool::Get(ENUM_TIMEFRAMES tf)
 
    if(m_count >= TFPOOL_MAX)
      {
-      Print("MedisTouch: TFContextPool full (", TFPOOL_MAX, " timeframes) — reusing last context.");
-      return m_ctx[m_count - 1];
+      Print("MedisTouch: TFContextPool exhausted (", TFPOOL_MAX,
+            " unique timeframes) — refusing to substitute an unrelated context.");
+      return NULL;
      }
    CTFContext* c = new CTFContext();
    if(!c.Init(m_symbol, tf, m_maxBars, m_swingStrength, m_fvgMinSizeATR, m_liqThresholdATR, m_rvolLookback,
