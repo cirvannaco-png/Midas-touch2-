@@ -1,9 +1,9 @@
-# Medis Touch CI — correctness gates
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push"'
-    - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "api"'
     - when: never
 
 stages:
@@ -20,8 +20,7 @@ mql5-structure:
   script:
     - python tools/validate_mql5.py EA
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web)$/'
-      when: on_success
+    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web|api)$/'
 
 architecture-gates:
   stage: validate
@@ -29,19 +28,16 @@ architecture-gates:
   script:
     - python tools/phase_a_d_manifest.py
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web)$/'
-      when: on_success
+    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web|api)$/'
 
 medis-touch-python:
   stage: test
   image: python:3.11-slim
   cache:
     key:
-      files:
-        - medis_touch/requirements-dev.txt
+      files: [medis_touch/requirements-dev.txt]
       prefix: pip-medis-touch
-    paths:
-      - .cache/pip
+    paths: [.cache/pip]
     policy: pull-push
   before_script:
     - cd medis_touch
@@ -51,19 +47,16 @@ medis-touch-python:
     - bandit -r app/ -q
     - pytest -v
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web)$/'
-      when: on_success
+    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web|api)$/'
 
 telegram-bridge:
   stage: test
   image: python:3.11-slim
   cache:
     key:
-      files:
-        - telegram-bridge/requirements-dev.txt
+      files: [telegram-bridge/requirements-dev.txt]
       prefix: pip-telegram-bridge
-    paths:
-      - .cache/pip
+    paths: [.cache/pip]
     policy: pull-push
   before_script:
     - cd telegram-bridge
@@ -72,28 +65,18 @@ telegram-bridge:
     - ruff check app/ migrations/ scripts/ tests/
     - bandit -r app/ scripts/ -q
     - |
-      BOT_TOKEN="123456:ci-placeholder" \
-      CHAT_ID="-1000000000" \
-      ADMIN_CHAT_ID="777000777" \
-      SECRET_KEY="ci-placeholder-secret" \
-      WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" \
-      DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" \
-      RATE_LIMIT_ENABLED="false" \
-      pytest -v
+      BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" pytest -v
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web)$/'
-      when: on_success
+    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web|api)$/'
 
 tools-tests:
   stage: test
   image: python:3.11-slim
   cache:
     key:
-      files:
-        - telegram-bridge/requirements-dev.txt
-      prefix: pip-telegram-tools
-    paths:
-      - .cache/pip
+      files: [telegram-bridge/requirements-dev.txt]
+      prefix: pip-tools
+    paths: [.cache/pip]
     policy: pull-push
   before_script:
     - cd telegram-bridge
@@ -102,10 +85,8 @@ tools-tests:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web)$/'
-      when: on_success
+    - if: '$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event|web|api)$/'
 
-# Real MetaEditor compilation cannot be performed by a Linux GitLab runner.
-# This remains a mandatory release gate and must be run on the Windows MT5
-# terminal/VPS after the structural and Python gates pass. The CI contract
-# deliberately does not pretend that a structural scan is an MQL5 compiler.
+# MetaEditor compilation remains a mandatory release gate. Linux runners
+# cannot execute MetaEditor or the MT5 Strategy Tester, so CI explicitly
+# refuses to treat the structural validator as an MQL5 compiler.
