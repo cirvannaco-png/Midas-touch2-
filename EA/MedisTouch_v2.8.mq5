@@ -389,7 +389,11 @@ void OnTick()
    g_monitor.OnTickCheck();
    g_pool.DetectAll();
    if(g_chartCtx == NULL || !g_chartCtx.candles.IsReady()) return;
-   double currentAtr = g_fvgCtx.candles.GetATR(0);
+   // ATR used for setup validation, execution sizing/deviation, lifecycle
+   // drift, and dynamic-stop management must belong to the same timeframe
+   // as the EA execution chart. InpFVGTF remains a concept-specific FVG
+   // timeframe and must not silently redefine execution risk units.
+   double currentAtr = g_chartCtx.candles.GetATR(0);
    g_positions.OnTick(currentAtr);
    g_orders.Prune();
    g_riskGuard.OnTick();
