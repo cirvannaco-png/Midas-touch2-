@@ -49,6 +49,20 @@ void TestDynamicStop()
    d=engine.Evaluate(_Symbol,false,100.0,101.0,99.50,98.0,2.0,0.0);
    AssertTrue(!d.modify,"SELL never widens an existing tighter SL");
 
+   // Confirmed structural anchor takes precedence over ATR fallback.
+   d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,102.0,1.0,0.0,101.0);
+   AssertTrue(d.modify && d.stage==DSE_TRAILING,"BUY confirmed anchor selects trailing stage");
+   AssertNear(d.proposedSL,100.9,0.000001,"BUY anchor uses configured ATR buffer");
+   d=engine.Evaluate(_Symbol,false,100.0,101.0,101.0,98.0,1.0,0.0,99.0);
+   AssertTrue(d.modify && d.stage==DSE_TRAILING,"SELL confirmed anchor selects trailing stage");
+   AssertNear(d.proposedSL,99.1,0.000001,"SELL anchor uses configured ATR buffer");
+
+   // Invalid anchor geometry must fall back deterministically to ATR.
+   d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,102.0,1.0,0.0,103.0);
+   AssertTrue(d.modify && d.stage==DSE_PROTECTION,"invalid BUY anchor falls back to ATR protection");
+   d=engine.Evaluate(_Symbol,false,100.0,101.0,101.0,98.0,1.0,0.0,97.0);
+   AssertTrue(d.modify && d.stage==DSE_PROTECTION,"invalid SELL anchor falls back to ATR protection");
+
    // Protection gates are fail-closed when explicitly configured.
    cfg.maxSpreadPoints=10;
    cfg.minATR=0.50;
