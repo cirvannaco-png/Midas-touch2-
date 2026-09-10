@@ -58,6 +58,8 @@ void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
    cfg.maxSpreadPoints=InpDynamicStopMaxSpreadPoints;
    cfg.minATR=InpDynamicStopMinATR;
    cfg.maxATR=InpDynamicStopMaxATR;
+   cfg.useStructuralAnchor=InpDynamicStopUseStructuralAnchor;
+   cfg.structuralBufferATR=InpDynamicStopStructuralBufferATR;
    m_minModifyIntervalSec=MathMax(0,InpDynamicStopModifyIntervalSec);
    m_dynamicStop.Configure(cfg);
   }
@@ -123,9 +125,6 @@ void CPositionManager::OnTick(double currentAtr)
       double r=RMultiple(dec,entry,price);
       double curSL=PositionGetDouble(POSITION_SL);
 
-      // Protective management is independent of the new-entry news lock.
-      // News can prevent NEW entries but never prevents tightening an
-      // already-open position's stop.
       MqlTick tick;
       if(!SymbolInfoTick(dec.symbol,tick)) continue;
       double point=SymbolInfoDouble(dec.symbol,SYMBOL_POINT);
@@ -133,8 +132,14 @@ void CPositionManager::OnTick(double currentAtr)
 
       if(InpEnableDynamicStop && CanModifyNow(ticket))
         {
+         // The position manager currently has no separate, confirmed
+         // swing-anchor object. Passing zero therefore deliberately uses
+         // the DynamicStopEngine's ATR fallback rather than inventing a
+         // structural level. A future structure adapter can supply the
+         // anchor without changing the stop policy contract.
+         double structuralAnchor=0.0;
          DynamicStopDecision ds=m_dynamicStop.Evaluate(dec.symbol,isBuy,entry,dec.setup.stop_loss,
-                                                        curSL,price,currentAtr,spreadPoints);
+                                                        curSL,price,currentAtr,spreadPoints,structuralAnchor);
          if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
            {
             m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,ds.proposedSL,price,r,ds.reason);
