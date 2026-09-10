@@ -151,33 +151,23 @@ TradeSetup         g_lastSetup;
 datetime           g_lastAlertTime = 0;
 datetime           g_lastLoggedTime = 0;
 
-//+------------------------------------------------------------------+
-//| Custom indicator initialization function                         |
-//+------------------------------------------------------------------+
 int OnInit()
   {
    g_pool.Configure(_Symbol, InpMaxHistoryBars, InpSwingStrength, InpFVGMinSizeATR, InpInternalLiqThresholdATR,
                     InpRVOLLookback, InpVALookbackBars, InpVANumBins, InpVAPercent / 100.0,
                     InpOBDisplacementATRMult, InpOBMinBodyRatio);
-
-   // Requesting each timeframe through the pool: identical timeframes
-   // (e.g. if you set InpBOSTF and InpLiquidityTF both to H4) collapse
-   // onto ONE shared context automatically instead of computing twice.
    g_chartCtx = g_pool.Get(_Period);
    g_trendCtx = g_pool.Get(InpTrendTF);
    g_bosCtx   = g_pool.Get(InpBOSTF);
    g_liqCtx   = g_pool.Get(InpLiquidityTF);
    g_fvgCtx   = g_pool.Get(InpFVGTF);
    g_htfObCtx = g_pool.Get(InpHtfObTF);
-
    if(g_chartCtx == NULL || g_trendCtx == NULL || g_bosCtx == NULL || g_liqCtx == NULL || g_fvgCtx == NULL || g_htfObCtx == NULL)
      {
       Print("MedisTouch: failed to initialize one or more timeframe contexts.");
       return INIT_FAILED;
      }
 
-   // S/R zones use the chart's own context (g_chartCtx) — that's the
-   // resolution you're actually looking at and trading off of.
    g_scoring.Init(g_trendCtx, g_bosCtx, g_liqCtx, g_fvgCtx, g_chartCtx, &g_chartCtx.candles);
    g_scoring.ConfigureInducement(InpImpulseLookbackBars, InpImpulseATRMult, InpImpulseBodyRatio,
                                  InpEqualTolATR, InpMaxLegExtend,
@@ -193,7 +183,8 @@ int OnInit()
    g_decision.Init(&g_chartCtx.candles, g_fvgCtx, g_liqCtx, &g_scoring, InpSLBufferATR, InpMinStopSpreadMult);
    g_visuals.Init(&g_objMan);
    g_logger.Init(_Symbol, InpSessionGMTOffsetOverride);
-   g_tracker.Init(&g_logger, _Symbol, InpFVGTF, InpMaxTrackingBars, InpFillPolicy, InpReplayTF);
+   // OutcomeTracker always runs on the execution/chart timeframe.
+   g_tracker.Init(&g_logger, _Symbol, _Period, InpMaxTrackingBars, InpFillPolicy, InpReplayTF);
    g_tracker.ConfigureSimulation(InpSimRiskPercentPerTrade, InpSimAllowMinLotOverride,
                                  InpSimBreakEvenAtR, InpSimPartialAtR, InpSimPartialFraction, InpSimTrailATRMult,
                                  InpSimCommissionPerLot, InpSimSpreadPoints, InpSimSlippagePoints);
@@ -202,8 +193,6 @@ int OnInit()
    ZeroMemory(g_lastSetup);
    return INIT_SUCCEEDED;
   }
-//+------------------------------------------------------------------+
-//| Custom indicator iteration function                              |
 //+------------------------------------------------------------------+
 int OnCalculate(const int rates_total,
                 const int prev_calculated,
@@ -220,7 +209,7 @@ int OnCalculate(const int rates_total,
    if(g_chartCtx == NULL || !g_chartCtx.candles.IsReady())
       return rates_total;
 
-   double currentATR = g_fvgCtx.candles.GetATR(0); // same ATR basis used for SL sizing in TradeZone
+   double currentATR = g_fvgCtx.candles.GetATR(0);
 
    TradeSetup buySetup = g_decision.GenerateBuySetup();
    TradeSetup sellSetup = g_decision.GenerateSellSetup();
@@ -254,12 +243,12 @@ int OnCalculate(const int rates_total,
          g_logger.LogSetup(g_lastSetup, _Symbol, InpFVGTF, EnumToString(t));
         }
       if(InpTrackOutcomes)
-         g_tracker.AddSetup(g_lastSetup);
+         g_tracker.AddSetup(g_lastSetup, -1);
       g_lastLoggedTime = g_lastSetup.creation_time;
      }
 
    if(InpTrackOutcomes)
-      g_tracker.Update(g_fvgCtx);
+      g_tracker.Update(g_chartCtx);
 
    g_visuals.ClearAll();
    g_visuals.DrawBOS(&g_bosCtx.bos, InpMaxBOSDraw);
@@ -273,7 +262,7 @@ int OnCalculate(const int rates_total,
    datetime setupFillTime = 0;
    int    setupBarsToFill = 0;
    if(InpTrackOutcomes && g_lastSetup.active)
-      g_tracker.GetFillState(g_lastSetup.creation_time, setupFilled, setupFillPrice, setupFillTime, setupBarsToFill);
+      g_tracker.GetFillState(g_lastSetup.creation_time, -1, setupFilled, setupFillPrice, setupFillTime, setupBarsToFill);
    g_visuals.DrawTradeSetup(g_lastSetup, setupFilled, setupFillPrice, setupFillTime);
 
    if(InpShowDashboard)
