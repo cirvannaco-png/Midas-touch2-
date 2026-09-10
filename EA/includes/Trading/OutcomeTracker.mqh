@@ -85,7 +85,6 @@ public:
    const CCalibrationEngine* CalibrationEngine() const { return GetPointer(m_calibration); }
   };
 
-//+------------------------------------------------------------------+
 COutcomeTracker::COutcomeTracker() : m_count(0), m_maxBars(100), m_lastProcessedBarTime(0),
                                       m_logger(NULL), m_fillPolicy(FILL_CONSERVATIVE), m_replayTF(PERIOD_M1),
                                       m_riskPercent(0.5), m_allowMinLotOverride(true),
@@ -94,47 +93,30 @@ COutcomeTracker::COutcomeTracker() : m_count(0), m_maxBars(100), m_lastProcessed
                                       m_spreadPoints(10.0), m_slippagePoints(2.0),
                                       m_calibrationEnabled(false), m_decayHalfLifeBars(12.0),
                                       m_publisher(NULL), m_weightVersion("")
-  {
-   ZeroMemory(m_stats);
-  }
-//+------------------------------------------------------------------+
+  { ZeroMemory(m_stats); }
+
 void COutcomeTracker::Init(CSignalLogger* logger, string symbol, ENUM_TIMEFRAMES entryTF, int maxBars,
                            ENUM_FILL_POLICY fillPolicy, ENUM_TIMEFRAMES replayTF)
   {
-   m_logger = logger;
-   m_symbol = symbol;
-   m_entryTF = entryTF;
-   m_maxBars = MathMax(5, maxBars);
-   m_fillPolicy = fillPolicy;
-   m_replayTF = replayTF;
-   m_count = 0;
-   m_lastProcessedBarTime = 0;
-   ZeroMemory(m_stats);
-   ArrayFree(m_pending);
-   ArrayFree(m_trackingStartBarTime);
+   m_logger = logger; m_symbol = symbol; m_entryTF = entryTF; m_maxBars = MathMax(5, maxBars);
+   m_fillPolicy = fillPolicy; m_replayTF = replayTF; m_count = 0; m_lastProcessedBarTime = 0;
+   ZeroMemory(m_stats); ArrayFree(m_pending); ArrayFree(m_trackingStartBarTime);
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::ConfigureSimulation(double riskPercent, bool allowMinLotOverride,
                                           double breakEvenAtR, double partialAtR, double partialFraction,
                                           double trailAtrMult, double commissionPerLot,
                                           double spreadPoints, double slippagePoints)
   {
-   m_riskPercent = (riskPercent > 0) ? riskPercent : 0.5;
-   m_allowMinLotOverride = allowMinLotOverride;
-   m_breakEvenAtR = breakEvenAtR;
-   m_partialAtR = partialAtR;
-   m_partialFraction = MathMax(0.0, MathMin(1.0, partialFraction));
-   m_trailAtrMult = trailAtrMult;
-   m_commissionPerLot = MathMax(0.0, commissionPerLot);
-   m_spreadPoints = MathMax(0.0, spreadPoints);
+   m_riskPercent = (riskPercent > 0) ? riskPercent : 0.5; m_allowMinLotOverride = allowMinLotOverride;
+   m_breakEvenAtR = breakEvenAtR; m_partialAtR = partialAtR;
+   m_partialFraction = MathMax(0.0, MathMin(1.0, partialFraction)); m_trailAtrMult = trailAtrMult;
+   m_commissionPerLot = MathMax(0.0, commissionPerLot); m_spreadPoints = MathMax(0.0, spreadPoints);
    m_slippagePoints = MathMax(0.0, slippagePoints);
   }
-//+------------------------------------------------------------------+
-double COutcomeTracker::PointSize() const
-  {
-   return SymbolInfoDouble(m_symbol, SYMBOL_POINT);
-  }
-//+------------------------------------------------------------------+
+
+double COutcomeTracker::PointSize() const { return SymbolInfoDouble(m_symbol, SYMBOL_POINT); }
+
 double COutcomeTracker::ValuePerUnitDistance() const
   {
    double tickSize = SymbolInfoDouble(m_symbol, SYMBOL_TRADE_TICK_SIZE);
@@ -142,61 +124,38 @@ double COutcomeTracker::ValuePerUnitDistance() const
    if(tickSize <= 0 || tickValue <= 0) return 0.0;
    return tickValue / tickSize;
   }
-//+------------------------------------------------------------------+
+
 double COutcomeTracker::ApplyEntryCosts(double rawPrice, bool isBuy) const
-  {
-   double costPoints = (m_spreadPoints / 2.0 + m_slippagePoints) * PointSize();
-   return isBuy ? rawPrice + costPoints : rawPrice - costPoints;
-  }
-//+------------------------------------------------------------------+
+  { double c = (m_spreadPoints / 2.0 + m_slippagePoints) * PointSize(); return isBuy ? rawPrice + c : rawPrice - c; }
+
 double COutcomeTracker::ApplyExitCosts(double rawPrice, bool isBuy) const
-  {
-   double costPoints = (m_spreadPoints / 2.0 + m_slippagePoints) * PointSize();
-   return isBuy ? rawPrice - costPoints : rawPrice + costPoints;
-  }
-//+------------------------------------------------------------------+
+  { double c = (m_spreadPoints / 2.0 + m_slippagePoints) * PointSize(); return isBuy ? rawPrice - c : rawPrice + c; }
+
 string COutcomeTracker::SLHitLabel(const PendingSetup &p) const
-  {
-   if(!p.beDone) return "SL_Hit";
-   if(!p.partialDone) return "BreakEven_Hit";
-   return "Trail_Hit";
-  }
-//+------------------------------------------------------------------+
+  { if(!p.beDone) return "SL_Hit"; if(!p.partialDone) return "BreakEven_Hit"; return "Trail_Hit"; }
+
 void COutcomeTracker::CloseSlice(PendingSetup &p, double closeLots, double rawExitPrice, bool isBuy)
   {
    if(closeLots <= 0 || p.lots <= 0) return;
-   double exitPrice = ApplyExitCosts(rawExitPrice, isBuy);
-   double valuePerUnit = ValuePerUnitDistance();
+   double exitPrice = ApplyExitCosts(rawExitPrice, isBuy), valuePerUnit = ValuePerUnitDistance();
    double direction = isBuy ? 1.0 : -1.0;
    double grossPnL = direction * (exitPrice - p.entryFillPrice) * closeLots * valuePerUnit;
    double commission = m_commissionPerLot * closeLots;
-   p.realizedPnL += (grossPnL - commission);
-   p.totalCommission += commission;
+   p.realizedPnL += grossPnL - commission; p.totalCommission += commission;
    p.totalSpreadCost += (m_spreadPoints / 2.0) * PointSize() * closeLots * valuePerUnit;
    p.totalSlippageCost += m_slippagePoints * PointSize() * closeLots * valuePerUnit;
-   p.remainingLots -= closeLots;
-   if(p.remainingLots < 0) p.remainingLots = 0;
+   p.remainingLots -= closeLots; if(p.remainingLots < 0) p.remainingLots = 0;
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::ApplyPartial(PendingSetup &p, double triggerPrice, bool isBuy)
-  {
-   if(p.lots > 0)
-      CloseSlice(p, p.lots * m_partialFraction, triggerPrice, isBuy);
-   p.partialDone = true;
-  }
-//+------------------------------------------------------------------+
+  { if(p.lots > 0) CloseSlice(p, p.lots * m_partialFraction, triggerPrice, isBuy); p.partialDone = true; }
+
 bool COutcomeTracker::IntrabarReplayGeneric(bool isBuy, CandleData &bar0, double adverseLevel, double favorableLevel, bool &favorableFirst)
   {
-   int replaySecs = PeriodSeconds(m_replayTF);
-   int entrySecs = PeriodSeconds(m_entryTF);
+   int replaySecs = PeriodSeconds(m_replayTF), entrySecs = PeriodSeconds(m_entryTF);
    if(replaySecs <= 0 || entrySecs <= 0 || replaySecs >= entrySecs) return false;
-
-   datetime barEnd = bar0.time + entrySecs;
-   MqlRates rates[];
-   ArraySetAsSeries(rates, true);
-   int copied = CopyRates(m_symbol, m_replayTF, bar0.time, barEnd - 1, rates);
-   if(copied <= 0) return false;
-
+   datetime barEnd = bar0.time + entrySecs; MqlRates rates[]; ArraySetAsSeries(rates, true);
+   int copied = CopyRates(m_symbol, m_replayTF, bar0.time, barEnd - 1, rates); if(copied <= 0) return false;
    for(int i = copied - 1; i >= 0; i--)
      {
       bool adverseHere = isBuy ? (rates[i].low <= adverseLevel) : (rates[i].high >= adverseLevel);
@@ -207,440 +166,232 @@ bool COutcomeTracker::IntrabarReplayGeneric(bool isBuy, CandleData &bar0, double
      }
    return false;
   }
-//+------------------------------------------------------------------+
+
 bool COutcomeTracker::ResolveOrder(bool isBuy, CandleData &bar0, double adverseLevel, double favorableLevel, bool &ambiguous)
   {
    ambiguous = false;
    switch(m_fillPolicy)
      {
-      case FILL_OPTIMISTIC:
-         return true;
-      case FILL_NEAREST:
-        {
-         double distAdverse = MathAbs(bar0.open - adverseLevel);
-         double distFavorable = MathAbs(bar0.open - favorableLevel);
-         return (distFavorable < distAdverse);
-        }
+      case FILL_OPTIMISTIC: return true;
+      case FILL_NEAREST: return MathAbs(bar0.open - favorableLevel) < MathAbs(bar0.open - adverseLevel);
       case FILL_INTRABAR_REPLAY:
-        {
-         bool favorableFirst = false;
-         if(IntrabarReplayGeneric(isBuy, bar0, adverseLevel, favorableLevel, favorableFirst))
-            return favorableFirst;
-         ambiguous = true;
-         return false;
-        }
-      case FILL_AMBIGUOUS:
-         ambiguous = true;
-         return false;
-      case FILL_CONSERVATIVE:
-      default:
-         return false;
+        { bool favorableFirst = false; if(IntrabarReplayGeneric(isBuy, bar0, adverseLevel, favorableLevel, favorableFirst)) return favorableFirst; ambiguous = true; return false; }
+      case FILL_AMBIGUOUS: ambiguous = true; return false;
+      case FILL_CONSERVATIVE: default: return false;
      }
   }
-//+------------------------------------------------------------------+
+
 string COutcomeTracker::ResolveCollision(bool isBuy, CandleData &bar0, double adverseLevel, double favorableLevel,
                                          double &outExitPrice, bool &ambiguous)
   {
    bool favorableFirst = ResolveOrder(isBuy, bar0, adverseLevel, favorableLevel, ambiguous);
    if(ambiguous) { outExitPrice = bar0.close; return "Ambiguous_SLandTP"; }
    if(favorableFirst) { outExitPrice = favorableLevel; return "FinalTP_Hit"; }
-   outExitPrice = adverseLevel;
-   return "SL_Hit";
+   outExitPrice = adverseLevel; return "SL_Hit";
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::FinalizeExit(int idx, PendingSetup &p, string outcome, double rawExitPrice,
                                    bool sameBarCollision, bool ambiguous)
   {
-   bool isBuy = (p.setup.type == ORDER_TYPE_BUY);
-   if(p.remainingLots > 0)
-      CloseSlice(p, p.remainingLots, rawExitPrice, isBuy);
+   bool isBuy = (p.setup.type == ORDER_TYPE_BUY); if(p.remainingLots > 0) CloseSlice(p, p.remainingLots, rawExitPrice, isBuy);
    p.sameBarCollision = sameBarCollision;
-
    if(p.lots > 0)
      {
-      if(ambiguous)
-         m_stats.ambiguous++;
+      if(ambiguous) m_stats.ambiguous++;
       else
         {
-         if(p.realizedPnL > 0.0000001)      m_stats.wins++;
-         else if(p.realizedPnL < -0.0000001) m_stats.losses++;
-         else                                m_stats.scratches++;
-         m_stats.resolvedCount++;
-         m_stats.netPnL += p.realizedPnL;
-         if(p.realizedPnL > 0) m_stats.grossProfit += p.realizedPnL;
-         else                  m_stats.grossLoss += (-p.realizedPnL);
-         m_stats.totalCommission += p.totalCommission;
-         m_stats.totalSpreadCost += p.totalSpreadCost;
-         m_stats.totalSlippageCost += p.totalSlippageCost;
+         if(p.realizedPnL > 0.0000001) m_stats.wins++; else if(p.realizedPnL < -0.0000001) m_stats.losses++; else m_stats.scratches++;
+         m_stats.resolvedCount++; m_stats.netPnL += p.realizedPnL;
+         if(p.realizedPnL > 0) m_stats.grossProfit += p.realizedPnL; else m_stats.grossLoss += -p.realizedPnL;
+         m_stats.totalCommission += p.totalCommission; m_stats.totalSpreadCost += p.totalSpreadCost; m_stats.totalSlippageCost += p.totalSlippageCost;
          double oneRDollar = p.mgmtRiskDist * ValuePerUnitDistance() * p.lots;
          if(oneRDollar > 0) m_stats.sumRMultiple += p.realizedPnL / oneRDollar;
          if(m_calibrationEnabled) m_calibration.Record(p.setup.confidence, p.realizedPnL);
         }
      }
-
    m_pending[idx] = p;
-   if(m_logger != NULL)
-      m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, rawExitPrice, m_fillPolicy);
-
-   string coarseOutcome;
-   if(ambiguous)                         coarseOutcome = "ambiguous";
-   else if(p.lots <= 0)                  coarseOutcome = "scratch";
-   else if(p.realizedPnL > 0.0000001)    coarseOutcome = "win";
-   else if(p.realizedPnL < -0.0000001)   coarseOutcome = "loss";
-   else                                  coarseOutcome = "scratch";
-   PublishIfConfigured(m_pending[idx], coarseOutcome, ambiguous);
-   RemoveAt(idx);
+   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, rawExitPrice, m_fillPolicy);
+   string coarseOutcome = ambiguous ? "ambiguous" : (p.lots <= 0 ? "scratch" : (p.realizedPnL > 0.0000001 ? "win" : (p.realizedPnL < -0.0000001 ? "loss" : "scratch")));
+   PublishIfConfigured(m_pending[idx], coarseOutcome, ambiguous); RemoveAt(idx);
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::PublishIfConfigured(const PendingSetup &p, string coarseOutcome, bool ambiguous)
   {
    if(m_publisher == NULL || p.decisionId < 0) return;
-   bool isBuy = (p.setup.type == ORDER_TYPE_BUY);
-   double realizedR = 0.0, mfeR = 0.0, maeR = 0.0;
+   bool isBuy = (p.setup.type == ORDER_TYPE_BUY); double realizedR = 0.0, mfeR = 0.0, maeR = 0.0;
    if(coarseOutcome != "no_fill" && coarseOutcome != "ambiguous" && p.mgmtRiskDist > 0)
      {
       double oneRDollar = p.mgmtRiskDist * ValuePerUnitDistance() * p.lots;
       if(oneRDollar > 0) realizedR = p.realizedPnL / oneRDollar;
-      mfeR = isBuy ? (p.mfePrice - p.sizingEntryPrice) / p.mgmtRiskDist
-                   : (p.sizingEntryPrice - p.mfePrice) / p.mgmtRiskDist;
-      maeR = isBuy ? (p.sizingEntryPrice - p.maePrice) / p.mgmtRiskDist
-                   : (p.maePrice - p.sizingEntryPrice) / p.mgmtRiskDist;
+      mfeR = isBuy ? (p.mfePrice - p.sizingEntryPrice) / p.mgmtRiskDist : (p.sizingEntryPrice - p.mfePrice) / p.mgmtRiskDist;
+      maeR = isBuy ? (p.sizingEntryPrice - p.maePrice) / p.mgmtRiskDist : (p.maePrice - p.sizingEntryPrice) / p.mgmtRiskDist;
      }
-   string signalId = m_publisher.SignalIdForDecision(p.decisionId);
-   string direction = isBuy ? "BUY" : "SELL";
-   SetupReasons r = p.setup.reasons;
-   m_publisher.PublishOutcome(signalId, m_symbol, direction, coarseOutcome, realizedR, mfeR, maeR,
-                              p.barsElapsed, p.barsToFill, p.filled,
-                              EnumToString(r.vol_regime), EnumToString(r.session), EnumToString(r.sweep_grade),
-                              r.htf_ob_confluence, p.confidenceAtSignal, p.confidenceDecayed, p.decayBars);
+   string signalId = m_publisher.SignalIdForDecision(p.decisionId); string direction = isBuy ? "BUY" : "SELL"; SetupReasons r = p.setup.reasons;
+   m_publisher.PublishOutcome(signalId, m_symbol, direction, coarseOutcome, realizedR, mfeR, maeR, p.barsElapsed, p.barsToFill, p.filled,
+                              EnumToString(r.vol_regime), EnumToString(r.session), EnumToString(r.sweep_grade), r.htf_ob_confluence,
+                              p.confidenceAtSignal, p.confidenceDecayed, p.decayBars);
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::Resolve(int idx, string outcome, double exitPrice)
   {
-   if(m_logger != NULL)
-      m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy);
-   PublishIfConfigured(m_pending[idx], "no_fill", false);
-   RemoveAt(idx);
+   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy);
+   PublishIfConfigured(m_pending[idx], "no_fill", false); RemoveAt(idx);
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::ResolveAmbiguousNoFill(int idx, string outcome, double exitPrice)
   {
-   PendingSetup p = m_pending[idx];
-   p.sameBarCollision = true;
-   m_pending[idx] = p;
-   m_stats.ambiguous++;
-   if(m_logger != NULL)
-      m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy);
-   PublishIfConfigured(m_pending[idx], "ambiguous", true);
-   RemoveAt(idx);
+   PendingSetup p = m_pending[idx]; p.sameBarCollision = true; m_pending[idx] = p; m_stats.ambiguous++;
+   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy);
+   PublishIfConfigured(m_pending[idx], "ambiguous", true); RemoveAt(idx);
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::AddSetup(TradeSetup &setup, long decisionId)
   {
-   PendingSetup p;
-   ZeroMemory(p);
-   p.setup = setup;
-   p.decisionId = decisionId;
-   bool isBuy = (setup.type == ORDER_TYPE_BUY);
-   p.entryRef = isBuy ? setup.entry_bottom : setup.entry_top;
-   p.riskDist = MathAbs(p.entryRef - setup.stop_loss);
-   p.mfePrice = p.entryRef;
-   p.maePrice = p.entryRef;
-   p.tp1Hit = false;
-   p.tp2Hit = false;
-   p.barsElapsed = 0;
-   p.lastBarTime = 0;
-   p.filled = false;
-   p.fillTime = 0;
-   p.barsToFill = 0;
-   p.sameBarCollision = false;
-   p.confidenceAtSignal = setup.confidence;
-   p.confidenceDecayed = setup.confidence;
-   p.decayBars = 0;
-   p.sizingEntryPrice = isBuy ? setup.entry_top : setup.entry_bottom;
-   p.mgmtRiskDist = MathAbs(p.sizingEntryPrice - setup.stop_loss);
-   bool exceededBudget = false;
-   p.lots = (p.mgmtRiskDist > 0)
-            ? m_risk.CalculateLotSize(m_symbol, m_riskPercent, p.sizingEntryPrice, setup.stop_loss,
-                                      false, m_allowMinLotOverride, exceededBudget)
-            : 0.0;
-   p.currentSL = setup.stop_loss;
-   p.beDone = false;
-   p.partialDone = false;
-   p.remainingLots = p.lots;
-   p.entryFillPrice = 0.0;
-   p.realizedPnL = 0.0;
-   p.totalCommission = 0.0;
-   p.totalSpreadCost = 0.0;
-   p.totalSlippageCost = 0.0;
-
-   datetime creationBar = iTime(m_symbol, m_entryTF, 0);
-   int entrySecs = PeriodSeconds(m_entryTF);
-   datetime firstEligible = 0;
-   if(creationBar > 0 && entrySecs > 0)
-      firstEligible = creationBar + entrySecs;
-   else
-     {
-      Print("MedisTouch: OutcomeTracker could not establish the execution-bar anchor; setup tracking is refused.");
-      return;
-     }
-
-   int n = m_count++;
-   ArrayResize(m_pending, m_count);
-   ArrayResize(m_trackingStartBarTime, m_count);
-   m_pending[n] = p;
-   m_trackingStartBarTime[n] = firstEligible;
+   PendingSetup p; ZeroMemory(p); p.setup = setup; p.decisionId = decisionId; bool isBuy = (setup.type == ORDER_TYPE_BUY);
+   p.entryRef = isBuy ? setup.entry_bottom : setup.entry_top; p.riskDist = MathAbs(p.entryRef - setup.stop_loss);
+   p.mfePrice = p.entryRef; p.maePrice = p.entryRef; p.tp1Hit = false; p.tp2Hit = false; p.barsElapsed = 0; p.lastBarTime = 0;
+   p.filled = false; p.fillTime = 0; p.barsToFill = 0; p.sameBarCollision = false; p.confidenceAtSignal = setup.confidence;
+   p.confidenceDecayed = setup.confidence; p.decayBars = 0; p.sizingEntryPrice = isBuy ? setup.entry_top : setup.entry_bottom;
+   p.mgmtRiskDist = MathAbs(p.sizingEntryPrice - setup.stop_loss); bool exceededBudget = false;
+   p.lots = (p.mgmtRiskDist > 0) ? m_risk.CalculateLotSize(m_symbol, m_riskPercent, p.sizingEntryPrice, setup.stop_loss, false, m_allowMinLotOverride, exceededBudget) : 0.0;
+   p.currentSL = setup.stop_loss; p.beDone = false; p.partialDone = false; p.remainingLots = p.lots; p.entryFillPrice = 0.0; p.realizedPnL = 0.0;
+   p.totalCommission = 0.0; p.totalSpreadCost = 0.0; p.totalSlippageCost = 0.0;
+   datetime creationBar = iTime(m_symbol, m_entryTF, 0); int entrySecs = PeriodSeconds(m_entryTF); datetime firstEligible = 0;
+   if(creationBar > 0 && entrySecs > 0) firstEligible = creationBar + entrySecs;
+   else { Print("MedisTouch: OutcomeTracker could not establish the execution-bar anchor; setup tracking is refused."); return; }
+   int n = m_count++; ArrayResize(m_pending, m_count); ArrayResize(m_trackingStartBarTime, m_count); m_pending[n] = p; m_trackingStartBarTime[n] = firstEligible;
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::RemoveAt(int idx)
   {
-   for(int i = idx; i < m_count - 1; i++)
-     {
-      m_pending[i] = m_pending[i + 1];
-      m_trackingStartBarTime[i] = m_trackingStartBarTime[i + 1];
-     }
-   m_count--;
-   ArrayResize(m_pending, m_count);
-   ArrayResize(m_trackingStartBarTime, m_count);
+   for(int i = idx; i < m_count - 1; i++) { m_pending[i] = m_pending[i + 1]; m_trackingStartBarTime[i] = m_trackingStartBarTime[i + 1]; }
+   m_count--; ArrayResize(m_pending, m_count); ArrayResize(m_trackingStartBarTime, m_count);
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::ProcessFilledBar(int idx, CandleData &bar0)
   {
-   PendingSetup p = m_pending[idx];
-   bool isBuy = (p.setup.type == ORDER_TYPE_BUY);
-   double finalTP = p.setup.final_tp;
-   int guard = 0;
-   while(guard++ < 6)
+   PendingSetup p = m_pending[idx]; bool isBuy = (p.setup.type == ORDER_TYPE_BUY); double finalTP = p.setup.final_tp;
+
+   // IMPORTANT: this routine is a deterministic one-transition-per-bar state machine.
+   // A state transition created from bar0 is NEVER re-evaluated against bar0.
+   // This prevents BE/partial activation from moving a stop and then testing that
+   // newly-created stop against the same OHLC range (a historical look-ahead).
+   double adverseLevel = p.currentSL;
+   bool adverseTouched = isBuy ? (bar0.low <= adverseLevel) : (bar0.high >= adverseLevel);
+   bool tpTouched = isBuy ? (bar0.high >= finalTP) : (bar0.low <= finalTP);
+   if(adverseTouched && tpTouched)
      {
-      double adverseLevel = p.currentSL;
-      bool adverseTouched = isBuy ? (bar0.low <= adverseLevel) : (bar0.high >= adverseLevel);
-      bool tpTouched = isBuy ? (bar0.high >= finalTP) : (bar0.low <= finalTP);
-      if(adverseTouched && tpTouched)
-        {
-         double exitPrice; bool ambiguous;
-         string outcome = ResolveCollision(isBuy, bar0, adverseLevel, finalTP, exitPrice, ambiguous);
-         if(outcome == "SL_Hit") outcome = SLHitLabel(p);
-         FinalizeExit(idx, p, outcome, exitPrice, true, ambiguous);
-         return;
-        }
-      if(tpTouched)
-        {
-         FinalizeExit(idx, p, "FinalTP_Hit", finalTP, false, false);
-         return;
-        }
+      double exitPrice; bool ambiguous; string outcome = ResolveCollision(isBuy, bar0, adverseLevel, finalTP, exitPrice, ambiguous);
+      if(outcome == "SL_Hit") outcome = SLHitLabel(p); FinalizeExit(idx, p, outcome, exitPrice, true, ambiguous); return;
+     }
+   if(tpTouched) { FinalizeExit(idx, p, "FinalTP_Hit", finalTP, false, false); return; }
 
-      if(!p.beDone)
+   if(!p.beDone)
+     {
+      double beTrigger = isBuy ? p.sizingEntryPrice + m_breakEvenAtR * p.mgmtRiskDist : p.sizingEntryPrice - m_breakEvenAtR * p.mgmtRiskDist;
+      bool beTouched = isBuy ? (bar0.high >= beTrigger) : (bar0.low <= beTrigger);
+      if(adverseTouched && beTouched)
         {
-         double beTrigger = isBuy ? p.sizingEntryPrice + m_breakEvenAtR * p.mgmtRiskDist
-                                  : p.sizingEntryPrice - m_breakEvenAtR * p.mgmtRiskDist;
-         bool beTouched = isBuy ? (bar0.high >= beTrigger) : (bar0.low <= beTrigger);
-         if(adverseTouched && beTouched)
-           {
-            bool ambiguous;
-            bool favorableFirst = ResolveOrder(isBuy, bar0, adverseLevel, beTrigger, ambiguous);
-            if(ambiguous) { FinalizeExit(idx, p, "Ambiguous_SLandBE", bar0.close, true, true); return; }
-            if(!favorableFirst) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
-            p.currentSL = p.sizingEntryPrice;
-            p.beDone = true;
-            m_pending[idx] = p;
-            continue;
-           }
-         if(adverseTouched) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
-         if(beTouched)
-           {
-            p.currentSL = p.sizingEntryPrice;
-            p.beDone = true;
-            m_pending[idx] = p;
-            continue;
-           }
-         break;
+         bool ambiguous; bool favorableFirst = ResolveOrder(isBuy, bar0, adverseLevel, beTrigger, ambiguous);
+         if(ambiguous) { FinalizeExit(idx, p, "Ambiguous_SLandBE", bar0.close, true, true); return; }
+         if(!favorableFirst) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
+         p.currentSL = p.sizingEntryPrice; p.beDone = true; m_pending[idx] = p; return;
         }
-
-      if(!p.partialDone)
-        {
-         double partialTrigger = isBuy ? p.sizingEntryPrice + m_partialAtR * p.mgmtRiskDist
-                                        : p.sizingEntryPrice - m_partialAtR * p.mgmtRiskDist;
-         bool partialTouched = isBuy ? (bar0.high >= partialTrigger) : (bar0.low <= partialTrigger);
-         if(adverseTouched && partialTouched)
-           {
-            bool ambiguous;
-            bool favorableFirst = ResolveOrder(isBuy, bar0, adverseLevel, partialTrigger, ambiguous);
-            if(ambiguous) { FinalizeExit(idx, p, "Ambiguous_SLandPartial", bar0.close, true, true); return; }
-            if(!favorableFirst) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
-            ApplyPartial(p, partialTrigger, isBuy);
-            m_pending[idx] = p;
-            continue;
-           }
-         if(adverseTouched) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
-         if(partialTouched)
-           {
-            ApplyPartial(p, partialTrigger, isBuy);
-            m_pending[idx] = p;
-            continue;
-           }
-         break;
-        }
-
-      // The trail computed from this completed bar becomes effective only
-      // on the NEXT completed bar. We never test bar0.low/high against it.
       if(adverseTouched) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
-      if(bar0.atr > 0)
-        {
-         double favPrice = isBuy ? bar0.high : bar0.low;
-         double newTrail = isBuy ? favPrice - m_trailAtrMult * bar0.atr
-                                 : favPrice + m_trailAtrMult * bar0.atr;
-         bool improved = isBuy ? (newTrail > p.currentSL) : (newTrail < p.currentSL);
-         if(improved) p.currentSL = newTrail;
-        }
-      break;
+      if(beTouched) { p.currentSL = p.sizingEntryPrice; p.beDone = true; m_pending[idx] = p; return; }
+      m_pending[idx] = p; return;
      }
 
-   if(p.barsElapsed >= m_maxBars)
+   if(!p.partialDone)
      {
-      FinalizeExit(idx, p, "Timeout", bar0.close, false, false);
-      return;
+      double partialTrigger = isBuy ? p.sizingEntryPrice + m_partialAtR * p.mgmtRiskDist : p.sizingEntryPrice - m_partialAtR * p.mgmtRiskDist;
+      bool partialTouched = isBuy ? (bar0.high >= partialTrigger) : (bar0.low <= partialTrigger);
+      if(adverseTouched && partialTouched)
+        {
+         bool ambiguous; bool favorableFirst = ResolveOrder(isBuy, bar0, adverseLevel, partialTrigger, ambiguous);
+         if(ambiguous) { FinalizeExit(idx, p, "Ambiguous_SLandPartial", bar0.close, true, true); return; }
+         if(!favorableFirst) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
+         ApplyPartial(p, partialTrigger, isBuy); m_pending[idx] = p; return;
+        }
+      if(adverseTouched) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
+      if(partialTouched) { ApplyPartial(p, partialTrigger, isBuy); m_pending[idx] = p; return; }
+      m_pending[idx] = p; return;
      }
+
+   // The trail computed from this completed bar becomes effective only on the NEXT completed bar.
+   if(adverseTouched) { FinalizeExit(idx, p, SLHitLabel(p), adverseLevel, false, false); return; }
+   if(bar0.atr > 0)
+     {
+      double favPrice = isBuy ? bar0.high : bar0.low;
+      double newTrail = isBuy ? favPrice - m_trailAtrMult * bar0.atr : favPrice + m_trailAtrMult * bar0.atr;
+      bool improved = isBuy ? (newTrail > p.currentSL) : (newTrail < p.currentSL);
+      if(improved) p.currentSL = newTrail;
+     }
+   if(p.barsElapsed >= m_maxBars) { FinalizeExit(idx, p, "Timeout", bar0.close, false, false); return; }
    m_pending[idx] = p;
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::ApplyDecay(PendingSetup &p) const
   {
-   if(m_decayHalfLifeBars <= 0.0 || p.decayBars <= 0)
-     {
-      p.confidenceDecayed = p.confidenceAtSignal;
-      return;
-     }
-   double factor = MathPow(0.5, (double)p.decayBars / m_decayHalfLifeBars);
-   p.confidenceDecayed = p.confidenceAtSignal * factor;
+   if(m_decayHalfLifeBars <= 0.0 || p.decayBars <= 0) { p.confidenceDecayed = p.confidenceAtSignal; return; }
+   double factor = MathPow(0.5, (double)p.decayBars / m_decayHalfLifeBars); p.confidenceDecayed = p.confidenceAtSignal * factor;
   }
-//+------------------------------------------------------------------+
+
 void COutcomeTracker::Update(CTFContext* entryCtx)
   {
-   if(entryCtx == NULL || entryCtx.tf != m_entryTF || entryCtx.candles.Total() < 2)
-      return;
-
-   // The tracker is driven by the execution timeframe only. Index 0 is
-   // the current unfinished bar; index 1 is the last fully closed bar.
-   datetime currentBarTime = iTime(m_symbol, m_entryTF, 0);
-   if(currentBarTime <= 0) return;
+   if(entryCtx == NULL || entryCtx.tf != m_entryTF || entryCtx.candles.Total() < 2) return;
+   datetime currentBarTime = iTime(m_symbol, m_entryTF, 0); if(currentBarTime <= 0) return;
    if(currentBarTime == m_lastProcessedBarTime) return;
-
-   CandleData bar0 = entryCtx.candles.GetCandle(1);
-   if(bar0.time <= 0) return;
-   if(bar0.time >= currentBarTime) return;
+   CandleData bar0 = entryCtx.candles.GetCandle(1); if(bar0.time <= 0 || bar0.time >= currentBarTime) return;
    m_lastProcessedBarTime = currentBarTime;
-
    for(int i = m_count - 1; i >= 0; i--)
      {
-      if(i >= ArraySize(m_trackingStartBarTime)) continue;
-      if(bar0.time < m_trackingStartBarTime[i]) continue;
-
-      PendingSetup p = m_pending[i];
-      bool isBuy = (p.setup.type == ORDER_TYPE_BUY);
-      p.lastBarTime = bar0.time;
-      p.barsElapsed++;
-
+      if(i >= ArraySize(m_trackingStartBarTime) || bar0.time < m_trackingStartBarTime[i]) continue;
+      PendingSetup p = m_pending[i]; bool isBuy = (p.setup.type == ORDER_TYPE_BUY); p.lastBarTime = bar0.time; p.barsElapsed++;
       if(!p.filled)
         {
-         if(p.decayBars < p.barsElapsed)
-           {
-            p.decayBars++;
-            ApplyDecay(p);
-           }
-
+         if(p.decayBars < p.barsElapsed) { p.decayBars++; ApplyDecay(p); }
          bool touchedEntry = isBuy ? (bar0.low <= p.entryRef) : (bar0.high >= p.entryRef);
          bool touchedStop = isBuy ? (bar0.low <= p.setup.stop_loss) : (bar0.high >= p.setup.stop_loss);
-
          if(touchedEntry && touchedStop)
            {
-            bool ambiguous = false;
-            bool entryFirst = ResolveOrder(isBuy, bar0, p.setup.stop_loss, p.entryRef, ambiguous);
-            if(ambiguous)
-              {
-               ResolveAmbiguousNoFill(i, "Ambiguous_EntrySL", bar0.close);
-               continue;
-              }
-            if(!entryFirst)
-              {
-               Resolve(i, "Invalidated_NoFill", bar0.close);
-               continue;
-              }
+            bool ambiguous = false; bool entryFirst = ResolveOrder(isBuy, bar0, p.setup.stop_loss, p.entryRef, ambiguous);
+            if(ambiguous) { ResolveAmbiguousNoFill(i, "Ambiguous_EntrySL", bar0.close); continue; }
+            if(!entryFirst) { Resolve(i, "Invalidated_NoFill", bar0.close); continue; }
            }
-         else if(touchedStop)
-           {
-            Resolve(i, "Invalidated_NoFill", bar0.close);
-            continue;
-           }
-
+         else if(touchedStop) { Resolve(i, "Invalidated_NoFill", bar0.close); continue; }
          if(touchedEntry)
            {
-            p.filled = true;
-            p.fillTime = bar0.time;
-            p.barsToFill = p.barsElapsed;
-            p.mfePrice = p.entryRef;
-            p.maePrice = p.entryRef;
-            p.currentSL = p.setup.stop_loss;
-            p.remainingLots = p.lots;
+            p.filled = true; p.fillTime = bar0.time; p.barsToFill = p.barsElapsed; p.mfePrice = p.entryRef; p.maePrice = p.entryRef; p.currentSL = p.setup.stop_loss; p.remainingLots = p.lots;
             if(p.lots > 0)
               {
-               p.entryFillPrice = ApplyEntryCosts(p.sizingEntryPrice, isBuy);
-               double valuePerUnit = ValuePerUnitDistance();
+               p.entryFillPrice = ApplyEntryCosts(p.sizingEntryPrice, isBuy); double valuePerUnit = ValuePerUnitDistance();
                p.totalSpreadCost = (m_spreadPoints / 2.0) * PointSize() * p.lots * valuePerUnit;
                p.totalSlippageCost = m_slippagePoints * PointSize() * p.lots * valuePerUnit;
               }
-            // The fill bar is deliberately NOT used for MFE/MAE, TP,
-            // breakeven, partial, or trailing management. Entry time inside
-            // an OHLC bar is unknowable; management starts on the next bar.
-            m_pending[i] = p;
-            continue;
+            m_pending[i] = p; continue;
            }
-
-         if(p.barsElapsed >= m_maxBars)
-           {
-            Resolve(i, "Timeout_NoFill", bar0.close);
-            continue;
-           }
-         m_pending[i] = p;
-         continue;
+         if(p.barsElapsed >= m_maxBars) { Resolve(i, "Timeout_NoFill", bar0.close); continue; }
+         m_pending[i] = p; continue;
         }
-
-      if(isBuy)
-        {
-         if(bar0.high > p.mfePrice) p.mfePrice = bar0.high;
-         if(bar0.low < p.maePrice) p.maePrice = bar0.low;
-        }
-      else
-        {
-         if(bar0.low < p.mfePrice) p.mfePrice = bar0.low;
-         if(bar0.high > p.maePrice) p.maePrice = bar0.high;
-        }
-      if(isBuy)
-        {
-         if(!p.tp1Hit && bar0.high >= p.setup.tp1) p.tp1Hit = true;
-         if(!p.tp2Hit && bar0.high >= p.setup.tp2) p.tp2Hit = true;
-        }
-      else
-        {
-         if(!p.tp1Hit && bar0.low <= p.setup.tp1) p.tp1Hit = true;
-         if(!p.tp2Hit && bar0.low <= p.setup.tp2) p.tp2Hit = true;
-        }
-      m_pending[i] = p;
-      ProcessFilledBar(i, bar0);
+      if(isBuy) { if(bar0.high > p.mfePrice) p.mfePrice = bar0.high; if(bar0.low < p.maePrice) p.maePrice = bar0.low; }
+      else { if(bar0.low < p.mfePrice) p.mfePrice = bar0.low; if(bar0.high > p.maePrice) p.maePrice = bar0.high; }
+      if(isBuy) { if(!p.tp1Hit && bar0.high >= p.setup.tp1) p.tp1Hit = true; if(!p.tp2Hit && bar0.high >= p.setup.tp2) p.tp2Hit = true; }
+      else { if(!p.tp1Hit && bar0.low <= p.setup.tp1) p.tp1Hit = true; if(!p.tp2Hit && bar0.low <= p.setup.tp2) p.tp2Hit = true; }
+      m_pending[i] = p; ProcessFilledBar(i, bar0);
      }
   }
-//+------------------------------------------------------------------+
+
 bool COutcomeTracker::GetFillState(datetime creation_time, long decisionId,
                                     bool &filled, double &fillPrice, datetime &fillTime, int &barsToFill)
   {
    for(int i = 0; i < m_count; i++)
      {
-      if(m_pending[i].setup.creation_time != creation_time) continue;
-      if(m_pending[i].decisionId != decisionId) continue;
+      if(m_pending[i].setup.creation_time != creation_time || m_pending[i].decisionId != decisionId) continue;
       filled = m_pending[i].filled;
-      fillPrice = m_pending[i].entryRef;
-      fillTime = m_pending[i].fillTime;
-      barsToFill = m_pending[i].barsToFill;
-      return true;
+      // Expose the economic simulated fill, not the trigger/reference edge.
+      fillPrice = m_pending[i].filled ? m_pending[i].entryFillPrice : 0.0;
+      fillTime = m_pending[i].fillTime; barsToFill = m_pending[i].barsToFill; return true;
      }
    return false;
   }
