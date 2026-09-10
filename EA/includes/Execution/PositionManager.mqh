@@ -9,12 +9,14 @@
 #include "DynamicStopEngine.mqh"
 #include "DynamicStopInputs.mqh"
 #include "../Monitoring/SLModificationAudit.mqh"
+#include "../Structure/SwingDetector.mqh"
 
 class CPositionManager
   {
 private:
    COrderManager*        m_orders;
    CBrokerAdapter*       m_broker;
+   CSwingDetector*       m_structureSwings;
    CSLModificationAudit  m_audit;
    CDynamicStopEngine    m_dynamicStop;
    double                m_partialAtR;
@@ -27,21 +29,24 @@ private:
    double RMultiple(const TradeDecisionRecord &dec,double entry,double price);
    bool   CanModifyNow(ulong ticket);
    void   RecordModification(ulong ticket);
+   double ConfirmedStructuralAnchor(bool isBuy);
 
 public:
    void Init(COrderManager* orders,CBrokerAdapter* broker,
              double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
              int maxSpreadPoints=0,double minATR=0.0,double maxATR=0.0,
-             int minModifyIntervalSec=5);
+             int minModifyIntervalSec=5,CSwingDetector* structureSwings=NULL);
    void OnTick(double currentAtr);
   };
 
 void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
                             double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
-                            int maxSpreadPoints,double minATR,double maxATR,int minModifyIntervalSec)
+                            int maxSpreadPoints,double minATR,double maxATR,int minModifyIntervalSec,
+                            CSwingDetector* structureSwings)
   {
    m_orders=orders;
    m_broker=broker;
+   m_structureSwings=structureSwings;
    m_partialAtR=partialAtR;
    m_partialFraction=partialFraction;
    m_minModifyIntervalSec=MathMax(0,minModifyIntervalSec);
@@ -58,6 +63,8 @@ void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
    cfg.maxSpreadPoints=InpDynamicStopMaxSpreadPoints;
    cfg.minATR=InpDynamicStopMinATR;
    cfg.maxATR=InpDynamicStopMaxATR;
+   cfg.useStructuralAnchor=InpDynamicStopUseStructuralAnchor;
+   cfg.structuralBufferATR=InpDynamicStopStructuralBufferATR;
    m_minModifyIntervalSec=MathMax(0,InpDynamicStopModifyIntervalSec);
    m_dynamicStop.Configure(cfg);
   }
@@ -99,6 +106,29 @@ void CPositionManager::RecordModification(ulong ticket)
    m_lastModifyTimes[n]=TimeCurrent();
   }
 
+// Return the newest CONFIRMED swing on the opposite side of the position.
+// CSwingDetector only exposes swings after its left/right strength window
+// has completed, so this is market structure derived from the actual
+// terminal candle feed rather than a synthetic price level.
+// BUY  -> most recent confirmed swing low.
+// SELL -> most recent confirmed swing high.
+// The DynamicStopEngine remains the final geometry/safety gate.
+double CPositionManager::ConfirmedStructuralAnchor(bool isBuy)
+  {
+   if(m_structureSwings==NULL) return 0.0;
+   if(isBuy)
+     {
+      if(m_structureSwings.LowCount()<=0) return 0.0;
+      SwingPoint low=m_structureSwings.GetLow(0);
+      if(low.time<=0 || low.price<=0.0 || low.is_high) return 0.0;
+      return low.price;
+     }
+   if(m_structureSwings.HighCount()<=0) return 0.0;
+   SwingPoint high=m_structureSwings.GetHigh(0);
+   if(high.time<=0 || high.price<=0.0 || !high.is_high) return 0.0;
+   return high.price;
+  }
+
 void CPositionManager::OnTick(double currentAtr)
   {
    for(int i=0;i<m_orders.Total();i++)
@@ -123,9 +153,6 @@ void CPositionManager::OnTick(double currentAtr)
       double r=RMultiple(dec,entry,price);
       double curSL=PositionGetDouble(POSITION_SL);
 
-      // Protective management is independent of the new-entry news lock.
-      // News can prevent NEW entries but never prevents tightening an
-      // already-open position's stop.
       MqlTick tick;
       if(!SymbolInfoTick(dec.symbol,tick)) continue;
       double point=SymbolInfoDouble(dec.symbol,SYMBOL_POINT);
@@ -133,8 +160,13 @@ void CPositionManager::OnTick(double currentAtr)
 
       if(InpEnableDynamicStop && CanModifyNow(ticket))
         {
+         // Source the anchor from the already-running, confirmed swing
+         // detector for the entry timeframe. If no confirmed swing exists,
+         // the DynamicStopEngine receives zero and deterministically falls
+         // back to its ATR policy; it never fabricates structure.
+         double structuralAnchor=ConfirmedStructuralAnchor(isBuy);
          DynamicStopDecision ds=m_dynamicStop.Evaluate(dec.symbol,isBuy,entry,dec.setup.stop_loss,
-                                                        curSL,price,currentAtr,spreadPoints);
+                                                        curSL,price,currentAtr,spreadPoints,structuralAnchor);
          if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
            {
             m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,ds.proposedSL,price,r,ds.reason);

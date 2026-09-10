@@ -5,6 +5,8 @@
 #ifndef DYNAMICSTOPENGINE_MQH
 #define DYNAMICSTOPENGINE_MQH
 
+#include "DynamicStopInputs.mqh"
+
 enum ENUM_DYNAMIC_STOP_STAGE
   {
    DSE_STRUCTURAL = 0,
@@ -15,23 +17,27 @@ enum ENUM_DYNAMIC_STOP_STAGE
 
 struct DynamicStopConfig
   {
-   double activateAtR;          // +0.75R
-   double breakevenAtR;         // +1.00R
-   double atrMultiplier;        // structural/ATR trailing distance
-   double minImprovementPts;    // suppress meaningless modifications
-   int    maxSpreadPoints;      // 0 = disabled
-   double minATR;               // 0 = disabled
-   double maxATR;               // 0 = disabled
+   double activateAtR;
+   double breakevenAtR;
+   double atrMultiplier;
+   double minImprovementPts;
+   int    maxSpreadPoints;
+   double minATR;
+   double maxATR;
+   bool   useStructuralAnchor;
+   double structuralBufferATR;
 
    void SetDefaults()
      {
-      activateAtR       = 0.75;
-      breakevenAtR      = 1.00;
-      atrMultiplier     = 1.50;
-      minImprovementPts = 2.0;
-      maxSpreadPoints   = 0;
-      minATR            = 0.0;
-      maxATR            = 0.0;
+      activateAtR          = 0.75;
+      breakevenAtR         = 1.00;
+      atrMultiplier        = 1.50;
+      minImprovementPts    = 2.0;
+      maxSpreadPoints      = 0;
+      minATR               = 0.0;
+      maxATR               = 0.0;
+      useStructuralAnchor  = true;
+      structuralBufferATR  = 0.10;
      }
   };
 
@@ -66,12 +72,14 @@ public:
    void Configure(const DynamicStopConfig &cfg) { m_cfg=cfg; }
    DynamicStopConfig Config() const { return m_cfg; }
 
-   // Pure policy calculation. Broker checks and PositionModify remain
-   // outside this class so the same decision can be replayed in a test.
+   // structuralAnchor is supplied by the caller from a confirmed market
+   // structure point. Zero means "no anchor available" and causes a
+   // deterministic ATR fallback rather than inventing structure.
    DynamicStopDecision Evaluate(string symbol,bool isBuy,double entry,
                                 double structuralSL,double currentSL,
                                 double currentPrice,double atr,
-                                double spreadPoints=0.0) const
+                                double spreadPoints=0.0,
+                                double structuralAnchor=0.0) const
      {
       DynamicStopDecision d;
       d.stage=DSE_STRUCTURAL;
@@ -99,20 +107,36 @@ public:
                         ? currentPrice-MathMax(atr,0.0)*m_cfg.atrMultiplier
                         : currentPrice+MathMax(atr,0.0)*m_cfg.atrMultiplier;
 
+      if(m_cfg.useStructuralAnchor && structuralAnchor>0.0 && atr>0.0)
+        {
+         double anchorCandidate=isBuy
+                               ? structuralAnchor-MathMax(0.0,m_cfg.structuralBufferATR)*atr
+                               : structuralAnchor+MathMax(0.0,m_cfg.structuralBufferATR)*atr;
+         // Never manufacture a stop on the wrong side of the market.
+         bool validAnchor=isBuy ? (anchorCandidate<currentPrice && anchorCandidate>0.0)
+                                : (anchorCandidate>currentPrice && anchorCandidate>0.0);
+         if(validAnchor)
+           {
+            candidate=anchorCandidate;
+            d.stage=DSE_TRAILING;
+            d.reason="confirmed structural-anchor trailing";
+           }
+        }
+
       if(r>=m_cfg.breakevenAtR)
         {
-         d.stage=(atr>0.0 ? DSE_TRAILING : DSE_BREAKEVEN);
          if(isBuy) candidate=MathMax(candidate,entry);
          else      candidate=MathMin(candidate,entry);
+         if(d.stage!=DSE_TRAILING)
+            d.stage=(atr>0.0 ? DSE_TRAILING : DSE_BREAKEVEN);
         }
 
       if(IsTighter(isBuy,candidate,currentSL) && ImprovementLargeEnough(symbol,candidate,currentSL))
         {
          d.proposedSL=candidate;
          d.modify=true;
-         d.reason=(d.stage==DSE_BREAKEVEN)
-                   ? "+1R breakeven protection"
-                   : (d.stage==DSE_PROTECTION ? "+0.75R protection" : "ATR trailing tightened");
+         if(d.reason=="structural stop retained")
+            d.reason=(d.stage==DSE_BREAKEVEN ? "+1R breakeven protection" : "+0.75R protection");
         }
       else if(!IsTighter(isBuy,candidate,currentSL))
          d.reason="candidate would widen or equal current stop";
