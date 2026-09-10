@@ -59,24 +59,81 @@ struct TradeSetup
 //| execution validation (broker/symbol metadata) that must happen    |
 //| separately, immediately before order submission. This only        |
 //| catches internally-inconsistent setups before they're even sent.  |
+//|                                                                    |
+//| v2.18: invalidation and target geometry is now checked here too.  |
+//| The old helper only checked stop_loss, which meant a malformed     |
+//| thesis boundary or inverted target ladder could cross the wire.    |
+//| No strategy logic is created here; this is pure contract safety.   |
 //+------------------------------------------------------------------+
 bool ValidateTradeSetupShape(const TradeSetup &setup, string &error_out)
   {
+   error_out = "";
+
+   if(setup.type != ORDER_TYPE_BUY && setup.type != ORDER_TYPE_SELL)
+     {
+      error_out = "TradeSetup type is not BUY or SELL";
+      return false;
+     }
+
    if(setup.entry_top < setup.entry_bottom)
      {
       error_out = "entry_top must be >= entry_bottom";
       return false;
      }
-   if(setup.type == ORDER_TYPE_BUY && setup.stop_loss >= setup.entry_bottom)
+
+   // A non-finite value must never reach WebRequest/order submission.
+   if(!MathIsValidNumber(setup.entry_top) || !MathIsValidNumber(setup.entry_bottom) ||
+      !MathIsValidNumber(setup.invalidation) || !MathIsValidNumber(setup.stop_loss) ||
+      !MathIsValidNumber(setup.tp1) || !MathIsValidNumber(setup.tp2) ||
+      !MathIsValidNumber(setup.final_tp) || !MathIsValidNumber(setup.confidence))
      {
-      error_out = "BUY stop_loss must be below entry range";
+      error_out = "TradeSetup contains a non-finite value";
       return false;
      }
-   if(setup.type == ORDER_TYPE_SELL && setup.stop_loss <= setup.entry_top)
+
+   if(setup.confidence < 0.0 || setup.confidence > 100.0)
      {
-      error_out = "SELL stop_loss must be above entry range";
+      error_out = "confidence must be in the canonical 0..100 range";
       return false;
      }
+
+   if(setup.type == ORDER_TYPE_BUY)
+     {
+      if(setup.stop_loss >= setup.entry_bottom)
+        {
+         error_out = "BUY stop_loss must be below entry range";
+         return false;
+        }
+      if(setup.invalidation >= setup.entry_bottom)
+        {
+         error_out = "BUY invalidation must be below entry range";
+         return false;
+        }
+      if(setup.tp1 <= setup.entry_top || setup.tp2 <= setup.tp1 || setup.final_tp <= setup.tp2)
+        {
+         error_out = "BUY targets must increase: TP1 < TP2 < final TP";
+         return false;
+        }
+     }
+   else
+     {
+      if(setup.stop_loss <= setup.entry_top)
+        {
+         error_out = "SELL stop_loss must be above entry range";
+         return false;
+        }
+      if(setup.invalidation <= setup.entry_top)
+        {
+         error_out = "SELL invalidation must be above entry range";
+         return false;
+        }
+      if(setup.tp1 >= setup.entry_bottom || setup.tp2 >= setup.tp1 || setup.final_tp >= setup.tp2)
+        {
+         error_out = "SELL targets must decrease: TP1 > TP2 > final TP";
+         return false;
+        }
+     }
+
    return true;
   }
 
@@ -91,16 +148,18 @@ bool ValidateTradeSetupShape(const TradeSetup &setup, string &error_out)
 string TradeSetupToSignalJson(const string signal_id, const string symbol,
                                const string timeframe, const TradeSetup &setup)
   {
-   string direction = (setup.type == ORDER_TYPE_BUY) ? "BUY" : "SELL";
    string reasons_json = "[";
    for(int i = 0; i < ArraySize(setup.reasons.items); i++)
      {
       if(i > 0)
          reasons_json += ",";
-      reasons_json += "\"" + setup.reasons.items[i] + "\"";
+      string reason = setup.reasons.items[i];
+      StringReplace(reason, "\"", "'");
+      reasons_json += "\"" + reason + "\"";
      }
    reasons_json += "]";
 
+   string direction = (setup.type == ORDER_TYPE_BUY) ? "BUY" : "SELL";
    string json = "{";
    json += "\"signal_id\":\"" + signal_id + "\",";
    json += "\"symbol\":\"" + symbol + "\",";
@@ -108,9 +167,6 @@ string TradeSetupToSignalJson(const string signal_id, const string symbol,
    json += "\"entry\":" + DoubleToString(setup.entry_bottom, 5) + ",";
    // CORE INVARIANT, preserved across the wire: invalidation (thesis
    // boundary) and sl (protective order) are separate fields here too.
-   // This used to be dropped on the floor at this exact serialization
-   // step, which quietly defeated the entire point of section 3 the
-   // moment a setup left the EA. Do not collapse these back into one.
    json += "\"invalidation\":" + DoubleToString(setup.invalidation, 5) + ",";
    json += "\"sl\":" + DoubleToString(setup.stop_loss, 5) + ",";
    json += "\"tp1\":" + DoubleToString(setup.tp1, 5) + ",";
@@ -126,4 +182,3 @@ string TradeSetupToSignalJson(const string signal_id, const string symbol,
    // just ignore the new keys. Update both sides together.
    return json;
   }
-//+------------------------------------------------------------------+
