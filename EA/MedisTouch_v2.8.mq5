@@ -231,9 +231,12 @@ int OnInit()
       Print("MedisTouch EA: failed to initialize one or more timeframe contexts.");
       return INIT_FAILED;
      }
-   if(InpHtfObTF <= InpFVGTF || InpHtfObTF <= InpBOSTF)
+   int htfSecs = PeriodSeconds(InpHtfObTF);
+   int fvgSecs = PeriodSeconds(InpFVGTF);
+   int bosSecs = PeriodSeconds(InpBOSTF);
+   if(htfSecs <= 0 || fvgSecs <= 0 || bosSecs <= 0 || htfSecs <= fvgSecs || htfSecs <= bosSecs)
       Print("MedisTouch EA: WARNING — InpHtfObTF (", EnumToString(InpHtfObTF),
-            ") is not strictly higher than InpFVGTF/InpBOSTF. HTF Order Block confluence will be comparing zones on the same or a lower resolution than the entry timeframe, which defeats the point of the filter even if InpRequireHtfOB is left OFF for diagnostics only.");
+            ") is not strictly higher in duration than InpFVGTF/InpBOSTF. HTF Order Block confluence will be comparing zones on the same or a lower resolution than the entry timeframe, which defeats the point of the filter even if InpRequireHtfOB is left OFF for diagnostics only.");
    g_scoring.Init(g_trendCtx, g_bosCtx, g_liqCtx, g_fvgCtx, g_chartCtx, &g_chartCtx.candles);
    g_scoring.ConfigureInducement(InpImpulseLookbackBars, InpImpulseATRMult, InpImpulseBodyRatio,
                                  InpEqualTolATR, InpMaxLegExtend,
@@ -263,7 +266,7 @@ int OnInit()
    g_scoring.ConfigureStrategySelection(InpMinSelectionScore);
    g_decision.Init(&g_chartCtx.candles, g_fvgCtx, g_liqCtx, &g_scoring, InpSLBufferATR, InpMinStopSpreadMult);
    g_logger.Init(_Symbol, InpSessionGMTOffsetOverride);
-   g_tracker.Init(&g_logger, _Symbol, InpFVGTF, InpMaxTrackingBars, InpFillPolicy, InpReplayTF);
+   g_tracker.Init(&g_logger, _Symbol, _Period, InpMaxTrackingBars, InpFillPolicy, InpReplayTF);
    g_tracker.ConfigureSimulation(InpRiskPercentPerTrade, InpAllowMinLotOverride,
                                  InpBreakEvenAtR, InpPartialAtR, InpPartialFraction, InpTrailATRMult,
                                  InpSimCommissionPerLot, InpSimSpreadPoints, InpSimSlippagePoints);
@@ -274,10 +277,6 @@ int OnInit()
    g_broker.Init(InpMagicNumber);
    g_monitor.Init(_Symbol, InpHeartbeatIntervalSec, InpMaxDrawdownAlertPercent);
    g_orders.Init(&g_broker, InpMaxOpenTrades, &g_monitor);
-   // Dynamic-stop structural anchors must come from the EA execution/chart
-   // timeframe. g_fvgCtx is a concept-specific timeframe (default M15) and
-   // must not silently become the stop engine's structural source when the EA
-   // is attached to H1/H4/etc. No synthetic structure is introduced.
    g_positions.Init(&g_orders, &g_broker, InpBreakEvenAtR, InpPartialAtR, InpPartialFraction, InpTrailATRMult,
                     0, 0.0, 0.0, 5, &g_chartCtx.swings);
    g_store.Init(_Symbol);
@@ -329,7 +328,8 @@ void CheckSignalLifecycle(double currentAtr)
   {
    if(g_lifecycleDecisionId == 0) return;
    bool filled; double fillPrice; datetime fillTime; int barsToFill;
-   bool haveState = g_tracker.GetFillState(g_lifecycleCreationTime, filled, fillPrice, fillTime, barsToFill);
+   bool haveState = g_tracker.GetFillState(g_lifecycleCreationTime, g_lifecycleDecisionId,
+                                            filled, fillPrice, fillTime, barsToFill);
    if(!haveState) { g_lifecycleDecisionId = 0; return; }
    if(filled)
      {
@@ -337,7 +337,7 @@ void CheckSignalLifecycle(double currentAtr)
       return;
      }
    bool isBuy = (g_lifecycleSetup.type == ORDER_TYPE_BUY);
-   int barsSinceCreation = iBarShift(_Symbol, InpFVGTF, g_lifecycleCreationTime, false);
+   int barsSinceCreation = iBarShift(_Symbol, _Period, g_lifecycleCreationTime, false);
    if(barsSinceCreation >= InpSignalExpiryBars)
      {
       if(g_lifecycleStatus != "expired")
@@ -389,10 +389,6 @@ void OnTick()
    g_monitor.OnTickCheck();
    g_pool.DetectAll();
    if(g_chartCtx == NULL || !g_chartCtx.candles.IsReady()) return;
-   // ATR used for setup validation, execution sizing/deviation, lifecycle
-   // drift, and dynamic-stop management must belong to the same timeframe
-   // as the EA execution chart. InpFVGTF remains a concept-specific FVG
-   // timeframe and must not silently redefine execution risk units.
    double currentAtr = g_chartCtx.candles.GetATR(0);
    g_positions.OnTick(currentAtr);
    g_orders.Prune();
@@ -465,7 +461,7 @@ void OnTick()
    TradeDecisionRecord decision = g_router.Decide(chosen);
    if(InpTrackOutcomes)
       g_tracker.AddSetup(chosen, decision.decision_id);
-   g_tracker.Update(g_fvgCtx);
+   g_tracker.Update(g_chartCtx);
    if(!decision.valid || decision.action == POLICY_IGNORE) return;
    g_store.Save(decision);
    if(decision.action == POLICY_EXECUTE_ONLY || decision.action == POLICY_EXECUTE_AND_SIGNAL)
