@@ -9,30 +9,24 @@ from app.database import Base
 
 
 class SignalStatus(str, enum.Enum):
-    PENDING = "pending"                  # signal_id reserved, Telegram call not yet resolved
+    PENDING = "pending"
     ACTIVE = "active"
-    FAILED = "failed"                    # transient failure, eligible for /retry-failed
-    PERMANENTLY_FAILED = "permanently_failed"  # NonRetryableError - do not keep retrying
+    FAILED = "failed"
+    PERMANENTLY_FAILED = "permanently_failed"
     DUPLICATE = "duplicate"
 
 
-# v2.9 addition. Distinct from SignalStatus above: SignalStatus tracks
-# DELIVERY (did the Telegram call succeed), lifecycle_status tracks
-# MARKET VALIDITY (does this setup still describe current price action).
-# A signal can be status=ACTIVE (delivered fine) and lifecycle_status=
-# STALE (price ran away from it) at the same time — these are
-# orthogonal, not a single combined state machine.
 class SignalLifecycleStatus(str, enum.Enum):
-    VALID = "valid"              # default — setup still describes current conditions
-    STALE = "stale"              # price moved meaningfully past the intended entry zone
-    EXPIRED = "expired"          # unfilled for too long; EA gave up waiting
-    INVALIDATED = "invalidated"  # an opposing BOS or other structural break contradicts the original setup
+    VALID = "valid"
+    STALE = "stale"
+    EXPIRED = "expired"
+    INVALIDATED = "invalidated"
 
 
 class TradeEventStatus(str, enum.Enum):
-    PENDING = "pending"                  # event_id reserved, Telegram call not yet resolved
+    PENDING = "pending"
     ACTIVE = "active"
-    FAILED = "failed"                    # transient failure, eligible for retry
+    FAILED = "failed"
     PERMANENTLY_FAILED = "permanently_failed"
 
 
@@ -46,57 +40,19 @@ class TradeEventType(str, enum.Enum):
     CLOSED_MANUAL = "closed_manual"
 
 
-# FIX: Use PG_ENUM (sqlalchemy.dialects.postgresql.ENUM) instead of the
-# generic SAEnum (sa.Enum / from sqlalchemy import Enum as SAEnum).
-#
-# The generic class silently discards create_type=False — the keyword is
-# accepted into **kwargs and thrown away, and the Postgres dialect adapter
-# then builds a brand-new ENUM object with its own default of create_type=True,
-# completely independent of what was passed to the generic class. The result
-# is that op.create_table() fires an unguarded CREATE TYPE, which collides
-# with the type the DO $$ block just created and raises:
-#   sqlalchemy.exc.ProgrammingError: asyncpg.exceptions.DuplicateObjectError
-#
-# PG_ENUM stores and respects create_type=False directly. Verified against
-# sqlalchemy[asyncio]==2.0.25, the exact version pinned in requirements.txt.
-# SQLite is unaffected (enums map to VARCHAR there).
-_signal_status_type = PG_ENUM(
-    SignalStatus,
-    name="signalstatus",
-    create_type=False,
-)
-# v2.9. Same PG_ENUM + create_type=False pattern as _signal_status_type
-# above, for the exact DuplicateObjectError reason documented there.
+_signal_status_type = PG_ENUM(SignalStatus, name="signalstatus", create_type=False)
 _signal_lifecycle_status_type = PG_ENUM(
-    SignalLifecycleStatus,
-    name="signallifecyclestatus",
-    create_type=False,
+    SignalLifecycleStatus, name="signallifecyclestatus", create_type=False
 )
 _trade_event_status_type = PG_ENUM(
-    TradeEventStatus,
-    name="tradeeventstatus",
-    create_type=False,
+    TradeEventStatus, name="tradeeventstatus", create_type=False
 )
 _trade_event_type_type = PG_ENUM(
-    TradeEventType,
-    name="tradeeventtype",
-    create_type=False,
+    TradeEventType, name="tradeeventtype", create_type=False
 )
 
 
 class BotSetting(Base):
-    """
-    Generic key/value store for operator-facing bridge controls that must
-    survive restarts (Render redeploys, dyno cycling) - the kind of thing
-    that otherwise accumulates as one dedicated column + migration per
-    flag. Two keys currently in use:
-
-      "muted_symbols"    -> JSON list[str], e.g. ["XAUUSD", "GBPJPY"]
-      "broadcast_paused" -> JSON bool
-
-    See app/settings_store.py for the read/write helpers; nothing should
-    query this table directly outside that module.
-    """
     __tablename__ = "bot_settings"
 
     key = Column(String, primary_key=True)
@@ -109,14 +65,6 @@ class BotSetting(Base):
 
 
 class TradeEvent(Base):
-    """
-    A single lifecycle event for a live trade the EA has actually placed
-    with the broker (open/modify/partial-close/close). Distinct from
-    Signal, which is a pre-trade alert - a Signal is "here's a setup",
-    a TradeEvent is "the EA's OrderManager/PositionManager did something
-    with a real order ticket". One signal_id can have zero, one, or many
-    TradeEvents (opened, then later closed_tp1, closed_manual, etc.).
-    """
     __tablename__ = "trade_events"
     __table_args__ = (
         Index("ix_trade_events_status", "status"),
@@ -148,19 +96,26 @@ class TradeEvent(Base):
 
 class Signal(Base):
     __tablename__ = "signals"
-    __table_args__ = (Index("ix_signals_status", "status"),)
+    __table_args__ = (
+        Index("ix_signals_status", "status"),
+        Index("ix_signals_strategy", "strategy"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     signal_id = Column(String, unique=True, nullable=False, index=True)
     symbol = Column(String, nullable=False)
     direction = Column(String, nullable=False)
     entry = Column(Float, nullable=False)
+    # Canonical TradeSetup contract: thesis invalidation is NOT the broker stop.
+    invalidation = Column(Float, nullable=True)
     sl = Column(Float, nullable=False)
     tp1 = Column(Float, nullable=False)
     tp2 = Column(Float, nullable=False)
+    final_tp = Column(Float, nullable=True)
     confidence = Column(Integer, nullable=False)
     reasons = Column(JSON, nullable=False)
     timeframe = Column(String, nullable=False)
+    strategy = Column(String(64), nullable=True, index=True)
     received_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     telegram_message_id = Column(Integer, nullable=True)
     status = Column(_signal_status_type, nullable=False, default=SignalStatus.PENDING)
@@ -220,10 +175,8 @@ class PromotionRequest(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     weight_version = Column(String, nullable=False, index=True)
-    action = Column(String, nullable=False)  # "PROMOTE" | "ROLLBACK"
+    action = Column(String, nullable=False)
     decision_json = Column(JSON, nullable=False)
-    # Config-linked requests are the authoritative recalibration lifecycle.
-    # Legacy weight-only requests remain nullable for backward compatibility.
     config_hash = Column(String(64), nullable=True, index=True)
     instrument = Column(String, nullable=True, index=True)
     timeframe = Column(String, nullable=True)
