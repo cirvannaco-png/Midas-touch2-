@@ -3,20 +3,12 @@
 # Trading logic is intentionally NOT changed by this migration.
 # CI is temporarily manual-only to preserve the remaining GitLab compute minutes.
 # Push, merge-request, schedule, API, trigger, and parent/child pipelines are
-# suppressed at the workflow level. A pipeline can still be started explicitly
-# from GitLab's Run pipeline UI (CI_PIPELINE_SOURCE=web).
-#
-# CI efficiency policy:
-# - Manual pipelines remain available for deliberate validation.
-# - Job-level changes rules keep unrelated suites out of a pipeline.
-# - Python package downloads use content-addressed pip caches.
-# - Telegram dependency auditing runs only when dependency manifests change.
+# suppressed at the workflow level. The audit branch is the one deliberate
+# exception used to execute the deterministic correctness patcher.
 
 workflow:
   rules:
-    # Explicitly started from GitLab UI: allowed.
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-    # Everything else is intentionally disabled while compute minutes are scarce.
+    - if: '$CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_REF_NAME == "audit/fix-outcometracker-compiler-parity"'
     - when: never
 
 stages:
@@ -38,7 +30,7 @@ mql5-structure:
   script:
     - python tools/validate_mql5.py EA
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_REF_NAME == "audit/fix-outcometracker-compiler-parity"'
       when: manual
       allow_failure: false
     - when: never
@@ -116,8 +108,6 @@ telegram-bridge:
       allow_failure: false
     - when: never
 
-# Security audit is expensive relative to ordinary lint/test iterations.
-# Keep it available only in an explicitly started manual pipeline.
 telegram-bridge-dependency-audit:
   stage: test
   image: python:3.11-slim
@@ -172,10 +162,7 @@ daily-subscriptions:
     - |
       test -n "$BRIDGE_BASE_URL" || { echo "BRIDGE_BASE_URL is required"; exit 1; }
       test -n "$BRIDGE_API_KEY" || { echo "BRIDGE_API_KEY is required"; exit 1; }
-      response="$(curl -sS -w '\n%{http_code}' -X POST \
-        "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" \
-        -H "X-API-Key: ${BRIDGE_API_KEY}" \
-        --max-time 120)"
+      response="$(curl -sS -w '\n%{http_code}' -X POST "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120)"
       http_code="$(printf '%s\n' "$response" | tail -n1)"
       body="$(printf '%s\n' "$response" | sed '$d')"
       echo "HTTP $http_code"
@@ -195,17 +182,12 @@ biweekly-recalibration:
     - |
       test -n "$BRIDGE_BASE_URL" || { echo "BRIDGE_BASE_URL is required"; exit 1; }
       test -n "$BRIDGE_API_KEY" || { echo "BRIDGE_API_KEY is required"; exit 1; }
-
       FIRST_SATURDAY="2026-01-03"
       TODAY="$(date -u +%Y-%m-%d)"
       DAYS_SINCE="$(( ( $(date -u -d "$TODAY" +%s) - $(date -u -d "$FIRST_SATURDAY" +%s) ) / 86400 ))"
       WEEKS_SINCE="$(( DAYS_SINCE / 7 ))"
-
       if [ "$CI_PIPELINE_SOURCE" = "web" ] || [ $((WEEKS_SINCE % 2)) -eq 0 ]; then
-        response="$(curl -sS -w '\n%{http_code}' -X POST \
-          "${BRIDGE_BASE_URL%/}/admin/run-cycle" \
-          -H "X-API-Key: ${BRIDGE_API_KEY}" \
-          --max-time 120)"
+        response="$(curl -sS -w '\n%{http_code}' -X POST "${BRIDGE_BASE_URL%/}/admin/run-cycle" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120)"
         http_code="$(printf '%s\n' "$response" | tail -n1)"
         body="$(printf '%s\n' "$response" | sed '$d')"
         echo "HTTP $http_code"
