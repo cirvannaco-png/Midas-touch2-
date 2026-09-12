@@ -3,16 +3,11 @@
 //|  The analysis -> action router: turns a validated TradeSetup into  |
 //|  an explicit, ID'd, auditable TradeDecisionRecord.                |
 //+------------------------------------------------------------------+
-// Why this exists as its own layer instead of the EA calling
-// COrderManager directly: "should we act on this setup at all, and how"
-// is policy, not execution. Keeping it here means execution, signalling
-// and persistence all receive the SAME immutable record, so the order
-// that gets placed, the message subscribers receive, and the row Recovery
-// later reads can never disagree about entry/SL/TP/confidence.
 #ifndef DECISIONENGINE_MQH
 #define DECISIONENGINE_MQH
 
 #include "../Core/Config.mqh"
+#include "../Portfolio/EnvironmentPolicy.mqh"
 #include "TradeDecision.mqh"
 
 class CDecisionEngine
@@ -24,8 +19,9 @@ private:
    double            m_minConfidenceExecute;
    double            m_minConfidenceSignal;
    double            m_fullRiskConfidence;
-   int               m_maxSpreadPoints;      // 0 = no spread gate
+   int               m_maxSpreadPoints;
    long              m_nextId;
+   CEnvironmentPolicy m_environment;
 
    double            CurrentSpreadPoints() const;
 
@@ -34,8 +30,6 @@ public:
    void              Init(const string symbol, bool enableExecution, bool enableSignals,
                           double minConfidenceExecute, double minConfidenceSignal,
                           double fullRiskConfidence, int maxSpreadPoints);
-   // Recovery/restart safety: decision IDs are the matching key baked into
-   // broker order comments, so a fresh instance must never reissue one.
    void              SeedNextId(long nextId);
    long              PeekNextId() const { return m_nextId; }
    TradeDecisionRecord Decide(const TradeSetup &setup);
@@ -58,17 +52,8 @@ void CDecisionEngine::Init(const string symbol, bool enableExecution, bool enabl
    m_maxSpreadPoints = MathMax(0, maxSpreadPoints);
   }
 //+------------------------------------------------------------------+
-void CDecisionEngine::SeedNextId(long nextId)
-  {
-   if(nextId > m_nextId) m_nextId = nextId;
-  }
-//+------------------------------------------------------------------+
 double CDecisionEngine::CurrentSpreadPoints() const
   {
-   // SYMBOL_SPREAD is already in points. It can legitimately be 0 on a
-   // symbol the broker quotes with a floating spread while the market is
-   // closed - fall back to the raw ask/bid difference in that case so the
-   // gate isn't silently bypassed at weekend/rollover.
    long spread = SymbolInfoInteger(m_symbol, SYMBOL_SPREAD);
    if(spread > 0) return (double)spread;
 
@@ -80,10 +65,6 @@ double CDecisionEngine::CurrentSpreadPoints() const
    return (ask - bid) / point;
   }
 //+------------------------------------------------------------------+
-// Returns a record with valid=false / POLICY_IGNORE for anything that
-// should not be acted on. It never throws away the reason - the caller
-// (and the CSV store) keeps it, because "why did the EA not take that
-// setup" is the single most common question in production.
 TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
   {
    TradeDecisionRecord rec;
@@ -107,16 +88,25 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
       return rec;
      }
 
-   bool canExecute = m_enableExecution && setup.confidence >= m_minConfidenceExecute;
-   bool canSignal  = m_enableSignals  && setup.confidence >= m_minConfidenceSignal;
+   const double executeThreshold = m_environment.ExecuteThreshold(setup, m_minConfidenceExecute);
+   const double signalThreshold  = m_environment.SignalThreshold(setup, m_minConfidenceSignal);
+   bool canExecute = m_enableExecution && setup.confidence >= executeThreshold;
+   bool canSignal  = m_enableSignals  && setup.confidence >= signalThreshold;
+
+   string environmentReason;
+   if(m_environment.BlockExecution(setup, environmentReason))
+     {
+      canExecute = false;
+      rec.reason = environmentReason + "; ";
+     }
 
    // Spread gate applies to EXECUTION only. A wide spread makes the fill
-   // bad; it does not make the analysis wrong, so subscribers still get
-   // the signal (they may be on a different broker entirely).
+   // bad; it does not make the analysis wrong, so subscribers can still
+   // receive the signal when the signal threshold is met.
    if(canExecute && m_maxSpreadPoints > 0 && rec.spread_points > (double)m_maxSpreadPoints)
      {
       canExecute = false;
-      rec.reason = StringFormat("execution skipped: spread %.0f pts > max %d pts; ",
+      rec.reason += StringFormat("execution skipped: spread %.0f pts > max %d pts; ",
                                 rec.spread_points, m_maxSpreadPoints);
      }
 
@@ -126,19 +116,21 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
 
    if(rec.action == POLICY_IGNORE)
      {
-      rec.reason += StringFormat("confidence %.1f below thresholds (execute %.1f / signal %.1f)",
-                                 setup.confidence, m_minConfidenceExecute, m_minConfidenceSignal);
+      rec.reason += StringFormat("confidence %.1f below thresholds (execute %.1f / signal %.1f; environment %s)",
+                                 setup.confidence, executeThreshold, signalThreshold,
+                                 m_environment.StateName(setup));
       return rec;
      }
 
-   // Below the "full risk" confidence the setup is still tradable, just
-   // not at full size - CRiskEngine::CalculateLotSize() halves it when
-   // reduce_risk is set.
-   rec.reduce_risk = (setup.confidence < m_fullRiskConfidence);
+   // Existing risk reduction remains the base policy; transition/recovery
+   // conditions add another explicit reduction without changing the raw
+   // confidence used by calibration statistics.
+   rec.reduce_risk = (setup.confidence < m_fullRiskConfidence) || m_environment.ReduceRisk(setup);
    rec.valid = true;
    rec.decision_id = m_nextId++;
-   rec.reason += StringFormat("%s at confidence %.1f%s", TradePolicyToString(rec.action),
-                              setup.confidence, rec.reduce_risk ? " (reduced risk)" : "");
+   rec.reason += StringFormat("%s at confidence %.1f (environment %s)%s", TradePolicyToString(rec.action),
+                              setup.confidence, m_environment.StateName(setup),
+                              rec.reduce_risk ? " (reduced risk)" : "");
    return rec;
   }
 #endif
