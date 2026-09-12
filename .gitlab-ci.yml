@@ -8,10 +8,8 @@ workflow:
     - when: never
 
 stages: [validate, test, maintenance, deploy-support]
-
 default:
   interruptible: true
-
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -115,15 +113,21 @@ tools-tests:
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
 
-# Operational mutation jobs remain manual-only.
 daily-subscriptions:
   stage: maintenance
   image: alpine:3.22
-  before_script: ["apk add --no-cache curl coreutils"]
+  before_script:
+    - apk add --no-cache curl coreutils
   script:
     - test -n "$BRIDGE_BASE_URL"
     - test -n "$BRIDGE_API_KEY"
-    - curl -fsS -X POST "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120
+    - |
+      response="$(curl -sS -w '\n%{http_code}' -X POST "${BRIDGE_BASE_URL%/}/admin/check-subscriptions" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120)"
+      http_code="$(printf '%s\n' "$response" | tail -n1)"
+      body="$(printf '%s\n' "$response" | sed '$d')"
+      echo "HTTP $http_code"
+      echo "$body"
+      test "$http_code" -lt 300
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web" && $SCHEDULE_TASK == "daily-subscriptions"'
       when: manual
@@ -132,11 +136,13 @@ daily-subscriptions:
 biweekly-recalibration:
   stage: maintenance
   image: alpine:3.22
-  before_script: ["apk add --no-cache curl coreutils"]
+  before_script:
+    - apk add --no-cache curl coreutils
   script:
     - test -n "$BRIDGE_BASE_URL"
     - test -n "$BRIDGE_API_KEY"
-    - curl -fsS -X POST "${BRIDGE_BASE_URL%/}/admin/run-cycle" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120
+    - |
+      curl -fsS -X POST "${BRIDGE_BASE_URL%/}/admin/run-cycle" -H "X-API-Key: ${BRIDGE_API_KEY}" --max-time 120
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web" && $SCHEDULE_TASK == "biweekly-recalibration"'
       when: manual
@@ -145,7 +151,8 @@ biweekly-recalibration:
 render-sync-secrets:
   stage: deploy-support
   image: python:3.11-slim
-  before_script: ["cd telegram-bridge"]
+  before_script:
+    - cd telegram-bridge
   script: ["python scripts/render_sync_secrets.py"]
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web" && $RUN_RENDER_SYNC == "true"'
