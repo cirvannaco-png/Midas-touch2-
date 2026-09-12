@@ -4,9 +4,10 @@
 #ifndef RISKGUARD_MQH
 #define RISKGUARD_MQH
 
-// Account-level circuit breaker. The daily baseline and peak-equity halt
-// state are persisted in terminal GlobalVariables so restarting MT5 cannot
-// silently reset a risk limit.
+// Account-level circuit breaker. The daily baseline, peak-equity halt state
+// are account-wide (not chart/symbol-wide) and persisted in terminal
+// GlobalVariables so restarting one EA instance cannot silently reset the
+// account's risk limits or create a second independent risk budget.
 class CRiskGuard
   {
 private:
@@ -22,7 +23,7 @@ private:
    double   m_peakEquity;
    bool     m_hardHalted;
 
-   string   m_symbol;
+   string   m_symbol; // retained for diagnostics only; state keys are account-wide
    string   m_gvPeakKey;
    string   m_gvHaltedKey;
    string   m_gvDayStartEquityKey;
@@ -59,7 +60,7 @@ void CRiskGuard::Init(string symbol, double maxDailyLossPercent, double maxDrawd
    m_deriskStartPercent = MathMax(0.0, deriskStartPercent);
    m_deriskFloor = MathMax(0.05, MathMin(1.0, deriskFloor));
 
-   string prefix = "MedisTouch_RiskGuard_" + IntegerToString((int)AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + symbol;
+   string prefix = "MedisTouch_RiskGuard_" + IntegerToString((int)AccountInfoInteger(ACCOUNT_LOGIN));
    m_gvPeakKey = prefix + "_PeakEquity";
    m_gvHaltedKey = prefix + "_HardHalted";
    m_gvDayStartEquityKey = prefix + "_DayStartEquity";
@@ -103,7 +104,7 @@ void CRiskGuard::RolloverIfNewDay()
       m_dayStartDayOfYear = t.day_of_year;
       m_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
       PersistDayBaseline();
-      PrintFormat("MedisTouch RiskGuard: new trading day, daily loss cap reset (start equity %.2f)", m_dayStartEquity);
+      PrintFormat("MedisTouch RiskGuard: new trading day, account-wide daily loss cap reset (start equity %.2f)", m_dayStartEquity);
      }
   }
 //+------------------------------------------------------------------+
@@ -121,7 +122,7 @@ void CRiskGuard::OnTick()
      {
       m_hardHalted = true;
       GlobalVariableSet(m_gvHaltedKey, 1.0);
-      PrintFormat("MedisTouch RiskGuard: HARD HALT — drawdown %.2f%% reached %.2f%% cap. No new trades until ManualReset().",
+      PrintFormat("MedisTouch RiskGuard: HARD HALT — account drawdown %.2f%% reached %.2f%% cap. No new trades until ManualReset().",
                   CurrentDrawdownPercent(), m_maxDrawdownPercent);
      }
   }
@@ -141,7 +142,7 @@ bool CRiskGuard::IsDailyLossLimitHit(string &reasonOut)
    double lossPercent = MathMax(0.0, (m_dayStartEquity - equity) / m_dayStartEquity * 100.0);
    if(lossPercent >= m_maxDailyLossPercent)
      {
-      reasonOut = StringFormat("daily loss cap hit: down %.2f%% from today's persisted start equity %.2f (cap %.2f%%)",
+      reasonOut = StringFormat("daily loss cap hit: account down %.2f%% from today's persisted start equity %.2f (cap %.2f%%)",
                                 lossPercent, m_dayStartEquity, m_maxDailyLossPercent);
       return true;
      }
@@ -152,7 +153,7 @@ bool CRiskGuard::IsHardHalted(string &reasonOut)
   {
    reasonOut = "";
    if(!m_hardHalted) return false;
-   reasonOut = StringFormat("hard drawdown halt active — %.2f%% below peak equity %.2f (cap %.2f%%). Call ManualReset() after review.",
+   reasonOut = StringFormat("account-wide hard drawdown halt active — %.2f%% below peak equity %.2f (cap %.2f%%). Call ManualReset() after review.",
                              CurrentDrawdownPercent(), m_peakEquity, m_maxDrawdownPercent);
    return true;
   }
@@ -172,7 +173,8 @@ void CRiskGuard::ManualReset()
   {
    m_hardHalted = false;
    GlobalVariableSet(m_gvHaltedKey, 0.0);
-   Print("MedisTouch RiskGuard: hard halt manually cleared by operator.");
+   Print("MedisTouch RiskGuard: account-wide hard halt manually cleared by operator.");
   }
 //+------------------------------------------------------------------+
 #endif
+//+------------------------------------------------------------------+
