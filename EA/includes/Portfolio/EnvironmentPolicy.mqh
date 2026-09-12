@@ -11,8 +11,7 @@ enum ENUM_ENVIRONMENT_STATE
   {
    ENV_NORMAL,
    ENV_TRANSITION,
-   ENV_SHOCK,
-   ENV_RECOVERY
+   ENV_SHOCK
   };
 
 // The policy acts on setup diagnostics without changing raw setup
@@ -23,7 +22,6 @@ class CEnvironmentPolicy
 private:
    double m_transitionExecute;
    double m_transitionSignal;
-   double m_recoveryExecute;
    double m_shockMinConfidence;
 
    bool IsHighVolNewsShock(const TradeSetup &setup) const
@@ -35,16 +33,14 @@ private:
 public:
    CEnvironmentPolicy()
       : m_transitionExecute(80.0), m_transitionSignal(72.0),
-        m_recoveryExecute(78.0), m_shockMinConfidence(92.0) {}
+        m_shockMinConfidence(92.0) {}
 
    void Configure(double transitionExecute, double transitionSignal,
-                  double recoveryExecute, double shockMinConfidence)
+                  double shockMinConfidence)
      {
       m_transitionExecute = MathMax(0.0, MathMin(100.0, transitionExecute));
       m_transitionSignal = MathMax(0.0, MathMin(100.0, transitionSignal));
-      m_recoveryExecute = MathMax(m_transitionExecute,
-                                  MathMin(100.0, recoveryExecute));
-      m_shockMinConfidence = MathMax(m_recoveryExecute,
+      m_shockMinConfidence = MathMax(m_transitionExecute,
                                      MathMin(100.0, shockMinConfidence));
      }
 
@@ -63,7 +59,6 @@ public:
       ENUM_ENVIRONMENT_STATE state = Classify(setup);
       if(state == ENV_SHOCK) return MathMax(base, m_shockMinConfidence);
       if(state == ENV_TRANSITION) return MathMax(base, m_transitionExecute);
-      if(state == ENV_RECOVERY) return MathMax(base, m_recoveryExecute);
       return base;
      }
 
@@ -72,23 +67,7 @@ public:
       ENUM_ENVIRONMENT_STATE state = Classify(setup);
       if(state == ENV_SHOCK) return MathMax(base, m_shockMinConfidence);
       if(state == ENV_TRANSITION) return MathMax(base, m_transitionSignal);
-      if(state == ENV_RECOVERY) return MathMax(base, m_recoveryExecute);
       return base;
-     }
-
-   // Explicit exposure multiplier. This is applied after the normal
-   // confidence/drawdown sizing decision and can only reduce exposure.
-   // SHOCK returns zero as a defense-in-depth rule; the decision router
-   // also blocks new exposure in SHOCK, so this protects future callers.
-   double RiskMultiplier(const TradeSetup &setup) const
-     {
-      switch(Classify(setup))
-        {
-         case ENV_SHOCK:      return 0.0;
-         case ENV_TRANSITION: return 0.50;
-         case ENV_RECOVERY:   return 0.75;
-         default:             return 1.0;
-        }
      }
 
    // High volatility alone does not stop trading. A shock requires both
@@ -105,8 +84,7 @@ public:
 
    bool ReduceRisk(const TradeSetup &setup) const
      {
-      ENUM_ENVIRONMENT_STATE state = Classify(setup);
-      return state == ENV_TRANSITION || state == ENV_RECOVERY;
+      return Classify(setup) == ENV_TRANSITION;
      }
 
    string StateName(const TradeSetup &setup) const
@@ -115,7 +93,6 @@ public:
         {
          case ENV_TRANSITION: return "TRANSITION";
          case ENV_SHOCK:      return "SHOCK";
-         case ENV_RECOVERY:   return "RECOVERY";
          default:             return "NORMAL";
         }
      }
