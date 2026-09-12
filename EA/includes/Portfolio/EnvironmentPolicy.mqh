@@ -76,6 +76,21 @@ public:
       return base;
      }
 
+   // Explicit exposure multiplier. This is applied after the normal
+   // confidence/drawdown sizing decision and can only reduce exposure.
+   // SHOCK returns zero as a defense-in-depth rule; the decision router
+   // also blocks new exposure in SHOCK, so this protects future callers.
+   double RiskMultiplier(const TradeSetup &setup) const
+     {
+      switch(Classify(setup))
+        {
+         case ENV_SHOCK:      return 0.0;
+         case ENV_TRANSITION: return 0.50;
+         case ENV_RECOVERY:   return 0.75;
+         default:             return 1.0;
+        }
+     }
+
    // High volatility alone does not stop trading. A shock requires both
    // high ATR percentile and a blocked high-impact-news window. This keeps
    // genuinely strong expansion regimes tradeable while protecting the
