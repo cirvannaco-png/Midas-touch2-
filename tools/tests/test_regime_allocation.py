@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 
-from regime_allocation import RegimeAllocationThresholds, propose_multiplier
+from regime_allocation import RegimeAllocationThresholds, build_regime_allocations, propose_multiplier
 
 
 @dataclass
 class Row:
     regime: str
     outcome: str
-    realized_r: float
+    realized_r: float | None
 
 
 def test_small_sample_holds_allocation():
@@ -53,3 +53,33 @@ def test_qualified_regime_can_increase_discretely():
     assert value > 0.5
     assert value <= 1.0
     assert reason.startswith("INCREASE:")
+
+
+def test_build_allocations_carries_previous_value_for_weak_regime():
+    rows = [
+        Row("TRENDING", "win", 1.0),
+        Row("TRENDING", "loss", -1.0),
+        Row("RANGING", "win", 1.0),
+    ]
+    result = build_regime_allocations(
+        rows,
+        previous={"TRENDING": 0.70, "RANGING": 0.40},
+        thresholds=RegimeAllocationThresholds(min_trades=50),
+    )
+    assert result["TRENDING"]["risk_multiplier"] == 0.70
+    assert result["RANGING"]["risk_multiplier"] == 0.40
+    assert not result["TRENDING"]["statistically_qualified"]
+
+
+def test_build_allocations_ignores_unresolved_and_missing_r():
+    rows = [
+        Row("TRENDING", "win", 1.0),
+        Row("TRENDING", "no_fill", None),
+        Row("TRENDING", "ambiguous", None),
+        Row("TRENDING", "loss", None),
+    ]
+    result = build_regime_allocations(rows, thresholds=RegimeAllocationThresholds(min_trades=1))
+    # Only the resolved row with a realized R is evidence. The missing-R
+    # loss must not be silently treated as zero expectancy.
+    assert result["TRENDING"]["metrics"]["trades"] == 1
+    assert result["TRENDING"]["metrics"]["avg_r"] == 1.0
