@@ -32,6 +32,7 @@ else:
 
 from gating import GatingError, decide, load_cycles_from_db
 from metrics_engine import compute_report
+from regime_allocation import build_regime_allocations
 
 CYCLE_WINDOW_WEEKS = 2
 
@@ -40,6 +41,36 @@ async def _fetch_window_rows(since: datetime) -> list:
     async with async_session() as session:
         result = await session.execute(select(SignalOutcome).where(SignalOutcome.received_at >= since))
         return list(result.scalars().all())
+
+
+async def _latest_regime_allocations() -> dict[str, float]:
+    """Return the last accepted/observed allocation map, if one exists.
+
+    Calibration cycles are append-only. A new cycle therefore starts from
+    the previous cycle's allocation map rather than silently resetting every
+    regime to the 0.50 cold-start default. This preserves conservative
+    hysteresis while still allowing statistically qualified changes.
+    """
+    async with async_session() as session:
+        previous = await session.scalar(
+            select(CalibrationCycle)
+            .where(CalibrationCycle.source == "live")
+            .order_by(CalibrationCycle.generated_at.desc())
+            .limit(1)
+        )
+    if previous is None or not isinstance(previous.report_json, dict):
+        return {}
+    raw = previous.report_json.get("regime_allocations", {})
+    if not isinstance(raw, dict):
+        return {}
+    allocations: dict[str, float] = {}
+    for regime, evidence in raw.items():
+        if not isinstance(evidence, dict):
+            continue
+        value = evidence.get("risk_multiplier")
+        if isinstance(value, (int, float)):
+            allocations[str(regime)] = float(value)
+    return allocations
 
 
 async def _persist_cycle(report: dict) -> CalibrationCycle:
@@ -83,6 +114,15 @@ def _format_summary(weight_version: str, decision, cycle_report: dict) -> str:
         "",
         f"Coverage this cycle: {cov.get('total_signals', 0)} signals, no-fill rate {no_fill_str}",
     ]
+
+    allocations = cycle_report.get("regime_allocations", {})
+    if allocations:
+        lines.append("\nRegime risk allocations (statistically gated):")
+        for regime, evidence in sorted(allocations.items()):
+            multiplier = evidence.get("risk_multiplier")
+            reason = evidence.get("reason", "")
+            if multiplier is not None:
+                lines.append(f"• {regime}: {float(multiplier):.2f}x — {reason}")
     return "\n".join(lines)
 
 
@@ -133,6 +173,22 @@ async def run_cycle() -> dict:
         return {"status": "no_data", "since": since.isoformat()}
 
     report = compute_report(rows)
+
+    # Regime allocation is part of the recalibration evidence now. It is
+    # intentionally derived from the same resolved SignalOutcome population
+    # used by metrics_engine, and each proposed change must clear the
+    # independent statistical gate in tools/regime_allocation.py.
+    previous_allocations = await _latest_regime_allocations()
+    report["regime_allocations"] = build_regime_allocations(
+        rows,
+        previous=previous_allocations,
+    )
+    report["regime_allocation_policy"] = {
+        "source": "resolved_signal_outcomes",
+        "requires_statistical_qualification": True,
+        "previous_allocations": previous_allocations,
+    }
+
     cycle = await _persist_cycle(report)
     logger.info(
         f"app.calibration.run_cycle: persisted cycle {cycle.cycle_id} "
@@ -202,6 +258,7 @@ async def run_cycle() -> dict:
         "status": "ok",
         "cycle_id": cycle.cycle_id,
         "resolved_count": report["expectancy"]["resolved_count"],
+        "regime_allocations": report["regime_allocations"],
         "decisions": decisions,
         "config_lifecycle": config_lifecycle,
     }
