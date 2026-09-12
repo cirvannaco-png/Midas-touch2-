@@ -36,7 +36,6 @@ struct TradeDecisionRecord
    bool              valid;
    double            confidence;
    double            spread_points;
-   double            environment_risk_multiplier; // <=1.0; live exposure adjustment only
    datetime          decided_time;
    string            reason;
   };
