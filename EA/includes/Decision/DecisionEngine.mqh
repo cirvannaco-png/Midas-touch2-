@@ -76,6 +76,7 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
    rec.action = POLICY_IGNORE;
    rec.valid = false;
    rec.spread_points = CurrentSpreadPoints();
+   rec.environment_risk_multiplier = 1.0;
 
    if(!setup.active)
      {
@@ -90,6 +91,7 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
 
    const double executeThreshold = m_environment.ExecuteThreshold(setup, m_minConfidenceExecute);
    const double signalThreshold  = m_environment.SignalThreshold(setup, m_minConfidenceSignal);
+   rec.environment_risk_multiplier = m_environment.RiskMultiplier(setup);
    bool canExecute = m_enableExecution && setup.confidence >= executeThreshold;
    bool canSignal  = m_enableSignals  && setup.confidence >= signalThreshold;
 
@@ -100,9 +102,6 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
       rec.reason = environmentReason + "; ";
      }
 
-   // Spread gate applies to EXECUTION only. A wide spread makes the fill
-   // bad; it does not make the analysis wrong, so subscribers can still
-   // receive the signal when the signal threshold is met.
    if(canExecute && m_maxSpreadPoints > 0 && rec.spread_points > (double)m_maxSpreadPoints)
      {
       canExecute = false;
@@ -122,14 +121,11 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
       return rec;
      }
 
-   // Existing risk reduction remains the base policy; transition/recovery
-   // conditions add another explicit reduction without changing the raw
-   // confidence used by calibration statistics.
    rec.reduce_risk = (setup.confidence < m_fullRiskConfidence) || m_environment.ReduceRisk(setup);
    rec.valid = true;
    rec.decision_id = m_nextId++;
-   rec.reason += StringFormat("%s at confidence %.1f (environment %s)%s", TradePolicyToString(rec.action),
-                              setup.confidence, m_environment.StateName(setup),
+   rec.reason += StringFormat("%s at confidence %.1f (environment %s, risk multiplier %.2f)%s", TradePolicyToString(rec.action),
+                              setup.confidence, m_environment.StateName(setup), rec.environment_risk_multiplier,
                               rec.reduce_risk ? " (reduced risk)" : "");
    return rec;
   }
