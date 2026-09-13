@@ -71,7 +71,7 @@ def _validate_cycles(cycles: list[dict], weight_version: str) -> None:
         raise GatingError("cycle history mixes synthetic and live cycles; filter explicitly to one source")
     for c in cycles:
         if c.get("source") not in {"live", "synthetic"} or not c.get("cycle_id"):
-            raise GatingError("every cycle must carry source=live|synthetic and a non-empty cycle_id")
+            raise GatingError("missing required cycle provenance: every cycle must carry source=live|synthetic and a non-empty cycle_id")
 
 
 def decide(cycles: list[dict], weight_version: str, min_persistence: int = MIN_PERSISTENCE) -> Decision:
