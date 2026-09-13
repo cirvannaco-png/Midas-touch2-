@@ -1,4 +1,5 @@
 from pathlib import Path
+
 ROOT=Path(__file__).resolve().parents[2]
 EA=ROOT/"EA"/"MedisTouch_v2.8.mq5"
 TRACKER=ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh"
@@ -10,6 +11,7 @@ ORDERS=ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh"
 CONFIG_SYNC=ROOT/"EA"/"includes"/"Signals"/"ConfigSync.mqh"
 GATING=ROOT/"tools"/"gating.py"
 CI=ROOT/".gitlab-ci.yml"
+
 
 def test_live_tracker_has_decision_identity_and_broker_fill():
     t=TRACKER.read_text();assert "void AddSetup(TradeSetup &setup,long decisionId=-1)" in t;assert "bool MarkExecuted(long id,double fill,datetime t,double volume)" in t;assert "p.entryFillPrice=fill" in t;assert "p.fillTime=t" in t
@@ -46,6 +48,9 @@ def test_portfolio_fails_closed_on_uncomputable_existing_risk():
 
 def test_broker_checks_directional_trade_modes():
     t=BROKER.read_text();assert "SYMBOL_TRADE_MODE_LONGONLY" in t;assert "SYMBOL_TRADE_MODE_SHORTONLY" in t;assert "SYMBOL_TRADE_MODE_CLOSEONLY" in t
+
+def test_broker_retries_only_explicit_transient_codes():
+    t=BROKER.read_text();assert "case TRADE_RETCODE_REQUOTE:" in t;assert "case TRADE_RETCODE_CONNECTION:" in t;assert "case TRADE_RETCODE_TIMEOUT:" in t;assert "default:\n         return false;" in t
 
 def test_recovery_restores_actual_broker_entry():
     t=RECOVERY.read_text();assert "double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);" in t;assert "RestoreTrade(dec,currentVolume,ticket,state,actualEntry)" in t
