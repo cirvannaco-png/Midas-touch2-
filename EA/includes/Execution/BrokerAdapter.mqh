@@ -45,10 +45,19 @@ void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs)
    m_lastLatencyUs = 0;
   }
 //+------------------------------------------------------------------+
+// Only explicitly transient, pre-deal conditions may be retried.
+// Ambiguous/server/authorization failures are fail-closed: retrying an
+// already accepted request can create duplicate exposure.
 bool CBrokerAdapter::IsRetryable(uint retcode)
   {
    switch(retcode)
      {
+      case TRADE_RETCODE_REQUOTE:
+      case TRADE_RETCODE_PRICE_CHANGED:
+      case TRADE_RETCODE_PRICE_OFF:
+      case TRADE_RETCODE_CONNECTION:
+      case TRADE_RETCODE_TIMEOUT:
+         return true;
       case TRADE_RETCODE_INVALID_STOPS:
       case TRADE_RETCODE_TRADE_DISABLED:
       case TRADE_RETCODE_MARKET_CLOSED:
@@ -68,9 +77,13 @@ bool CBrokerAdapter::IsRetryable(uint retcode)
       case TRADE_RETCODE_HEDGE_PROHIBITED:
       case TRADE_RETCODE_SERVER_DISABLES_AT:
       case TRADE_RETCODE_CLIENT_DISABLES_AT:
+      case TRADE_RETCODE_INVALID_PRICE:
+      case TRADE_RETCODE_INVALID_VOLUME:
+      case TRADE_RETCODE_INVALID:
+      case TRADE_RETCODE_TRADE_CONTEXT_BUSY:
          return false;
       default:
-         return true;
+         return false;
      }
   }
 //+------------------------------------------------------------------+
@@ -82,6 +95,9 @@ int CBrokerAdapter::DelayForRetcode(uint retcode)
       case TRADE_RETCODE_PRICE_CHANGED:
       case TRADE_RETCODE_PRICE_OFF:
          return MathMin(m_retryDelayMs,50);
+      case TRADE_RETCODE_CONNECTION:
+      case TRADE_RETCODE_TIMEOUT:
+         return MathMax(m_retryDelayMs,500);
       default:
          return m_retryDelayMs;
      }
@@ -94,9 +110,6 @@ bool CBrokerAdapter::IsConnected()
    return false;
   }
 //+------------------------------------------------------------------+
-// requireFullOpen=true is used for new exposure. In addition to disabled
-// and close-only, enforce the broker's directional-only modes. This avoids
-// sending a known-doomed BUY to a SHORTONLY symbol (or vice versa).
 bool CBrokerAdapter::IsMarketOpenForTrading(string symbol, bool requireFullOpen, bool isBuy)
   {
    long mode=(long)SymbolInfoInteger(symbol,SYMBOL_TRADE_MODE);
@@ -132,40 +145,18 @@ bool CBrokerAdapter::ValidateStopDistance(string symbol, double refPrice, double
      }
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    if(point<=0.0) return false;
-
    long stopsLevelPts=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
    long freezeLevelPts=SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
    double minDist=MathMax(stopsLevelPts,freezeLevelPts)*point;
-
    if(sl>0.0)
      {
       bool wrongSide=isBuy ? (sl>=refPrice) : (sl<=refPrice);
-      if(wrongSide)
-        {
-         PrintFormat("MedisTouch BrokerAdapter: %s refused — SL %.5f is on the wrong side of reference %.5f.",action,sl,refPrice);
-         return false;
-        }
-      if(minDist>0.0 && MathAbs(refPrice-sl)<minDist)
-        {
-         PrintFormat("MedisTouch BrokerAdapter: %s refused — SL %.5f is too close to %.5f (requires >= %.1f points).",
-                     action,sl,refPrice,minDist/point);
-         return false;
-        }
+      if(wrongSide || (minDist>0.0 && MathAbs(refPrice-sl)<minDist)) return false;
      }
    if(tp>0.0)
      {
       bool wrongSide=isBuy ? (tp<=refPrice) : (tp>=refPrice);
-      if(wrongSide)
-        {
-         PrintFormat("MedisTouch BrokerAdapter: %s refused — TP %.5f is on the wrong side of reference %.5f.",action,tp,refPrice);
-         return false;
-        }
-      if(minDist>0.0 && MathAbs(refPrice-tp)<minDist)
-        {
-         PrintFormat("MedisTouch BrokerAdapter: %s refused — TP %.5f is too close to %.5f (requires >= %.1f points).",
-                     action,tp,refPrice,minDist/point);
-         return false;
-        }
+      if(wrongSide || (minDist>0.0 && MathAbs(refPrice-tp)<minDist)) return false;
      }
    return true;
   }
@@ -182,18 +173,9 @@ ulong CBrokerAdapter::ResolvePositionTicket()
   {
    ulong dealTicket=m_trade.ResultDeal();
    if(dealTicket==0) return m_trade.ResultOrder();
-   if(!HistoryDealSelect(dealTicket))
-     {
-      PrintFormat("MedisTouch BrokerAdapter: could not select deal #%d; falling back to order ticket.",dealTicket);
-      return m_trade.ResultOrder();
-     }
+   if(!HistoryDealSelect(dealTicket)) return m_trade.ResultOrder();
    ulong positionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
-   if(positionId==0)
-     {
-      PrintFormat("MedisTouch BrokerAdapter: deal #%d has no DEAL_POSITION_ID; falling back to order ticket.",dealTicket);
-      return m_trade.ResultOrder();
-     }
-   return positionId;
+   return positionId>0 ? positionId : m_trade.ResultOrder();
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
@@ -207,17 +189,11 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
      {
       if(m_trade.Buy(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketBuy"))
         {
-         ticketOut=ResolvePositionTicket();
-         fillPriceOut=m_trade.ResultPrice();
-         m_lastLatencyUs=GetMicrosecondCount()-t0;
-         return ticketOut>0;
+         ticketOut=ResolvePositionTicket(); fillPriceOut=m_trade.ResultPrice(); m_lastLatencyUs=GetMicrosecondCount()-t0; return ticketOut>0;
         }
-      uint code=m_trade.ResultRetcode();
-      if(!IsRetryable(code)) break;
-      Sleep(DelayForRetcode(code));
+      uint code=m_trade.ResultRetcode(); if(!IsRetryable(code)) break; Sleep(DelayForRetcode(code));
      }
-   m_lastLatencyUs=GetMicrosecondCount()-t0;
-   return false;
+   m_lastLatencyUs=GetMicrosecondCount()-t0; return false;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
@@ -231,79 +207,42 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
      {
       if(m_trade.Sell(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketSell"))
         {
-         ticketOut=ResolvePositionTicket();
-         fillPriceOut=m_trade.ResultPrice();
-         m_lastLatencyUs=GetMicrosecondCount()-t0;
-         return ticketOut>0;
+         ticketOut=ResolvePositionTicket(); fillPriceOut=m_trade.ResultPrice(); m_lastLatencyUs=GetMicrosecondCount()-t0; return ticketOut>0;
         }
-      uint code=m_trade.ResultRetcode();
-      if(!IsRetryable(code)) break;
-      Sleep(DelayForRetcode(code));
+      uint code=m_trade.ResultRetcode(); if(!IsRetryable(code)) break; Sleep(DelayForRetcode(code));
      }
-   m_lastLatencyUs=GetMicrosecondCount()-t0;
-   return false;
+   m_lastLatencyUs=GetMicrosecondCount()-t0; return false;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::PlaceLimit(string symbol,ENUM_ORDER_TYPE type,double volume,double price,double sl,double tp,ulong &ticketOut,string comment)
   {
-   ticketOut=0;
-   if(type!=ORDER_TYPE_BUY_LIMIT && type!=ORDER_TYPE_SELL_LIMIT) return false;
+   ticketOut=0; if(type!=ORDER_TYPE_BUY_LIMIT && type!=ORDER_TYPE_SELL_LIMIT) return false;
    bool isBuy=(type==ORDER_TYPE_BUY_LIMIT);
-   if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,isBuy)) { m_lastLatencyUs=0; return false; }
-   if(!ValidateStopDistance(symbol,price,sl,tp,isBuy,"PlaceLimit")) { m_lastLatencyUs=0; return false; }
+   if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,isBuy)) return false;
+   if(!ValidateStopDistance(symbol,price,sl,tp,isBuy,"PlaceLimit")) return false;
    ulong t0=GetMicrosecondCount();
    for(int i=0;i<m_maxRetries;i++)
      {
-      bool ok=isBuy
-               ? m_trade.BuyLimit(volume,price,symbol,sl,tp,ORDER_TIME_GTC,0,comment)
-               : m_trade.SellLimit(volume,price,symbol,sl,tp,ORDER_TIME_GTC,0,comment);
-      if(ok && LastRequestOk("PlaceLimit"))
-        {
-         ticketOut=m_trade.ResultOrder();
-         m_lastLatencyUs=GetMicrosecondCount()-t0;
-         return ticketOut>0;
-        }
-      uint code=m_trade.ResultRetcode();
-      if(!IsRetryable(code)) break;
-      Sleep(DelayForRetcode(code));
+      bool ok=isBuy ? m_trade.BuyLimit(volume,price,symbol,sl,tp,ORDER_TIME_GTC,0,comment) : m_trade.SellLimit(volume,price,symbol,sl,tp,ORDER_TIME_GTC,0,comment);
+      if(ok && LastRequestOk("PlaceLimit")){ticketOut=m_trade.ResultOrder();m_lastLatencyUs=GetMicrosecondCount()-t0;return ticketOut>0;}
+      uint code=m_trade.ResultRetcode();if(!IsRetryable(code))break;Sleep(DelayForRetcode(code));
      }
-   m_lastLatencyUs=GetMicrosecondCount()-t0;
-   return false;
+   m_lastLatencyUs=GetMicrosecondCount()-t0;return false;
   }
 //+------------------------------------------------------------------+
-bool CBrokerAdapter::CancelOrder(ulong ticket)
-  {
-   if(!IsConnected()) return false;
-   if(m_trade.OrderDelete(ticket)) return true;
-   LastRequestOk("CancelOrder"); return false;
-  }
+bool CBrokerAdapter::CancelOrder(ulong ticket){if(!IsConnected())return false;if(m_trade.OrderDelete(ticket))return true;LastRequestOk("CancelOrder");return false;}
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
   {
-   if(!IsConnected()) return false;
-   if(!PositionSelectByTicket(ticket)) return false;
-   string symbol=PositionGetString(POSITION_SYMBOL);
-   bool isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-   double refPrice=isBuy ? SymbolInfoDouble(symbol,SYMBOL_BID) : SymbolInfoDouble(symbol,SYMBOL_ASK);
-   if(!ValidateStopDistance(symbol,refPrice,sl,tp,isBuy,"ModifySLTP")) return false;
-   if(m_trade.PositionModify(ticket,sl,tp)) return true;
-   LastRequestOk("ModifySLTP"); return false;
+   if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
+   string symbol=PositionGetString(POSITION_SYMBOL);bool isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+   double refPrice=isBuy?SymbolInfoDouble(symbol,SYMBOL_BID):SymbolInfoDouble(symbol,SYMBOL_ASK);
+   if(!ValidateStopDistance(symbol,refPrice,sl,tp,isBuy,"ModifySLTP"))return false;
+   if(m_trade.PositionModify(ticket,sl,tp))return true;LastRequestOk("ModifySLTP");return false;
   }
 //+------------------------------------------------------------------+
-bool CBrokerAdapter::ClosePartial(ulong ticket,double volume)
-  {
-   if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
-   if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   if(m_trade.PositionClosePartial(ticket,volume)) return true;
-   LastRequestOk("ClosePartial"); return false;
-  }
+bool CBrokerAdapter::ClosePartial(ulong ticket,double volume){if(!IsConnected()||!PositionSelectByTicket(ticket))return false;if(m_trade.PositionClosePartial(ticket,volume))return true;LastRequestOk("ClosePartial");return false;}
 //+------------------------------------------------------------------+
-bool CBrokerAdapter::CloseFull(ulong ticket)
-  {
-   if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
-   if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   if(m_trade.PositionClose(ticket)) return true;
-   LastRequestOk("CloseFull"); return false;
-  }
+bool CBrokerAdapter::CloseFull(ulong ticket){if(!IsConnected()||!PositionSelectByTicket(ticket))return false;if(m_trade.PositionClose(ticket))return true;LastRequestOk("CloseFull");return false;}
 #endif
 //+------------------------------------------------------------------+
