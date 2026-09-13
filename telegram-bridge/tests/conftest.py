@@ -30,9 +30,22 @@ VALID_TRADE_OPENED = {
 
 @pytest.fixture(scope="session", autouse=True)
 def _create_test_tables():
-    """Create a deterministic, isolated SQLite schema for the test session."""
+    """Create a deterministic, isolated SQLite schema for the test session.
+
+    The CI script runs each test_*.py as a separate pytest process, so this
+    session-scoped fixture fires once per file.  Deleting the DB file before
+    create_all avoids the 'index already exists' OperationalError that occurs
+    when SQLite retains orphaned indexes across processes.
+    """
     import app.models  # noqa: F401 - register all models on Base.metadata
     from app.database import Base, engine
+
+    # Remove any leftover SQLite file so create_all starts from a clean slate.
+    db_url = os.environ.get("DATABASE_URL", "")
+    if db_url.startswith("sqlite"):
+        db_path = db_url.split("///", 1)[-1]
+        if db_path and db_path != ":memory:" and os.path.exists(db_path):
+            os.remove(db_path)
 
     async def _setup():
         await engine.dispose()
