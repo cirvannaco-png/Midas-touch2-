@@ -98,7 +98,6 @@ class Signal(Base):
     __tablename__ = "signals"
     __table_args__ = (
         Index("ix_signals_status", "status"),
-        Index("ix_signals_strategy", "strategy"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
