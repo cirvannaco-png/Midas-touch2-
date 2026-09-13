@@ -68,6 +68,26 @@ private:
       return MathAbs(candidate-current)>=m_cfg.minImprovementPts*point;
      }
 
+   // Preflight the same broker geometry that BrokerAdapter validates before
+   // sending PositionModify().  For an open BUY the protective stop is
+   // measured from Bid; for an open SELL it is measured from Ask.  Stops
+   // and freeze levels are broker constraints, not strategy preferences.
+   // Rejecting here avoids repeatedly generating modifications that the
+   // broker is guaranteed to reject while the price is inside the freeze
+   // band. BrokerAdapter still performs the authoritative final check.
+   bool BrokerDistanceSafe(string symbol,bool isBuy,double candidate,double currentPrice) const
+     {
+      if(candidate<=0.0 || currentPrice<=0.0) return false;
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      if(point<=0.0) return false;
+      long stops=(long)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
+      long freeze=(long)SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+      long required=MathMax(stops,freeze);
+      if(required<=0) return true;
+      double minDistance=(double)required*point;
+      return MathAbs(currentPrice-candidate)>=minDistance;
+     }
+
 public:
    void Configure(const DynamicStopConfig &cfg) { m_cfg=cfg; }
    DynamicStopConfig Config() const { return m_cfg; }
@@ -129,6 +149,12 @@ public:
          else      candidate=MathMin(candidate,entry);
          if(d.stage!=DSE_TRAILING)
             d.stage=(atr>0.0 ? DSE_TRAILING : DSE_BREAKEVEN);
+        }
+
+      if(!BrokerDistanceSafe(symbol,isBuy,candidate,currentPrice))
+        {
+         d.reason="broker stops/freeze distance protection";
+         return d;
         }
 
       if(IsTighter(isBuy,candidate,currentSL) && ImprovementLargeEnough(symbol,candidate,currentSL))
