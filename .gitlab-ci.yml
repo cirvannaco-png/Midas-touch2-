@@ -1,30 +1,38 @@
 # Midas Touch production validation pipeline.
-# Validation runs for main and merge-request pipelines. Feature-branch pushes
-# are suppressed when an open MR exists to avoid duplicate CI consumption.
-# Production deployment is deliberately absent until validation is green.
+# Only merge-request and default-branch pipelines are created.
+# No deployment is performed by this pipeline.
 workflow:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS'
-      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: never
 
 stages:
   - validate
   - test
 
+default:
+  interruptible: true
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
 mql5-structure:
   stage: validate
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
+  rules:
+    - when: on_success
 
 architecture-gates:
   stage: validate
   image: python:3.11-slim
   script:
     - python tools/phase_a_d_manifest.py
+  rules:
+    - when: on_success
 
 medis-touch-python:
   stage: test
@@ -44,6 +52,8 @@ medis-touch-python:
     - ruff check app/ tests/
     - bandit -r app/ -q
     - pytest -v
+  rules:
+    - when: on_success
 
 telegram-bridge:
   stage: test
@@ -64,6 +74,8 @@ telegram-bridge:
     - bandit -r app/ scripts/ -q
     - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python scripts/render_sync_secrets.py --dry-run
     - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" pytest -v
+  rules:
+    - when: on_success
 
 telegram-bridge-dependency-audit:
   stage: test
@@ -81,6 +93,8 @@ telegram-bridge-dependency-audit:
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
   script:
     - pip-audit -r requirements.txt
+  rules:
+    - when: on_success
 
 tools-tests:
   stage: test
@@ -99,3 +113,5 @@ tools-tests:
   script:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
+  rules:
+    - when: on_success
