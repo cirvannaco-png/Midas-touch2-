@@ -1,10 +1,13 @@
 # Midas Touch production validation pipeline.
-# Production deployment is deliberately absent: validation must be green before
-# any separately authorized deployment action is enabled.
+# Validation runs only for main and merge-request pipelines. Feature-branch push
+# pipelines are suppressed when an open MR exists, so each change gets one CI run.
+# Production deployment is deliberately absent until validation is green.
 workflow:
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
     - when: never
 
 stages:
@@ -16,16 +19,12 @@ mql5-structure:
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_PIPELINE_SOURCE == "merge_request_event"'
 
 architecture-gates:
   stage: validate
   image: python:3.11-slim
   script:
     - python tools/phase_a_d_manifest.py
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_PIPELINE_SOURCE == "merge_request_event"'
 
 medis-touch-python:
   stage: test
@@ -45,8 +44,6 @@ medis-touch-python:
     - ruff check app/ tests/
     - bandit -r app/ -q
     - pytest -v
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_PIPELINE_SOURCE == "merge_request_event"'
 
 telegram-bridge:
   stage: test
@@ -67,8 +64,6 @@ telegram-bridge:
     - bandit -r app/ scripts/ -q
     - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python scripts/render_sync_secrets.py --dry-run
     - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" pytest -v
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_PIPELINE_SOURCE == "merge_request_event"'
 
 telegram-bridge-dependency-audit:
   stage: test
@@ -86,8 +81,6 @@ telegram-bridge-dependency-audit:
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
   script:
     - pip-audit -r requirements.txt
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_PIPELINE_SOURCE == "merge_request_event"'
 
 tools-tests:
   stage: test
@@ -106,5 +99,3 @@ tools-tests:
   script:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_PIPELINE_SOURCE == "merge_request_event"'
