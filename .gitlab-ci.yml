@@ -32,7 +32,7 @@ governance-tests:
   script:
     - ruff check medis_touch/app/ medis_touch/tests/
     - bandit -r medis_touch/app/ -q
-    - pytest -v medis_touch/tests/
+    - PYTHONPATH="$CI_PROJECT_DIR" pytest -v medis_touch/tests/test_prediction_governance.py
   rules:
     - when: on_success
 
@@ -53,7 +53,7 @@ medis-touch-python:
   script:
     - ruff check app/ tests/
     - bandit -r app/ -q
-    - pytest -v
+    - PYTHONPATH="$PWD/.." pytest -v
   rules:
     - when: on_success
 
