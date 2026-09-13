@@ -8,10 +8,6 @@
 #include "../Core/CandleData.mqh"
 #include "SwingDetector.mqh"
 
-// NOTE: by design this engine tracks only the single most recent bullish
-// CHoCH and the single most recent bearish CHoCH (mirrors how CHoCH is
-// actually used — as a live structure-shift flag, not a historical log).
-// Count() will be 0, 1, or 2.
 class CCHOCH
   {
 private:
@@ -25,7 +21,7 @@ public:
    void              Init(CSwingDetector* swings, CCandleData* candles);
    void              Detect();
    int               Count() const { return m_count; }
-   CHOCHPoint        Get(int i) const; // 0 = most recent
+   CHOCHPoint        Get(int i) const;
   };
 //+------------------------------------------------------------------+
 CCHOCH::CCHOCH() : m_swings(NULL), m_candles(NULL), m_count(0) {}
@@ -46,7 +42,9 @@ void CCHOCH::Detect()
    ZeroMemory(bear);
    bool haveBull = false, haveBear = false;
 
-   // Bearish -> Bullish CHoCH: last lower high broken upwards
+   // Bearish -> Bullish CHoCH: a confirmed lower high is broken by a
+   // completed candle. Shift 0 is deliberately excluded: a forming bar
+   // must never manufacture a structure-shift event.
    int highCount = m_swings.HighCount();
    if(highCount >= 2)
      {
@@ -54,13 +52,14 @@ void CCHOCH::Detect()
         {
          SwingPoint curr = m_swings.GetHigh(i);
          SwingPoint prev = m_swings.GetHigh(i + 1);
-         if(curr.price < prev.price) // lower high
+         if(curr.price < prev.price)
            {
-            for(int bar = curr.bar_index - 1; bar >= 0; bar--)
+            for(int bar = curr.bar_index - 1; bar >= 1; bar--)
               {
-               if(m_candles.GetCandle(bar).close > curr.price)
+               CandleData cd = m_candles.GetCandle(bar);
+               if(cd.close > curr.price)
                  {
-                  bull.time = m_candles.GetCandle(bar).time;
+                  bull.time = cd.time;
                   bull.price = curr.price;
                   bull.bullish = true;
                   bull.bar_index = bar;
@@ -73,7 +72,8 @@ void CCHOCH::Detect()
         }
      }
 
-   // Bullish -> Bearish CHoCH: last higher low broken downwards
+   // Bullish -> Bearish CHoCH: a confirmed higher low is broken by a
+   // completed candle. Shift 0 is deliberately excluded for causality.
    int lowCount = m_swings.LowCount();
    if(lowCount >= 2)
      {
@@ -81,13 +81,14 @@ void CCHOCH::Detect()
         {
          SwingPoint curr = m_swings.GetLow(i);
          SwingPoint prev = m_swings.GetLow(i + 1);
-         if(curr.price > prev.price) // higher low
+         if(curr.price > prev.price)
            {
-            for(int bar = curr.bar_index - 1; bar >= 0; bar--)
+            for(int bar = curr.bar_index - 1; bar >= 1; bar--)
               {
-               if(m_candles.GetCandle(bar).close < curr.price)
+               CandleData cd = m_candles.GetCandle(bar);
+               if(cd.close < curr.price)
                  {
-                  bear.time = m_candles.GetCandle(bar).time;
+                  bear.time = cd.time;
                   bear.price = curr.price;
                   bear.bullish = false;
                   bear.bar_index = bar;
@@ -100,8 +101,6 @@ void CCHOCH::Detect()
         }
      }
 
-   // Order by actual recency (smaller bar_index = more recent) rather
-   // than a fixed bullish-then-bearish assumption.
    if(haveBull && haveBear)
      {
       if(bull.bar_index <= bear.bar_index)
