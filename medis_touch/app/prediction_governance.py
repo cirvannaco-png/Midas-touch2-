@@ -10,11 +10,11 @@ used by the backend, offline calibration jobs, and fault-injection tests.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from math import sqrt
 from statistics import mean
-from typing import Iterable
 
 
 class EvidenceState(str, Enum):
@@ -69,10 +69,6 @@ class Prediction:
             raise ValueError("model_score must be in [0, 1]")
         if not 0.0 <= self.calibrated_probability <= 1.0:
             raise ValueError("calibrated_probability must be in [0, 1]")
-        if not all((self.model_score, self.calibrated_probability)):
-            # Zero is valid; this guard intentionally does nothing beyond
-            # keeping the fields explicit in the contract.
-            pass
 
 
 @dataclass(frozen=True)
@@ -128,11 +124,14 @@ class CalibrationModel:
     def bins(self, width: float = 0.05) -> list[CalibrationBin]:
         if not 0 < width <= 1:
             raise ValueError("width must be in (0, 1]")
-        count = int(round(1 / width))
+        count = round(1 / width)
         result: list[CalibrationBin] = []
         for i in range(count):
             lo, hi = i * width, min(1.0, (i + 1) * width)
-            rows = [o for o in self._observations if lo <= o.model_score < hi or (hi == 1.0 and o.model_score <= hi)]
+            rows = [
+                o for o in self._observations
+                if lo <= o.model_score < hi or (hi == 1.0 and o.model_score <= hi)
+            ]
             wins = sum(o.won for o in rows)
             n = len(rows)
             p = wins / n if n else 0.0
@@ -143,14 +142,21 @@ class CalibrationModel:
     def probability(self, model_score: float) -> tuple[float, int, bool]:
         if not 0 <= model_score <= 1:
             raise ValueError("model_score must be in [0, 1]")
-        b = next(b for b in self.bins() if b.lower <= model_score < b.upper or (b.upper == 1 and model_score <= b.upper))
-        # UNKNOWN is not a probability. Return a neutral diagnostic value
-        # plus an explicit sufficiency flag; consumers must not relabel it.
+        b = next(
+            b for b in self.bins()
+            if b.lower <= model_score < b.upper or (b.upper == 1 and model_score <= b.upper)
+        )
         return b.probability, b.sample_count, b.sample_count >= self.min_sample
 
     def expected_return(self, model_score: float) -> float | None:
-        b = next(b for b in self.bins() if b.lower <= model_score < b.upper or (b.upper == 1 and model_score <= b.upper))
-        rows = [o for o in self._observations if b.lower <= o.model_score < b.upper or (b.upper == 1 and o.model_score <= b.upper)]
+        b = next(
+            b for b in self.bins()
+            if b.lower <= model_score < b.upper or (b.upper == 1 and model_score <= b.upper)
+        )
+        rows = [
+            o for o in self._observations
+            if b.lower <= o.model_score < b.upper or (b.upper == 1 and o.model_score <= b.upper)
+        ]
         if len(rows) < self.min_sample:
             return None
         return mean(o.outcome_r - o.costs_r for o in rows)
@@ -212,8 +218,6 @@ def reconcile(local: LocalState | None, broker: BrokerTruth | None) -> LocalStat
     if broker is None:
         if local is None:
             raise RuntimeError("NO_LOCAL_OR_BROKER_STATE")
-        # Local-only records cannot prove a live broker position. Mark them
-        # unresolved instead of inventing broker truth.
         return LocalState(local.decision_id, local.broker_order_id, local.position_id,
                           "RECONCILIATION_REQUIRED", local.volume, local.stop_loss,
                           local.version_fingerprint)
