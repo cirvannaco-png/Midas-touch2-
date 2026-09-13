@@ -23,7 +23,7 @@ def test_live_tracker_closes_from_broker_deals():
     t=TRACKER.read_text();assert "bool MarkClosed" in t;assert "p.realizedPnL+=netPnl" in t
 
 def test_restart_restores_tracker_state():
-    t=RECOVERY.read_text();assert "m_tracker->RestoreExecuted(dec.setup,decisionId,actualEntry" in t;assert "g_activeOutcomeTracker" in t
+    t=RECOVERY.read_text();assert "m_tracker.RestoreExecuted(dec.setup,decisionId,actualEntry" in t;assert "g_activeOutcomeTracker" in t
 
 def test_ea_initializes_tracker_on_chart_execution_timeframe():
     t=EA.read_text();assert "g_tracker.Init(&g_logger,_Symbol,_Period" in t;assert "g_tracker.Update(g_chartCtx);" in t;assert "g_tracker.Update(g_fvgCtx);" not in t
@@ -56,7 +56,7 @@ def test_recovery_restores_actual_broker_entry():
     t=RECOVERY.read_text();assert "double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);" in t;assert "RestoreTrade(dec,currentVolume,ticket,state,actualEntry)" in t
 
 def test_order_manager_exposes_real_fill():
-    t=ORDERS.read_text();assert "double FillPriceForDecision(long decisionId)" in t;assert "double m_trades[idx].fillPrice" in t
+    t=ORDERS.read_text();assert "double COrderManager::FillPriceForDecision(long decisionId)" in t;assert "m_trades[idx].fillPrice" in t
 
 def test_config_sync_retries_failed_ack():
     t=CONFIG_SYNC.read_text();assert "m_lastAckedHash" in t;assert "will retry on the next poll" in t;assert "m_lastAckedHash==configHash" in t
