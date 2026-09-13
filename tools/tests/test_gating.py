@@ -6,6 +6,7 @@ untagged cycle must raise, overlapping CIs must mean HOLD not a coin
 flip, and a genuine direction contradiction must ROLLBACK rather than
 average itself away. Each gets a direct test.
 """
+import pytest
 from gating import GatingError, _validate_cycles, decide
 from stats import wilson_ci
 
