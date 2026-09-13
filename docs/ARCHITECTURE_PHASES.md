@@ -1,6 +1,21 @@
-# Medis Touch — Phase A-D Architecture Gates
+# Midas Touch — Architecture Phases and Production Gates
 
-This document is the release gate for the staged Medis Touch hardening/refactor. It is intentionally conservative: infrastructure and architecture changes must not silently change trading decisions.
+## Current certification status
+
+Midas Touch is **not yet certified production-ready**. The architecture is fail-closed, but certification requires current green CI evidence plus external MetaEditor/MT5 validation and controlled forward-test evidence.
+
+This integration branch consolidates production-hardening changes before they are merged to `main`.
+
+### Mandatory evidence gates
+
+1. Repository structural validation.
+2. Python, Telegram bridge, dependency, and invariant tests.
+3. GitLab CI green on the exact candidate commit.
+4. MetaEditor compilation of every production EA entry point with **0 errors**; warnings must be reviewed rather than ignored.
+5. MT5 Strategy Tester backtest using the production EA/inputs, with no-lookahead and execution/indicator parity verification.
+6. Walk-forward/holdout validation on actual persisted EA outcomes or an actual exported Strategy Tester OutcomeTracker dataset.
+7. Controlled demo forward test with broker acknowledgement, restart recovery, duplicate-order, reconciliation, and telemetry verification.
+8. Only after all preceding gates pass: production enablement.
 
 ## Non-negotiable execution chain
 
@@ -8,118 +23,14 @@ This document is the release gate for the staged Medis Touch hardening/refactor.
 
 Any failed gate is fail-closed. No best-effort order placement.
 
-## Phase A — Security, copy boundary, broker capability, freshness, risk
+## Payment-provider rule
 
-### Gate A1 — Subscriber/payment authorization
-- Payment verification must be provider-authenticated and reconciled.
-- Payment notification alone never grants copy access.
-- Entitlement must be active at the time of copy authorization.
-- Explicit copy authorization is mandatory.
-- Copy keys are subscriber-specific and revocable.
+Payment notifications never grant entitlement without provider verification and transaction reconciliation. The Ammer Pay adapter is currently **disabled** because its server-to-server endpoint, webhook schema, and signature contract have not been verified from a primary merchant API specification. It must not be enabled for production until those contracts are supplied and tested. A verified provider must be used instead.
 
-### Gate A2 — Signal freshness
-- Five-minute hard stale rejection is the XAUUSD baseline.
-- Freshness is evaluated from signal age against an instrument policy.
-- A stale signal is rejected, never silently refreshed or executed.
+## Statistical calibration rule
 
-### Gate A3 — Risk
-- User selects requested risk within the published interface.
-- System validates the requested risk against the authoritative maximum.
-- An invalid request is rejected; it is never silently clamped.
+Regime allocations may only change when the configured sample-size, Wilson-confidence, expectancy, drawdown, and improvement gates pass. Aggregate regime statistics must not be blindly applied across strategies when strategy attribution is available; calibration must preserve strategy/regime attribution to prevent cross-strategy contamination.
 
-### Gate A4 — Portfolio
-- Portfolio admission is authoritative and persistent.
-- A caller-provided `portfolio_admitted=true` is not trusted as proof.
-- The execution boundary re-verifies admission immediately before broker submission.
+## Validation limitation
 
-### Gate A5 — Broker capability
-The implementation target is exactly ten broker capabilities:
-1. Exness
-2. Pepperstone
-3. HFM
-4. IC Markets
-5. XM
-6. IG
-7. OANDA
-8. AvaTrade
-9. FXTM
-10. FP Markets
-
-`Pepperdine` is a compatibility alias for `Pepperstone`, not an additional broker.
-
-**Status:** core Phase-A infrastructure is present in the current repository. Production activation remains configuration/test dependent.
-
-## Phase B — API route decomposition
-
-Target route boundaries:
-- `api/signals.py`
-- `api/trades.py`
-- `api/outcomes.py`
-- `api/webhook.py`
-- `api/admin.py`
-
-The existing `telegram-bridge/app/routes.py` remains the compatibility surface until the decomposed routes have equivalent tests and are wired into the application. No route is deleted merely for architectural cleanliness.
-
-**Gate:** old and new route behavior must be equivalent for authentication, idempotency, validation, status codes, persistence, and Telegram side effects.
-
-**Status:** decomposition is not yet certified complete; keep the compatibility route intact during migration.
-
-## Phase C — Application-service decomposition
-
-Business workflows must move behind explicit services without changing external contracts. Minimum service boundaries:
-- signal ingestion / lifecycle
-- trade-event ingestion
-- outcome recording
-- subscription/entitlement
-- copy authorization
-- payment reconciliation
-- calibration/config promotion
-- execution admission
-
-Routes become adapters. Services own orchestration. Domain rules remain testable without HTTP.
-
-**Status:** service-level modules already exist in several areas (`copy_trading`, `subscriptions`, `payment_webhook`, `calibration`, `execution_validation`). Consolidation and dependency-direction checks are still required before declaring Phase C complete.
-
-## Phase D — Domain-model decomposition
-
-The monolithic bridge model surface must be decomposed into cohesive model modules while preserving database table names and migration compatibility. Candidate boundaries are:
-- signals
-- trades
-- outcomes
-- subscribers/entitlements
-- payments
-- calibration/configuration
-- operational settings/audit
-
-Rules:
-- no destructive migration during decomposition;
-- preserve existing table names and enum values;
-- add compatibility imports where necessary;
-- migrations must remain linear and reversible in intent;
-- tests must cover serialization, persistence, and route/service integration.
-
-**Status:** the current repository still has a consolidated `telegram-bridge/app/models.py`; Phase D is therefore **not complete**.
-
-## Promotion rule
-
-A phase is complete only when:
-
-1. implementation exists;
-2. tests cover the changed behavior;
-3. CI is green;
-4. no trading-decision behavior was changed unintentionally;
-5. backward compatibility is demonstrated;
-6. the corresponding diff is reviewable.
-
-Green CI alone does not certify a phase.
-
-## Current baseline
-
-- Main branch: clean migrated repository.
-- Latest verified pipeline: GitLab pipeline 24 — passed.
-- MQL5 structural validation, Python tests, Telegram bridge tests, and tools tests are covered by CI.
-- GitHub reference URL was requested for comparison, but the web fetch of the supplied repository URL is currently unavailable. Therefore GitHub-to-GitLab equivalence is **not** certified by this document.
-
-## Safety boundary
-
-Do not modify strategy scoring, signal generation, confidence calculation, risk sizing, or execution behavior merely to perform the Phase B-D structural refactor. Architectural changes must preserve behavior first; behavioral improvements require a separate validated change.
+Static MQL5 validation proves source/include integrity only. It does **not** prove MetaEditor compilation, broker behavior, Strategy Tester correctness, or live execution safety. Those remain explicit certification gates.

@@ -45,32 +45,20 @@ void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs)
    m_lastLatencyUs = 0;
   }
 //+------------------------------------------------------------------+
+// Retry only broker outcomes that are explicitly transient. Unknown,
+// ambiguous, or permanent outcomes fail closed to prevent duplicate exposure.
 bool CBrokerAdapter::IsRetryable(uint retcode)
   {
    switch(retcode)
      {
-      case TRADE_RETCODE_INVALID_STOPS:
-      case TRADE_RETCODE_TRADE_DISABLED:
-      case TRADE_RETCODE_MARKET_CLOSED:
-      case TRADE_RETCODE_NO_MONEY:
-      case TRADE_RETCODE_INVALID_EXPIRATION:
-      case TRADE_RETCODE_LOCKED:
-      case TRADE_RETCODE_INVALID_FILL:
-      case TRADE_RETCODE_ONLY_REAL:
-      case TRADE_RETCODE_LIMIT_ORDERS:
-      case TRADE_RETCODE_LIMIT_VOLUME:
-      case TRADE_RETCODE_INVALID_ORDER:
-      case TRADE_RETCODE_LIMIT_POSITIONS:
-      case TRADE_RETCODE_LONG_ONLY:
-      case TRADE_RETCODE_SHORT_ONLY:
-      case TRADE_RETCODE_CLOSE_ONLY:
-      case TRADE_RETCODE_FIFO_CLOSE:
-      case TRADE_RETCODE_HEDGE_PROHIBITED:
-      case TRADE_RETCODE_SERVER_DISABLES_AT:
-      case TRADE_RETCODE_CLIENT_DISABLES_AT:
-         return false;
-      default:
+      case TRADE_RETCODE_REQUOTE:
+      case TRADE_RETCODE_PRICE_CHANGED:
+      case TRADE_RETCODE_PRICE_OFF:
+      case TRADE_RETCODE_CONNECTION:
+      case TRADE_RETCODE_TIMEOUT:
          return true;
+      default:
+         return false;
      }
   }
 //+------------------------------------------------------------------+
@@ -82,6 +70,9 @@ int CBrokerAdapter::DelayForRetcode(uint retcode)
       case TRADE_RETCODE_PRICE_CHANGED:
       case TRADE_RETCODE_PRICE_OFF:
          return MathMin(m_retryDelayMs,50);
+      case TRADE_RETCODE_CONNECTION:
+      case TRADE_RETCODE_TIMEOUT:
+         return MathMax(m_retryDelayMs,500);
       default:
          return m_retryDelayMs;
      }
@@ -147,8 +138,7 @@ bool CBrokerAdapter::ValidateStopDistance(string symbol, double refPrice, double
         }
       if(minDist>0.0 && MathAbs(refPrice-sl)<minDist)
         {
-         PrintFormat("MedisTouch BrokerAdapter: %s refused — SL %.5f is too close to %.5f (requires >= %.1f points).",
-                     action,sl,refPrice,minDist/point);
+         PrintFormat("MedisTouch BrokerAdapter: %s refused — SL %.5f is too close to %.5f (requires >= %.1f points).",action,sl,refPrice,minDist/point);
          return false;
         }
      }
@@ -162,8 +152,7 @@ bool CBrokerAdapter::ValidateStopDistance(string symbol, double refPrice, double
         }
       if(minDist>0.0 && MathAbs(refPrice-tp)<minDist)
         {
-         PrintFormat("MedisTouch BrokerAdapter: %s refused — TP %.5f is too close to %.5f (requires >= %.1f points).",
-                     action,tp,refPrice,minDist/point);
+         PrintFormat("MedisTouch BrokerAdapter: %s refused — TP %.5f is too close to %.5f (requires >= %.1f points).",action,tp,refPrice,minDist/point);
          return false;
         }
      }
