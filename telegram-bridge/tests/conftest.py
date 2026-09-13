@@ -1,10 +1,7 @@
 import asyncio
 import os
 
-# Must be set before app.config.settings is constructed (module-level
-# singleton), so this runs at collection time via env vars rather than
-# a fixture. Using SQLite in-memory-per-file avoids touching Postgres
-# or the network in CI.
+# Must be set before app.config.settings is constructed.
 os.environ.setdefault("BOT_TOKEN", "123456:test-token")
 os.environ.setdefault("CHAT_ID", "-1000000000")
 os.environ.setdefault("ADMIN_CHAT_ID", "777000777")
@@ -19,61 +16,34 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 VALID_BUY_SIGNAL = {
-    "signal_id": "test-signal-1",
-    "symbol": "EURUSD",
-    "direction": "BUY",
-    "entry": 1.1000,
-    "sl": 1.0950,
-    "tp1": 1.1050,
-    "tp2": 1.1100,
-    "confidence": 80,
-    "reasons": ["structure break confirmed", "liquidity sweep"],
-    "timeframe": "M15",
+    "signal_id": "test-signal-1", "symbol": "EURUSD", "direction": "BUY",
+    "entry": 1.1000, "sl": 1.0950, "tp1": 1.1050, "tp2": 1.1100,
+    "confidence": 80, "reasons": ["structure break confirmed", "liquidity sweep"], "timeframe": "M15",
 }
 
 VALID_TRADE_OPENED = {
-    "event_id": "1000123:opened",
-    "trade_id": "1000123",
-    "signal_id": "test-signal-1",
-    "symbol": "EURUSD",
-    "direction": "BUY",
-    "event": "opened",
-    "volume": 0.10,
-    "price": 1.1002,
-    "sl": 1.0950,
-    "tp1": 1.1050,
-    "tp2": 1.1100,
+    "event_id": "1000123:opened", "trade_id": "1000123", "signal_id": "test-signal-1",
+    "symbol": "EURUSD", "direction": "BUY", "event": "opened", "volume": 0.10,
+    "price": 1.1002, "sl": 1.0950, "tp1": 1.1050, "tp2": 1.1100,
 }
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _create_test_tables():
-    """
-    Create SQLite tables once for the entire test session.
+    """Create a deterministic, isolated SQLite schema for the test session.
 
-    init_db() was intentionally removed from the app lifespan (Alembic owns
-    DDL in production), but the test suite runs against SQLite with no
-    migration runner, so we call it explicitly here. SQLite maps all
-    PG_ENUM/Enum columns to VARCHAR — no Postgres dialect required.
-
-    CRITICAL: app.models must be imported *before* init_db() runs. Base is a
-    bare declarative_base() defined in app.database; the Signal/TradeEvent
-    tables only register onto Base.metadata as a side effect of importing
-    app.models. Without this import, create_all() silently creates zero
-    tables and every DB-touching test fails with "no such table: signals" -
-    which is exactly what happens on a clean checkout today.
+    Production DDL remains owned by Alembic. The test database is disposable;
+    dropping metadata before create_all prevents stale SQLite indexes from a
+    previous interrupted run from causing duplicate-index failures.
     """
-    import app.models  # noqa: F401 - registers Signal/TradeEvent on Base.metadata
-    from app.database import engine, init_db
+    import app.models  # noqa: F401 - register all models on Base.metadata
+    from app.database import Base, engine
 
     async def _setup():
-        await init_db()
-        # Dispose the pool immediately so the connections created in this
-        # event loop are not reused by subsequent asyncio.run() calls (which
-        # create new event loops).  aiosqlite connections are bound to the
-        # loop that created them; reusing a stale connection in a new loop
-        # causes SQLAlchemy to silently open an in-memory DB instead of the
-        # file, producing "no such table" errors in later teardowns.
+        await engine.dispose()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
         await engine.dispose()
 
     asyncio.run(_setup())
@@ -81,7 +51,6 @@ def _create_test_tables():
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter():
-    """Each test gets a clean rate-limit bucket state (module-level singleton)."""
     from app.ratelimit import rate_limiter
     rate_limiter._buckets.clear()
     yield
@@ -90,16 +59,7 @@ def _reset_rate_limiter():
 
 @pytest.fixture()
 def forced_rate_limit():
-    """
-    Force the rate limiter on for tests that assert 429 behaviour.
-
-    The limiter singleton is built from settings at import time, and CI runs
-    pytest with RATE_LIMIT_ENABLED=false (so the rest of the suite is not
-    throttled). Tests that assert throttling must therefore configure the
-    limiter explicitly instead of relying on ambient env vars.
-    """
     from app.ratelimit import rate_limiter
-
     original = (rate_limiter.enabled, rate_limiter.max_requests, rate_limiter.window_seconds)
     rate_limiter.enabled = True
     rate_limiter.max_requests = 5
@@ -114,15 +74,9 @@ def forced_rate_limit():
 
 @pytest.fixture()
 def client():
-    """TestClient with Telegram sends mocked out - no real network calls.
-
-    Each test gets a clean persisted state: the app uses a single shared
-    SQLite file for the whole test session, so registry/config-sync rows must
-    be cleared along with the legacy signals and trade rows.
-    """
+    """TestClient with Telegram sends mocked; persisted rows are cleared per test."""
     with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)):
         from fastapi.testclient import TestClient
-
         from app.config_evaluation_model import ConfigurationEvaluation
         from app.config_registry_model import ConfigurationRegistry
         from app.config_sync_state_model import ConfigSyncState
@@ -134,21 +88,14 @@ def client():
             yield c
 
         async def _truncate():
-            # Evict any connections that were created in a previous event
-            # loop (e.g. from asyncio.run() seeding helpers in the test
-            # body).  Without this, aiosqlite may silently "connect" to an
-            # empty in-memory DB rather than the test file, causing
-            # "no such table" on teardown.
             await engine.dispose()
             async with engine.begin() as conn:
-                await conn.run_sync(lambda sync_conn: sync_conn.execute(ConfigurationEvaluation.__table__.delete()))
-                await conn.run_sync(lambda sync_conn: sync_conn.execute(ConfigSyncState.__table__.delete()))
-                await conn.run_sync(lambda sync_conn: sync_conn.execute(ConfigurationRegistry.__table__.delete()))
-                await conn.run_sync(lambda sync_conn: sync_conn.execute(Signal.__table__.delete()))
-                await conn.run_sync(lambda sync_conn: sync_conn.execute(TradeEvent.__table__.delete()))
-                await conn.run_sync(lambda sync_conn: sync_conn.execute(BotSetting.__table__.delete()))
-                await conn.run_sync(lambda sync_conn: sync_conn.execute(Payment.__table__.delete()))
-                await conn.run_sync(lambda sync_conn: sync_conn.execute(Subscriber.__table__.delete()))
+                for model in (
+                    ConfigurationEvaluation, ConfigSyncState, ConfigurationRegistry,
+                    Signal, TradeEvent, BotSetting, Payment, Subscriber,
+                ):
+                    await conn.run_sync(lambda sync_conn, table=model.__table__: sync_conn.execute(table.delete()))
+            await engine.dispose()
 
         asyncio.run(_truncate())
 
