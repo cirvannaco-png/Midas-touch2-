@@ -5,6 +5,7 @@ TRACKER=ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh"
 RISK_GUARD=ROOT/"EA"/"includes"/"Portfolio"/"RiskGuard.mqh"
 PORTFOLIO=ROOT/"EA"/"includes"/"Portfolio"/"PortfolioManager.mqh"
 BROKER=ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh"
+DYNAMIC_STOP=ROOT/"EA"/"includes"/"Execution"/"DynamicStopEngine.mqh"
 RECOVERY=ROOT/"EA"/"includes"/"Recovery"/"RecoveryEngine.mqh"
 ORDERS=ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh"
 CONFIG_SYNC=ROOT/"EA"/"includes"/"Signals"/"ConfigSync.mqh"
@@ -46,6 +47,12 @@ def test_portfolio_fails_closed_on_uncomputable_existing_risk():
 
 def test_broker_checks_directional_trade_modes():
     t=BROKER.read_text();assert "SYMBOL_TRADE_MODE_LONGONLY" in t;assert "SYMBOL_TRADE_MODE_SHORTONLY" in t;assert "SYMBOL_TRADE_MODE_CLOSEONLY" in t
+
+def test_broker_checks_server_retcode_and_confirmed_fill():
+    t=BROKER.read_text();assert "m_trade.ResultRetcode()" in t;assert "m_trade.ResultPrice()" in t;assert "m_trade.ResultDeal()" in t
+
+def test_dynamic_stop_prevalidates_broker_distance_and_never_widens():
+    t=DYNAMIC_STOP.read_text();assert "SYMBOL_TRADE_STOPS_LEVEL" in t;assert "SYMBOL_TRADE_FREEZE_LEVEL" in t;assert "BrokerDistanceSafe" in t;assert "IsTighter" in t;assert "candidate would widen or equal current stop" in t
 
 def test_recovery_restores_actual_broker_entry():
     t=RECOVERY.read_text();assert "double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);" in t;assert "RestoreTrade(dec,currentVolume,ticket,state,actualEntry)" in t
