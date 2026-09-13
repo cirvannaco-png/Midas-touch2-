@@ -1,10 +1,7 @@
-# Midas Touch production validation pipeline.
-# Only merge-request and default-branch pipelines are created.
-# No deployment is performed by this pipeline.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_BRANCH == "main"'
     - when: never
 
 stages:
@@ -23,14 +20,19 @@ mql5-structure:
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
+    - python tools/phase_a_d_manifest.py
   rules:
     - when: on_success
 
-architecture-gates:
-  stage: validate
+governance-tests:
+  stage: test
   image: python:3.11-slim
+  before_script:
+    - python -m pip install --disable-pip-version-check -r medis_touch/requirements-dev.txt
   script:
-    - python tools/phase_a_d_manifest.py
+    - ruff check medis_touch/app/ medis_touch/tests/
+    - bandit -r medis_touch/app/ -q
+    - pytest -v medis_touch/tests/
   rules:
     - when: on_success
 
@@ -80,14 +82,6 @@ telegram-bridge:
 telegram-bridge-dependency-audit:
   stage: test
   image: python:3.11-slim
-  cache:
-    key:
-      files:
-        - telegram-bridge/requirements-dev.txt
-      prefix: pip-telegram-audit
-    paths:
-      - .cache/pip
-    policy: pull-push
   before_script:
     - cd telegram-bridge
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -99,14 +93,6 @@ telegram-bridge-dependency-audit:
 tools-tests:
   stage: test
   image: python:3.11-slim
-  cache:
-    key:
-      files:
-        - telegram-bridge/requirements-dev.txt
-      prefix: pip-telegram-tools
-    paths:
-      - .cache/pip
-    policy: pull-push
   before_script:
     - cd telegram-bridge
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
