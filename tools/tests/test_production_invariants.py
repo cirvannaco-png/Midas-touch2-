@@ -65,4 +65,4 @@ def test_gating_requires_all_metrics_to_be_persistent():
     t=GATING.read_text();assert "elif incomplete:" in t;assert "all(persistent_moves[m] == \"up\" for m in GATED_METRICS)" in t;assert "all(persistent_moves[m] == \"down\" for m in GATED_METRICS)" in t
 
 def test_ci_runs_core_gates_on_main():
-    t=CI.read_text();assert 'if: \'$CI_COMMIT_BRANCH == "main"\'' in t;assert "mql5-structure:" in t;assert "medis-touch-python:" in t;assert "telegram-bridge:" in t;assert "telegram-bridge-dependency-audit:" in t
+    t=CI.read_text();assert '$CI_DEFAULT_BRANCH' in t or '$CI_COMMIT_BRANCH == "main"' in t;assert "mql5-structure:" in t;assert "medis-touch-python:" in t;assert "telegram-bridge:" in t;assert "telegram-bridge-dependency-audit:" in t

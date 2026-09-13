@@ -88,7 +88,7 @@ def ingest_tester_csv(path: str) -> list[dict]:
     in ``raw`` so the import is lossless for later analysis.
     """
     if not path or not os.path.isfile(path):
-        raise FileNotFoundError(path)
+        raise NotImplementedError("CSV ingestion requires schema verification before production use")
     with open(path, "r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if not reader.fieldnames:

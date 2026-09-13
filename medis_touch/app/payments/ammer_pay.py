@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from .base import CheckoutRequest, CheckoutResult, NormalizedPaymentEvent, PaymentProvider, WebhookVerificationError
+from .base import (
+    CheckoutRequest,
+    CheckoutResult,
+    NormalizedPaymentEvent,
+    PaymentProvider,
+    WebhookVerificationError,
+)
 
 
 class AmmerPayProvider(PaymentProvider):
