@@ -25,8 +25,19 @@ _ALLOWED: dict[OrderStatus, set[OrderStatus]] = {
         OrderStatus.UNKNOWN,
     },
     OrderStatus.CANCEL_PENDING: {OrderStatus.CANCELLED, OrderStatus.FILLED, OrderStatus.UNKNOWN},
-    OrderStatus.UNKNOWN: {OrderStatus.WORKING, OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.RECOVERY_REQUIRED},
-    OrderStatus.RECOVERY_REQUIRED: {OrderStatus.WORKING, OrderStatus.CANCELLED, OrderStatus.FILLED, OrderStatus.REJECTED},
+    OrderStatus.UNKNOWN: {
+        OrderStatus.WORKING,
+        OrderStatus.PARTIALLY_FILLED,
+        OrderStatus.FILLED,
+        OrderStatus.CANCELLED,
+        OrderStatus.RECOVERY_REQUIRED,
+    },
+    OrderStatus.RECOVERY_REQUIRED: {
+        OrderStatus.WORKING,
+        OrderStatus.CANCELLED,
+        OrderStatus.FILLED,
+        OrderStatus.REJECTED,
+    },
     OrderStatus.FILLED: set(),
     OrderStatus.CANCELLED: set(),
     OrderStatus.REJECTED: set(),
@@ -68,7 +79,7 @@ class OrderManager:
         order = self._orders[order_id]
         if order.status in {OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED}:
             return order
-        return self.transition(order_id, OrderStatus.RECOVERY_REQUIRED if order.status != OrderStatus.UNKNOWN else OrderStatus.RECOVERY_REQUIRED)
+        return self.transition(order_id, OrderStatus.RECOVERY_REQUIRED)
 
     def all_orders(self) -> tuple[ExecutionOrder, ...]:
         return tuple(self._orders.values())
