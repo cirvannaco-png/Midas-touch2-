@@ -1,4 +1,5 @@
 """Deterministic order-management state machine with idempotency."""
+from __future__ import annotations
 
 import time
 from dataclasses import replace
