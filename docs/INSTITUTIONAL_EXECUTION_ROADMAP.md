@@ -16,10 +16,33 @@ Evolve Midas Touch 2 from `decision -> broker -> execution` into a broker-neutra
 - Venue quote and health model.
 - Smart order routing score based on liquidity coverage, fill reliability, spread/slippage and latency.
 - Market/adaptive execution-policy selection.
-- Fail-closed pre-trade gate for exposure, loss, spread, venue health and configuration authorization.
+- Fail-closed pre-trade gate for exposure, loss, spread, venue health, configuration authorization and invalid/non-finite inputs.
 - Signed TCA/implementation-shortfall calculation.
 - Broker/OMS reconciliation contract that freezes when state is unavailable or ambiguous.
 - Deterministic execution surveillance for venue, rejection, slippage, latency and duplicate-order anomalies.
+- Multi-trade batch preflight with aggregate portfolio and per-symbol exposure accounting.
+- Account-scoped copy-trading idempotency so one signal can safely fan out to independent accounts without sharing an execution key.
+
+## Multi-trading invariant
+
+Midas must support multiple independent authorized trades in the same execution cycle. The execution layer must never assume one open position or one symbol at a time.
+
+For every batch:
+
+1. Reject duplicate order IDs.
+2. Reject duplicate idempotency keys.
+3. Preflight every order before the first broker submission.
+4. Accumulate requested notional against both portfolio and symbol limits.
+5. Preserve each order's governance configuration/model identity.
+6. Execute each authorized order through the same single-order governed path.
+7. Keep partial fills and reconciliation state isolated per parent order.
+8. Keep copy-trading idempotency isolated per destination account.
+
+Batch preflight is atomic as a **validation boundary**, not as a broker execution transaction. Once an external order is accepted, later orders may still fail. The system must model this explicitly rather than pretending that a broker supports rollback.
+
+## Required next control: concurrent risk reservations
+
+The current batch gate protects one coordinator call. Production persistence must additionally reserve portfolio/symbol capacity transactionally before concurrent workers can submit orders. A future `RiskReservation` boundary must support acquire, release/consume, expiry and reconciliation of reservations. This closes the race where two independent workers each pass pre-trade checks against the same stale exposure snapshot.
 
 ## Next parallel workstreams
 
@@ -69,6 +92,7 @@ Execution-aware backtesting must model spread, commission, slippage, latency, pa
 - No promotion without complete required evidence.
 - No look-ahead in routing, TCA benchmarks, simulation or calibration.
 - Exact configuration/model hash remains attached to every executable order.
+- Multiple orders/accounts never share an idempotency namespace accidentally.
 
 ## Production sequence
 
