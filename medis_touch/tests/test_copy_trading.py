@@ -14,7 +14,7 @@ from medis_touch.app.copy_trading import (
     account_scoped_idempotency_key,
     authorize_and_claim,
 )
-from medis_touch.app.models import Signal, SignalStatus
+from medis_touch.app.models import OrderType, Signal, SignalStatus, TradeSetup
 
 
 NOW = datetime(2026, 9, 14, 19, 0, tzinfo=timezone.utc)
@@ -24,7 +24,8 @@ def _fixtures(account_id: str = "acct-1"):
     subscription = Subscription("sub-1", "user-1", "copy", "ammer_pay", "pay-1", SubscriptionStatus.ACTIVE, NOW - timedelta(days=1), NOW + timedelta(days=1))
     entitlement = Entitlement("ent-1", "user-1", "sub-1", EntitlementStatus.ACTIVE, True, True, True, NOW - timedelta(days=1), NOW + timedelta(days=1))
     account = CopyAccount(account_id, "user-1", "simulated", f"broker-{account_id}", True, "fixed_risk_amount", 100.0)
-    signal = Signal(signal_id="sig-1", status=SignalStatus.ACTIVE, invalidated_at=None, expires_at=NOW + timedelta(minutes=5))
+    setup = TradeSetup(OrderType.BUY, 101.0, 100.0, 99.0, 98.5, 102.0, 103.0, 105.0, 0.8, NOW, NOW + timedelta(minutes=5))
+    signal = Signal(signal_id="sig-1", setup=setup, status=SignalStatus.ACTIVE)
     event = CopyTradeEvent(f"copy-{account_id}", signal.signal_id, "user-1", account_id, CopyEventStatus.PENDING, account_scoped_idempotency_key(signal_id=signal.signal_id, account_id=account_id), NOW)
     return subscription, entitlement, account, signal, event
 
