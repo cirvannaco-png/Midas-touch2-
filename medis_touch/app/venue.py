@@ -8,6 +8,7 @@ from .execution_models import ExecutionFill, ExecutionOrder, VenueQuote
 
 class ExecutionVenue(Protocol):
     name: str
+
     def quote(self, symbol: str) -> VenueQuote: ...
     def submit(self, order: ExecutionOrder) -> str: ...
     def fill(self, order: ExecutionOrder, venue_order_id: str, price: float) -> ExecutionFill: ...
@@ -29,14 +30,26 @@ class SimulatedVenue:
     def submit(self, order: ExecutionOrder) -> str:
         if order.quantity <= 0 or order.quantity > self.available_volume:
             raise RuntimeError("simulated venue rejected order")
+        if order.venue is not None and order.venue != self.name:
+            raise RuntimeError("order routed to the wrong venue")
         return f"{self.name}:{order.order_id}"
 
     def fill(self, order: ExecutionOrder, venue_order_id: str, price: float) -> ExecutionFill:
-        return ExecutionFill(fill_id=f"{venue_order_id}:fill", order_id=order.order_id,
-                             venue_order_id=venue_order_id, quantity=order.quantity, price=price)
+        if not venue_order_id or price <= 0:
+            raise RuntimeError("invalid simulated fill")
+        if order.side.upper() == "BUY" and price < self.ask:
+            raise RuntimeError("buy fill is below simulated ask")
+        if order.side.upper() == "SELL" and price > self.bid:
+            raise RuntimeError("sell fill is above simulated bid")
+        return ExecutionFill(
+            fill_id=f"{venue_order_id}:fill", order_id=order.order_id,
+            venue_order_id=venue_order_id, quantity=order.quantity, price=price,
+        )
 
     def cancel(self, venue_order_id: str) -> bool:
         return bool(venue_order_id)
 
     def reconcile(self, venue_order_id: str) -> dict:
+        if not venue_order_id:
+            return {"status": "UNKNOWN"}
         return {"venue_order_id": venue_order_id, "status": "FILLED"}
