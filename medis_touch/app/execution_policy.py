@@ -1,8 +1,6 @@
 """Deterministic child-order schedules for TWAP, VWAP and POV."""
 from __future__ import annotations
 
-import math
-
 
 def _validate(quantity: float, slices: int) -> None:
     if quantity <= 0 or slices <= 0:
