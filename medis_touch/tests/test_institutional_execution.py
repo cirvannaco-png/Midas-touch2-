@@ -1,3 +1,5 @@
+from math import inf, nan
+
 from medis_touch.app.execution_models import ExecutionOrder, OrderStatus, VenueQuote
 from medis_touch.app.execution_policy import adaptive_policy, pov_schedule, twap_schedule, vwap_schedule
 from medis_touch.app.execution_router import SmartOrderRouter
@@ -59,6 +61,20 @@ def test_pretrade_gate_fails_closed_on_exposure_and_venue():
     assert "order notional limit" in result.reasons
     assert "portfolio exposure limit" in result.reasons
     assert "venue unhealthy" in result.reasons
+
+
+def test_pretrade_gate_rejects_non_finite_and_invalid_side():
+    order = ExecutionOrder("o1", "d1", "XAUUSD", "HOLD", 1)
+    limits = PreTradeLimits(500, 1000, 500, 100, 5)
+    result = evaluate(order, reference_price=nan, portfolio_notional=0, symbol_notional=0,
+                      daily_loss=0, spread_bps=0, limits=limits)
+    assert not result.allowed
+    assert "non-finite risk input" in result.reasons
+    assert "invalid order side" in result.reasons
+    result = evaluate(order, reference_price=100, portfolio_notional=0, symbol_notional=0,
+                      daily_loss=0, spread_bps=0, limits=PreTradeLimits(inf, 1000, 500, 100, 5))
+    assert not result.allowed
+    assert "non-finite risk input" in result.reasons
 
 
 def test_execution_schedules_are_deterministic_and_conserve_quantity():
