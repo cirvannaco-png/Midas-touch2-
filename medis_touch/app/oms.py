@@ -3,7 +3,7 @@
 import time
 from dataclasses import replace
 
-from .execution_models import ExecutionOrder, ExecutionFill, OrderStatus
+from .execution_models import ExecutionFill, ExecutionOrder, OrderStatus
 
 
 _ALLOWED: dict[OrderStatus, set[OrderStatus]] = {
@@ -25,21 +25,34 @@ class OrderManager:
     def __init__(self, *, require_governance: bool = False) -> None:
         self._orders: dict[str, ExecutionOrder] = {}
         self._idempotency: dict[str, str] = {}
+        self._fingerprints: dict[str, tuple[object, ...]] = {}
         self._fills: dict[str, set[str]] = {}
         self._require_governance = require_governance
+
+    @staticmethod
+    def _fingerprint(order: ExecutionOrder) -> tuple[object, ...]:
+        return (order.decision_id, order.symbol, order.side.upper(), order.quantity,
+                order.order_type, order.limit_price, order.policy.value, order.idempotency_key,
+                order.metadata.get("execution_config_hash"), order.metadata.get("execution_model_hash"))
 
     def submit(self, order: ExecutionOrder) -> ExecutionOrder:
         if self._require_governance and not order.metadata.get("execution_config_hash"):
             raise ValueError("execution configuration hash is required")
+        fingerprint = self._fingerprint(order)
         if order.order_id in self._orders:
+            if self._fingerprints[order.order_id] != fingerprint:
+                raise ValueError("order_id already exists with different order identity")
             return self._orders[order.order_id]
         if order.idempotency_key:
             existing = self._idempotency.get(order.idempotency_key)
             if existing:
+                if self._fingerprints[existing] != fingerprint:
+                    raise ValueError("idempotency key already exists with different order identity")
                 return self._orders[existing]
             self._idempotency[order.idempotency_key] = order.order_id
         stored = replace(order, status=OrderStatus.NEW, updated_at=time.time())
         self._orders[order.order_id] = stored
+        self._fingerprints[order.order_id] = fingerprint
         self._fills[order.order_id] = set()
         return stored
 
@@ -61,10 +74,7 @@ class OrderManager:
             raise ValueError("fill exceeds remaining order quantity")
         old_qty = order.filled_quantity
         new_qty = old_qty + fill.quantity
-        if order.average_fill_price is None:
-            average = fill.price
-        else:
-            average = ((order.average_fill_price * old_qty) + (fill.price * fill.quantity)) / new_qty
+        average = fill.price if order.average_fill_price is None else ((order.average_fill_price * old_qty) + (fill.price * fill.quantity)) / new_qty
         status = OrderStatus.FILLED if abs(new_qty - order.quantity) <= 1e-12 else OrderStatus.PARTIALLY_FILLED
         self._fills[fill.order_id].add(fill.fill_id)
         updated = replace(order, filled_quantity=new_qty, average_fill_price=average, status=status, updated_at=time.time())
