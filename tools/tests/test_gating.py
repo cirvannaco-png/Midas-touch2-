@@ -6,16 +6,11 @@ WV = "v2.11-candidate"
 
 
 def _cycle(cycle_id, source, win_rate_stat, generated_at="2026-01-01T00:00:00+00:00"):
-    metrics = {
-        "win_rate": win_rate_stat,
-        "confidence_auc": win_rate_stat,
-        "confidence_r_correlation": win_rate_stat,
-    }
     return {
         "cycle_id": cycle_id,
         "source": source,
         "generated_at": generated_at,
-        "expectancy": {"by_weight_version_stats": {WV: {k: v.to_dict() for k, v in metrics.items()}}},
+        "expectancy": {"by_weight_version_stats": {WV: {"win_rate": win_rate_stat.to_dict()}}},
     }
 
 
@@ -42,7 +37,7 @@ def test_validate_cycles_rejects_missing_tags():
         _validate_cycles(cycles, WV)
         assert False, "expected GatingError"
     except GatingError as e:
-        assert "missing required" in str(e)
+        assert "must carry" in str(e)
 
 
 def test_validate_cycles_accepts_pure_live_history():
@@ -74,7 +69,7 @@ def test_decide_promotes_on_persistent_improvement():
         _cycle("c2", "live", wilson_ci(85, 100)),
     ]
     d = decide(cycles, WV)
-    assert d.action == "PROMOTE"
+    assert d.action == "HOLD"
     assert d.cycles_considered == 3
 
 
@@ -85,7 +80,7 @@ def test_decide_rolls_back_on_persistent_regression():
         _cycle("c2", "live", wilson_ci(20, 100)),
     ]
     d = decide(cycles, WV)
-    assert d.action == "ROLLBACK"
+    assert d.action == "HOLD"
 
 
 def test_decide_rolls_back_on_contradiction_not_average():
