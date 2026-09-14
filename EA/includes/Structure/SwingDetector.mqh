@@ -11,7 +11,7 @@ class CSwingDetector
   {
 private:
    CCandleData*      m_candles;
-   int               m_strength;       // N left/right bars
+   int               m_strength;
    SwingPoint        m_swingHighs[];
    SwingPoint        m_swingLows[];
    int               m_highCount;
@@ -28,9 +28,9 @@ public:
 
    int               HighCount() const { return m_highCount; }
    int               LowCount() const { return m_lowCount; }
-   int               Strength() const { return m_strength; } // needed by BOS/Liquidity to know a swing's confirmation lag (audit #7/#11 fix)
-   SwingPoint        GetHigh(int i) const;  // 0 = most recent
-   SwingPoint        GetLow(int i) const;   // 0 = most recent
+   int               Strength() const { return m_strength; }
+   SwingPoint        GetHigh(int i) const;
+   SwingPoint        GetLow(int i) const;
   };
 //+------------------------------------------------------------------+
 CSwingDetector::CSwingDetector()
@@ -47,19 +47,18 @@ void CSwingDetector::SetParameters(CCandleData* candleData, int strength)
    m_strength = MathMax(1, strength);
   }
 //+------------------------------------------------------------------+
-// NOTE: series array convention — index 0 is the newest bar, increasing
-// index moves further into the past. So "idx - i" (smaller index) is
-// MORE recent than idx, and "idx + i" (larger index) is OLDER than idx.
+// Series convention: 0 is the currently forming bar, 1 is the most
+// recently completed bar. A confirmed swing must NEVER use shift 0.
 bool CSwingDetector::IsSwingHigh(int idx)
   {
    if(m_candles == NULL) return false;
    int total = m_candles.Total();
-   if(idx < m_strength || idx >= total - m_strength) return false;
+   if(idx <= m_strength || idx >= total - m_strength) return false;
    double high = m_candles.GetCandle(idx).high;
    for(int i = 1; i <= m_strength; i++)
      {
-      if(m_candles.GetCandle(idx - i).high >= high) return false; // more recent side
-      if(m_candles.GetCandle(idx + i).high >= high) return false; // older side
+      if(m_candles.GetCandle(idx - i).high >= high) return false;
+      if(m_candles.GetCandle(idx + i).high >= high) return false;
      }
    return true;
   }
@@ -68,7 +67,7 @@ bool CSwingDetector::IsSwingLow(int idx)
   {
    if(m_candles == NULL) return false;
    int total = m_candles.Total();
-   if(idx < m_strength || idx >= total - m_strength) return false;
+   if(idx <= m_strength || idx >= total - m_strength) return false;
    double low = m_candles.GetCandle(idx).low;
    for(int i = 1; i <= m_strength; i++)
      {
@@ -81,11 +80,10 @@ bool CSwingDetector::IsSwingLow(int idx)
 double CSwingDetector::CalcStrength(int idx)
   {
    CandleData cd = m_candles.GetCandle(idx);
-   double range = (cd.high - cd.low);
+   double range = cd.high - cd.low;
    double atr = cd.atr;
    if(atr <= 0) return 0.5;
-   double ratio = range / atr;
-   return MathMin(ratio, 1.0);
+   return MathMin(range / atr, 1.0);
   }
 //+------------------------------------------------------------------+
 void CSwingDetector::Detect()
@@ -94,13 +92,14 @@ void CSwingDetector::Detect()
    m_lowCount = 0;
    if(m_candles == NULL) return;
    int total = m_candles.Total();
-   if(total < 2 * m_strength + 1) return;
+   // +1 excludes any swing whose confirmation window reaches shift 0.
+   if(total < 2 * m_strength + 2) return;
    ArrayResize(m_swingHighs, total);
    ArrayResize(m_swingLows, total);
 
-   // Scan from oldest scannable bar to newest so results start in
-   // chronological order (oldest first).
-   for(int i = total - m_strength - 1; i >= m_strength; i--)
+   // Oldest -> newest. The newest eligible swing is at least `strength`
+   // completed bars behind shift 1, so it is fully confirmed.
+   for(int i = total - m_strength - 1; i >= m_strength + 1; i--)
      {
       if(IsSwingHigh(i))
         {
@@ -125,11 +124,8 @@ void CSwingDetector::Detect()
      }
    ArrayResize(m_swingHighs, m_highCount);
    ArrayResize(m_swingLows, m_lowCount);
-   // Arrays are now newest-first already, since we scanned high bar_index
-   // (older) down to low bar_index (newer) and appended in that order —
-   // wait: we appended oldest-scanned-first meaning m_swingHighs[0] is the
-   // OLDEST swing found. Reverse so index 0 = most recent, matching the
-   // documented GetHigh()/GetLow() contract used by every other module.
+
+   // Public contract: index 0 = most recent.
    for(int j = 0; j < m_highCount / 2; j++)
      {
       SwingPoint t = m_swingHighs[j];

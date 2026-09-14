@@ -14,7 +14,7 @@ private:
    FVGZone           m_zones[];
    int               m_zoneCount;
 
-   double            m_minSizeATR;   // minimum gap size as fraction of ATR
+   double            m_minSizeATR;
 
    void              UpdateState(FVGZone &zone);
 
@@ -23,7 +23,7 @@ public:
    void              Init(CCandleData* candleData, double minSizeATR = 0.1);
    void              Detect();
    int               Count() const { return m_zoneCount; }
-   FVGZone           GetZone(int i) const; // 0 = most recent
+   FVGZone           GetZone(int i) const;
    void              UpdateAllStates();
   };
 //+------------------------------------------------------------------+
@@ -40,23 +40,21 @@ void CFVG::Detect()
    if(m_candles == NULL) return;
    ArrayFree(m_zones);
    int total = m_candles.Total();
-   if(total < 3) return;
+   // A 3-candle FVG needs three completed candles. With series indexing,
+   // shift 0 is forming, so the newest usable triplet is shifts 3,2,1.
+   if(total < 4) return;
 
-   // Series-indexed: shift 0 = now. As i runs 2 -> total-1, the 3-bar
-   // window {i, i-1, i-2} slides from the most recent triplet toward the
-   // oldest. Within a triplet: cd2 = GetCandle(i) is the OLDEST of the
-   // three (largest shift); cd0 = GetCandle(i-2) is the NEWEST of the
-   // three (smallest shift). (The original comments had this backwards —
-   // labels only, the gap-direction math itself was already correct.)
-   for(int i = 2; i < total; i++)
+   // Scan newest completed triplets first. The newest candle in each
+   // triplet is shift i-2 and must remain >= 1; this guarantees that a
+   // forming candle can never create or resize an FVG.
+   for(int i = 3; i < total; i++)
      {
-      CandleData cd0 = m_candles.GetCandle(i - 2); // newest of the triplet
-      CandleData cd1 = m_candles.GetCandle(i - 1); // middle
-      CandleData cd2 = m_candles.GetCandle(i);     // oldest of the triplet
+      CandleData cd0 = m_candles.GetCandle(i - 2); // newest, completed
+      CandleData cd1 = m_candles.GetCandle(i - 1); // middle, completed
+      CandleData cd2 = m_candles.GetCandle(i);     // oldest, completed
       double atr = cd1.atr;
       if(atr <= 0) continue;
 
-      // Bullish FVG: low of the newest candle > high of the oldest candle
       if(cd0.low > cd2.high)
         {
          double gap = cd0.low - cd2.high;
@@ -75,7 +73,6 @@ void CFVG::Detect()
             m_zones[n] = zone;
            }
         }
-      // Bearish FVG: high of the newest candle < low of the oldest candle
       else if(cd0.high < cd2.low)
         {
          double gap = cd2.low - cd0.high;
@@ -95,11 +92,6 @@ void CFVG::Detect()
            }
         }
      }
-   // NOTE: no reversal needed — the loop runs from the most recent
-   // triplet to the oldest, so m_zones[0] is already the most recent
-   // zone. (Original code reversed unconditionally here too, which
-   // inverted GetZone(0) to the oldest FVG in the whole history window —
-   // the same ordering bug as CBOS::Detect().)
   }
 //+------------------------------------------------------------------+
 void CFVG::UpdateAllStates()
@@ -111,14 +103,9 @@ void CFVG::UpdateAllStates()
 void CFVG::UpdateState(FVGZone &zone)
   {
    if(zone.state == FVG_MITIGATED || zone.state == FVG_INVALIDATED)
-      return; // terminal states — nothing to update
+      return;
    int total = m_candles.Total();
-   // Series-indexed newest-first: scan from now (0) backward. Once we
-   // reach a bar older than the zone's creation time we can stop —
-   // everything beyond that is even older (was "continue" in the
-   // original, forcing a full unnecessary scan of the whole history
-   // buffer on every OnCalculate call, for every zone).
-   for(int bar = 0; bar < total; bar++)
+   for(int bar = 1; bar < total; bar++)
      {
       CandleData cd = m_candles.GetCandle(bar);
       if(cd.time < zone.time)
