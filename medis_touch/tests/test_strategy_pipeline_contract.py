@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from medis_touch.app.models import OrderType, TradeSetup
-from medis_touch.app.strategy_engines import MarketContext, SetupEngine
-from medis_touch.app.strategy_pipeline import (
+from app.models import OrderType, TradeSetup
+from app.strategy_engines import MarketContext, SetupEngine
+from app.strategy_pipeline import (
     AuthoritativeStrategyPipeline,
     StrategyCandidate,
     validate_complete_setup,
