@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from time import time
+import time
 
 from .execution_models import ExecutionOrder, OrderStatus
 
@@ -61,7 +61,7 @@ class OrderManager:
             if existing:
                 return self._orders[existing]
             self._idempotency[order.idempotency_key] = order.order_id
-        stored = replace(order, status=OrderStatus.NEW, updated_at=time())
+        stored = replace(order, status=OrderStatus.NEW, updated_at=time.time())
         self._orders[order.order_id] = stored
         return stored
 
@@ -69,7 +69,7 @@ class OrderManager:
         order = self._orders[order_id]
         if status not in _ALLOWED[order.status]:
             raise ValueError(f"invalid OMS transition {order.status.value} -> {status.value}")
-        updated = replace(order, status=status, updated_at=time())
+        updated = replace(order, status=status, updated_at=time.time())
         self._orders[order_id] = updated
         return updated
 
