@@ -1,17 +1,16 @@
 """Broker-neutral execution venue contract and deterministic simulator."""
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
 
-from .execution_models import ExecutionOrder, VenueQuote
+from .execution_models import ExecutionFill, ExecutionOrder, VenueQuote
 
 
 class ExecutionVenue(Protocol):
     name: str
-
     def quote(self, symbol: str) -> VenueQuote: ...
     def submit(self, order: ExecutionOrder) -> str: ...
+    def fill(self, order: ExecutionOrder, venue_order_id: str, price: float) -> ExecutionFill: ...
     def cancel(self, venue_order_id: str) -> bool: ...
     def reconcile(self, venue_order_id: str) -> dict: ...
 
@@ -32,8 +31,12 @@ class SimulatedVenue:
             raise RuntimeError("simulated venue rejected order")
         return f"{self.name}:{order.order_id}"
 
+    def fill(self, order: ExecutionOrder, venue_order_id: str, price: float) -> ExecutionFill:
+        return ExecutionFill(fill_id=f"{venue_order_id}:fill", order_id=order.order_id,
+                             venue_order_id=venue_order_id, quantity=order.quantity, price=price)
+
     def cancel(self, venue_order_id: str) -> bool:
         return bool(venue_order_id)
 
     def reconcile(self, venue_order_id: str) -> dict:
-        return {"venue_order_id": venue_order_id, "status": "WORKING"}
+        return {"venue_order_id": venue_order_id, "status": "FILLED"}

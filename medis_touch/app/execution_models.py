@@ -1,9 +1,4 @@
-"""Canonical institutional execution domain models.
-
-The models are broker-agnostic and deliberately small.  They define the
-contract shared by OMS, pre-trade risk, routing, TCA, and reconciliation.
-"""
-from __future__ import annotations
+"""Canonical institutional execution domain models."""
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -78,6 +73,16 @@ class ExecutionOrder:
 
 
 @dataclass(frozen=True)
+class ExecutionFill:
+    fill_id: str
+    order_id: str
+    venue_order_id: str
+    quantity: float
+    price: float
+    timestamp: float = field(default_factory=time)
+
+
+@dataclass(frozen=True)
 class RiskDecision:
     allowed: bool
     reasons: tuple[str, ...] = ()
@@ -104,3 +109,20 @@ class ReconciliationResult:
     matched: bool
     action: str
     reason: str
+
+
+@dataclass(frozen=True)
+class ExecutionOutcome:
+    order_id: str
+    decision_id: str
+    symbol: str
+    side: str
+    requested_quantity: float
+    filled_quantity: float
+    average_fill_price: float | None
+    status: OrderStatus
+    tca: TCAResult
+    execution_config_hash: str
+    execution_model_hash: str
+    reconciled: bool
+    surveillance_codes: tuple[str, ...] = ()

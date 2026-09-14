@@ -74,3 +74,17 @@ def test_simulated_venue_matches_adapter_contract():
     assert quote.venue == "sim"
     order = ExecutionOrder("o1", "d1", "XAUUSD", "BUY", 1)
     assert venue.submit(order) == "sim:o1"
+
+
+def test_oms_fill_is_idempotent_and_conserves_quantity():
+    from medis_touch.app.execution_models import ExecutionFill
+    oms = OrderManager()
+    order = oms.submit(ExecutionOrder("fill-1", "d1", "XAUUSD", "BUY", 2.0))
+    oms.transition(order.order_id, OrderStatus.VALIDATED)
+    oms.transition(order.order_id, OrderStatus.ROUTING)
+    oms.transition(order.order_id, OrderStatus.WORKING)
+    fill = ExecutionFill("f1", order.order_id, "v:o", 1.0, 100.0)
+    oms.record_fill(fill)
+    oms.record_fill(fill)
+    current = oms.get(order.order_id)
+    assert current is not None and current.filled_quantity == 1.0 and current.status == OrderStatus.PARTIALLY_FILLED
