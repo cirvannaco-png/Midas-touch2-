@@ -58,3 +58,63 @@ def test_unauthorized_venue_blocks_before_oms_submission() -> None:
         coordinator.execute(order, reference_price=100, portfolio_notional=0, symbol_notional=0,
                             daily_loss=0, spread_bps=1, limits=_limits(), regime="normal")
     assert coordinator.oms.all_orders() == ()
+
+
+def test_multiple_trades_share_portfolio_and_symbol_risk_capacity() -> None:
+    coordinator = _coordinator(_config())
+    orders = (
+        ExecutionOrder("multi-1", "decision-1", "XAUUSD", "BUY", 4.0, idempotency_key="multi-idem-1"),
+        ExecutionOrder("multi-2", "decision-2", "EURUSD", "SELL", 4.0, idempotency_key="multi-idem-2"),
+    )
+    results = coordinator.execute_many(
+        orders,
+        reference_prices={"XAUUSD": 100.0, "EURUSD": 100.0},
+        portfolio_notional=0,
+        symbol_notionals={},
+        daily_loss=0,
+        spread_bps={"XAUUSD": 2.0, "EURUSD": 2.0},
+        limits=_limits(),
+        regime="normal",
+    )
+    assert len(results) == 2
+    assert all(outcome.status == OrderStatus.FILLED for outcome, _ in results)
+    assert {outcome.order_id for outcome, _ in results} == {"multi-1", "multi-2"}
+    assert len(coordinator.oms.all_orders()) == 2
+
+
+def test_multiple_trades_are_preflighted_before_any_submission() -> None:
+    limits = PreTradeLimits(1000, 1000, 5000, 100, 5)
+    coordinator = _coordinator(_config())
+    orders = (
+        ExecutionOrder("batch-1", "decision-1", "XAUUSD", "BUY", 6.0, idempotency_key="batch-idem-1"),
+        ExecutionOrder("batch-2", "decision-2", "EURUSD", "SELL", 6.0, idempotency_key="batch-idem-2"),
+    )
+    with pytest.raises(PermissionError, match="portfolio exposure limit"):
+        coordinator.execute_many(
+            orders,
+            reference_prices={"XAUUSD": 100.0, "EURUSD": 100.0},
+            portfolio_notional=0,
+            symbol_notionals={},
+            daily_loss=0,
+            spread_bps={"XAUUSD": 2.0, "EURUSD": 2.0},
+            limits=limits,
+            regime="normal",
+        )
+    assert coordinator.oms.all_orders() == ()
+
+
+def test_multiple_trades_enforce_existing_symbol_exposure() -> None:
+    coordinator = _coordinator(_config())
+    order = ExecutionOrder("symbol-1", "decision-1", "XAUUSD", "BUY", 4.0)
+    with pytest.raises(PermissionError, match="symbol exposure limit"):
+        coordinator.execute_many(
+            (order,),
+            reference_prices={"XAUUSD": 100.0},
+            portfolio_notional=0,
+            symbol_notionals={"XAUUSD": 4900.0},
+            daily_loss=0,
+            spread_bps={"XAUUSD": 2.0},
+            limits=_limits(),
+            regime="normal",
+        )
+    assert coordinator.oms.all_orders() == ()
