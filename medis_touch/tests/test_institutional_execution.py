@@ -1,9 +1,12 @@
-from medis_touch.app.execution_models import ExecutionOrder, ExecutionPolicy, OrderStatus, VenueQuote
+from medis_touch.app.execution_models import ExecutionOrder, OrderStatus, VenueQuote
+from medis_touch.app.execution_policy import adaptive_policy, pov_schedule, twap_schedule, vwap_schedule
 from medis_touch.app.execution_router import SmartOrderRouter
 from medis_touch.app.execution_surveillance import inspect
 from medis_touch.app.oms import OrderManager
+from medis_touch.app.pretrade_risk import PreTradeLimits, evaluate
 from medis_touch.app.reconciliation import reconcile
 from medis_touch.app.tca import calculate_tca
+from medis_touch.app.venue import SimulatedVenue
 
 
 def test_oms_is_idempotent_and_rejects_invalid_transition():
@@ -45,3 +48,29 @@ def test_reconciliation_fails_closed_when_broker_is_unknown():
 def test_surveillance_detects_duplicate_and_venue_failure():
     alerts = inspect(rejection_rate=0.0, slippage_bps=0.0, p99_latency_ms=10, duplicate_order_count=1, venue_healthy=False)
     assert {a.code for a in alerts} == {"DUPLICATE_ORDER", "VENUE_UNHEALTHY"}
+
+
+def test_pretrade_gate_fails_closed_on_exposure_and_venue():
+    order = ExecutionOrder("o1", "d1", "XAUUSD", "BUY", 10)
+    limits = PreTradeLimits(500, 1000, 500, 100, 5)
+    result = evaluate(order, reference_price=100, portfolio_notional=600, symbol_notional=400,
+                      daily_loss=10, spread_bps=2, limits=limits, venue_healthy=False)
+    assert not result.allowed
+    assert "order notional limit" in result.reasons
+    assert "portfolio exposure limit" in result.reasons
+    assert "venue unhealthy" in result.reasons
+
+
+def test_execution_schedules_are_deterministic_and_conserve_quantity():
+    assert sum(twap_schedule(100, 4)) == 100
+    assert sum(vwap_schedule(100, [1, 2, 1])) == 100
+    assert sum(pov_schedule(100, [20, 20, 20], 0.5)) == 100
+    assert adaptive_policy(spread_bps=1, volatility=0.05, fill_probability=0.99, urgency=0.05) == "PASSIVE"
+
+
+def test_simulated_venue_matches_adapter_contract():
+    venue = SimulatedVenue("sim", 100, 100.2, 5)
+    quote = venue.quote("XAUUSD")
+    assert quote.venue == "sim"
+    order = ExecutionOrder("o1", "d1", "XAUUSD", "BUY", 1)
+    assert venue.submit(order) == "sim:o1"
