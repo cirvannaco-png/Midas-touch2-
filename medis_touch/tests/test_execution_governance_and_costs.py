@@ -2,19 +2,12 @@ from medis_touch.app.child_execution import ChildOrderExecutor
 from medis_touch.app.execution_cost_model import CostAssumptions, estimate_execution_cost
 from medis_touch.app.execution_governance import ExecutionConfig, attach_identity, promotion_allowed
 from medis_touch.app.execution_models import ExecutionOrder, ExecutionPolicy
-from medis_touch.app.venue import SimulatedVenue
 
 
 def _order(policy: ExecutionPolicy = ExecutionPolicy.TWAP) -> ExecutionOrder:
     return ExecutionOrder(
-        order_id="parent-1",
-        decision_id="decision-1",
-        symbol="XAUUSD",
-        side="BUY",
-        quantity=10.0,
-        policy=policy,
-        idempotency_key="idem-1",
-        metadata={"slices": 2, "participation": 0.25},
+        order_id="parent-1", decision_id="decision-1", symbol="XAUUSD", side="BUY", quantity=10.0,
+        policy=policy, idempotency_key="idem-1", metadata={"slices": 2, "participation": 0.25},
     )
 
 
@@ -23,7 +16,7 @@ def _config() -> ExecutionConfig:
 
 
 def test_child_execution_conserves_parent_quantity() -> None:
-    children = ChildOrderExecutor(SimulatedVenue("v1", 100.0, 101.0, 1000.0)).submit_children(_order())
+    children = ChildOrderExecutor().build_children(_order())
     assert sum(child.quantity for child in children) == 10.0
     assert all(child.metadata["parent_order_id"] == "parent-1" for child in children)
 
@@ -39,10 +32,7 @@ def test_config_hash_is_canonical_and_required_for_promotion() -> None:
 
 def test_cost_model_is_positive_and_time_local() -> None:
     cost = estimate_execution_cost(
-        quantity=10,
-        reference_price=100,
-        spread=0.2,
-        participation=0.25,
+        quantity=10, reference_price=100, spread=0.2, participation=0.25,
         assumptions=CostAssumptions(commission_per_unit=0.01, slippage_bps=2, impact_bps_per_participation=4),
     )
     assert cost > 0
