@@ -27,6 +27,91 @@ class GovernedExecutionCoordinator:
         self.router = SmartOrderRouter()
         self.children = ChildOrderExecutor()
 
+    def execute_many(
+        self,
+        orders: list[ExecutionOrder] | tuple[ExecutionOrder, ...],
+        *,
+        reference_prices: dict[str, float],
+        portfolio_notional: float,
+        symbol_notionals: dict[str, float],
+        daily_loss: float,
+        spread_bps: dict[str, float],
+        limits: PreTradeLimits,
+        regime: str,
+        observed_volumes: dict[str, list[float]] | None = None,
+    ) -> tuple[tuple[ExecutionOutcome, OutcomeObservation], ...]:
+        """Execute multiple already-authorized trades without bypassing shared risk.
+
+        The entire batch is preflighted before the first broker submission. Risk
+        exposure is accumulated conservatively using requested notional, so one
+        trade cannot consume portfolio capacity and allow a later trade to exceed
+        the same limits. No alpha/risk decision is created here; this is only an
+        execution-layer batch boundary.
+        """
+        batch = tuple(orders)
+        if not batch:
+            return ()
+
+        seen_ids: set[str] = set()
+        seen_idempotency: set[str] = set()
+        projected_portfolio = portfolio_notional
+        projected_symbols = dict(symbol_notionals)
+
+        for order in batch:
+            if order.order_id in seen_ids:
+                raise ValueError("duplicate order_id in execution batch")
+            seen_ids.add(order.order_id)
+            if order.idempotency_key and order.idempotency_key in seen_idempotency:
+                raise ValueError("duplicate idempotency key in execution batch")
+            if order.idempotency_key:
+                seen_idempotency.add(order.idempotency_key)
+
+            reference_price = reference_prices.get(order.symbol)
+            spread = spread_bps.get(order.symbol)
+            if reference_price is None or spread is None:
+                raise ValueError(f"missing execution market inputs for {order.symbol}")
+            quote = self.venue.quote(order.symbol)
+            if quote.symbol != order.symbol or quote.venue not in self.config.allowed_venues or not quote.healthy:
+                raise PermissionError(f"venue is not authorized and healthy for {order.symbol}")
+            governed = ExecutionOrder(**{**order.__dict__, "metadata": attach_identity(order.metadata, self.config)})
+            risk = evaluate(
+                governed,
+                reference_price=reference_price,
+                portfolio_notional=projected_portfolio,
+                symbol_notional=projected_symbols.get(order.symbol, 0.0),
+                daily_loss=daily_loss,
+                spread_bps=spread,
+                limits=limits,
+                venue_healthy=quote.healthy,
+                configuration_authorized=True,
+            )
+            if not risk.allowed:
+                raise PermissionError(f"batch pre-trade risk rejected {order.order_id}: " + "; ".join(risk.reasons))
+            notional = order.quantity * reference_price
+            projected_portfolio += notional
+            projected_symbols[order.symbol] = projected_symbols.get(order.symbol, 0.0) + notional
+
+        results = []
+        projected_portfolio = portfolio_notional
+        projected_symbols = dict(symbol_notionals)
+        for order in batch:
+            result = self.execute(
+                order,
+                reference_price=reference_prices[order.symbol],
+                portfolio_notional=projected_portfolio,
+                symbol_notional=projected_symbols.get(order.symbol, 0.0),
+                daily_loss=daily_loss,
+                spread_bps=spread_bps[order.symbol],
+                limits=limits,
+                regime=regime,
+                observed_volumes=(observed_volumes or {}).get(order.symbol),
+            )
+            results.append(result)
+            notional = order.quantity * reference_prices[order.symbol]
+            projected_portfolio += notional
+            projected_symbols[order.symbol] = projected_symbols.get(order.symbol, 0.0) + notional
+        return tuple(results)
+
     def execute(
         self,
         order: ExecutionOrder,
