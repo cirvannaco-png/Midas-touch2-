@@ -38,14 +38,17 @@ class GovernedExecutionCoordinator:
         regime: str,
         observed_volumes: list[float] | None = None,
     ) -> tuple[ExecutionOutcome, OutcomeObservation]:
-        if order.metadata.get("execution_config_hash") not in {None, self.config.config_hash}:
+        existing_hash = order.metadata.get("execution_config_hash")
+        if existing_hash is not None and existing_hash != self.config.config_hash:
             raise PermissionError("order execution configuration hash does not match approved configuration")
-        if limits.max_order_notional > self.config.max_order_notional:
-            raise PermissionError("pre-trade limit exceeds approved execution configuration")
         governed = ExecutionOrder(**{**order.__dict__, "metadata": attach_identity(order.metadata, self.config)})
         quote = self.venue.quote(governed.symbol)
+        if quote.symbol != governed.symbol:
+            raise RuntimeError("venue returned a quote for the wrong symbol")
         if quote.venue not in self.config.allowed_venues:
-            raise PermissionError("execution venue is not authorized by configuration")
+            raise PermissionError("quoted venue is not authorized by execution configuration")
+        if not quote.healthy:
+            raise PermissionError("execution venue is unhealthy")
         risk = evaluate(
             governed,
             reference_price=reference_price,
@@ -64,49 +67,37 @@ class GovernedExecutionCoordinator:
         self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
         route = self.router.route([quote], stored.quantity)
         if route.venue not in self.config.allowed_venues:
-            raise PermissionError("router selected venue outside approved configuration")
+            raise PermissionError("router selected an unauthorized venue")
         self.oms.transition(stored.order_id, OrderStatus.ROUTING)
         children = self.children.build_children(stored, observed_volumes=observed_volumes)
         self.oms.transition(stored.order_id, OrderStatus.WORKING)
-        venue_order_ids: list[str] = []
 
         try:
             for child in children:
                 child = ExecutionOrder(**{**child.__dict__, "venue": route.venue})
                 venue_order_id = self.venue.submit(child)
-                venue_order_ids.append(venue_order_id)
                 fill_price = quote.ask if child.side.upper() == "BUY" else quote.bid
                 fill = self.venue.fill(child, venue_order_id, fill_price)
                 self.oms.record_fill(
-                    ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp)
+                    ExecutionFill(
+                        fill.fill_id, stored.order_id, venue_order_id,
+                        fill.quantity, fill.price, fill.timestamp,
+                    )
                 )
         except Exception:
-            current = self.oms.get(stored.order_id)
-            if current is not None and current.status not in {OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED}:
-                if current.status != OrderStatus.UNKNOWN:
-                    self.oms.transition(current.order_id, OrderStatus.UNKNOWN)
-                self.oms.freeze_for_reconciliation(current.order_id)
+            self.oms.freeze_for_reconciliation(stored.order_id)
             raise
 
         current = self.oms.get(stored.order_id)
         assert current is not None
-        observed_statuses: list[OrderStatus] = []
-        for venue_order_id in venue_order_ids:
-            observed = self.venue.reconcile(venue_order_id)
-            try:
-                observed_statuses.append(OrderStatus(observed["status"]))
-            except (KeyError, ValueError):
-                observed_statuses.append(OrderStatus.UNKNOWN)
-        if any(status == OrderStatus.UNKNOWN for status in observed_statuses):
-            aggregate_status = OrderStatus.UNKNOWN
-        elif current.filled_quantity >= current.quantity - 1e-12 and observed_statuses and all(status == OrderStatus.FILLED for status in observed_statuses):
-            aggregate_status = OrderStatus.FILLED
-        elif current.filled_quantity > 0:
-            aggregate_status = OrderStatus.PARTIALLY_FILLED
-        else:
-            aggregate_status = OrderStatus.WORKING
-        reconciliation = reconcile(current, aggregate_status, current.filled_quantity)
-        if not reconciliation.matched:
+        child_reconciliations = []
+        for child in children:
+            child_venue_id = f"{route.venue}:{child.order_id}"
+            observed = self.venue.reconcile(child_venue_id)
+            observed_status = OrderStatus(observed.get("status", "UNKNOWN"))
+            child_reconciliations.append(reconcile(child, observed_status, child.quantity))
+        reconciled = all(result.matched for result in child_reconciliations)
+        if not reconciled:
             self.oms.freeze_for_reconciliation(current.order_id)
             current = self.oms.get(current.order_id)
             assert current is not None
@@ -138,7 +129,7 @@ class GovernedExecutionCoordinator:
             tca=tca,
             execution_config_hash=self.config.config_hash,
             execution_model_hash=self.config.model_hash,
-            reconciled=reconciliation.matched,
+            reconciled=reconciled,
             surveillance_codes=tuple(a.code for a in alerts),
         )
         return outcome, to_observation(outcome, regime=regime, policy=route.policy.value, venue=route.venue)
