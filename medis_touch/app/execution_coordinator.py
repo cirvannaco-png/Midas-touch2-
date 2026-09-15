@@ -118,7 +118,7 @@ class GovernedExecutionCoordinator:
         try:
             stored = self.oms.submit(governed)
             if self.recovery_journal is not None:
-                existing = self.recovery_journal.begin_submission(stored.order_id)
+                existing = self.recovery_journal.begin_submission(stored.order_id, parent_order_id=None, client_order_id=stored.idempotency_key or stored.order_id)
                 if existing.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
                     raise RuntimeError(f"invalid durable recovery state: {existing.state}")
             self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
@@ -131,24 +131,33 @@ class GovernedExecutionCoordinator:
             child_reconciliations = []
             for child in children:
                 child = replace(child, venue=route.venue, status=OrderStatus.WORKING)
+                if self.recovery_journal is not None:
+                    child_client_id = child.idempotency_key or f"{stored.order_id}:{child.order_id}"
+                    child_record = self.recovery_journal.begin_submission(child.order_id, parent_order_id=stored.order_id, client_order_id=child_client_id)
+                    if child_record.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
+                        raise RuntimeError(f"invalid durable child recovery state: {child_record.state}")
                 broker_call_started = True
                 try:
                     venue_order_id = self.venue.submit(child)
                 except Exception as exc:
                     if self.recovery_journal is not None:
-                        self.recovery_journal.mark_unknown(stored.order_id, str(exc))
+                        self.recovery_journal.mark_unknown(child.order_id, str(exc))
                     raise
                 if self.recovery_journal is not None:
-                    self.recovery_journal.mark_working(stored.order_id, venue_order_id)
+                    self.recovery_journal.mark_working(child.order_id, venue_order_id)
                 fill_price = quote.ask if child.side.upper() == "BUY" else quote.bid
                 fill = self.venue.fill(child, venue_order_id, fill_price)
                 if self.recovery_journal is not None:
-                    self.recovery_journal.mark_fill(stored.order_id, fill.quantity, fill.price)
+                    self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price)
                 self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
                 expected_child = replace(child, status=OrderStatus.FILLED, filled_quantity=child.quantity, average_fill_price=fill.price)
                 observed = self.venue.reconcile(venue_order_id)
                 observed_status = OrderStatus(observed.get("status", "UNKNOWN"))
                 child_reconciliations.append(reconcile(expected_child, observed_status, fill.quantity))
+            if self.recovery_journal is not None:
+                parent_record = self.recovery_journal.get(stored.order_id)
+                if parent_record.state == "SUBMITTING":
+                    self.recovery_journal.mark_recovered(stored.order_id)
         except Exception:
             if stored is not None:
                 self.oms.freeze_for_reconciliation(stored.order_id)
@@ -167,9 +176,10 @@ class GovernedExecutionCoordinator:
             raise RuntimeError(f"execution reconciliation unresolved for {current.order_id}")
         self._commit_reservation(current.order_id, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, symbol=current.symbol)
         if self.recovery_journal is not None:
-            record = self.recovery_journal.get(current.order_id)
-            if record.filled_quantity > current.filled_quantity:
-                raise RuntimeError("durable recovery fill exceeds OMS fill")
+            durable_children = self.recovery_journal.child_records(current.order_id)
+            durable_filled = sum(child.filled_quantity for child in durable_children)
+            if durable_filled != current.filled_quantity:
+                raise RuntimeError("durable child fill aggregate does not match OMS parent fill")
         alerts = inspect(rejection_rate=quote.rejection_rate, slippage_bps=quote.historical_slippage_bps, p99_latency_ms=quote.latency_ms, venue_healthy=quote.healthy)
         tca = calculate_tca(order_id=current.order_id, side=current.side, quantity=current.quantity, decision_price=reference_price, arrival_price=quote.ask if current.side.upper() == "BUY" else quote.bid, average_fill_price=current.average_fill_price, spread=quote.spread)
         outcome = ExecutionOutcome(order_id=current.order_id, decision_id=current.decision_id, symbol=current.symbol, side=current.side, requested_quantity=current.quantity, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, status=current.status, tca=tca, execution_config_hash=self.config.config_hash, execution_model_hash=self.config.model_hash, reconciled=reconciled, surveillance_codes=tuple(a.code for a in alerts))
