@@ -8,10 +8,10 @@ from .child_execution import ChildOrderExecutor
 from .execution_governance import ExecutionConfig, attach_identity, promotion_allowed
 from .execution_models import ExecutionFill, ExecutionOrder, ExecutionOutcome, OrderStatus
 from .execution_outcome import OutcomeObservation, to_observation
-from .execution_recovery import ExecutionRecoveryJournal
+from .execution_recovery import ExecutionRecoveryJournal, ExecutionStateEvent
 from .execution_router import SmartOrderRouter
 from .execution_surveillance import inspect
-from .institutional_control import ControlInputs, ControlState, control_state
+from .institutional_control import ControlInputs, ControlState, DecisionLineage, control_state
 from .oms import OrderManager
 from .pretrade_risk import PersistentPortfolioAdmission, PreTradeLimits, RiskReservationBook, evaluate
 from .reconciliation import reconcile
@@ -36,6 +36,30 @@ class GovernedExecutionCoordinator:
         self.admission_scope = admission_scope
         self.recovery_journal = recovery_journal
         self._local_reservations = RiskReservationBook()
+
+    def _lineage_fingerprint(self, order: ExecutionOrder, regime: str) -> str:
+        metadata = order.metadata
+        lineage = DecisionLineage(
+            decision_id=order.decision_id,
+            model_version=str(metadata.get("model_version", self.config.model_hash)),
+            strategy_version=str(metadata.get("strategy_version", "unknown")),
+            regime_version=str(metadata.get("regime_version", regime)),
+            calibration_version=str(metadata.get("calibration_version", "unknown")),
+            risk_version=str(metadata.get("risk_version", "unknown")),
+            execution_version=self.config.version,
+            configuration_hash=self.config.config_hash,
+        )
+        return lineage.fingerprint()
+
+    def _record_backend_state(self, order: ExecutionOrder, *, status: OrderStatus, sequence: int, setup_fingerprint: str) -> None:
+        if self.recovery_journal is None:
+            return
+        self.recovery_journal.record_state_event(ExecutionStateEvent(
+            source="BACKEND", order_id=order.order_id, decision_id=order.decision_id,
+            setup_fingerprint=setup_fingerprint, status=status.value,
+            filled_quantity=order.filled_quantity, average_fill_price=order.average_fill_price,
+            sequence=sequence, created_at=order.updated_at,
+        ))
 
     def execute_many(self, orders: list[ExecutionOrder] | tuple[ExecutionOrder, ...], *, reference_prices: dict[str, float], portfolio_notional: float, symbol_notionals: dict[str, float], daily_loss: float, spread_bps: dict[str, float], limits: PreTradeLimits, regime: str, observed_volumes: dict[str, list[float]] | None = None) -> tuple[tuple[ExecutionOutcome, OutcomeObservation], ...]:
         """Execute multiple already-authorized trades without bypassing shared risk."""
@@ -103,6 +127,8 @@ class GovernedExecutionCoordinator:
         if existing_hash is not None and existing_hash != self.config.config_hash:
             raise PermissionError("order execution configuration hash does not match approved configuration")
         governed = ExecutionOrder(**{**order.__dict__, "metadata": attach_identity(order.metadata, self.config)})
+        lineage_fingerprint = self._lineage_fingerprint(governed, regime)
+        governed = ExecutionOrder(**{**governed.__dict__, "metadata": {**governed.metadata, "lineage_fingerprint": lineage_fingerprint}})
         quote = self.venue.quote(governed.symbol)
         if quote.symbol != governed.symbol:
             raise RuntimeError("venue returned a quote for the wrong symbol")
@@ -127,13 +153,17 @@ class GovernedExecutionCoordinator:
                 if existing.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
                     raise RuntimeError(f"invalid durable recovery state: {existing.state}")
             stored = self.oms.submit(governed)
-            self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
+            self._record_backend_state(stored, status=OrderStatus.NEW, sequence=0, setup_fingerprint=lineage_fingerprint)
+            stored = self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
+            self._record_backend_state(stored, status=OrderStatus.VALIDATED, sequence=1, setup_fingerprint=lineage_fingerprint)
             route = self.router.route([quote], stored.quantity)
             if route.venue not in self.config.allowed_venues:
                 raise PermissionError("router selected an unauthorized venue")
-            self.oms.transition(stored.order_id, OrderStatus.ROUTING)
+            stored = self.oms.transition(stored.order_id, OrderStatus.ROUTING)
+            self._record_backend_state(stored, status=OrderStatus.ROUTING, sequence=2, setup_fingerprint=lineage_fingerprint)
             children = self.children.build_children(stored, observed_volumes=observed_volumes)
-            self.oms.transition(stored.order_id, OrderStatus.WORKING)
+            stored = self.oms.transition(stored.order_id, OrderStatus.WORKING)
+            self._record_backend_state(stored, status=OrderStatus.WORKING, sequence=3, setup_fingerprint=lineage_fingerprint)
             child_reconciliations = []
             for child in children:
                 child = replace(child, venue=route.venue, status=OrderStatus.WORKING)
@@ -155,7 +185,8 @@ class GovernedExecutionCoordinator:
                 fill = self.venue.fill(child, venue_order_id, fill_price)
                 if self.recovery_journal is not None:
                     self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price)
-                self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
+                stored = self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
+                self._record_backend_state(stored, status=stored.status, sequence=4, setup_fingerprint=lineage_fingerprint)
                 expected_child = replace(child, status=OrderStatus.FILLED, filled_quantity=child.quantity, average_fill_price=fill.price)
                 observed = self.venue.reconcile(venue_order_id)
                 observed_status = OrderStatus(observed.get("status", "UNKNOWN"))

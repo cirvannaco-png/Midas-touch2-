@@ -44,15 +44,17 @@ def test_control_plane_restriction_blocks_before_reservation() -> None:
     assert coordinator.oms.all_orders() == ()
 
 
-def test_durable_parent_identity_is_bound_before_execution(tmp_path) -> None:
+def test_durable_parent_identity_and_backend_lineage_are_bound(tmp_path) -> None:
     journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
     coordinator = _coordinator(_config(), journal)
-    order = ExecutionOrder("durable-parent-1", "decision-1", "XAUUSD", "BUY", 1.0, idempotency_key="parent-client-1")
+    order = ExecutionOrder("durable-parent-1", "decision-1", "XAUUSD", "BUY", 1.0, idempotency_key="parent-client-1", metadata={"strategy_version": "s1"})
     outcome, _ = coordinator.execute(order, reference_price=100.0, portfolio_notional=0, symbol_notional=0, daily_loss=0, spread_bps=2, limits=_limits(), regime="normal")
     parent = journal.get(outcome.order_id)
     assert parent.client_order_id == "parent-client-1"
     assert parent.state == "RECOVERED"
     assert journal.child_records(outcome.order_id)
+    assert journal.parity(outcome.order_id) is False
+    assert "lineage_fingerprint" in coordinator.oms.get(outcome.order_id).metadata
 
 
 def test_governance_hash_mismatch_blocks_before_routing() -> None:
