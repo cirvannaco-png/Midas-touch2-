@@ -1,22 +1,16 @@
-"""
-Fail-closed execution validation.
+"""Fail-closed execution validation.
 
-Handbook section 15. Core rule, verbatim: "Unknown/invalid critical
-symbol metadata -> REFUSE TRADE." The specific bug called out:
-"ValidateStopDistance must not return true merely because point
-metadata is unavailable" — i.e. a `None`/missing value must be treated
-as INVALID, never as "skip this check". This is the classic fail-open
-bug: `if point_size and stop_distance < point_size: return False` looks
-fine until `point_size` is None, at which point the whole condition is
-falsy and the function returns... whatever the fall-through is, usually
-True. Below, every check is written so that missing metadata is an
-explicit rejection, not a bypassed branch.
+Unknown or invalid critical symbol metadata is a hard trade rejection. The
+validator deliberately checks metadata integrity before arithmetic so missing,
+zero, negative, or non-finite broker values can never become an accidental
+approval or a runtime division-by-zero.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 
 
 class RejectionReason(str, Enum):
@@ -36,10 +30,6 @@ class RejectionReason(str, Enum):
 
 @dataclass(frozen=True)
 class SymbolMetadata:
-    """All fields Optional on purpose — that's the whole point of this
-    module. A None here must fail the corresponding check, not skip it.
-    """
-
     point_size: float | None
     tick_size: float | None
     stops_level_points: int | None
@@ -59,115 +49,84 @@ class ValidationResult:
     detail: str = ""
 
     @staticmethod
-    def reject(reason: RejectionReason, detail: str = "") -> ValidationResult:
+    def reject(reason: RejectionReason, detail: str = "") -> "ValidationResult":
         return ValidationResult(ok=False, reason=reason, detail=detail)
 
     @staticmethod
-    def accept() -> ValidationResult:
+    def accept() -> "ValidationResult":
         return ValidationResult(ok=True)
 
 
-def validate_stop_distance(
-    *,
-    entry_price: float,
-    stop_loss: float,
-    meta: SymbolMetadata,
-) -> ValidationResult:
-    """The specific function the handbook calls out by name.
-
-    Every metadata field this depends on is checked for None FIRST,
-    before any numeric comparison — so "metadata unavailable" can never
-    fall through to an implicit pass.
-    """
+def validate_stop_distance(*, entry_price: float, stop_loss: float, meta: SymbolMetadata) -> ValidationResult:
     if meta.point_size is None:
         return ValidationResult.reject(RejectionReason.MISSING_POINT_SIZE)
+    if not isfinite(meta.point_size) or meta.point_size <= 0:
+        return ValidationResult.reject(RejectionReason.MISSING_POINT_SIZE, "point_size must be finite and > 0")
     if meta.stops_level_points is None:
         return ValidationResult.reject(RejectionReason.MISSING_STOPS_LEVEL)
-
+    if meta.stops_level_points < 0:
+        return ValidationResult.reject(RejectionReason.MISSING_STOPS_LEVEL, "stops_level_points < 0")
+    if not all(isfinite(value) for value in (entry_price, stop_loss)):
+        return ValidationResult.reject(RejectionReason.PRICE_NOT_NORMALIZED, "entry/stop price is not finite")
     distance_points = abs(entry_price - stop_loss) / meta.point_size
-    min_required = meta.stops_level_points
-
-    if distance_points < min_required:
-        return ValidationResult.reject(
-            RejectionReason.STOP_DISTANCE_TOO_TIGHT,
-            detail=f"{distance_points:.1f} points < required {min_required}",
-        )
+    if distance_points < meta.stops_level_points:
+        return ValidationResult.reject(RejectionReason.STOP_DISTANCE_TOO_TIGHT, detail=f"{distance_points:.1f} points < required {meta.stops_level_points}")
     return ValidationResult.accept()
 
 
 def validate_tick_size(price: float, meta: SymbolMetadata) -> ValidationResult:
-    """Handbook section 15 explicitly requires validating tick_size,
-    separately from point_size (many brokers/symbols have a coarser
-    tradeable tick than the raw point precision — e.g. 5-digit pricing
-    with a 1-tick minimum increment). None here is a hard reject, same
-    fail-closed rule as everything else in this module.
-    """
     if meta.tick_size is None:
         return ValidationResult.reject(RejectionReason.MISSING_TICK_SIZE)
-    if meta.tick_size <= 0:
-        return ValidationResult.reject(RejectionReason.MISSING_TICK_SIZE, "tick_size <= 0")
+    if not isfinite(meta.tick_size) or meta.tick_size <= 0:
+        return ValidationResult.reject(RejectionReason.MISSING_TICK_SIZE, "tick_size must be finite and > 0")
+    if not isfinite(price):
+        return ValidationResult.reject(RejectionReason.PRICE_NOT_NORMALIZED, "price is not finite")
     remainder = price % meta.tick_size
-    # tolerate float error on both sides of the modulus
     if remainder > 1e-9 and (meta.tick_size - remainder) > 1e-9:
-        return ValidationResult.reject(
-            RejectionReason.PRICE_NOT_NORMALIZED,
-            detail=f"{price} not aligned to tick_size {meta.tick_size}",
-        )
+        return ValidationResult.reject(RejectionReason.PRICE_NOT_NORMALIZED, detail=f"{price} not aligned to tick_size {meta.tick_size}")
     return ValidationResult.accept()
 
 
-def validate_freeze_level(
-    *, entry_price: float, stop_loss: float, meta: SymbolMetadata
-) -> ValidationResult:
-    """Handbook section 15 requires validating freeze level alongside
-    stops level. Stops level governs the minimum distance for
-    SL/TP *placement*; freeze level governs the minimum distance within
-    which an order can no longer be *modified or cancelled*. They are
-    frequently different values and both matter: a stop that clears
-    stops_level but sits inside freeze_level will place fine and then
-    reject on the first modification attempt. That failure mode belongs
-    here, not discovered later in production.
-    """
+def validate_freeze_level(*, entry_price: float, stop_loss: float, meta: SymbolMetadata) -> ValidationResult:
     if meta.point_size is None:
         return ValidationResult.reject(RejectionReason.MISSING_POINT_SIZE)
+    if not isfinite(meta.point_size) or meta.point_size <= 0:
+        return ValidationResult.reject(RejectionReason.MISSING_POINT_SIZE, "point_size must be finite and > 0")
     if meta.freeze_level_points is None:
         return ValidationResult.reject(RejectionReason.MISSING_FREEZE_LEVEL)
-
+    if meta.freeze_level_points < 0:
+        return ValidationResult.reject(RejectionReason.MISSING_FREEZE_LEVEL, "freeze_level_points < 0")
+    if not all(isfinite(value) for value in (entry_price, stop_loss)):
+        return ValidationResult.reject(RejectionReason.PRICE_NOT_NORMALIZED, "entry/stop price is not finite")
     distance_points = abs(entry_price - stop_loss) / meta.point_size
     if distance_points < meta.freeze_level_points:
-        return ValidationResult.reject(
-            RejectionReason.FREEZE_DISTANCE_TOO_TIGHT,
-            detail=(
-                f"{distance_points:.1f} points < freeze level "
-                f"{meta.freeze_level_points}"
-            ),
-        )
+        return ValidationResult.reject(RejectionReason.FREEZE_DISTANCE_TOO_TIGHT, detail=f"{distance_points:.1f} points < freeze level {meta.freeze_level_points}")
     return ValidationResult.accept()
 
 
 def validate_price_normalization(price: float, meta: SymbolMetadata) -> ValidationResult:
     if meta.price_digits is None:
         return ValidationResult.reject(RejectionReason.PRICE_NOT_NORMALIZED, "digits unknown")
+    if meta.price_digits < 0 or not isfinite(price):
+        return ValidationResult.reject(RejectionReason.PRICE_NOT_NORMALIZED, "invalid price metadata or value")
     rounded = round(price, meta.price_digits)
     if abs(rounded - price) > 1e-12:
-        return ValidationResult.reject(
-            RejectionReason.PRICE_NOT_NORMALIZED,
-            detail=f"{price} not aligned to {meta.price_digits} digits",
-        )
+        return ValidationResult.reject(RejectionReason.PRICE_NOT_NORMALIZED, detail=f"{price} not aligned to {meta.price_digits} digits")
     return ValidationResult.accept()
 
 
 def validate_volume(volume: float, meta: SymbolMetadata) -> ValidationResult:
     if meta.volume_min is None or meta.volume_max is None or meta.volume_step is None:
         return ValidationResult.reject(RejectionReason.MISSING_VOLUME_LIMITS)
-    if not (meta.volume_min <= volume <= meta.volume_max):
+    if not all(isfinite(value) for value in (volume, meta.volume_min, meta.volume_max, meta.volume_step)) or meta.volume_step <= 0:
+        return ValidationResult.reject(RejectionReason.MISSING_VOLUME_LIMITS, "volume metadata must be finite and step > 0")
+    if meta.volume_min < 0 or meta.volume_max < meta.volume_min:
+        return ValidationResult.reject(RejectionReason.MISSING_VOLUME_LIMITS, "invalid volume range")
+    if not meta.volume_min <= volume <= meta.volume_max:
         return ValidationResult.reject(RejectionReason.VOLUME_OUT_OF_RANGE)
-    # step alignment, tolerant of float error
     steps = (volume - meta.volume_min) / meta.volume_step
     if abs(steps - round(steps)) > 1e-6:
-        return ValidationResult.reject(
-            RejectionReason.VOLUME_OUT_OF_RANGE, detail="not aligned to volume_step"
-        )
+        return ValidationResult.reject(RejectionReason.VOLUME_OUT_OF_RANGE, detail="not aligned to volume_step")
     return ValidationResult.accept()
 
 
@@ -182,27 +141,14 @@ def validate_trading_permissions(meta: SymbolMetadata) -> ValidationResult:
 def validate_margin(required_margin: float | None, free_margin: float | None) -> ValidationResult:
     if required_margin is None or free_margin is None:
         return ValidationResult.reject(RejectionReason.INSUFFICIENT_MARGIN, "margin data unavailable")
+    if not all(isfinite(value) for value in (required_margin, free_margin)) or required_margin < 0 or free_margin < 0:
+        return ValidationResult.reject(RejectionReason.INSUFFICIENT_MARGIN, "invalid margin data")
     if required_margin > free_margin:
         return ValidationResult.reject(RejectionReason.INSUFFICIENT_MARGIN)
     return ValidationResult.accept()
 
 
-def validate_execution(
-    *,
-    entry_price: float,
-    stop_loss: float,
-    volume: float,
-    meta: SymbolMetadata,
-    required_margin: float | None,
-    free_margin: float | None,
-) -> ValidationResult:
-    """Runs every check; returns the first rejection, or accept() only
-    if every single check explicitly passed. Order doesn't matter for
-    correctness here since each check is independent and short-circuits
-    on its own missing data — but cheap/metadata checks are ordered
-    before the margin check to fail fast without needing an account
-    snapshot for a trade that was already invalid on symbol grounds.
-    """
+def validate_execution(*, entry_price: float, stop_loss: float, volume: float, meta: SymbolMetadata, required_margin: float | None, free_margin: float | None) -> ValidationResult:
     for result in (
         validate_stop_distance(entry_price=entry_price, stop_loss=stop_loss, meta=meta),
         validate_freeze_level(entry_price=entry_price, stop_loss=stop_loss, meta=meta),
