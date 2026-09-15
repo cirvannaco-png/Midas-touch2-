@@ -152,7 +152,14 @@ class GovernedExecutionCoordinator:
                 existing = self.recovery_journal.begin_submission(governed.order_id, parent_order_id=None, client_order_id=parent_identity)
                 if existing.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
                     raise RuntimeError(f"invalid durable recovery state: {existing.state}")
-            stored = self.oms.submit(governed)
+            try:
+                stored = self.oms.submit(governed)
+            except Exception as exc:
+                if self.recovery_journal is not None:
+                    record = self.recovery_journal.get(governed.order_id)
+                    if record.state == "SUBMITTING":
+                        self.recovery_journal.mark_cancelled(governed.order_id)
+                raise exc
             self._record_backend_state(stored, status=OrderStatus.NEW, sequence=0, setup_fingerprint=lineage_fingerprint)
             stored = self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
             self._record_backend_state(stored, status=OrderStatus.VALIDATED, sequence=1, setup_fingerprint=lineage_fingerprint)
@@ -199,6 +206,8 @@ class GovernedExecutionCoordinator:
             if stored is not None:
                 self.oms.freeze_for_reconciliation(stored.order_id)
             if not broker_call_started and stored is not None:
+                self._release_reservation(governed.order_id)
+            elif not broker_call_started and stored is None:
                 self._release_reservation(governed.order_id)
             raise
         current = self.oms.get(stored.order_id)
