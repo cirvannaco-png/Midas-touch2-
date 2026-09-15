@@ -1,4 +1,4 @@
-"""Execution-cost research helpers for venue/regime attribution and stress tests."""
+"""Execution-cost research helpers for strategy/venue/regime attribution and stress tests."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,6 +12,7 @@ class ExecutionObservation:
     implementation_shortfall: float
     slippage_bps: float
     market_impact_bps: float
+    strategy: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,16 @@ def group_by_venue_and_regime(
     groups: dict[tuple[str, str], list[ExecutionObservation]] = {}
     for observation in observations:
         groups.setdefault((observation.venue, observation.regime), []).append(observation)
+    return {key: summarize(value) for key, value in groups.items()}
+
+
+def group_by_strategy_regime_venue(
+    observations: list[ExecutionObservation],
+) -> dict[tuple[str, str, str], ExecutionCostSummary]:
+    """Attribute execution quality without treating cost as alpha performance."""
+    groups: dict[tuple[str, str, str], list[ExecutionObservation]] = {}
+    for observation in observations:
+        groups.setdefault((observation.strategy, observation.regime, observation.venue), []).append(observation)
     return {key: summarize(value) for key, value in groups.items()}
 
 
