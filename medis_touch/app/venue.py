@@ -15,6 +15,8 @@ class ExecutionVenue(Protocol):
     def cancel(self, venue_order_id: str) -> bool: ...
     def reconcile(self, venue_order_id: str) -> dict: ...
 
+    def reconcile_by_client_order_id(self, client_order_id: str) -> dict: ...
+
 
 @dataclass
 class SimulatedVenue:
@@ -41,10 +43,7 @@ class SimulatedVenue:
             raise RuntimeError("buy fill is below simulated ask")
         if order.side.upper() == "SELL" and price > self.bid:
             raise RuntimeError("sell fill is above simulated bid")
-        return ExecutionFill(
-            fill_id=f"{venue_order_id}:fill", order_id=order.order_id,
-            venue_order_id=venue_order_id, quantity=order.quantity, price=price,
-        )
+        return ExecutionFill(fill_id=f"{venue_order_id}:fill", order_id=order.order_id, venue_order_id=venue_order_id, quantity=order.quantity, price=price)
 
     def cancel(self, venue_order_id: str) -> bool:
         return bool(venue_order_id)
@@ -53,3 +52,8 @@ class SimulatedVenue:
         if not venue_order_id:
             return {"status": "UNKNOWN"}
         return {"venue_order_id": venue_order_id, "status": "FILLED"}
+
+    def reconcile_by_client_order_id(self, client_order_id: str) -> dict:
+        if not client_order_id:
+            return {"status": "UNKNOWN"}
+        return {"client_order_id": client_order_id, "venue_order_id": f"{self.name}:{client_order_id}", "status": "FILLED"}
