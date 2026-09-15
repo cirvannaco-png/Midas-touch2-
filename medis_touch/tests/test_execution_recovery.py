@@ -28,7 +28,7 @@ def test_partial_fill_cancel_then_late_fill_preserves_quantity(tmp_path) -> None
     final = journal.mark_fill("o-2", 2.0, 101.0)
     assert final.state == "FILLED"
     assert final.filled_quantity == 5.0
-    assert final.filled_notional == 803.0
+    assert final.filled_notional == 502.0
 
 
 def test_concurrent_recovery_readers_never_lose_fills(tmp_path) -> None:
