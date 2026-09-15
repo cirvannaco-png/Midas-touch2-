@@ -109,6 +109,7 @@ class GovernedExecutionCoordinator:
         if not risk.allowed:
             raise PermissionError("pre-trade risk rejected: " + "; ".join(risk.reasons))
         self._reserve(governed, reference_price=reference_price, portfolio_notional=portfolio_notional, symbol_notional=symbol_notional, limits=limits)
+        submitted_to_broker = False
         try:
             stored = self.oms.submit(governed)
             self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
@@ -122,6 +123,7 @@ class GovernedExecutionCoordinator:
             for child in children:
                 child = replace(child, venue=route.venue, status=OrderStatus.WORKING)
                 venue_order_id = self.venue.submit(child)
+                submitted_to_broker = True
                 fill_price = quote.ask if child.side.upper() == "BUY" else quote.bid
                 fill = self.venue.fill(child, venue_order_id, fill_price)
                 self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
@@ -130,12 +132,16 @@ class GovernedExecutionCoordinator:
                 observed_status = OrderStatus(observed.get("status", "UNKNOWN"))
                 child_reconciliations.append(reconcile(expected_child, observed_status, fill.quantity))
         except Exception:
-            self.oms.freeze_for_reconciliation(stored.order_id) if 'stored' in locals() else None
-            self._release_reservation(governed.order_id)
+            if 'stored' in locals():
+                self.oms.freeze_for_reconciliation(stored.order_id)
+            # Before any broker submission, no external exposure exists and the
+            # reservation can be released. After submission, preserve it until
+            # authoritative reconciliation resolves the broker state.
+            if not submitted_to_broker:
+                self._release_reservation(governed.order_id)
             raise
         current = self.oms.get(stored.order_id)
         if current is None:
-            self._release_reservation(governed.order_id)
             raise RuntimeError("OMS lost parent order after broker execution")
         reconciled = all(result.matched for result in child_reconciliations)
         if not reconciled:
@@ -143,6 +149,10 @@ class GovernedExecutionCoordinator:
             current = self.oms.get(current.order_id)
             if current is None:
                 raise RuntimeError("OMS lost parent order during reconciliation recovery")
+            # UNKNOWN/mismatch is deliberately held in recovery. The reservation
+            # remains outstanding and blocks duplicate exposure until a recovery
+            # worker obtains authoritative broker state and commits/releases it.
+            raise RuntimeError(f"execution reconciliation unresolved for {current.order_id}")
         self._commit_reservation(current.order_id, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, symbol=current.symbol)
         alerts = inspect(rejection_rate=quote.rejection_rate, slippage_bps=quote.historical_slippage_bps, p99_latency_ms=quote.latency_ms, venue_healthy=quote.healthy)
         tca = calculate_tca(order_id=current.order_id, side=current.side, quantity=current.quantity, decision_price=reference_price, arrival_price=quote.ask if current.side.upper() == "BUY" else quote.bid, average_fill_price=current.average_fill_price, spread=quote.spread)
