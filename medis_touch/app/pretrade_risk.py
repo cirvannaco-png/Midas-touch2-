@@ -51,8 +51,11 @@ class RiskReservationBook:
         if not reservation_id:
             raise ValueError("reservation_id is required")
         with self._lock:
+            requested_symbols = tuple(sorted(requested_symbol_notionals.items()))
             existing = self._reservations.get(reservation_id)
             if existing is not None:
+                if existing.portfolio_notional != requested_portfolio_notional or existing.symbol_notionals != requested_symbols:
+                    raise ValueError("reservation_id already exists with different exposure identity")
                 return existing
             values = (
                 portfolio_notional,
@@ -75,7 +78,7 @@ class RiskReservationBook:
             reservation = RiskReservation(
                 reservation_id=reservation_id,
                 portfolio_notional=requested_portfolio_notional,
-                symbol_notionals=tuple(sorted(requested_symbol_notionals.items())),
+                symbol_notionals=requested_symbols,
             )
             self._reservations[reservation_id] = reservation
             return reservation
