@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from threading import RLock
 
 from .execution_models import ExecutionOrder, RiskDecision
 
@@ -15,6 +16,76 @@ class PreTradeLimits:
     max_symbol_notional: float
     max_daily_loss: float
     max_spread_bps: float
+
+
+@dataclass(frozen=True)
+class RiskReservation:
+    reservation_id: str
+    portfolio_notional: float
+    symbol_notionals: tuple[tuple[str, float], ...]
+
+
+class RiskReservationBook:
+    """Process-local atomic reservation ledger for concurrent execution workers.
+
+    This closes the check-then-submit race inside one service process: a second
+    worker cannot reserve the same remaining portfolio/symbol capacity while the
+    first worker is between risk validation and broker submission. A persistent
+    deployment must replace or wrap this book with an atomic database/Redis
+    reservation store shared by all workers and processes; this class is not a
+    substitute for distributed persistence.
+    """
+
+    def __init__(self) -> None:
+        self._lock = RLock()
+        self._reservations: dict[str, RiskReservation] = {}
+
+    def reserve(
+        self,
+        reservation_id: str,
+        *,
+        portfolio_notional: float,
+        symbol_notionals: dict[str, float],
+        requested_portfolio_notional: float,
+        requested_symbol_notionals: dict[str, float],
+        limits: PreTradeLimits,
+    ) -> RiskReservation:
+        if not reservation_id:
+            raise ValueError("reservation_id is required")
+        if reservation_id in self._reservations:
+            return self._reservations[reservation_id]
+        if not all(isfinite(value) and value >= 0 for value in (
+            portfolio_notional, requested_portfolio_notional,
+            *symbol_notionals.values(), *requested_symbol_notionals.values(),
+        )):
+            raise ValueError("risk reservation inputs must be finite and non-negative")
+        reserved_portfolio = sum(item.portfolio_notional for item in self._reservations.values())
+        if portfolio_notional + reserved_portfolio + requested_portfolio_notional > limits.max_portfolio_notional:
+            raise PermissionError("portfolio exposure reservation limit")
+
+        merged = dict(symbol_notionals)
+        for reservation in self._reservations.values():
+            for symbol, notional in reservation.symbol_notionals:
+                merged[symbol] = merged.get(symbol, 0.0) + notional
+        for symbol, notional in requested_symbol_notionals.items():
+            if merged.get(symbol, 0.0) + notional + portfolio_notional > limits.max_symbol_notional:
+                raise PermissionError(f"symbol exposure reservation limit: {symbol}")
+
+        reservation = RiskReservation(
+            reservation_id=reservation_id,
+            portfolio_notional=requested_portfolio_notional,
+            symbol_notionals=tuple(sorted(requested_symbol_notionals.items())),
+        )
+        self._reservations[reservation_id] = reservation
+        return reservation
+
+    def release(self, reservation_id: str) -> None:
+        with self._lock:
+            self._reservations.pop(reservation_id, None)
+
+    def snapshot(self) -> tuple[RiskReservation, ...]:
+        with self._lock:
+            return tuple(self._reservations.values())
 
 
 def evaluate(
