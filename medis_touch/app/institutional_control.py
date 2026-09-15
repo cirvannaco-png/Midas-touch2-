@@ -2,12 +2,8 @@
 
 This module is intentionally deterministic and side-effect free. It provides
 portable controls that remain useful on Render Free: decision lineage,
-portfolio budgets, promotion gates, kill-switch decisions, stress-test
-aggregation, and audit-grade decision records. Persistence and broker I/O
-remain adapters owned by the existing OMS/recovery layers.
-
-The controls are fail-closed: missing evidence, unknown state, or critical
-surveillance conditions cannot silently produce an approval.
+portfolio budgets, promotion gates, kill-switch decisions, execution throttles,
+stress-test aggregation, and audit-grade decision records.
 """
 from __future__ import annotations
 
@@ -44,11 +40,7 @@ class DecisionLineage:
     configuration_hash: str
 
     def fingerprint(self) -> str:
-        payload = "|".join((
-            self.decision_id, self.model_version, self.strategy_version,
-            self.regime_version, self.calibration_version, self.risk_version,
-            self.execution_version, self.configuration_hash,
-        ))
+        payload = "|".join((self.decision_id, self.model_version, self.strategy_version, self.regime_version, self.calibration_version, self.risk_version, self.execution_version, self.configuration_hash))
         return sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -106,14 +98,9 @@ class PromotionEvidence:
 
 
 def promotion_gate(evidence: PromotionEvidence) -> GateResult:
-    """Approve only when every mandatory evidence gate passes."""
     if evidence.sample_count < 0 or evidence.minimum_sample <= 0:
         return GateResult.FAIL
-    checks = (
-        evidence.code_validation, evidence.data_validation, evidence.out_of_sample,
-        evidence.walk_forward, evidence.stress_test, evidence.execution_cost_test,
-        evidence.calibration_test, evidence.risk_test, evidence.paper_trade,
-    )
+    checks = (evidence.code_validation, evidence.data_validation, evidence.out_of_sample, evidence.walk_forward, evidence.stress_test, evidence.execution_cost_test, evidence.calibration_test, evidence.risk_test, evidence.paper_trade)
     if evidence.sample_count < evidence.minimum_sample:
         return GateResult.HOLD
     return GateResult.PASS if all(checks) else GateResult.FAIL
@@ -133,19 +120,43 @@ class ControlInputs:
 
 
 def control_state(inputs: ControlInputs) -> ControlState:
-    """Determine the strongest required operational state."""
     if inputs.duplicate_orders < 0:
         return ControlState.HALTED
-    critical = (
-        not inputs.venue_healthy, not inputs.reconciliation_ok, not inputs.market_data_fresh,
-        not inputs.risk_ok, not inputs.governance_match, inputs.drawdown_breach,
-        inputs.duplicate_orders > 0,
-    )
+    critical = (not inputs.venue_healthy, not inputs.reconciliation_ok, not inputs.market_data_fresh, not inputs.risk_ok, not inputs.governance_match, inputs.drawdown_breach, inputs.duplicate_orders > 0)
     if any(critical):
         return ControlState.HALTED
     if inputs.model_drift or inputs.execution_degraded:
         return ControlState.RESTRICTED
     return ControlState.NORMAL
+
+
+@dataclass(frozen=True)
+class ExecutionThrottle:
+    window_seconds: float
+    max_orders: int
+    max_repeats: int
+
+    def __post_init__(self) -> None:
+        if not isfinite(self.window_seconds) or self.window_seconds <= 0:
+            raise ValueError("window_seconds must be finite and > 0")
+        if self.max_orders <= 0 or self.max_repeats <= 0:
+            raise ValueError("throttle limits must be positive")
+
+
+@dataclass(frozen=True)
+class ThrottleDecision:
+    allowed: bool
+    reason: str
+
+
+def evaluate_throttle(*, throttle: ExecutionThrottle, orders_in_window: int, repeated_executions: int) -> ThrottleDecision:
+    if orders_in_window < 0 or repeated_executions < 0:
+        return ThrottleDecision(False, "INVALID_THROTTLE_STATE")
+    if orders_in_window >= throttle.max_orders:
+        return ThrottleDecision(False, "ORDER_RATE_LIMIT")
+    if repeated_executions >= throttle.max_repeats:
+        return ThrottleDecision(False, "REPEAT_EXECUTION_LIMIT")
+    return ThrottleDecision(True, "THROTTLE_AVAILABLE")
 
 
 @dataclass(frozen=True)
@@ -170,18 +181,9 @@ class StressSummary:
 def summarize_stress(results: Iterable[StressScenarioResult]) -> StressSummary:
     rows = tuple(results)
     failed = sum(not row.passed for row in rows)
-    integrity_failures = sum(
-        (not row.reconciliation_ok) or row.duplicate_orders > 0 or row.unknown_positions > 0
-        for row in rows
-    )
+    integrity_failures = sum((not row.reconciliation_ok) or row.duplicate_orders > 0 or row.unknown_positions > 0 for row in rows)
     worst_loss = min((row.max_loss_r for row in rows), default=0.0)
-    return StressSummary(
-        passed=bool(rows) and failed == 0 and integrity_failures == 0,
-        scenarios=len(rows),
-        failed=failed,
-        worst_loss_r=worst_loss,
-        integrity_failures=integrity_failures,
-    )
+    return StressSummary(passed=bool(rows) and failed == 0 and integrity_failures == 0, scenarios=len(rows), failed=failed, worst_loss_r=worst_loss, integrity_failures=integrity_failures)
 
 
 @dataclass(frozen=True)
@@ -207,9 +209,7 @@ class AuditDecision:
             raise ValueError("risk_fraction must be finite and non-negative")
 
 
-def can_execute(*, state: ControlState, expected_return_r: float,
-                risk_fraction: float, budget: PortfolioBudget) -> bool:
-    """Final pure execution gate; fail closed on ambiguity or invalid numbers."""
+def can_execute(*, state: ControlState, expected_return_r: float, risk_fraction: float, budget: PortfolioBudget) -> bool:
     if state is not ControlState.NORMAL:
         return False
     if not isfinite(expected_return_r) or not isfinite(risk_fraction):
