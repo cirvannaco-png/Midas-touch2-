@@ -5,6 +5,8 @@ import pytest
 from medis_touch.app.execution_coordinator import GovernedExecutionCoordinator
 from medis_touch.app.execution_governance import ExecutionConfig
 from medis_touch.app.execution_models import ExecutionOrder, ExecutionPolicy, OrderStatus
+from medis_touch.app.execution_recovery import ExecutionRecoveryJournal
+from medis_touch.app.institutional_control import ControlInputs
 from medis_touch.app.pretrade_risk import PreTradeLimits
 from medis_touch.app.venue import SimulatedVenue
 
@@ -17,8 +19,8 @@ def _config(venues: tuple[str, ...] = ("sim",)) -> ExecutionConfig:
     return ExecutionConfig("1", "TWAP", 10000, 5, 0.25, venues, "model-v1")
 
 
-def _coordinator(config: ExecutionConfig) -> GovernedExecutionCoordinator:
-    return GovernedExecutionCoordinator(SimulatedVenue("sim", 100.0, 100.2, 1000.0), config, approved_hash=config.config_hash, evidence_passed=True)
+def _coordinator(config: ExecutionConfig, recovery: ExecutionRecoveryJournal | None = None) -> GovernedExecutionCoordinator:
+    return GovernedExecutionCoordinator(SimulatedVenue("sim", 100.0, 100.2, 1000.0), config, approved_hash=config.config_hash, evidence_passed=True, recovery_journal=recovery)
 
 
 def test_governed_execution_completes_full_chain() -> None:
@@ -31,6 +33,26 @@ def test_governed_execution_completes_full_chain() -> None:
     assert outcome.execution_config_hash == config.config_hash
     assert outcome.reconciled
     assert observation.filled_quantity == 4.0
+
+
+def test_control_plane_restriction_blocks_before_reservation() -> None:
+    config = _config()
+    coordinator = _coordinator(config)
+    order = ExecutionOrder("restricted-1", "decision-1", "XAUUSD", "BUY", 1.0)
+    with pytest.raises(PermissionError, match="institutional control state"):
+        coordinator.execute(order, reference_price=100.0, portfolio_notional=0, symbol_notional=0, daily_loss=0, spread_bps=2, limits=_limits(), regime="normal", control_inputs=ControlInputs(True, True, True, True, True, model_drift=True))
+    assert coordinator.oms.all_orders() == ()
+
+
+def test_durable_parent_identity_is_bound_before_execution(tmp_path) -> None:
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    coordinator = _coordinator(_config(), journal)
+    order = ExecutionOrder("durable-parent-1", "decision-1", "XAUUSD", "BUY", 1.0, idempotency_key="parent-client-1")
+    outcome, _ = coordinator.execute(order, reference_price=100.0, portfolio_notional=0, symbol_notional=0, daily_loss=0, spread_bps=2, limits=_limits(), regime="normal")
+    parent = journal.get(outcome.order_id)
+    assert parent.client_order_id == "parent-client-1"
+    assert parent.state == "RECOVERED"
+    assert journal.child_records(outcome.order_id)
 
 
 def test_governance_hash_mismatch_blocks_before_routing() -> None:
