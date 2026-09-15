@@ -1,8 +1,8 @@
 """Leakage-resistant walk-forward validation window construction."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 
 @dataclass(frozen=True)
@@ -14,13 +14,7 @@ class WalkForwardWindow:
     test_end: int
 
 
-def build_windows(
-    observations: Sequence[object],
-    *,
-    train_size: int,
-    test_size: int,
-    step: int | None = None,
-) -> tuple[WalkForwardWindow, ...]:
+def build_windows(observations: Sequence[object], *, train_size: int, test_size: int, step: int | None = None) -> tuple[WalkForwardWindow, ...]:
     """Build sequential train/test windows with strict temporal separation."""
     if train_size <= 0 or test_size <= 0:
         raise ValueError("train_size and test_size must be positive")
@@ -40,15 +34,7 @@ def build_windows(
     return tuple(windows)
 
 
-def evaluate(
-    observations: Sequence[object],
-    *,
-    train_size: int,
-    test_size: int,
-    trainer,
-    evaluator,
-    step: int | None = None,
-):
+def evaluate(observations: Sequence[object], *, train_size: int, test_size: int, trainer, evaluator, step: int | None = None):
     """Train only on each window's historical segment and evaluate only on its OOS segment."""
     windows = build_windows(observations, train_size=train_size, test_size=test_size, step=step)
     results = []
