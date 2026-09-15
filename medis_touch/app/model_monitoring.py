@@ -5,13 +5,19 @@ production guardrails rather than as a replacement for full offline research.
 """
 from __future__ import annotations
 
-from math import log
+from math import isfinite, log
 from statistics import mean
 
 
+def _validate_finite(values: list[float], name: str) -> None:
+    if not values or not all(isfinite(value) for value in values):
+        raise ValueError(f"{name} must contain finite values")
+
+
 def _normalize(values: list[float], bins: int) -> list[float]:
-    if not values:
-        raise ValueError("values must not be empty")
+    _validate_finite(values, "values")
+    if bins < 2:
+        raise ValueError("bins must be >= 2")
     lo, hi = min(values), max(values)
     if lo == hi:
         return [1.0] + [0.0] * (bins - 1)
@@ -26,8 +32,8 @@ def _normalize(values: list[float], bins: int) -> list[float]:
 
 def population_stability_index(reference: list[float], current: list[float], bins: int = 10) -> float:
     """Calculate PSI using common min/max bounds and epsilon protection."""
-    if not reference or not current:
-        raise ValueError("reference and current must not be empty")
+    _validate_finite(reference, "reference")
+    _validate_finite(current, "current")
     if bins < 2:
         raise ValueError("bins must be >= 2")
     lo, hi = min(reference + current), max(reference + current)
@@ -52,8 +58,8 @@ def jensen_shannon_divergence(reference: list[float], current: list[float]) -> f
     """JSD for already-normalized discrete distributions."""
     if len(reference) != len(current) or not reference:
         raise ValueError("distributions must have equal non-zero length")
-    if any(value < 0 for value in reference + current):
-        raise ValueError("distribution values must be non-negative")
+    if any(not isfinite(value) or value < 0 for value in reference + current):
+        raise ValueError("distribution values must be finite and non-negative")
     if abs(sum(reference) - 1.0) > 1e-6 or abs(sum(current) - 1.0) > 1e-6:
         raise ValueError("distributions must sum to 1")
 
@@ -65,17 +71,51 @@ def jensen_shannon_divergence(reference: list[float], current: list[float]) -> f
 
 
 def calibration_error(predicted: list[float], observed: list[float]) -> float:
-    """Mean absolute calibration error for paired probability/outcome data."""
+    """Mean absolute error between predicted probabilities and binary outcomes."""
     if len(predicted) != len(observed) or not predicted:
         raise ValueError("predicted and observed must have equal non-zero length")
-    if any(not 0 <= p <= 1 for p in predicted):
-        raise ValueError("predicted probabilities must be in [0, 1]")
+    if any(not isfinite(p) or not 0 <= p <= 1 for p in predicted):
+        raise ValueError("predicted probabilities must be finite and in [0, 1]")
     if any(o not in (0, 1) for o in observed):
         raise ValueError("observed outcomes must be 0 or 1")
     return mean(abs(p - o) for p, o in zip(predicted, observed))
 
 
+def expected_calibration_error(predicted: list[float], observed: list[int], bins: int = 10) -> float:
+    """Bucketed ECE: weighted gap between mean confidence and empirical accuracy."""
+    if len(predicted) != len(observed) or not predicted:
+        raise ValueError("predicted and observed must have equal non-zero length")
+    if bins < 2:
+        raise ValueError("bins must be >= 2")
+    if any(not isfinite(p) or not 0 <= p <= 1 for p in predicted):
+        raise ValueError("predicted probabilities must be finite and in [0, 1]")
+    if any(o not in (0, 1) for o in observed):
+        raise ValueError("observed outcomes must be 0 or 1")
+    buckets = [[] for _ in range(bins)]
+    for probability, outcome in zip(predicted, observed):
+        buckets[min(bins - 1, int(probability * bins))].append((probability, outcome))
+    total = len(predicted)
+    return sum((len(bucket) / total) * abs(mean(p for p, _ in bucket) - mean(o for _, o in bucket)) for bucket in buckets if bucket)
+
+
+def brier_score(predicted: list[float], observed: list[int]) -> float:
+    """Mean squared probability error; lower is better."""
+    if len(predicted) != len(observed) or not predicted:
+        raise ValueError("predicted and observed must have equal non-zero length")
+    if any(not isfinite(p) or not 0 <= p <= 1 for p in predicted):
+        raise ValueError("predicted probabilities must be finite and in [0, 1]")
+    if any(o not in (0, 1) for o in observed):
+        raise ValueError("observed outcomes must be 0 or 1")
+    return mean((p - o) ** 2 for p, o in zip(predicted, observed))
+
+
 def drift_state(psi: float, *, watch: float = 0.10, restrict: float = 0.25) -> str:
+    if not all(isfinite(value) for value in (psi, watch, restrict)):
+        raise ValueError("drift thresholds must be finite")
+    if watch < 0 or restrict <= watch:
+        raise ValueError("require 0 <= watch < restrict")
+    if psi < 0:
+        raise ValueError("PSI cannot be negative")
     if psi < watch:
         return "NORMAL"
     if psi < restrict:

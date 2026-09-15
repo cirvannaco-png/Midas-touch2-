@@ -11,6 +11,7 @@ from .execution_outcome import OutcomeObservation, to_observation
 from .execution_recovery import ExecutionRecoveryJournal
 from .execution_router import SmartOrderRouter
 from .execution_surveillance import inspect
+from .institutional_control import ControlInputs, ControlState, control_state
 from .oms import OrderManager
 from .pretrade_risk import PersistentPortfolioAdmission, PreTradeLimits, RiskReservationBook, evaluate
 from .reconciliation import reconcile
@@ -97,7 +98,7 @@ class GovernedExecutionCoordinator:
         else:
             self.portfolio_admission.release(order_id)
 
-    def execute(self, order: ExecutionOrder, *, reference_price: float, portfolio_notional: float, symbol_notional: float, daily_loss: float, spread_bps: float, limits: PreTradeLimits, regime: str, observed_volumes: list[float] | None = None) -> tuple[ExecutionOutcome, OutcomeObservation]:
+    def execute(self, order: ExecutionOrder, *, reference_price: float, portfolio_notional: float, symbol_notional: float, daily_loss: float, spread_bps: float, limits: PreTradeLimits, regime: str, observed_volumes: list[float] | None = None, control_inputs: ControlInputs | None = None) -> tuple[ExecutionOutcome, OutcomeObservation]:
         existing_hash = order.metadata.get("execution_config_hash")
         if existing_hash is not None and existing_hash != self.config.config_hash:
             raise PermissionError("order execution configuration hash does not match approved configuration")
@@ -112,15 +113,20 @@ class GovernedExecutionCoordinator:
         risk = evaluate(governed, reference_price=reference_price, portfolio_notional=portfolio_notional, symbol_notional=symbol_notional, daily_loss=daily_loss, spread_bps=spread_bps, limits=limits, venue_healthy=quote.healthy, configuration_authorized=True)
         if not risk.allowed:
             raise PermissionError("pre-trade risk rejected: " + "; ".join(risk.reasons))
+        derived_controls = control_inputs or ControlInputs(venue_healthy=quote.healthy, reconciliation_ok=True, market_data_fresh=True, risk_ok=risk.allowed, governance_match=True, execution_degraded=quote.rejection_rate > 0.25 or quote.historical_slippage_bps > 10.0)
+        state = control_state(derived_controls)
+        if state is not ControlState.NORMAL:
+            raise PermissionError(f"institutional control state blocks execution: {state.value}")
         self._reserve(governed, reference_price=reference_price, portfolio_notional=portfolio_notional, symbol_notional=symbol_notional, limits=limits)
         broker_call_started = False
         stored = None
         try:
-            stored = self.oms.submit(governed)
             if self.recovery_journal is not None:
-                existing = self.recovery_journal.begin_submission(stored.order_id, parent_order_id=None, client_order_id=stored.idempotency_key or stored.order_id)
+                parent_identity = governed.idempotency_key or governed.order_id
+                existing = self.recovery_journal.begin_submission(governed.order_id, parent_order_id=None, client_order_id=parent_identity)
                 if existing.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
                     raise RuntimeError(f"invalid durable recovery state: {existing.state}")
+            stored = self.oms.submit(governed)
             self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
             route = self.router.route([quote], stored.quantity)
             if route.venue not in self.config.allowed_venues:

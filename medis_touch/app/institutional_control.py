@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
+from math import isfinite
 from typing import Iterable
 
 
@@ -57,11 +58,19 @@ class PortfolioBudget:
     limit: float
     used: float = 0.0
 
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("budget name is required")
+        if not all(isfinite(value) and value >= 0 for value in (self.limit, self.used)):
+            raise ValueError("budget values must be finite and non-negative")
+        if self.used > self.limit:
+            raise ValueError("budget used cannot exceed limit")
+
     def remaining(self) -> float:
-        return max(0.0, self.limit - self.used)
+        return self.limit - self.used
 
     def admit(self, requested: float) -> bool:
-        return requested >= 0.0 and requested <= self.remaining()
+        return isfinite(requested) and requested >= 0.0 and requested <= self.remaining()
 
 
 @dataclass(frozen=True)
@@ -74,8 +83,8 @@ class PortfolioAdmission:
 
 def admit_budget(budget: PortfolioBudget, requested: float) -> PortfolioAdmission:
     remaining = budget.remaining()
-    if requested < 0:
-        return PortfolioAdmission(False, requested, remaining, "NEGATIVE_REQUEST")
+    if not isfinite(requested) or requested < 0:
+        return PortfolioAdmission(False, requested, remaining, "INVALID_REQUEST")
     if requested > remaining:
         return PortfolioAdmission(False, requested, remaining, "BUDGET_EXCEEDED")
     return PortfolioAdmission(True, requested, remaining, "BUDGET_AVAILABLE")
@@ -98,16 +107,12 @@ class PromotionEvidence:
 
 def promotion_gate(evidence: PromotionEvidence) -> GateResult:
     """Approve only when every mandatory evidence gate passes."""
+    if evidence.sample_count < 0 or evidence.minimum_sample <= 0:
+        return GateResult.FAIL
     checks = (
-        evidence.code_validation,
-        evidence.data_validation,
-        evidence.out_of_sample,
-        evidence.walk_forward,
-        evidence.stress_test,
-        evidence.execution_cost_test,
-        evidence.calibration_test,
-        evidence.risk_test,
-        evidence.paper_trade,
+        evidence.code_validation, evidence.data_validation, evidence.out_of_sample,
+        evidence.walk_forward, evidence.stress_test, evidence.execution_cost_test,
+        evidence.calibration_test, evidence.risk_test, evidence.paper_trade,
     )
     if evidence.sample_count < evidence.minimum_sample:
         return GateResult.HOLD
@@ -128,18 +133,12 @@ class ControlInputs:
 
 
 def control_state(inputs: ControlInputs) -> ControlState:
-    """Determine the strongest required operational state.
-
-    Critical integrity failures halt globally. Recoverable degradation
-    restricts operation rather than pretending the system is healthy.
-    """
+    """Determine the strongest required operational state."""
+    if inputs.duplicate_orders < 0:
+        return ControlState.HALTED
     critical = (
-        not inputs.venue_healthy,
-        not inputs.reconciliation_ok,
-        not inputs.market_data_fresh,
-        not inputs.risk_ok,
-        not inputs.governance_match,
-        inputs.drawdown_breach,
+        not inputs.venue_healthy, not inputs.reconciliation_ok, not inputs.market_data_fresh,
+        not inputs.risk_ok, not inputs.governance_match, inputs.drawdown_breach,
         inputs.duplicate_orders > 0,
     )
     if any(critical):
@@ -202,14 +201,18 @@ class AuditDecision:
             raise ValueError("model_score must be in [0, 1]")
         if not 0.0 <= self.calibrated_probability <= 1.0:
             raise ValueError("calibrated_probability must be in [0, 1]")
-        if self.risk_fraction < 0.0:
-            raise ValueError("risk_fraction must be non-negative")
+        if not isfinite(self.expected_return_r):
+            raise ValueError("expected_return_r must be finite")
+        if not isfinite(self.risk_fraction) or self.risk_fraction < 0.0:
+            raise ValueError("risk_fraction must be finite and non-negative")
 
 
 def can_execute(*, state: ControlState, expected_return_r: float,
                 risk_fraction: float, budget: PortfolioBudget) -> bool:
-    """Final pure execution gate used by adapters; fail closed on ambiguity."""
+    """Final pure execution gate; fail closed on ambiguity or invalid numbers."""
     if state is not ControlState.NORMAL:
+        return False
+    if not isfinite(expected_return_r) or not isfinite(risk_fraction):
         return False
     if expected_return_r <= 0.0 or risk_fraction <= 0.0:
         return False

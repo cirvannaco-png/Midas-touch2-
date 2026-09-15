@@ -36,11 +36,11 @@ DEFAULT_CASES = (
 
 
 def run(cases: tuple[StressCase, ...] = DEFAULT_CASES, evaluator: Callable[[ControlInputs], ControlState] = control_state) -> tuple[StressCaseResult, ...]:
-    return tuple(
-        StressCaseResult(case.name, evaluator(case.inputs) is case.expected_state,
-                         evaluator(case.inputs), case.expected_state)
-        for case in cases
-    )
+    results = []
+    for case in cases:
+        actual = evaluator(case.inputs)
+        results.append(StressCaseResult(case.name, actual is case.expected_state, actual, case.expected_state))
+    return tuple(results)
 
 
 def all_passed(results: tuple[StressCaseResult, ...]) -> bool:
