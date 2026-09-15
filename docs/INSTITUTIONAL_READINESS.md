@@ -25,21 +25,22 @@ This checklist separates **software maturity** from external infrastructure and 
 - [x] ECE/Brier/calibration monitoring
 - [x] Fail-closed broker metadata validation
 - [x] Audit-grade decision record primitive
+- [x] Strategy/regime/venue execution-cost attribution helpers
+- [x] Leakage-resistant walk-forward/OOS window construction
+- [x] OMS-boundary failure cleanup and reservation-release fault fixture
 - [x] CI paused with `[skip ci]` commits and the institutional MR closed during hardening
 
 ## Remaining software work before CI re-enable
 
 1. Execute the complete Python/Telegram/tools test suites and correct every failure.
-2. Complete integration tests connecting portfolio controls, throttle, control state,
+2. Finish integration assertions connecting portfolio controls, throttle, control state,
    OMS, pre-trade risk, recovery, reconciliation, surveillance, TCA and lifecycle.
-3. Add end-to-end provenance assertions for decision → child order → fill →
+3. Complete end-to-end provenance assertions for decision → child order → fill →
    reconciliation → TCA → outcome, including EA-side sequence parity fixtures.
-4. Add strategy/regime/venue attribution reports over resolved historical data.
-5. Add realistic cost/slippage stress fixtures and walk-forward/OOS evidence fixtures.
-6. Expand negative/fault-injection tests for restart, timeout, duplicate, stale-data,
-   unknown-position, governance mismatch and reconciliation failure paths.
-7. Run static Python validation and repository-wide invariant checks before CI restore.
-8. Re-enable CI only after the local/available validation suite is clean.
+4. Expand fault injection for restart, timeout/ambiguous acknowledgement, duplicate
+   client order, stale data, unknown position and unresolved reconciliation paths.
+5. Run repository-wide static Python validation and invariant checks before CI restore.
+6. Re-enable CI only after the available validation suite is clean.
 
 ## External gates deliberately not claimed as complete
 
