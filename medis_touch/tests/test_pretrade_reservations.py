@@ -1,8 +1,11 @@
 # ruff: noqa: I001
 
+from concurrent.futures import ThreadPoolExecutor
+from tempfile import NamedTemporaryFile
+
 import pytest
 
-from medis_touch.app.pretrade_risk import PreTradeLimits, RiskReservationBook
+from medis_touch.app.pretrade_risk import PreTradeLimits, PersistentPortfolioAdmission, RiskReservationBook
 
 
 def _limits() -> PreTradeLimits:
@@ -73,3 +76,31 @@ def test_reservation_rejects_non_finite_or_negative_inputs() -> None:
         book.reserve("bad-negative", portfolio_notional=0, symbol_notionals={}, requested_portfolio_notional=1, requested_symbol_notionals={"XAUUSD": -1}, limits=_limits())
     with pytest.raises(ValueError):
         book.reserve("bad-ttl", portfolio_notional=0, symbol_notionals={}, requested_portfolio_notional=1, requested_symbol_notionals={"XAUUSD": 1}, limits=_limits(), ttl_seconds=0)
+
+
+def test_persistent_admission_commits_reservation_and_exposure_atomically() -> None:
+    with NamedTemporaryFile(suffix=".db") as file:
+        admission = PersistentPortfolioAdmission(file.name)
+        reservation = admission.reserve("r1", scope_id="acct", requested_portfolio_notional=300, requested_symbol_notionals={"XAUUSD": 300}, limits=_limits())
+        assert admission.snapshot("acct") == (reservation,)
+        admission.commit("r1")
+        assert admission.snapshot("acct") == ()
+        with pytest.raises(PermissionError):
+            admission.reserve("r2", scope_id="acct", requested_portfolio_notional=800, requested_symbol_notionals={"XAUUSD": 800}, limits=_limits())
+
+
+def test_persistent_admission_serializes_concurrent_reservations_without_oversubscription() -> None:
+    with NamedTemporaryFile(suffix=".db") as file:
+        admission = PersistentPortfolioAdmission(file.name)
+
+        def attempt(index: int) -> bool:
+            try:
+                admission.reserve(f"r{index}", scope_id="acct", requested_portfolio_notional=600, requested_symbol_notionals={"XAUUSD": 600}, limits=_limits(), ttl_seconds=60)
+                return True
+            except PermissionError:
+                return False
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(attempt, range(8)))
+        assert sum(results) == 1
+        assert len(admission.snapshot("acct")) == 1
