@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 from threading import RLock
+from time import time
 
 from .execution_models import ExecutionOrder, RiskDecision
 
@@ -23,6 +24,8 @@ class RiskReservation:
     reservation_id: str
     portfolio_notional: float
     symbol_notionals: tuple[tuple[str, float], ...]
+    created_at: float
+    expires_at: float | None
 
 
 class RiskReservationBook:
@@ -47,10 +50,14 @@ class RiskReservationBook:
         requested_portfolio_notional: float,
         requested_symbol_notionals: dict[str, float],
         limits: PreTradeLimits,
+        ttl_seconds: float | None = 30.0,
     ) -> RiskReservation:
         if not reservation_id:
             raise ValueError("reservation_id is required")
+        if ttl_seconds is not None and (not isfinite(ttl_seconds) or ttl_seconds <= 0):
+            raise ValueError("ttl_seconds must be positive and finite")
         with self._lock:
+            self._expire_locked(time())
             requested_symbols = tuple(sorted(requested_symbol_notionals.items()))
             existing = self._reservations.get(reservation_id)
             if existing is not None:
@@ -75,20 +82,42 @@ class RiskReservationBook:
             for symbol, notional in requested_symbol_notionals.items():
                 if merged.get(symbol, 0.0) + notional > limits.max_symbol_notional:
                     raise PermissionError(f"symbol exposure reservation limit: {symbol}")
+            now = time()
             reservation = RiskReservation(
                 reservation_id=reservation_id,
                 portfolio_notional=requested_portfolio_notional,
                 symbol_notionals=requested_symbols,
+                created_at=now,
+                expires_at=None if ttl_seconds is None else now + ttl_seconds,
             )
             self._reservations[reservation_id] = reservation
             return reservation
+
+    def consume(self, reservation_id: str) -> None:
+        """Release a reservation only after authoritative exposure is committed."""
+        self.release(reservation_id)
 
     def release(self, reservation_id: str) -> None:
         with self._lock:
             self._reservations.pop(reservation_id, None)
 
+    def expire(self, now: float | None = None) -> tuple[str, ...]:
+        with self._lock:
+            return self._expire_locked(time() if now is None else now)
+
+    def _expire_locked(self, now: float) -> tuple[str, ...]:
+        expired = tuple(
+            reservation_id
+            for reservation_id, reservation in self._reservations.items()
+            if reservation.expires_at is not None and reservation.expires_at <= now
+        )
+        for reservation_id in expired:
+            self._reservations.pop(reservation_id, None)
+        return expired
+
     def snapshot(self) -> tuple[RiskReservation, ...]:
         with self._lock:
+            self._expire_locked(time())
             return tuple(self._reservations.values())
 
 
