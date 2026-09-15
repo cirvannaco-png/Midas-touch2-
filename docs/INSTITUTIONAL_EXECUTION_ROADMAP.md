@@ -17,6 +17,7 @@ Evolve Midas Touch 2 from `decision -> broker -> execution` into a broker-neutra
 - Smart order routing score based on liquidity coverage, fill reliability, spread/slippage and latency.
 - Market/adaptive execution-policy selection.
 - Fail-closed pre-trade gate for exposure, loss, spread, venue health, configuration authorization and invalid/non-finite inputs.
+- Process-local atomic risk-reservation primitive with idempotent identity and explicit release.
 - Signed TCA/implementation-shortfall calculation.
 - Broker/OMS reconciliation contract that freezes when state is unavailable or ambiguous.
 - Deterministic execution surveillance for venue, rejection, slippage, latency and duplicate-order anomalies.
@@ -40,9 +41,11 @@ For every batch:
 
 Batch preflight is atomic as a **validation boundary**, not as a broker execution transaction. Once an external order is accepted, later orders may still fail. The system must model this explicitly rather than pretending that a broker supports rollback.
 
-## Required next control: concurrent risk reservations
+## Risk-reservation lifecycle
 
-The current batch gate protects one coordinator call. Production persistence must additionally reserve portfolio/symbol capacity transactionally before concurrent workers can submit orders. A future `RiskReservation` boundary must support acquire, release/consume, expiry and reconciliation of reservations. This closes the race where two independent workers each pass pre-trade checks against the same stale exposure snapshot.
+A reservation is a temporary claim on portfolio/symbol capacity created before an external submission race can occur. Its identity must be deterministic and idempotent. A successful execution must not silently release capacity before the authoritative portfolio/position state incorporates the exposure; otherwise a second worker could immediately oversubscribe the same stale snapshot.
+
+The current `RiskReservationBook` is intentionally process-local. Production multi-worker/multi-process deployment requires a shared atomic persistence adapter (database row lock/transaction, Redis-compatible atomic primitive, or equivalent) implementing the same acquire/idempotency/release/consume/expiry contract. Until that adapter exists and is tested under concurrency, the reservation mechanism is an engineering control, not a production proof of distributed serialization.
 
 ## Next parallel workstreams
 
@@ -93,6 +96,7 @@ Execution-aware backtesting must model spread, commission, slippage, latency, pa
 - No look-ahead in routing, TCA benchmarks, simulation or calibration.
 - Exact configuration/model hash remains attached to every executable order.
 - Multiple orders/accounts never share an idempotency namespace accidentally.
+- Reservation capacity cannot be released before authoritative exposure state is updated.
 
 ## Production sequence
 
