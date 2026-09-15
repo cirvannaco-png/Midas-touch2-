@@ -19,9 +19,9 @@ def calculate_tca(*, order_id: str, side: str, quantity: float, decision_price: 
     if average_fill_price is None:
         return TCAResult(order_id, decision_price, arrival_price, None, quantity)
     direction = _signed(side)
-    slippage = direction * (average_fill_price - arrival_price) * quantity
-    spread_cost = abs(spread) * quantity / 2.0
-    shortfall = direction * (average_fill_price - decision_price) * quantity
+    slippage = round(direction * (average_fill_price - arrival_price) * quantity, 12)
+    spread_cost = round(abs(spread) * quantity / 2.0, 12)
+    shortfall = round(direction * (average_fill_price - decision_price) * quantity, 12)
     return TCAResult(
         order_id=order_id,
         decision_price=decision_price,

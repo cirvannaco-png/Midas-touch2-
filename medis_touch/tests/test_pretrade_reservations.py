@@ -22,9 +22,10 @@ def test_reservation_book_accumulates_portfolio_and_symbol_capacity() -> None:
 
 def test_reservation_book_rejects_aggregate_portfolio_oversubscription() -> None:
     book = RiskReservationBook()
-    book.reserve("r1", portfolio_notional=0, symbol_notionals={}, requested_portfolio_notional=700, requested_symbol_notionals={"XAUUSD": 700}, limits=_limits())
+    portfolio_only_limits = PreTradeLimits(1000, 1000, 1000, 100, 5)
+    book.reserve("r1", portfolio_notional=0, symbol_notionals={}, requested_portfolio_notional=700, requested_symbol_notionals={"XAUUSD": 700}, limits=portfolio_only_limits)
     with pytest.raises(PermissionError, match="portfolio exposure reservation limit"):
-        book.reserve("r2", portfolio_notional=0, symbol_notionals={}, requested_portfolio_notional=400, requested_symbol_notionals={"EURUSD": 400}, limits=_limits())
+        book.reserve("r2", portfolio_notional=0, symbol_notionals={}, requested_portfolio_notional=400, requested_symbol_notionals={"EURUSD": 400}, limits=portfolio_only_limits)
 
 
 def test_reservation_book_rejects_aggregate_symbol_oversubscription() -> None:
