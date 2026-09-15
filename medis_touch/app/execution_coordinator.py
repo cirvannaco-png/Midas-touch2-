@@ -1,1 +1,230 @@
-...
+"""Governed end-to-end execution coordinator."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+
+from .child_execution import ChildOrderExecutor
+from .execution_governance import ExecutionConfig, attach_identity, promotion_allowed
+from .execution_models import ExecutionFill, ExecutionOrder, ExecutionOutcome, OrderStatus
+from .execution_outcome import OutcomeObservation, to_observation
+from .execution_recovery import ExecutionRecoveryJournal, ExecutionStateEvent
+from .execution_router import SmartOrderRouter
+from .execution_surveillance import inspect
+from .institutional_control import ControlInputs, ControlState, DecisionLineage, control_state
+from .oms import OrderManager
+from .pretrade_risk import PersistentPortfolioAdmission, PreTradeLimits, RiskReservationBook, evaluate
+from .reconciliation import reconcile
+from .tca import calculate_tca
+from .venue import ExecutionVenue
+
+
+class GovernedExecutionCoordinator:
+    """Single path from authorized Midas decision to measured execution outcome."""
+
+    def __init__(self, venue: ExecutionVenue, config: ExecutionConfig, *, approved_hash: str | None, evidence_passed: bool, portfolio_admission: PersistentPortfolioAdmission | None = None, admission_scope: str = "default", recovery_journal: ExecutionRecoveryJournal | None = None) -> None:
+        if not promotion_allowed(challenger=config, approved_hash=approved_hash, evidence_passed=evidence_passed):
+            raise PermissionError("execution configuration is not approved")
+        if not admission_scope:
+            raise ValueError("admission_scope is required")
+        self.venue = venue
+        self.config = config
+        self.oms = OrderManager(require_governance=True)
+        self.router = SmartOrderRouter()
+        self.children = ChildOrderExecutor()
+        self.portfolio_admission = portfolio_admission
+        self.admission_scope = admission_scope
+        self.recovery_journal = recovery_journal
+        self._local_reservations = RiskReservationBook()
+
+    def _lineage_fingerprint(self, order: ExecutionOrder, regime: str) -> str:
+        metadata = order.metadata
+        lineage = DecisionLineage(
+            decision_id=order.decision_id,
+            model_version=str(metadata.get("model_version", self.config.model_hash)),
+            strategy_version=str(metadata.get("strategy_version", "unknown")),
+            regime_version=str(metadata.get("regime_version", regime)),
+            calibration_version=str(metadata.get("calibration_version", "unknown")),
+            risk_version=str(metadata.get("risk_version", "unknown")),
+            execution_version=self.config.version,
+            configuration_hash=self.config.config_hash,
+        )
+        return lineage.fingerprint()
+
+    def _record_backend_state(self, order: ExecutionOrder, *, status: OrderStatus, sequence: int, setup_fingerprint: str) -> None:
+        if self.recovery_journal is None:
+            return
+        self.recovery_journal.record_state_event(ExecutionStateEvent(
+            source="BACKEND", order_id=order.order_id, decision_id=order.decision_id,
+            setup_fingerprint=setup_fingerprint, status=status.value,
+            filled_quantity=order.filled_quantity, average_fill_price=order.average_fill_price,
+            sequence=sequence, created_at=order.updated_at,
+        ))
+
+    def execute_many(self, orders: list[ExecutionOrder] | tuple[ExecutionOrder, ...], *, reference_prices: dict[str, float], portfolio_notional: float, symbol_notionals: dict[str, float], daily_loss: float, spread_bps: dict[str, float], limits: PreTradeLimits, regime: str, observed_volumes: dict[str, list[float]] | None = None) -> tuple[tuple[ExecutionOutcome, OutcomeObservation], ...]:
+        """Execute multiple already-authorized trades without bypassing shared risk."""
+        batch = tuple(orders)
+        if not batch:
+            return ()
+        seen_ids: set[str] = set()
+        seen_idempotency: set[str] = set()
+        projected_portfolio = portfolio_notional
+        projected_symbols = dict(symbol_notionals)
+        for order in batch:
+            if order.order_id in seen_ids:
+                raise ValueError("duplicate order_id in execution batch")
+            seen_ids.add(order.order_id)
+            if order.idempotency_key and order.idempotency_key in seen_idempotency:
+                raise ValueError("duplicate idempotency key in execution batch")
+            if order.idempotency_key:
+                seen_idempotency.add(order.idempotency_key)
+            reference_price = reference_prices.get(order.symbol)
+            spread = spread_bps.get(order.symbol)
+            if reference_price is None or spread is None:
+                raise ValueError(f"missing execution market inputs for {order.symbol}")
+            quote = self.venue.quote(order.symbol)
+            if quote.symbol != order.symbol or quote.venue not in self.config.allowed_venues or not quote.healthy:
+                raise PermissionError(f"venue is not authorized and healthy for {order.symbol}")
+            governed = ExecutionOrder(**{**order.__dict__, "metadata": attach_identity(order.metadata, self.config)})
+            risk = evaluate(governed, reference_price=reference_price, portfolio_notional=projected_portfolio, symbol_notional=projected_symbols.get(order.symbol, 0.0), daily_loss=daily_loss, spread_bps=spread, limits=limits, venue_healthy=quote.healthy, configuration_authorized=True)
+            if not risk.allowed:
+                raise PermissionError(f"batch pre-trade risk rejected {order.order_id}: " + "; ".join(risk.reasons))
+            notional = order.quantity * reference_price
+            projected_portfolio += notional
+            projected_symbols[order.symbol] = projected_symbols.get(order.symbol, 0.0) + notional
+        results = []
+        projected_portfolio = portfolio_notional
+        projected_symbols = dict(symbol_notionals)
+        for order in batch:
+            result = self.execute(order, reference_price=reference_prices[order.symbol], portfolio_notional=projected_portfolio, symbol_notional=projected_symbols.get(order.symbol, 0.0), daily_loss=daily_loss, spread_bps=spread_bps[order.symbol], limits=limits, regime=regime, observed_volumes=(observed_volumes or {}).get(order.symbol))
+            results.append(result)
+            notional = order.quantity * reference_prices[order.symbol]
+            projected_portfolio += notional
+            projected_symbols[order.symbol] = projected_symbols.get(order.symbol, 0.0) + notional
+        return tuple(results)
+
+    def _reserve(self, order: ExecutionOrder, *, reference_price: float, portfolio_notional: float, symbol_notional: float, limits: PreTradeLimits):
+        requested = order.quantity * reference_price
+        if self.portfolio_admission is not None:
+            return self.portfolio_admission.reserve(order.order_id, scope_id=self.admission_scope, requested_portfolio_notional=requested, requested_symbol_notionals={order.symbol: requested}, limits=limits)
+        return self._local_reservations.reserve(order.order_id, portfolio_notional=portfolio_notional, symbol_notionals={order.symbol: symbol_notional}, requested_portfolio_notional=requested, requested_symbol_notionals={order.symbol: requested}, limits=limits)
+
+    def _commit_reservation(self, order_id: str, *, filled_quantity: float, average_fill_price: float | None, symbol: str) -> None:
+        if self.portfolio_admission is None:
+            self._local_reservations.consume(order_id)
+            return
+        filled_notional = 0.0 if average_fill_price is None else filled_quantity * average_fill_price
+        self.portfolio_admission.commit(order_id, committed_portfolio_notional=filled_notional, committed_symbol_notionals={symbol: filled_notional})
+
+    def _release_reservation(self, order_id: str) -> None:
+        if self.portfolio_admission is None:
+            self._local_reservations.release(order_id)
+        else:
+            self.portfolio_admission.release(order_id)
+
+    def execute(self, order: ExecutionOrder, *, reference_price: float, portfolio_notional: float, symbol_notional: float, daily_loss: float, spread_bps: float, limits: PreTradeLimits, regime: str, observed_volumes: list[float] | None = None, control_inputs: ControlInputs | None = None) -> tuple[ExecutionOutcome, OutcomeObservation]:
+        existing_hash = order.metadata.get("execution_config_hash")
+        if existing_hash is not None and existing_hash != self.config.config_hash:
+            raise PermissionError("order execution configuration hash does not match approved configuration")
+        governed = ExecutionOrder(**{**order.__dict__, "metadata": attach_identity(order.metadata, self.config)})
+        lineage_fingerprint = self._lineage_fingerprint(governed, regime)
+        governed = ExecutionOrder(**{**governed.__dict__, "metadata": {**governed.metadata, "lineage_fingerprint": lineage_fingerprint}})
+        quote = self.venue.quote(governed.symbol)
+        if quote.symbol != governed.symbol:
+            raise RuntimeError("venue returned a quote for the wrong symbol")
+        if quote.venue not in self.config.allowed_venues:
+            raise PermissionError("quoted venue is not authorized by execution configuration")
+        if not quote.healthy:
+            raise PermissionError("execution venue is unhealthy")
+        risk = evaluate(governed, reference_price=reference_price, portfolio_notional=portfolio_notional, symbol_notional=symbol_notional, daily_loss=daily_loss, spread_bps=spread_bps, limits=limits, venue_healthy=quote.healthy, configuration_authorized=True)
+        if not risk.allowed:
+            raise PermissionError("pre-trade risk rejected: " + "; ".join(risk.reasons))
+        derived_controls = control_inputs or ControlInputs(venue_healthy=quote.healthy, reconciliation_ok=True, market_data_fresh=True, risk_ok=risk.allowed, governance_match=True, execution_degraded=quote.rejection_rate > 0.25 or quote.historical_slippage_bps > 10.0)
+        state = control_state(derived_controls)
+        if state is not ControlState.NORMAL:
+            raise PermissionError(f"institutional control state blocks execution: {state.value}")
+        self._reserve(governed, reference_price=reference_price, portfolio_notional=portfolio_notional, symbol_notional=symbol_notional, limits=limits)
+        broker_call_started = False
+        stored = None
+        try:
+            if self.recovery_journal is not None:
+                parent_identity = governed.idempotency_key or governed.order_id
+                existing = self.recovery_journal.begin_submission(governed.order_id, parent_order_id=None, client_order_id=parent_identity)
+                if existing.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
+                    raise RuntimeError(f"invalid durable recovery state: {existing.state}")
+            try:
+                stored = self.oms.submit(governed)
+            except Exception:
+                if self.recovery_journal is not None:
+                    record = self.recovery_journal.get(governed.order_id)
+                    if record.state == "SUBMITTING":
+                        self.recovery_journal.mark_cancelled(governed.order_id)
+                raise
+            self._record_backend_state(stored, status=OrderStatus.NEW, sequence=0, setup_fingerprint=lineage_fingerprint)
+            stored = self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
+            self._record_backend_state(stored, status=OrderStatus.VALIDATED, sequence=1, setup_fingerprint=lineage_fingerprint)
+            route = self.router.route([quote], stored.quantity)
+            if route.venue not in self.config.allowed_venues:
+                raise PermissionError("router selected an unauthorized venue")
+            stored = self.oms.transition(stored.order_id, OrderStatus.ROUTING)
+            self._record_backend_state(stored, status=OrderStatus.ROUTING, sequence=2, setup_fingerprint=lineage_fingerprint)
+            children = self.children.build_children(stored, observed_volumes=observed_volumes)
+            stored = self.oms.transition(stored.order_id, OrderStatus.WORKING)
+            self._record_backend_state(stored, status=OrderStatus.WORKING, sequence=3, setup_fingerprint=lineage_fingerprint)
+            child_reconciliations = []
+            for child_index, child in enumerate(children):
+                child = replace(child, venue=route.venue, status=OrderStatus.WORKING)
+                if self.recovery_journal is not None:
+                    child_client_id = child.idempotency_key or f"{stored.order_id}:{child.order_id}"
+                    child_record = self.recovery_journal.begin_submission(child.order_id, parent_order_id=stored.order_id, client_order_id=child_client_id)
+                    if child_record.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
+                        raise RuntimeError(f"invalid durable child recovery state: {child_record.state}")
+                broker_call_started = True
+                try:
+                    venue_order_id = self.venue.submit(child)
+                except Exception as exc:
+                    if self.recovery_journal is not None:
+                        self.recovery_journal.mark_unknown(child.order_id, str(exc))
+                    raise
+                if self.recovery_journal is not None:
+                    self.recovery_journal.mark_working(child.order_id, venue_order_id)
+                fill_price = quote.ask if child.side.upper() == "BUY" else quote.bid
+                fill = self.venue.fill(child, venue_order_id, fill_price)
+                if self.recovery_journal is not None:
+                    self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price)
+                stored = self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
+                self._record_backend_state(stored, status=stored.status, sequence=4 + child_index, setup_fingerprint=lineage_fingerprint)
+                expected_child = replace(child, status=OrderStatus.FILLED, filled_quantity=child.quantity, average_fill_price=fill.price)
+                observed = self.venue.reconcile(venue_order_id)
+                observed_status = OrderStatus(observed.get("status", "UNKNOWN"))
+                child_reconciliations.append(reconcile(expected_child, observed_status, fill.quantity))
+            if self.recovery_journal is not None:
+                parent_record = self.recovery_journal.get(stored.order_id)
+                if parent_record.state == "SUBMITTING":
+                    self.recovery_journal.mark_recovered(stored.order_id)
+        except Exception:
+            if stored is not None:
+                self.oms.freeze_for_reconciliation(stored.order_id)
+            if not broker_call_started:
+                self._release_reservation(governed.order_id)
+            raise
+        current = self.oms.get(stored.order_id)
+        if current is None:
+            raise RuntimeError("OMS lost parent order after broker execution")
+        reconciled = all(result.matched for result in child_reconciliations)
+        if not reconciled:
+            self.oms.freeze_for_reconciliation(current.order_id)
+            current = self.oms.get(current.order_id)
+            if current is None:
+                raise RuntimeError("OMS lost parent order during reconciliation recovery")
+            raise RuntimeError(f"execution reconciliation unresolved for {current.order_id}")
+        self._commit_reservation(current.order_id, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, symbol=current.symbol)
+        if self.recovery_journal is not None:
+            durable_children = self.recovery_journal.child_records(current.order_id)
+            durable_filled = sum(child.filled_quantity for child in durable_children)
+            if durable_filled != current.filled_quantity:
+                raise RuntimeError("durable child fill aggregate does not match OMS parent fill")
+        alerts = inspect(rejection_rate=quote.rejection_rate, slippage_bps=quote.historical_slippage_bps, p99_latency_ms=quote.latency_ms, venue_healthy=quote.healthy)
+        tca = calculate_tca(order_id=current.order_id, side=current.side, quantity=current.quantity, decision_price=reference_price, arrival_price=quote.ask if current.side.upper() == "BUY" else quote.bid, average_fill_price=current.average_fill_price, spread=quote.spread)
+        outcome = ExecutionOutcome(order_id=current.order_id, decision_id=current.decision_id, symbol=current.symbol, side=current.side, requested_quantity=current.quantity, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, status=current.status, tca=tca, execution_config_hash=self.config.config_hash, execution_model_hash=self.config.model_hash, reconciled=reconciled, surveillance_codes=tuple(a.code for a in alerts))
+        return outcome, to_observation(outcome, regime=regime, policy=route.policy.value, venue=route.venue)
