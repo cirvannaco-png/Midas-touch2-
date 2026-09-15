@@ -1,6 +1,5 @@
 import pytest
-
-from medis_touch.app.portfolio_risk import PortfolioExposure, assess_portfolio  # noqa: I001
+from medis_touch.app.portfolio_risk import PortfolioExposure, assess_portfolio
 
 
 def test_portfolio_rejects_single_symbol_concentration():
