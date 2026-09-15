@@ -1,3 +1,5 @@
+# ruff: noqa: I001
+
 from math import inf, nan
 
 import pytest
@@ -33,10 +35,7 @@ def test_oms_rejects_conflicting_order_id_identity():
 
 def test_router_prefers_healthy_liquid_venue():
     router = SmartOrderRouter()
-    quotes = [
-        VenueQuote("slow", "XAUUSD", 100, 101, 10, 500, 0.8, 0.1, 4),
-        VenueQuote("good", "XAUUSD", 100, 100.5, 20, 20, 0.99, 0.01, 1),
-    ]
+    quotes = [VenueQuote("slow", "XAUUSD", 100, 101, 10, 500, 0.8, 0.1, 4), VenueQuote("good", "XAUUSD", 100, 100.5, 20, 20, 0.99, 0.01, 1)]
     assert router.route(quotes, 5).venue == "good"
 
 
@@ -71,8 +70,7 @@ def test_surveillance_detects_duplicate_and_venue_failure():
 def test_pretrade_gate_fails_closed_on_exposure_and_venue():
     order = ExecutionOrder("o1", "d1", "XAUUSD", "BUY", 10)
     limits = PreTradeLimits(500, 1000, 500, 100, 5)
-    result = evaluate(order, reference_price=100, portfolio_notional=600, symbol_notional=400,
-                      daily_loss=10, spread_bps=2, limits=limits, venue_healthy=False)
+    result = evaluate(order, reference_price=100, portfolio_notional=600, symbol_notional=400, daily_loss=10, spread_bps=2, limits=limits, venue_healthy=False)
     assert not result.allowed
     assert "order notional limit" in result.reasons
     assert "portfolio exposure limit" in result.reasons
@@ -82,13 +80,11 @@ def test_pretrade_gate_fails_closed_on_exposure_and_venue():
 def test_pretrade_gate_rejects_non_finite_and_invalid_side():
     order = ExecutionOrder("o1", "d1", "XAUUSD", "HOLD", 1)
     limits = PreTradeLimits(500, 1000, 500, 100, 5)
-    result = evaluate(order, reference_price=nan, portfolio_notional=0, symbol_notional=0,
-                      daily_loss=0, spread_bps=0, limits=limits)
+    result = evaluate(order, reference_price=nan, portfolio_notional=0, symbol_notional=0, daily_loss=0, spread_bps=0, limits=limits)
     assert not result.allowed
     assert "non-finite risk input" in result.reasons
     assert "invalid order side" in result.reasons
-    result = evaluate(order, reference_price=100, portfolio_notional=0, symbol_notional=0,
-                      daily_loss=0, spread_bps=0, limits=PreTradeLimits(inf, 1000, 500, 100, 5))
+    result = evaluate(order, reference_price=100, portfolio_notional=0, symbol_notional=0, daily_loss=0, spread_bps=0, limits=PreTradeLimits(inf, 1000, 500, 100, 5))
     assert not result.allowed
     assert "non-finite risk input" in result.reasons
 

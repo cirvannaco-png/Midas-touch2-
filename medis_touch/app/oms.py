@@ -1,4 +1,5 @@
 """Deterministic order-management state machine with idempotency."""
+# ruff: noqa: I001
 
 import time
 from dataclasses import replace

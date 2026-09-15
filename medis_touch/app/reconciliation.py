@@ -1,4 +1,5 @@
 """Broker/OMS reconciliation helpers. Unknown state always fails closed."""
+# ruff: noqa: I001
 
 from __future__ import annotations
 
