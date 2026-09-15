@@ -98,12 +98,12 @@ class RiskReservationBook:
 class PersistentPortfolioAdmission:
     """SQLite-backed transactional reservation and committed-exposure ledger.
 
-    Each admission operation runs in ``BEGIN IMMEDIATE`` and therefore
-    serializes competing writers in the same database. Reservations and
-    committed exposure are scoped by ``scope_id`` (normally an account or
-    portfolio). The transaction is the risk boundary: capacity is checked and
-    the reservation is inserted atomically, eliminating check-then-submit
-    oversubscription across processes sharing the database.
+    Each admission operation uses ``BEGIN IMMEDIATE``. Capacity is checked and
+    reserved in one transaction, so competing processes cannot both pass a
+    stale read and oversubscribe the same portfolio or symbol. ``commit``
+    atomically moves authoritative filled exposure from reservation to the
+    committed ledger; unfilled reservation capacity is discarded at that
+    boundary.
     """
 
     def __init__(self, database: str = ":memory:") -> None:
@@ -118,30 +118,21 @@ class PersistentPortfolioAdmission:
     def _initialize(self) -> None:
         with self._connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
-            db.executescript(
-                """
+            db.executescript("""
                 CREATE TABLE IF NOT EXISTS portfolio_admission_reservations (
-                    reservation_id TEXT PRIMARY KEY,
-                    scope_id TEXT NOT NULL,
-                    portfolio_notional REAL NOT NULL,
-                    symbol_notionals TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    expires_at REAL
+                    reservation_id TEXT PRIMARY KEY, scope_id TEXT NOT NULL,
+                    portfolio_notional REAL NOT NULL, symbol_notionals TEXT NOT NULL,
+                    created_at REAL NOT NULL, expires_at REAL
                 );
-                CREATE INDEX IF NOT EXISTS idx_admission_res_scope
-                    ON portfolio_admission_reservations(scope_id);
+                CREATE INDEX IF NOT EXISTS idx_admission_res_scope ON portfolio_admission_reservations(scope_id);
                 CREATE TABLE IF NOT EXISTS portfolio_admission_exposure (
-                    scope_id TEXT PRIMARY KEY,
-                    portfolio_notional REAL NOT NULL
+                    scope_id TEXT PRIMARY KEY, portfolio_notional REAL NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS portfolio_admission_symbol_exposure (
-                    scope_id TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    notional REAL NOT NULL,
+                    scope_id TEXT NOT NULL, symbol TEXT NOT NULL, notional REAL NOT NULL,
                     PRIMARY KEY(scope_id, symbol)
                 );
-                """
-            )
+                """)
 
     @staticmethod
     def _validate(values: tuple[float, ...]) -> None:
@@ -165,33 +156,48 @@ class PersistentPortfolioAdmission:
             if existing:
                 if existing[0] != scope_id or existing[1] != requested_portfolio_notional or existing[2] != symbols_json:
                     raise ValueError("reservation_id already exists with different exposure identity")
+                db.commit()
                 return RiskReservation(reservation_id, existing[1], tuple(json.loads(existing[2])), existing[3], existing[4])
-            committed_portfolio = db.execute("SELECT portfolio_notional FROM portfolio_admission_exposure WHERE scope_id = ?", (scope_id,)).fetchone()
-            committed_portfolio_value = committed_portfolio[0] if committed_portfolio else 0.0
+            committed = db.execute("SELECT portfolio_notional FROM portfolio_admission_exposure WHERE scope_id = ?", (scope_id,)).fetchone()
+            committed_portfolio = committed[0] if committed else 0.0
             reserved_portfolio = db.execute("SELECT COALESCE(SUM(portfolio_notional), 0) FROM portfolio_admission_reservations WHERE scope_id = ?", (scope_id,)).fetchone()[0]
-            if committed_portfolio_value + reserved_portfolio + requested_portfolio_notional > limits.max_portfolio_notional:
+            if committed_portfolio + reserved_portfolio + requested_portfolio_notional > limits.max_portfolio_notional:
+                db.rollback()
                 raise PermissionError("portfolio exposure reservation limit")
             for symbol, requested in requested_symbol_notionals.items():
                 committed_symbol = db.execute("SELECT notional FROM portfolio_admission_symbol_exposure WHERE scope_id = ? AND symbol = ?", (scope_id, symbol)).fetchone()
                 committed_symbol_value = committed_symbol[0] if committed_symbol else 0.0
-                reserved_symbol = db.execute("SELECT COALESCE(SUM(json_extract(value, '$[1]')), 0) FROM portfolio_admission_reservations, json_each(symbol_notionals) WHERE scope_id = ? AND json_extract(value, '$[0]') = ?", (scope_id, symbol)).fetchone()[0]
+                reserved_symbol = db.execute("SELECT COALESCE(SUM(CAST(json_extract(value, '$[1]') AS REAL)), 0) FROM portfolio_admission_reservations, json_each(symbol_notionals) WHERE scope_id = ? AND json_extract(value, '$[0]') = ?", (scope_id, symbol)).fetchone()[0]
                 if committed_symbol_value + reserved_symbol + requested > limits.max_symbol_notional:
+                    db.rollback()
                     raise PermissionError(f"symbol exposure reservation limit: {symbol}")
             expires = None if ttl_seconds is None else created + ttl_seconds
             db.execute("INSERT INTO portfolio_admission_reservations VALUES (?, ?, ?, ?, ?, ?)", (reservation_id, scope_id, requested_portfolio_notional, symbols_json, created, expires))
             db.commit()
             return RiskReservation(reservation_id, requested_portfolio_notional, tuple(sorted(requested_symbol_notionals.items())), created, expires)
 
-    def commit(self, reservation_id: str) -> None:
-        """Atomically consume a reservation and commit its exposure."""
+    def commit(self, reservation_id: str, *, committed_portfolio_notional: float | None = None, committed_symbol_notionals: dict[str, float] | None = None) -> None:
+        """Atomically commit authoritative filled exposure and consume the reservation."""
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT scope_id, portfolio_notional, symbol_notionals FROM portfolio_admission_reservations WHERE reservation_id = ?", (reservation_id,)).fetchone()
             if row is None:
+                db.rollback()
                 raise KeyError(f"unknown reservation: {reservation_id}")
-            scope_id, portfolio, symbols_json = row
-            db.execute("INSERT INTO portfolio_admission_exposure(scope_id, portfolio_notional) VALUES (?, ?) ON CONFLICT(scope_id) DO UPDATE SET portfolio_notional = portfolio_notional + excluded.portfolio_notional", (scope_id, portfolio))
-            for symbol, notional in json.loads(symbols_json):
+            scope_id, reserved_portfolio, symbols_json = row
+            committed_portfolio = reserved_portfolio if committed_portfolio_notional is None else committed_portfolio_notional
+            committed_symbols = dict(json.loads(symbols_json)) if committed_symbol_notionals is None else dict(committed_symbol_notionals)
+            self._validate((committed_portfolio, *committed_symbols.values()))
+            if committed_portfolio > reserved_portfolio:
+                db.rollback()
+                raise ValueError("committed exposure exceeds reservation")
+            for symbol, notional in committed_symbols.items():
+                reserved_for_symbol = dict(json.loads(symbols_json)).get(symbol, 0.0)
+                if notional > reserved_for_symbol:
+                    db.rollback()
+                    raise ValueError(f"committed exposure exceeds reservation for {symbol}")
+            db.execute("INSERT INTO portfolio_admission_exposure(scope_id, portfolio_notional) VALUES (?, ?) ON CONFLICT(scope_id) DO UPDATE SET portfolio_notional = portfolio_notional + excluded.portfolio_notional", (scope_id, committed_portfolio))
+            for symbol, notional in committed_symbols.items():
                 db.execute("INSERT INTO portfolio_admission_symbol_exposure(scope_id, symbol, notional) VALUES (?, ?, ?) ON CONFLICT(scope_id, symbol) DO UPDATE SET notional = notional + excluded.notional", (scope_id, symbol, notional))
             db.execute("DELETE FROM portfolio_admission_reservations WHERE reservation_id = ?", (reservation_id,))
             db.commit()
