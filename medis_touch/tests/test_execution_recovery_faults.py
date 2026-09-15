@@ -35,4 +35,4 @@ def test_oms_submit_failure_closes_durable_parent_and_releases_reservation(tmp_p
     with pytest.raises(RuntimeError, match="OMS boundary failure"):
         coordinator.execute(order, reference_price=100.0, portfolio_notional=0.0, symbol_notional=0.0, daily_loss=0.0, spread_bps=2.0, limits=_limits(), regime="normal")
     assert journal.get("oms-fail").state == "CANCELLED"
-    assert coordinator._local_reservations.reserved_portfolio_notional == 0.0
+    assert coordinator._local_reservations.snapshot() == ()
