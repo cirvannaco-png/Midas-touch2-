@@ -1,17 +1,11 @@
-"""Midas institutional control-plane primitives.
-
-This module is intentionally deterministic and side-effect free. It provides
-portable controls that remain useful on Render Free: decision lineage,
-portfolio budgets, promotion gates, kill-switch decisions, execution throttles,
-stress-test aggregation, and audit-grade decision records.
-"""
+"""Midas institutional control-plane primitives."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
 from math import isfinite
-from typing import Iterable
 
 
 class ControlState(str, Enum):
@@ -40,7 +34,7 @@ class DecisionLineage:
     configuration_hash: str
 
     def fingerprint(self) -> str:
-        payload = "|".join((self.decision_id, self.model_version, self.strategy_version, self.regime_version, self.calibration_version, self.risk_version, self.execution_version, self.configuration_hash))
+        payload = f"{self.decision_id}|{self.model_version}|{self.strategy_version}|{self.regime_version}|{self.calibration_version}|{self.risk_version}|{self.execution_version}|{self.configuration_hash}"
         return sha256(payload.encode("utf-8")).hexdigest()
 
 
