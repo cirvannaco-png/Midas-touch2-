@@ -61,6 +61,19 @@ def test_reservation_is_idempotent_and_release_restores_capacity() -> None:
     assert book.snapshot() == ()
 
 
+def test_conflicting_reservation_identity_is_rejected() -> None:
+    book = RiskReservationBook()
+    book.reserve(
+        "same", portfolio_notional=0, symbol_notionals={},
+        requested_portfolio_notional=500, requested_symbol_notionals={"XAUUSD": 500}, limits=_limits(),
+    )
+    with pytest.raises(ValueError, match="different exposure identity"):
+        book.reserve(
+            "same", portfolio_notional=0, symbol_notionals={},
+            requested_portfolio_notional=400, requested_symbol_notionals={"EURUSD": 400}, limits=_limits(),
+        )
+
+
 def test_reservation_rejects_non_finite_or_negative_inputs() -> None:
     book = RiskReservationBook()
     with pytest.raises(ValueError):
