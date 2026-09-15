@@ -53,12 +53,34 @@ bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
 TradeSetup CTradeDecision::GenerateBuySetup()
   {
    TradeSetup setup;ZeroMemory(setup);if(m_priceRef==NULL||m_fvgCtx==NULL||m_scoring==NULL)return setup;double conf=m_scoring.CalculateConfidence(true);if(conf<60.0)return setup;FVGZone entryFVG;if(!FindEntryFVG(FVG_BULL,entryFVG))return setup;double atr=m_fvgCtx.candles.GetATR(0);if(atr<=0)return setup;
-   setup.type=ORDER_TYPE_BUY;setup.entry_top=entryFVG.top;setup.entry_bottom=entryFVG.bottom;setup.stop_loss=entryFVG.bottom-m_slBufferATR*atr;setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),setup.entry_top,setup.stop_loss,true);CTargetSelector::AssignTargets(setup,m_liqCtx,m_priceRef.Symbol(),atr,setup.entry_bottom);setup.confidence=conf;setup.creation_time=TimeCurrent();setup.active=true;m_scoring.EvaluateReasons(true,setup.reasons);m_scoring.PopulateConfidenceDiagnostics(setup.reasons,setup.confidence);m_scoring.PopulateStrategyDiagnostics(true,setup.confidence,setup.reasons);m_lastSetup=setup;return setup;
+   setup.type=ORDER_TYPE_BUY;setup.entry_top=entryFVG.top;setup.entry_bottom=entryFVG.bottom;setup.stop_loss=entryFVG.bottom-m_slBufferATR*atr;setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),setup.entry_top,setup.stop_loss,true);CTargetSelector::AssignTargets(setup,m_liqCtx,m_priceRef.Symbol(),atr,setup.entry_bottom);setup.confidence=conf;setup.creation_time=TimeCurrent();setup.active=true;m_scoring.EvaluateReasons(true,setup.reasons);m_scoring.PopulateConfidenceDiagnostics(setup.reasons,setup.confidence);m_scoring.PopulateStrategyDiagnostics(true,setup.confidence,setup.reasons);
+   // The current executable setup builder is SMC/FVG-based. Strategy
+   // selection is therefore an authoritative safety gate, not a label:
+   // if the selector says a different strategy should own this trade,
+   // this builder MUST NOT pass its SMC setup downstream as that strategy.
+   // The selected strategy's dedicated TradeSetup builder must exist
+   // before that strategy can become executable. No silent SMC fallback.
+   if(setup.reasons.selected_strategy!=STRATEGY_SMC)
+     {
+      setup.active=false;
+      setup.reasons.risk_warning="Selected strategy has no executable TradeSetup builder; SMC fallback blocked";
+     }
+   m_lastSetup=setup;return setup;
   }
 TradeSetup CTradeDecision::GenerateSellSetup()
   {
    TradeSetup setup;ZeroMemory(setup);if(m_priceRef==NULL||m_fvgCtx==NULL||m_scoring==NULL)return setup;double conf=m_scoring.CalculateConfidence(false);if(conf<60.0)return setup;FVGZone entryFVG;if(!FindEntryFVG(FVG_BEAR,entryFVG))return setup;double atr=m_fvgCtx.candles.GetATR(0);if(atr<=0)return setup;
-   setup.type=ORDER_TYPE_SELL;setup.entry_top=entryFVG.top;setup.entry_bottom=entryFVG.bottom;setup.stop_loss=entryFVG.top+m_slBufferATR*atr;setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),setup.entry_bottom,setup.stop_loss,false);CTargetSelector::AssignTargets(setup,m_liqCtx,m_priceRef.Symbol(),atr,setup.entry_top);setup.confidence=conf;setup.creation_time=TimeCurrent();setup.active=true;m_scoring.EvaluateReasons(false,setup.reasons);m_scoring.PopulateConfidenceDiagnostics(setup.reasons,setup.confidence);m_scoring.PopulateStrategyDiagnostics(false,setup.confidence,setup.reasons);m_lastSetup=setup;return setup;
+   setup.type=ORDER_TYPE_SELL;setup.entry_top=entryFVG.top;setup.entry_bottom=entryFVG.bottom;setup.stop_loss=entryFVG.top+m_slBufferATR*atr;setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),setup.entry_bottom,setup.stop_loss,false);CTargetSelector::AssignTargets(setup,m_liqCtx,m_priceRef.Symbol(),atr,setup.entry_top);setup.confidence=conf;setup.creation_time=TimeCurrent();setup.active=true;m_scoring.EvaluateReasons(false,setup.reasons);m_scoring.PopulateConfidenceDiagnostics(setup.reasons,setup.confidence);m_scoring.PopulateStrategyDiagnostics(false,setup.confidence,setup.reasons);
+   // Same fail-closed invariant as BUY: the SMC/FVG builder may only
+   // produce an executable setup when the authoritative selector also
+   // selected SMC. A challenger without its own builder cannot inherit
+   // another strategy's thesis.
+   if(setup.reasons.selected_strategy!=STRATEGY_SMC)
+     {
+      setup.active=false;
+      setup.reasons.risk_warning="Selected strategy has no executable TradeSetup builder; SMC fallback blocked";
+     }
+   m_lastSetup=setup;return setup;
   }
 #endif
 //+------------------------------------------------------------------+
