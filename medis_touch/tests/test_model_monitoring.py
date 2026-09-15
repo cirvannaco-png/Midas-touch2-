@@ -1,5 +1,3 @@
-import pytest
-
 from medis_touch.app.model_monitoring import (
     brier_score,
     calibration_error,
@@ -8,6 +6,7 @@ from medis_touch.app.model_monitoring import (
     jensen_shannon_divergence,
     population_stability_index,
 )
+import pytest
 
 
 def test_psi_is_zero_for_identical_samples():
