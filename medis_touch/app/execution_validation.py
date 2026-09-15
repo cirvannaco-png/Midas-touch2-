@@ -1,10 +1,4 @@
-"""Fail-closed execution validation.
-
-Unknown or invalid critical symbol metadata is a hard trade rejection. The
-validator deliberately checks metadata integrity before arithmetic so missing,
-zero, negative, or non-finite broker values can never become an accidental
-approval or a runtime division-by-zero.
-"""
+"""Fail-closed execution validation."""
 
 from __future__ import annotations
 
@@ -49,11 +43,11 @@ class ValidationResult:
     detail: str = ""
 
     @staticmethod
-    def reject(reason: RejectionReason, detail: str = "") -> "ValidationResult":
+    def reject(reason: RejectionReason, detail: str = "") -> ValidationResult:
         return ValidationResult(ok=False, reason=reason, detail=detail)
 
     @staticmethod
-    def accept() -> "ValidationResult":
+    def accept() -> ValidationResult:
         return ValidationResult(ok=True)
 
 
