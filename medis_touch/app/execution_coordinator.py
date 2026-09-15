@@ -40,14 +40,7 @@ class GovernedExecutionCoordinator:
         regime: str,
         observed_volumes: dict[str, list[float]] | None = None,
     ) -> tuple[tuple[ExecutionOutcome, OutcomeObservation], ...]:
-        """Execute multiple already-authorized trades without bypassing shared risk.
-
-        The entire batch is preflighted before the first broker submission. Risk
-        exposure is accumulated conservatively using requested notional, so one
-        trade cannot consume portfolio capacity and allow a later trade to exceed
-        the same limits. No alpha/risk decision is created here; this is only an
-        execution-layer batch boundary.
-        """
+        """Execute multiple already-authorized trades without bypassing shared risk."""
         batch = tuple(orders)
         if not batch:
             return ()
@@ -177,12 +170,14 @@ class GovernedExecutionCoordinator:
             raise
 
         current = self.oms.get(stored.order_id)
-        assert current is not None
+        if current is None:
+            raise RuntimeError("OMS lost parent order after broker execution")
         reconciled = all(result.matched for result in child_reconciliations)
         if not reconciled:
             self.oms.freeze_for_reconciliation(current.order_id)
             current = self.oms.get(current.order_id)
-            assert current is not None
+            if current is None:
+                raise RuntimeError("OMS lost parent order during reconciliation recovery")
 
         alerts = inspect(
             rejection_rate=quote.rejection_rate, slippage_bps=quote.historical_slippage_bps,
