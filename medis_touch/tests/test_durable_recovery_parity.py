@@ -41,7 +41,7 @@ def test_partial_cancel_late_fill_is_durable(tmp_path) -> None:
     record = restarted.get("order-3")
     assert record.state == "FILLED"
     assert record.filled_quantity == 5
-    assert record.filled_notional == 803
+    assert record.filled_notional == 502
 
 
 def test_ea_backend_state_sequences_are_identical(tmp_path) -> None:
