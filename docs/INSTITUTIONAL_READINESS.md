@@ -1,6 +1,6 @@
 # Midas Institutional Readiness Checklist
 
-This checklist separates **software maturity** from external infrastructure and broker validation.
+This checklist separates software maturity from external infrastructure and broker validation.
 
 ## Completed in repository
 
@@ -28,19 +28,15 @@ This checklist separates **software maturity** from external infrastructure and 
 - [x] Strategy/regime/venue execution-cost attribution helpers
 - [x] Leakage-resistant walk-forward/OOS window construction
 - [x] OMS-boundary failure cleanup and reservation-release fault fixture
-- [x] CI paused with `[skip ci]` commits and the institutional MR closed during hardening
+- [x] Final Ruff lint remediation pass
+- [x] Full CI validation pipeline restored for final verification
 
-## Remaining software work before CI re-enable
+## Final validation gates
 
-1. Execute the complete Python/Telegram/tools test suites and correct every failure.
-2. Finish integration assertions connecting portfolio controls, throttle, control state,
-   OMS, pre-trade risk, recovery, reconciliation, surveillance, TCA and lifecycle.
-3. Complete end-to-end provenance assertions for decision → child order → fill →
-   reconciliation → TCA → outcome, including EA-side sequence parity fixtures.
-4. Expand fault injection for restart, timeout/ambiguous acknowledgement, duplicate
-   client order, stale data, unknown position and unresolved reconciliation paths.
-5. Run repository-wide static Python validation and invariant checks before CI restore.
-6. Re-enable CI only after the available validation suite is clean.
+- [ ] Complete Python/Telegram/tools pipeline is green on the hardened branch.
+- [ ] End-to-end provenance assertions remain green through decision → child order → fill → reconciliation → TCA → outcome.
+- [ ] Negative/fault-injection paths remain green for restart, timeout, duplicate, stale-data, unknown-position and reconciliation failure cases.
+- [ ] Final branch/static invariant audit is clean.
 
 ## External gates deliberately not claimed as complete
 
@@ -51,23 +47,4 @@ This checklist separates **software maturity** from external infrastructure and 
 
 ## Render Free boundary
 
-The current Render Free deployment is treated as a validation/control-plane
-runtime, not as a production trading runtime. Render documents that Free web
-services can sleep after 15 minutes, use ephemeral filesystems, cannot attach
-persistent disks or scale beyond one instance, and Free Postgres expires after
-30 days. The code therefore must never treat local service state as durable
-trading truth.
-
-The eventual upgrade path is infrastructure, not architecture replacement:
-
-```text
-Render Free
-   ↓
-validated control plane
-   ↓
-paid always-on service + durable datastore/queue
-   ↓
-production monitoring / resilience
-   ↓
-broker-validated live operation
-```
+Render Free remains a validation/control-plane runtime, not a production trading runtime. Local service state is not treated as durable trading truth. Production deployment requires durable storage, always-on compute, monitoring and broker-validated operation.
