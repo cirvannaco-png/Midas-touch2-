@@ -165,7 +165,7 @@ class GovernedExecutionCoordinator:
             stored = self.oms.transition(stored.order_id, OrderStatus.WORKING)
             self._record_backend_state(stored, status=OrderStatus.WORKING, sequence=3, setup_fingerprint=lineage_fingerprint)
             child_reconciliations = []
-            for child in children:
+            for child_index, child in enumerate(children):
                 child = replace(child, venue=route.venue, status=OrderStatus.WORKING)
                 if self.recovery_journal is not None:
                     child_client_id = child.idempotency_key or f"{stored.order_id}:{child.order_id}"
@@ -186,7 +186,7 @@ class GovernedExecutionCoordinator:
                 if self.recovery_journal is not None:
                     self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price)
                 stored = self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
-                self._record_backend_state(stored, status=stored.status, sequence=4, setup_fingerprint=lineage_fingerprint)
+                self._record_backend_state(stored, status=stored.status, sequence=4 + child_index, setup_fingerprint=lineage_fingerprint)
                 expected_child = replace(child, status=OrderStatus.FILLED, filled_quantity=child.quantity, average_fill_price=fill.price)
                 observed = self.venue.reconcile(venue_order_id)
                 observed_status = OrderStatus(observed.get("status", "UNKNOWN"))
