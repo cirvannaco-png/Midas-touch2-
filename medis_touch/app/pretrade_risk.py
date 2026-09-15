@@ -155,9 +155,10 @@ class PersistentPortfolioAdmission:
             symbols_json = json.dumps(sorted(requested_symbol_notionals.items()), separators=(",", ":"))
             if existing:
                 if existing[0] != scope_id or existing[1] != requested_portfolio_notional or existing[2] != symbols_json:
+                    db.rollback()
                     raise ValueError("reservation_id already exists with different exposure identity")
                 db.commit()
-                return RiskReservation(reservation_id, existing[1], tuple(json.loads(existing[2])), existing[3], existing[4])
+                return RiskReservation(reservation_id, existing[1], tuple((symbol, notional) for symbol, notional in json.loads(existing[2])), existing[3], existing[4])
             committed = db.execute("SELECT portfolio_notional FROM portfolio_admission_exposure WHERE scope_id = ?", (scope_id,)).fetchone()
             committed_portfolio = committed[0] if committed else 0.0
             reserved_portfolio = db.execute("SELECT COALESCE(SUM(portfolio_notional), 0) FROM portfolio_admission_reservations WHERE scope_id = ?", (scope_id,)).fetchone()[0]
@@ -186,14 +187,14 @@ class PersistentPortfolioAdmission:
                 raise KeyError(f"unknown reservation: {reservation_id}")
             scope_id, reserved_portfolio, symbols_json = row
             committed_portfolio = reserved_portfolio if committed_portfolio_notional is None else committed_portfolio_notional
-            committed_symbols = dict(json.loads(symbols_json)) if committed_symbol_notionals is None else dict(committed_symbol_notionals)
+            reserved_symbols = dict(json.loads(symbols_json))
+            committed_symbols = reserved_symbols if committed_symbol_notionals is None else dict(committed_symbol_notionals)
             self._validate((committed_portfolio, *committed_symbols.values()))
             if committed_portfolio > reserved_portfolio:
                 db.rollback()
                 raise ValueError("committed exposure exceeds reservation")
             for symbol, notional in committed_symbols.items():
-                reserved_for_symbol = dict(json.loads(symbols_json)).get(symbol, 0.0)
-                if notional > reserved_for_symbol:
+                if notional > reserved_symbols.get(symbol, 0.0):
                     db.rollback()
                     raise ValueError(f"committed exposure exceeds reservation for {symbol}")
             db.execute("INSERT INTO portfolio_admission_exposure(scope_id, portfolio_notional) VALUES (?, ?) ON CONFLICT(scope_id) DO UPDATE SET portfolio_notional = portfolio_notional + excluded.portfolio_notional", (scope_id, committed_portfolio))
@@ -211,7 +212,7 @@ class PersistentPortfolioAdmission:
     def snapshot(self, scope_id: str) -> tuple[RiskReservation, ...]:
         with self._connect() as db:
             rows = db.execute("SELECT reservation_id, portfolio_notional, symbol_notionals, created_at, expires_at FROM portfolio_admission_reservations WHERE scope_id = ?", (scope_id,)).fetchall()
-        return tuple(RiskReservation(rid, portfolio, tuple(json.loads(symbols)), created, expires) for rid, portfolio, symbols, created, expires in rows)
+        return tuple(RiskReservation(rid, portfolio, tuple((symbol, notional) for symbol, notional in json.loads(symbols)), created, expires) for rid, portfolio, symbols, created, expires in rows)
 
 
 def evaluate(order: ExecutionOrder, *, reference_price: float, portfolio_notional: float, symbol_notional: float, daily_loss: float, spread_bps: float, limits: PreTradeLimits, venue_healthy: bool = True, configuration_authorized: bool = True) -> RiskDecision:
