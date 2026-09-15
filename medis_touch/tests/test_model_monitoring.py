@@ -1,6 +1,5 @@
 import pytest
-
-from medis_touch.app.model_monitoring import (  # noqa: I001
+from medis_touch.app.model_monitoring import (
     brier_score,
     calibration_error,
     drift_state,
