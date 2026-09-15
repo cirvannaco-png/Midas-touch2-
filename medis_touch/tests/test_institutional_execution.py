@@ -1,6 +1,8 @@
 from math import inf, nan
 
-from medis_touch.app.execution_models import ExecutionOrder, OrderStatus, VenueQuote
+import pytest
+
+from medis_touch.app.execution_models import ExecutionFill, ExecutionOrder, OrderStatus, VenueQuote
 from medis_touch.app.execution_policy import adaptive_policy, pov_schedule, twap_schedule, vwap_schedule
 from medis_touch.app.execution_router import SmartOrderRouter
 from medis_touch.app.execution_surveillance import inspect
@@ -18,11 +20,15 @@ def test_oms_is_idempotent_and_rejects_invalid_transition():
     assert oms.submit(ExecutionOrder("o2", "d1", "XAUUSD", "BUY", 1.0, idempotency_key="d1:XAUUSD")).order_id == "o1"
     oms.transition("o1", OrderStatus.VALIDATED)
     oms.transition("o1", OrderStatus.ROUTING)
-    try:
+    with pytest.raises(ValueError):
         oms.transition("o1", OrderStatus.FILLED)
-        assert False, "invalid transition accepted"
-    except ValueError:
-        pass
+
+
+def test_oms_rejects_conflicting_order_id_identity():
+    oms = OrderManager()
+    oms.submit(ExecutionOrder("same", "d1", "XAUUSD", "BUY", 1.0, idempotency_key="idem"))
+    with pytest.raises(ValueError, match="different order identity"):
+        oms.submit(ExecutionOrder("same", "d2", "XAUUSD", "BUY", 1.0, idempotency_key="idem"))
 
 
 def test_router_prefers_healthy_liquid_venue():
@@ -45,6 +51,16 @@ def test_reconciliation_fails_closed_when_broker_is_unknown():
     result = reconcile(order, OrderStatus.UNKNOWN)
     assert not result.matched
     assert result.action == "FREEZE_AND_QUERY"
+
+
+def test_oms_freezes_ambiguous_working_order_for_recovery():
+    oms = OrderManager()
+    order = oms.submit(ExecutionOrder("recover-1", "d1", "XAUUSD", "BUY", 1))
+    oms.transition(order.order_id, OrderStatus.VALIDATED)
+    oms.transition(order.order_id, OrderStatus.ROUTING)
+    oms.transition(order.order_id, OrderStatus.WORKING)
+    recovered = oms.freeze_for_reconciliation(order.order_id)
+    assert recovered.status == OrderStatus.RECOVERY_REQUIRED
 
 
 def test_surveillance_detects_duplicate_and_venue_failure():
@@ -93,7 +109,6 @@ def test_simulated_venue_matches_adapter_contract():
 
 
 def test_oms_fill_is_idempotent_and_conserves_quantity():
-    from medis_touch.app.execution_models import ExecutionFill
     oms = OrderManager()
     order = oms.submit(ExecutionOrder("fill-1", "d1", "XAUUSD", "BUY", 2.0))
     oms.transition(order.order_id, OrderStatus.VALIDATED)
