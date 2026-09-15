@@ -1,5 +1,4 @@
 import pytest
-
 from medis_touch.app.execution_coordinator import GovernedExecutionCoordinator
 from medis_touch.app.execution_governance import ExecutionConfig
 from medis_touch.app.execution_models import ExecutionOrder, ExecutionPolicy
