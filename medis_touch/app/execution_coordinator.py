@@ -1,11 +1,14 @@
 """Governed end-to-end execution coordinator."""
 
+from __future__ import annotations
+
 from dataclasses import replace
 
 from .child_execution import ChildOrderExecutor
 from .execution_governance import ExecutionConfig, attach_identity, promotion_allowed
 from .execution_models import ExecutionFill, ExecutionOrder, ExecutionOutcome, OrderStatus
 from .execution_outcome import OutcomeObservation, to_observation
+from .execution_recovery import ExecutionRecoveryJournal
 from .execution_router import SmartOrderRouter
 from .execution_surveillance import inspect
 from .oms import OrderManager
@@ -18,7 +21,7 @@ from .venue import ExecutionVenue
 class GovernedExecutionCoordinator:
     """Single path from authorized Midas decision to measured execution outcome."""
 
-    def __init__(self, venue: ExecutionVenue, config: ExecutionConfig, *, approved_hash: str | None, evidence_passed: bool, portfolio_admission: PersistentPortfolioAdmission | None = None, admission_scope: str = "default") -> None:
+    def __init__(self, venue: ExecutionVenue, config: ExecutionConfig, *, approved_hash: str | None, evidence_passed: bool, portfolio_admission: PersistentPortfolioAdmission | None = None, admission_scope: str = "default", recovery_journal: ExecutionRecoveryJournal | None = None) -> None:
         if not promotion_allowed(challenger=config, approved_hash=approved_hash, evidence_passed=evidence_passed):
             raise PermissionError("execution configuration is not approved")
         if not admission_scope:
@@ -30,6 +33,7 @@ class GovernedExecutionCoordinator:
         self.children = ChildOrderExecutor()
         self.portfolio_admission = portfolio_admission
         self.admission_scope = admission_scope
+        self.recovery_journal = recovery_journal
         self._local_reservations = RiskReservationBook()
 
     def execute_many(self, orders: list[ExecutionOrder] | tuple[ExecutionOrder, ...], *, reference_prices: dict[str, float], portfolio_notional: float, symbol_notionals: dict[str, float], daily_loss: float, spread_bps: dict[str, float], limits: PreTradeLimits, regime: str, observed_volumes: dict[str, list[float]] | None = None) -> tuple[tuple[ExecutionOutcome, OutcomeObservation], ...]:
@@ -110,8 +114,13 @@ class GovernedExecutionCoordinator:
             raise PermissionError("pre-trade risk rejected: " + "; ".join(risk.reasons))
         self._reserve(governed, reference_price=reference_price, portfolio_notional=portfolio_notional, symbol_notional=symbol_notional, limits=limits)
         broker_call_started = False
+        stored = None
         try:
             stored = self.oms.submit(governed)
+            if self.recovery_journal is not None:
+                existing = self.recovery_journal.begin_submission(stored.order_id)
+                if existing.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
+                    raise RuntimeError(f"invalid durable recovery state: {existing.state}")
             self.oms.transition(stored.order_id, OrderStatus.VALIDATED)
             route = self.router.route([quote], stored.quantity)
             if route.venue not in self.config.allowed_venues:
@@ -122,22 +131,28 @@ class GovernedExecutionCoordinator:
             child_reconciliations = []
             for child in children:
                 child = replace(child, venue=route.venue, status=OrderStatus.WORKING)
-                # The submit call itself may have an ambiguous acknowledgement.
-                # Mark the external boundary before invoking it so a timeout or
-                # transport error cannot release exposure reservation prematurely.
                 broker_call_started = True
-                venue_order_id = self.venue.submit(child)
+                try:
+                    venue_order_id = self.venue.submit(child)
+                except Exception as exc:
+                    if self.recovery_journal is not None:
+                        self.recovery_journal.mark_unknown(stored.order_id, str(exc))
+                    raise
+                if self.recovery_journal is not None:
+                    self.recovery_journal.mark_working(stored.order_id, venue_order_id)
                 fill_price = quote.ask if child.side.upper() == "BUY" else quote.bid
                 fill = self.venue.fill(child, venue_order_id, fill_price)
+                if self.recovery_journal is not None:
+                    self.recovery_journal.mark_fill(stored.order_id, fill.quantity, fill.price)
                 self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
                 expected_child = replace(child, status=OrderStatus.FILLED, filled_quantity=child.quantity, average_fill_price=fill.price)
                 observed = self.venue.reconcile(venue_order_id)
                 observed_status = OrderStatus(observed.get("status", "UNKNOWN"))
                 child_reconciliations.append(reconcile(expected_child, observed_status, fill.quantity))
         except Exception:
-            if 'stored' in locals():
+            if stored is not None:
                 self.oms.freeze_for_reconciliation(stored.order_id)
-            if not broker_call_started:
+            if not broker_call_started and stored is not None:
                 self._release_reservation(governed.order_id)
             raise
         current = self.oms.get(stored.order_id)
@@ -151,6 +166,10 @@ class GovernedExecutionCoordinator:
                 raise RuntimeError("OMS lost parent order during reconciliation recovery")
             raise RuntimeError(f"execution reconciliation unresolved for {current.order_id}")
         self._commit_reservation(current.order_id, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, symbol=current.symbol)
+        if self.recovery_journal is not None:
+            record = self.recovery_journal.get(current.order_id)
+            if record.filled_quantity > current.filled_quantity:
+                raise RuntimeError("durable recovery fill exceeds OMS fill")
         alerts = inspect(rejection_rate=quote.rejection_rate, slippage_bps=quote.historical_slippage_bps, p99_latency_ms=quote.latency_ms, venue_healthy=quote.healthy)
         tca = calculate_tca(order_id=current.order_id, side=current.side, quantity=current.quantity, decision_price=reference_price, arrival_price=quote.ask if current.side.upper() == "BUY" else quote.bid, average_fill_price=current.average_fill_price, spread=quote.spread)
         outcome = ExecutionOutcome(order_id=current.order_id, decision_id=current.decision_id, symbol=current.symbol, side=current.side, requested_quantity=current.quantity, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, status=current.status, tca=tca, execution_config_hash=self.config.config_hash, execution_model_hash=self.config.model_hash, reconciled=reconciled, surveillance_codes=tuple(a.code for a in alerts))
