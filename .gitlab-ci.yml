@@ -1,8 +1,9 @@
+# CI PAUSED BY OWNER: computation is intentionally preserved for the
+# institutional edge-hardening pass. Restore the workflow rules before
+# relying on automated validation. Do not treat a paused pipeline as a
+# passing pipeline.
 workflow:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
-    - if: '$CI_COMMIT_BRANCH == "feature/institutional-execution-foundation"'
     - when: never
 
 stages:
@@ -16,6 +17,7 @@ variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
+# Jobs are retained intact below so resuming CI is a workflow-only change.
 mql5-structure:
   stage: validate
   image: python:3.11-slim
