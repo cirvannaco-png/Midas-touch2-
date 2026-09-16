@@ -55,11 +55,16 @@ def test_bridge_validation_preserves_thesis_vs_protective_stop_boundary():
     assert "final TP must be below TP2" in validator
 
 
-def test_decision_persistence_and_database_schema_have_matching_fields():
+def test_decision_persistence_database_schema_and_migration_match():
     store = _read("EA/includes/Decision/DecisionStore.mqh")
     model = _read("telegram-bridge/app/models.py")
+    migration = _read("telegram-bridge/migrations/versions/0012_canonical_trade_setup_contract.py")
     assert "rec.setup.invalidation" in store
     assert "rec.setup.reasons.selected_strategy" in store
     assert "invalidation = Column(Float, nullable=True)" in model
     assert "final_tp = Column(Float, nullable=True)" in model
     assert "strategy = Column(String(64), nullable=True, index=True)" in model
+    assert 'sa.Column("invalidation", sa.Float(), nullable=True)' in migration
+    assert 'sa.Column("final_tp", sa.Float(), nullable=True)' in migration
+    assert 'sa.Column("strategy", sa.String(64), nullable=True)' in migration
+    assert 'op.create_index("ix_signals_strategy", "signals", ["strategy"])' in migration
