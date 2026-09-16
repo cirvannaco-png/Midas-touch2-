@@ -9,6 +9,8 @@ BROKER=ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh"
 RECOVERY=ROOT/"EA"/"includes"/"Recovery"/"RecoveryEngine.mqh"
 ORDERS=ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh"
 CONFIG_SYNC=ROOT/"EA"/"includes"/"Signals"/"ConfigSync.mqh"
+DECISION_STORE=ROOT/"EA"/"includes"/"Decision"/"DecisionStore.mqh"
+TRADE_ZONE=ROOT/"EA"/"includes"/"Trading"/"TradeZone.mqh"
 GATING=ROOT/"tools"/"gating.py"
 CI=ROOT/".gitlab-ci.yml"
 
@@ -36,6 +38,18 @@ def test_ea_uses_broker_deal_fill_and_close_events():
 
 def test_ea_fails_closed_on_decision_persistence():
     t=EA.read_text();assert "if(!g_store.Save(decision))" in t;assert "if(!g_store.SaveExecution(decision.decision_id,lots,ticket))" in t
+
+def test_decision_store_persists_thesis_invalidation_and_strategy():
+    t=DECISION_STORE.read_text();assert "p[5]=DoubleToString(rec.setup.invalidation,_Digits)" in t;assert "p[14]=IntegerToString((int)rec.setup.reasons.selected_strategy)" in t;assert "rec.setup.invalidation=StringToDouble(f[5])" in t;assert "rec.setup.reasons.selected_strategy=(ENUM_SELECTED_STRATEGY)(int)StringToInteger(f[14])" in t
+
+def test_legacy_decisions_do_not_fabricate_invalidation():
+    t=DECISION_STORE.read_text();assert "rec.setup.invalidation=0.0" in t;assert "Legacy decisions predate the first-class thesis boundary" in t
+
+def test_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
+    t=TRADE_ZONE.read_text();assert "TradeSetup rejected;ZeroMemory(rejected);return rejected;" in t;assert "return TradeSetup();" not in t
+
+def test_trade_zone_applies_spread_floor_then_rechecks_invalidation():
+    t=TRADE_ZONE.read_text();assert "out.stop_loss=EnforceSpreadFloor" in t;assert "out.stop_loss>=out.invalidation" in t;assert "out.stop_loss<=out.invalidation" in t
 
 def test_normal_opportunity_floor_is_below_transition_floor():
     t=EA.read_text();assert "input double InpMinConfidenceExecute=68.0;" in t;assert "input double InpMinConfidenceSignal=58.0;" in t
@@ -65,4 +79,7 @@ def test_gating_requires_all_metrics_to_be_persistent():
     t=GATING.read_text();assert "elif incomplete:" in t;assert "all(persistent_moves[m] == \"up\" for m in GATED_METRICS)" in t;assert "all(persistent_moves[m] == \"down\" for m in GATED_METRICS)" in t
 
 def test_ci_runs_core_gates_on_main():
-    t=CI.read_text();assert '$CI_DEFAULT_BRANCH' in t or '$CI_COMMIT_BRANCH == "main"' in t;assert "mql5-structure:" in t;assert "medis-touch-python:" in t;assert "telegram-bridge:" in t;assert "telegram-bridge-dependency-audit:" in t
+    t=CI.read_text();assert '$CI_DEFAULT_BRANCH' in t or '$CI_COMMIT_BRANCH == "main"' in t;assert "mql5-structure:" in t;assert "medis-touch-python:" in t;assert "telegram-bridge-dependency-audit:" in t;assert "governance-tests:" in t
+
+def test_ci_governance_gate_contains_repository_and_bridge_checks():
+    t=CI.read_text();assert 'PYTHONPATH="$CI_PROJECT_DIR/telegram-bridge:$CI_PROJECT_DIR/tools" pytest -v tools/tests' in t;assert 'ruff check telegram-bridge/app/ telegram-bridge/migrations/ telegram-bridge/scripts/ telegram-bridge/tests/' in t;assert 'bandit -r telegram-bridge/app/ telegram-bridge/scripts/ -q' in t;assert 'telegram-bridge/tests/test_*.py' in t;assert 'render_sync_secrets.py --dry-run' in t

@@ -44,17 +44,41 @@ int CDecisionStore::ReadLines(const string filename,string &lines[])
   }
 string CDecisionStore::SerializeDecision(const TradeDecisionRecord &rec)
   {
-   string p[13]; p[0]=IntegerToString(rec.decision_id);p[1]=rec.symbol;p[2]=IntegerToString((int)rec.setup.type);p[3]=DoubleToString(rec.setup.entry_top,_Digits);
-   p[4]=DoubleToString(rec.setup.entry_bottom,_Digits);p[5]=DoubleToString(rec.setup.stop_loss,_Digits);p[6]=DoubleToString(rec.setup.tp1,_Digits);p[7]=DoubleToString(rec.setup.tp2,_Digits);
-   p[8]=DoubleToString(rec.setup.final_tp,_Digits);p[9]=DoubleToString(rec.setup.confidence,2);p[10]=IntegerToString((long)rec.decided_time);p[11]=IntegerToString((int)rec.action);p[12]=rec.reduce_risk?"1":"0";
-   string line=p[0];for(int i=1;i<13;i++)line+=DECISION_CSV_SEP+p[i];return line;
+   // v2.19+ append-only contract: keep the historical fields readable while
+   // making thesis invalidation and selected strategy durable across restart.
+   string p[15]; p[0]=IntegerToString(rec.decision_id);p[1]=rec.symbol;p[2]=IntegerToString((int)rec.setup.type);p[3]=DoubleToString(rec.setup.entry_top,_Digits);
+   p[4]=DoubleToString(rec.setup.entry_bottom,_Digits);p[5]=DoubleToString(rec.setup.invalidation,_Digits);p[6]=DoubleToString(rec.setup.stop_loss,_Digits);
+   p[7]=DoubleToString(rec.setup.tp1,_Digits);p[8]=DoubleToString(rec.setup.tp2,_Digits);p[9]=DoubleToString(rec.setup.final_tp,_Digits);
+   p[10]=DoubleToString(rec.setup.confidence,2);p[11]=IntegerToString((long)rec.decided_time);p[12]=IntegerToString((int)rec.action);
+   p[13]=rec.reduce_risk?"1":"0";p[14]=IntegerToString((int)rec.setup.reasons.selected_strategy);
+   string line=p[0];for(int i=1;i<15;i++)line+=DECISION_CSV_SEP+p[i];return line;
   }
 bool CDecisionStore::ParseDecision(const string line,TradeDecisionRecord &rec)
   {
    string f[];int n=StringSplit(line,StringGetCharacter(DECISION_CSV_SEP,0),f);if(n<11)return false;ZeroMemory(rec);
    rec.decision_id=(long)StringToInteger(f[0]);rec.symbol=f[1];rec.setup.type=(ENUM_ORDER_TYPE)(int)StringToInteger(f[2]);rec.setup.entry_top=StringToDouble(f[3]);rec.setup.entry_bottom=StringToDouble(f[4]);
-   rec.setup.stop_loss=StringToDouble(f[5]);rec.setup.tp1=StringToDouble(f[6]);rec.setup.tp2=StringToDouble(f[7]);rec.setup.final_tp=StringToDouble(f[8]);rec.setup.confidence=StringToDouble(f[9]);
-   rec.setup.creation_time=(datetime)StringToInteger(f[10]);rec.setup.active=true;rec.confidence=rec.setup.confidence;rec.decided_time=rec.setup.creation_time;rec.action=(n>11)?(ENUM_TRADE_POLICY)(int)StringToInteger(f[11]):POLICY_EXECUTE_ONLY;rec.reduce_risk=(n>12&&f[12]=="1");rec.valid=true;rec.reason="restored from "+m_decisionsFile;return rec.decision_id>0;
+   // New format has invalidation at column 5. Old rows used column 5 for
+   // stop_loss; restore those rows conservatively by mirroring the old
+   // semantics so historical decisions remain loadable rather than being
+   // silently assigned a fabricated thesis boundary.
+   if(n>=15)
+     {
+      rec.setup.invalidation=StringToDouble(f[5]);rec.setup.stop_loss=StringToDouble(f[6]);rec.setup.tp1=StringToDouble(f[7]);rec.setup.tp2=StringToDouble(f[8]);rec.setup.final_tp=StringToDouble(f[9]);
+      rec.setup.confidence=StringToDouble(f[10]);rec.setup.creation_time=(datetime)StringToInteger(f[11]);rec.action=(ENUM_TRADE_POLICY)(int)StringToInteger(f[12]);rec.reduce_risk=(f[13]=="1");
+      rec.setup.reasons.selected_strategy=(ENUM_SELECTED_STRATEGY)(int)StringToInteger(f[14]);
+     }
+   else
+     {
+      rec.setup.stop_loss=StringToDouble(f[5]);rec.setup.tp1=StringToDouble(f[6]);rec.setup.tp2=StringToDouble(f[7]);rec.setup.final_tp=StringToDouble(f[8]);rec.setup.confidence=StringToDouble(f[9]);
+      rec.setup.creation_time=(datetime)StringToInteger(f[10]);rec.action=(n>11)?(ENUM_TRADE_POLICY)(int)StringToInteger(f[11]):POLICY_EXECUTE_ONLY;rec.reduce_risk=(n>12&&f[12]=="1");
+      // Legacy decisions predate the first-class thesis boundary. Keep them
+      // restorable, but do not pretend the historical SL was a known thesis
+      // invalidation: zero means "unavailable" and downstream lifecycle
+      // code must not infer a new structural boundary from it.
+      rec.setup.invalidation=0.0;
+      rec.setup.reasons.selected_strategy=STRATEGY_NONE;
+     }
+   rec.setup.active=true;rec.confidence=rec.setup.confidence;rec.decided_time=rec.setup.creation_time;rec.valid=rec.decision_id>0;rec.reason="restored from "+m_decisionsFile;return rec.valid;
   }
 string CDecisionStore::SerializeExecution(const ExecutionRecord &rec){return IntegerToString(rec.decision_id)+DECISION_CSV_SEP+DoubleToString(rec.volume,2)+DECISION_CSV_SEP+IntegerToString((long)rec.ticket)+DECISION_CSV_SEP+IntegerToString((long)rec.submitted_time);}
 bool CDecisionStore::ParseExecution(const string line,ExecutionRecord &rec)
@@ -69,8 +93,6 @@ void CDecisionStore::LoadFromDisk()
 bool CDecisionStore::Save(const TradeDecisionRecord &rec)
   {
    if(!rec.valid)return false; for(int i=0;i<ArraySize(m_decisions);i++)if(m_decisions[i].decision_id==rec.decision_id)return true;
-   // Persist first. If disk durability fails, do not mutate the in-memory mirror:
-   // otherwise the caller could proceed while recovery has no durable decision.
    if(!AppendLine(m_decisionsFile,SerializeDecision(rec)))return false;
    int idx=ArraySize(m_decisions);ArrayResize(m_decisions,idx+1);m_decisions[idx]=rec;return true;
   }

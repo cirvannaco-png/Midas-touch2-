@@ -1,18 +1,9 @@
 """
 Copy-trading schema and authorization gate.
 
-Handbook sections 8-9. Security rule, verbatim (section 22): "Never
-trust Telegram button presence as authorization. Re-check copy
-authorization immediately before execution." This module implements
-that as two call sites: `can_copy()` for the polling query filter, and
-`authorize_and_claim()` which re-runs the exact same check inside the
-DB transaction that claims the copy event, immediately before an order
-is sent to the broker.
-
-Table shapes below are dataclasses standing in for whatever ORM you're
-using (SQLAlchemy per telegram-bridge/app/database.py). Port the field
-lists directly into your models — they're taken verbatim from the
-handbook's schema section.
+The copy layer authorizes already-created Midas signals; it never creates
+alpha or bypasses execution governance. Authorization is rechecked immediately
+before a copy event is claimed for execution.
 """
 
 from __future__ import annotations
@@ -50,7 +41,7 @@ class CopyAccount:
     broker: str
     broker_account_reference: str
     enabled: bool
-    risk_mode: str  # e.g. "fixed_lot" | "percent_equity" | "fixed_risk_amount"
+    risk_mode: str
     risk_value: float
 
 
@@ -59,7 +50,7 @@ class Subscription:
     subscription_id: str
     user_id: str
     plan: str
-    provider: str  # "ammer_pay" | "smart_glocal"
+    provider: str
     provider_reference: str
     status: SubscriptionStatus
     started_at: datetime
@@ -94,28 +85,26 @@ class CopyTradeEvent:
     error: str | None = None
 
 
-# --- The gate ------------------------------------------------------------
-#
-# Minimal duck-typed protocol so this stays independent of your ORM.
-# `signal` here is app.models.Signal, kept loosely typed to avoid an
-# import cycle with whatever persistence layer wraps it.
+def account_scoped_idempotency_key(*, signal_id: str, account_id: str) -> str:
+    """Return the stable idempotency namespace for one signal/account pair.
+
+    A signal may legitimately fan out to many accounts, so the source signal
+    ID alone must never be used as the broker/OMS idempotency key.
+    """
+    if not signal_id or not account_id:
+        raise ValueError("signal_id and account_id are required")
+    return f"copy:{signal_id}:account:{account_id}"
 
 
 def can_copy(
     subscription: Subscription,
     entitlement: Entitlement,
     account: CopyAccount,
-    signal,  # app.models.Signal
+    signal,
     now: datetime,
 ) -> bool:
-    """Direct translation of handbook section 8's `can_copy`.
-
-    ALL seven conditions must hold. Do not shortcut this with an ORM
-    query that only checks some of them "because the others are usually
-    true" — that's exactly how a stale entitlement or a disabled
-    account ends up executing a trade.
-    """
-    from .models import SignalStatus  # local import avoids cycle
+    """Return true only when all copy authorization conditions hold."""
+    from .models import SignalStatus
 
     return (
         subscription.status == SubscriptionStatus.ACTIVE
@@ -130,14 +119,6 @@ def can_copy(
     )
 
 
-# --- Copy polling contract -------------------------------------------------
-#
-# The SQL filter equivalent, for wherever you build the polling query
-# (handbook section 9). Keep this string in sync with can_copy() above
-# by hand — there is no automatic way to guarantee an ORM query and a
-# Python predicate stay identical, so if you change one, change both
-# and add a test that exercises both paths against the same fixture.
-
 COPY_POLLING_WHERE_CLAUSE = """
 WHERE subscription.status = 'ACTIVE'
   AND subscription.expires_at > NOW()
@@ -151,9 +132,7 @@ WHERE subscription.status = 'ACTIVE'
 
 
 class AuthorizationError(Exception):
-    """Raised when a claim attempt fails the immediate-pre-execution
-    re-check. The caller must treat this as a hard stop, never a retry
-    with relaxed conditions."""
+    """Raised when immediate pre-execution authorization fails."""
 
 
 def authorize_and_claim(
@@ -165,19 +144,24 @@ def authorize_and_claim(
     copy_event: CopyTradeEvent,
     now: datetime,
 ) -> CopyTradeEvent:
-    """Re-run can_copy() *inside* the transaction that claims the copy
-    event, immediately before the order is sent to the broker.
+    """Reauthorize and claim a pending copy event.
 
-    This is the second of the two mandatory checks (section 9: "Perform
-    the authorization check again immediately before execution. A stale
-    Telegram button or cached poll must never authorize a trade.").
-
-    Caller is responsible for wrapping this in a DB transaction with a
-    row lock (SELECT ... FOR UPDATE on the copy_event row, or an
-    UPDATE ... WHERE status = 'PENDING' compare-and-swap) so two workers
-    can't both claim the same event — that's a concurrency concern this
-    pure function can't enforce on its own.
+    Persistence must enforce the final compare-and-swap/row-lock around this
+    transition. This pure function additionally rejects non-PENDING events so
+    a stale worker cannot locally re-claim an event that another worker owns.
     """
+    if copy_event.status != CopyEventStatus.PENDING:
+        raise AuthorizationError(
+            f"copy_id={copy_event.copy_id} is not pending; current={copy_event.status.value}"
+        )
+    expected_key = account_scoped_idempotency_key(
+        signal_id=copy_event.signal_id,
+        account_id=copy_event.account_id,
+    )
+    if copy_event.idempotency_key != expected_key:
+        copy_event.status = CopyEventStatus.REJECTED
+        copy_event.error = "invalid_account_scoped_idempotency_key"
+        raise AuthorizationError(f"copy_id={copy_event.copy_id} has invalid idempotency scope")
     if not can_copy(subscription, entitlement, account, signal, now):
         copy_event.status = CopyEventStatus.REJECTED
         copy_event.error = "authorization_failed_at_claim_time"

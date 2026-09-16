@@ -15,7 +15,7 @@ Preserve the Medis Touch architecture, trading behavior, security boundaries, an
 - Never log secrets, API keys, copy keys, payment credentials, or broker credentials.
 - Preserve backward compatibility for existing `app.models` imports and database metadata during model decomposition.
 - Do not rewrite large files merely to perform a narrow extraction. Prefer small, reviewable commits.
-- Every implementation change requires targeted tests and a green GitLab pipeline before merge.
+- Every implementation change requires targeted tests and a green GitLab pipeline before merge, unless CI is deliberately paused to conserve runner minutes; in that case, skipped CI must be reported and validation remains an explicit pre-merge gate.
 - If evidence is insufficient, stop and report the uncertainty rather than guessing.
 
 ## Change protocol
@@ -23,13 +23,13 @@ Preserve the Medis Touch architecture, trading behavior, security boundaries, an
 2. State the invariant being preserved.
 3. Make the smallest safe change.
 4. Add or update regression tests.
-5. Run relevant validation.
+5. Run relevant validation where available.
 6. Review the diff for source/spec drift.
-7. Run GitLab CI.
+7. Run GitLab CI when the CI gate is enabled.
 8. Only then propose merge/deployment.
 
 ## Branch policy
-Work on `feature/phase-a-d-hardening` for the current hardening program. Do not push directly to `main` unless the repository policy explicitly permits it and the change has passed review.
+Work on an isolated feature branch for each hardening program. Do not push directly to `main` unless repository policy explicitly permits it and the change has passed review. The institutional execution foundation is currently developed on `feature/institutional-execution-foundation`.
 
 ## MQL5 policy
 `EA/` is protected architecture. Structural validation is required, but Python-side refactors must not modify EA trading behavior. MetaEditor remains the authoritative compiler for final MQL5 compilation.
@@ -39,5 +39,6 @@ Work on `feature/phase-a-d-hardening` for the current hardening program. Do not 
 - Phase B: API route decomposition.
 - Phase C: application-service extraction.
 - Phase D: seven-domain model decomposition with compatibility exports.
+- Institutional execution: governed OMS, pre-trade risk, execution policy, routing, venue abstraction, child orders, fills, reconciliation, TCA, surveillance, outcome and execution calibration.
 
-A phase is not complete because files exist. It is complete only when its architectural gates, regression tests, and CI evidence pass.
+A phase is not complete because files exist. It is complete only when its architectural gates, regression tests, CI evidence, and required external-system validation pass.

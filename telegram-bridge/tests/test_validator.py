@@ -29,6 +29,56 @@ def test_valid_sell_passes():
     assert errors is None
 
 
+def test_buy_with_complete_canonical_setup_passes():
+    data = {
+        **BASE_BUY,
+        "invalidation": 1.0970,
+        "final_tp": 1.1150,
+    }
+    valid, errors = validate_signal(data)
+    assert valid is True
+    assert errors is None
+
+
+def test_sell_with_complete_canonical_setup_passes():
+    data = {
+        **BASE_SELL,
+        "invalidation": 1.1030,
+        "final_tp": 1.0850,
+    }
+    valid, errors = validate_signal(data)
+    assert valid is True
+    assert errors is None
+
+
+def test_buy_invalidation_must_be_below_entry():
+    data = {**BASE_BUY, "invalidation": 1.1010}
+    valid, errors = validate_signal(data)
+    assert valid is False
+    assert any("thesis invalidation must be below entry" in e for e in errors)
+
+
+def test_buy_stop_must_be_below_invalidation():
+    data = {**BASE_BUY, "invalidation": 1.0970, "sl": 1.0980}
+    valid, errors = validate_signal(data)
+    assert valid is False
+    assert any("protective stop must be below thesis invalidation" in e for e in errors)
+
+
+def test_buy_final_tp_must_be_above_tp2():
+    data = {**BASE_BUY, "final_tp": 1.1090}
+    valid, errors = validate_signal(data)
+    assert valid is False
+    assert any("final TP must be above TP2" in e for e in errors)
+
+
+def test_sell_invalidation_and_final_tp_are_directional():
+    data = {**BASE_SELL, "invalidation": 1.1030, "final_tp": 1.0910}
+    valid, errors = validate_signal(data)
+    assert valid is False
+    assert any("final TP must be below TP2" in e for e in errors)
+
+
 def test_buy_sl_above_entry_rejected():
     data = {**BASE_BUY, "sl": 1.1050}
     valid, errors = validate_signal(data)

@@ -1,22 +1,24 @@
 //+------------------------------------------------------------------+
 //|                                      includes/StrategySelector.mqh |
-//|  v2.15 public facade for the strategy selection diagnostic layer  |
+//|  Public facade for the regime-aware strategy authority            |
 //+------------------------------------------------------------------+
-// The fourth and last layer added in this batch (v2.12-v2.15). Compares
-// the already-computed diagnostic scores from the three strategy
-// modules against the live SMC engine's own confidence, per regime, and
-// records which one WOULD have been selected. Never sums scores — see
-// Strategies/StrategySelector.mqh's header for why that distinction is
-// the entire point of this class. Diagnostic only — see
-// Core/Config.mqh for ENUM_SELECTED_STRATEGY.
+// The canonical implementation lives in Strategies/StrategySelector.mqh.
+// It consumes already-computed strategy diagnostics and, together with
+// the regime classifier, determines which strategy is permitted to own
+// an executable setup. It never sums heterogeneous scores.
 //
-// Wiring reference (see Analysis/Scoring.mqh): no Init() needed — this
-// class has no engine dependencies, only Configure(). Called from
-// PopulateStrategyDiagnostics() after all four reads are populated.
+// This facade exists only to preserve the historical include path used by
+// Scoring.mqh and other callers. The authoritative executable boundary is
+// now:
+//   market regime -> eligible strategy -> strategy-owned TradeSetup
+//   -> structural validation -> decision/risk -> execution.
+//
+// A selected strategy that cannot construct a complete setup must fail
+// closed; it must never silently fall back to SMC.
 #ifndef STRATEGYSELECTOR_FACADE_MQH
 #define STRATEGYSELECTOR_FACADE_MQH
 
-#include "Strategies/StrategySelector.mqh"   // CStrategySelector + ENUM_SELECTED_STRATEGY
+#include "Strategies/StrategySelector.mqh"
 
 #endif
 //+------------------------------------------------------------------+
