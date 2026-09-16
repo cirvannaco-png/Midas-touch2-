@@ -23,6 +23,7 @@ mql5-structure:
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
+    - python tools/validate_edge_lineage.py
     - python tools/phase_a_d_manifest.py
   rules:
     - when: on_success
