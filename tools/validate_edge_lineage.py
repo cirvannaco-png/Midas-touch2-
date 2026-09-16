@@ -42,12 +42,12 @@ REQUIRED = {
     "EA/includes/Decision/DecisionStore.mqh": [
         "rec.setup.invalidation",
         "rec.setup.reasons.selected_strategy",
-        "historical thesis boundary",
+        "historical decisions predate the first-class thesis boundary",
     ],
     "EA/includes/Signals/SignalPublisher.mqh": [
-        "\"invalidation\"",
-        "\"final_tp\"",
-        "\"strategy\"",
+        "invalidation",
+        "final_tp",
+        "selected_strategy",
         "EnumToString(r.selected_strategy)",
     ],
     "telegram-bridge/app/routes.py": [
