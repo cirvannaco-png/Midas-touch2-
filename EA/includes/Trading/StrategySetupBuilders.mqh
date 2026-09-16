@@ -124,17 +124,21 @@ public:
       if(!haveValue && !FindNearestSR(srCtx, forBuy, price, atr, level, touches)) return false;
       if(r.reversion_class == REVERSION_VALUE_FADE && !haveValue) return false;
 
+      // A reversion order is anchored to the defended value/level, not to
+      // the already-stretched market price. This preserves the thesis that
+      // price returns to value and prevents a stop from accidentally ending
+      // up on the wrong side of the live entry.
       out.type = forBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-      out.entry_top = price;
-      out.entry_bottom = price;
+      out.entry_top = level;
+      out.entry_bottom = level;
       out.stop_loss = forBuy ? level - 0.40 * atr : level + 0.40 * atr;
-      CTargetSelector::AssignTargets(out, liqCtx, priceCtx.candles.Symbol(), atr, price);
+      CTargetSelector::AssignTargets(out, liqCtx, priceCtx.candles.Symbol(), atr, level);
       out.confidence = MathMax(0.0, MathMin(confidence, 100.0));
       out.creation_time = TimeCurrent();
       out.active = true;
       out.reasons = r;
       out.reasons.risk_warning = StringFormat("Mean-reversion owner: reference %.5f%s", level,
-                                               haveValue ? StringFormat(", stretch %.2f ATR", stretch) : "");
+                                               haveValue ? StringFormat(", observed stretch %.2f ATR", stretch) : "");
       return ValidateCandidate(out, forBuy);
      }
 
@@ -156,10 +160,10 @@ public:
       if(!FindNearestSR(srCtx, forBuy, price, atr, level, touches)) return false;
 
       out.type = forBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-      out.entry_top = price;
-      out.entry_bottom = price;
+      out.entry_top = level;
+      out.entry_bottom = level;
       out.stop_loss = forBuy ? level - 0.40 * atr : level + 0.40 * atr;
-      CTargetSelector::AssignTargets(out, liqCtx, priceCtx.candles.Symbol(), atr, price);
+      CTargetSelector::AssignTargets(out, liqCtx, priceCtx.candles.Symbol(), atr, level);
       out.confidence = MathMax(0.0, MathMin(confidence, 100.0));
       out.creation_time = TimeCurrent();
       out.active = true;
