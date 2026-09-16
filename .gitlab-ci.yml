@@ -29,10 +29,16 @@ governance-tests:
   image: python:3.11-slim
   before_script:
     - python -m pip install --disable-pip-version-check -r medis_touch/requirements-dev.txt
+    - python -m pip install --disable-pip-version-check -r telegram-bridge/requirements-dev.txt
   script:
     - ruff check medis_touch/app/ medis_touch/tests/
     - bandit -r medis_touch/app/ -q
     - PYTHONPATH="$CI_PROJECT_DIR" pytest -v medis_touch/tests/test_prediction_governance.py
+    - PYTHONPATH="$CI_PROJECT_DIR/telegram-bridge:$CI_PROJECT_DIR/tools" pytest -v tools/tests
+    - ruff check telegram-bridge/app/ telegram-bridge/migrations/ telegram-bridge/scripts/ telegram-bridge/tests/
+    - bandit -r telegram-bridge/app/ telegram-bridge/scripts/ -q
+    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python telegram-bridge/scripts/render_sync_secrets.py --dry-run
+    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-webhook-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in telegram-bridge/tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: on_success
@@ -67,23 +73,6 @@ telegram-bridge-dependency-audit:
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
   script:
     - pip-audit -r requirements.txt
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - when: on_success
-
-tools-tests:
-  stage: test
-  image: python:3.11-slim
-  before_script:
-    - cd telegram-bridge
-    - python -m pip install --disable-pip-version-check -r requirements-dev.txt
-  script:
-    - cd ..
-    - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
-    - ruff check telegram-bridge/app/ telegram-bridge/migrations/ telegram-bridge/scripts/ telegram-bridge/tests/
-    - bandit -r telegram-bridge/app/ telegram-bridge/scripts/ -q
-    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python telegram-bridge/scripts/render_sync_secrets.py --dry-run
-    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-webhook-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in telegram-bridge/tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: on_success
