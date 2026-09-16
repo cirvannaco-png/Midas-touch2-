@@ -55,9 +55,9 @@ double CTradeDecision::EnforceSpreadFloor(string symbol,double entry,double stop
 
 bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
   {if(m_fvgCtx==NULL||m_priceRef==NULL||m_priceRef.Total()==0)return false;double price=m_priceRef.GetCandle(0).close;
-   double atr=m_fvgCtx.candles.GetATR(0);if(price<=0||atr<=0)return false;bool found=false;double bestScore=-1.0;ENUM_FVG_DIR want=dir;
+   double atr=m_fvgCtx.candles.GetATR(0);if(price<=0||atr<=0)return false;bool found=false;double bestScore=-1.0;
    for(int i=0;i<m_fvgCtx.fvg.Count();i++)
-     {FVGZone z=m_fvgCtx.fvg.GetZone(i);if(z.dir!=want)continue;if(z.state!=FVG_FRESH&&z.state!=FVG_TESTED)continue;
+     {FVGZone z=m_fvgCtx.fvg.GetZone(i);if(z.dir!=dir)continue;if(z.state!=FVG_FRESH&&z.state!=FVG_TESTED)continue;
       double mid=(z.top+z.bottom)/2.0;double distATR=MathAbs(price-mid)/atr;if(distATR>m_fvgMaxDistATR)continue;
       double base=(z.state==FVG_FRESH)?1.0:0.6;double proximity=MathMax(0.0,1.0-distATR/m_fvgMaxDistATR);
       double score=base*(0.5+0.5*proximity);if(!found||score>bestScore){found=true;bestScore=score;out=z;}}
@@ -68,11 +68,10 @@ TradeSetup CTradeDecision::BuildSMC(bool forBuy)
    double conf=m_scoring.CalculateConfidence(forBuy);if(conf<60.0)return setup;FVGZone entryFVG;
    if(!FindEntryFVG(forBuy?FVG_BULL:FVG_BEAR,entryFVG))return setup;double atr=m_fvgCtx.candles.GetATR(0);if(atr<=0)return setup;
    setup.type=forBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL;setup.entry_top=entryFVG.top;setup.entry_bottom=entryFVG.bottom;
-   setup.invalidation=forBuy?(entryFVG.bottom-m_slBufferATR*atr):(entryFVG.top+m_slBufferATR*atr);
-   setup.stop_loss=forBuy?setup.invalidation:setup.invalidation; // SMC protective stop is subsequently widened by spread floor.
+   setup.stop_loss=forBuy?(entryFVG.bottom-m_slBufferATR*atr):(entryFVG.top+m_slBufferATR*atr);
    setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),forBuy?setup.entry_top:setup.entry_bottom,setup.stop_loss,forBuy);
    CTargetSelector::AssignTargets(setup,m_liqCtx,m_priceRef.Symbol(),atr,forBuy?setup.entry_bottom:setup.entry_top);
-   setup.confidence=conf;setup.creation_time=TimeCurrent();setup.expiry_time=0;setup.active=true;
+   setup.confidence=conf;setup.creation_time=TimeCurrent();setup.active=true;
    m_scoring.EvaluateReasons(forBuy,setup.reasons);m_scoring.PopulateConfidenceDiagnostics(setup.reasons,setup.confidence);
    m_scoring.PopulateStrategyDiagnostics(forBuy,setup.confidence,setup.reasons);
    if(setup.reasons.selected_strategy!=STRATEGY_SMC)
@@ -81,8 +80,7 @@ TradeSetup CTradeDecision::BuildSMC(bool forBuy)
 
 TradeSetup CTradeDecision::BuildAuthoritativeStrategy(bool forBuy,const TradeSetup &smc)
   {TradeSetup out;ZeroMemory(out);if(!smc.active)return out;
-   const ENUM_SELECTED_STRATEGY selected=smc.reasons.selected_strategy;const double score=smc.reasons.selected_strategy_score;
-   bool built=false;
+   const ENUM_SELECTED_STRATEGY selected=smc.reasons.selected_strategy;const double score=smc.reasons.selected_strategy_score;bool built=false;
    if(selected==STRATEGY_MOMENTUM_BREAKOUT)
       built=CStrategySetupBuilders::BuildMomentum(forBuy,score,smc.reasons,m_priceRef,m_bosCtx,m_liqCtx,out);
    else if(selected==STRATEGY_MEAN_REVERSION)
@@ -91,15 +89,12 @@ TradeSetup CTradeDecision::BuildAuthoritativeStrategy(bool forBuy,const TradeSet
       built=CStrategySetupBuilders::BuildKeyLevel(forBuy,score,smc.reasons,m_priceRef,m_srCtx,m_liqCtx,out);
    if(!built)return out;
    out.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),ResolveExecutionEntry(out),out.stop_loss,forBuy);
-   if(forBuy && out.invalidation>=out.entry_bottom)out.active=false;
-   if(!forBuy && out.invalidation<=out.entry_top)out.active=false;
    return out;}
 
 TradeSetup CTradeDecision::GenerateBuySetup()
   {TradeSetup smc=BuildSMC(true);if(smc.active){TradeSetup owned=BuildAuthoritativeStrategy(true,smc);if(owned.active){m_lastSetup=owned;return owned;}}
-   // If SMC was the authoritative selection it is the legitimate baseline.
-   // If a challenger was selected but its builder failed, return inactive:
-   // never silently substitute SMC.
+   // Challenger selection is authoritative. If its dedicated builder cannot
+   // produce a complete setup, abstain rather than silently execute SMC.
    if(smc.reasons.selected_strategy==STRATEGY_SMC&&smc.active){m_lastSetup=smc;return smc;}
    ZeroMemory(smc);m_lastSetup=smc;return smc;}
 
