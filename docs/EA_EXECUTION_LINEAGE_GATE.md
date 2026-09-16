@@ -1,16 +1,14 @@
 # EA strategy-to-execution lineage gate
 
-## Current verified state
+## Current code-level state
 
-The live `EA/MedisTouch_v2.8.mq5` execution path currently generates `TradeSetup` objects through `CTradeDecision`, validates the chosen BUY/SELL setup through `CRiskEngine`, passes that setup by value into `CDecisionEngine::Decide`, persists the resulting `TradeDecisionRecord`, and routes the decision through the broker/order manager. `COutcomeTrackerLive` is linked back to the decision through `decision_id` and receives execution/close events from `OnTradeTransaction`.
+The live `EA/MedisTouch_v2.8.mq5` execution path generates `TradeSetup` objects through `CTradeDecision`, validates the selected BUY/SELL setup through `CDecisionEngine::ValidateSetupGeometry`, persists the resulting `TradeDecisionRecord`, and routes the decision through the broker/order manager. `COutcomeTrackerLive` remains linked to the decision through `decision_id` and receives execution/close events from `OnTradeTransaction`.
 
-The market-state layer is real and already present: `CRegimeDetector` combines trend structure, ATR-percentile volatility and market phase into `TRENDING`, `RANGING`, `TRANSITION`, or `UNDEFINED`. The strategy selector now treats that regime as the authoritative eligibility context.
+The market-state layer is authoritative for strategy eligibility: `CRegimeDetector` combines trend structure, ATR-percentile volatility and market phase into `TRENDING`, `RANGING`, `TRANSITION`, or `UNDEFINED`. `CStrategySelector` uses that state to select one eligible strategy without summing heterogeneous strategy scores.
 
-## Remaining blocking gap
+The previously blocking builder gap is now closed at source level. Momentum Breakout, Mean Reversion, and Key-Level Reaction each have an owned `TradeSetup` builder. `CTradeDecision::BuildAuthoritativeStrategy()` dispatches to the selected builder, rejects incomplete/invalid candidates, reapplies the broker spread floor, and fail-closes if execution constraints violate the thesis invalidation boundary. A selected challenger is never silently replaced by SMC.
 
-The selected non-SMC strategy still cannot manufacture the executable `TradeSetup` that reaches risk and execution. Momentum Breakout, Mean Reversion and Key-Level Reaction therefore remain diagnostic/readout engines even though their eligibility is now hardened.
-
-The authoritative invariant remains:
+## Authoritative lineage
 
 ```text
 regime
@@ -26,9 +24,7 @@ regime
   -> strategy-confidence calibration
 ```
 
-No non-SMC strategy may be silently replaced by an SMC setup. A selected strategy that cannot produce a complete setup must fail closed.
-
-## Setup immutability requirement
+## Setup immutability and persistence
 
 After the completed setup crosses the strategy boundary, downstream components may attach execution/governance metadata, but must not mutate the strategy thesis fields:
 
@@ -41,8 +37,16 @@ After the completed setup crosses the strategy boundary, downstream components m
 - creation time
 - confidence at decision time
 
-Calibration observations and execution-cost observations remain separate from the strategy thesis. The same setup must remain traceable by `decision_id` and an immutable setup fingerprint/snapshot across risk, portfolio, execution, broker acknowledgement/recovery, and outcome processing.
+`DecisionStore` persists the thesis invalidation and selected strategy across restart. The bridge contract now carries and persists `invalidation`, `final_tp`, and `strategy`; bridge validation enforces their geometric relationship when supplied. Copy-feed responses preserve the same fields so downstream subscribers do not receive a degraded setup contract.
+
+Calibration observations and execution-cost observations remain separate from the strategy thesis. The same setup remains traceable by `decision_id` and its persisted snapshot across risk, portfolio, execution, broker acknowledgement/recovery, and outcome processing.
+
+## Validation status
+
+Static lineage and production-invariant coverage now includes the EA selector/builders, decision geometry, durable decision persistence, signal publishing, bridge schema/validation/database persistence, and copy-feed preservation.
+
+CI remains intentionally paused to preserve computation capacity. Therefore no claim of a green pipeline is made here. MetaEditor compilation, Strategy Tester execution, walk-forward/holdout validation, and controlled demo forward testing remain external certification gates.
 
 ## Production gate
 
-The feature must not be promoted to production until the live EA path has an authoritative strategy setup builder for every strategy it can select, and the lineage is exercised end-to-end, followed by MQL5 compilation, historical execution-cost testing, walk-forward/parity validation, and controlled demo forward testing.
+The feature must not be promoted to production until the live EA path is compiled with MetaEditor with zero errors and reviewed warnings, followed by historical execution-cost testing, walk-forward/parity validation, and controlled demo forward testing with broker acknowledgement, restart recovery, duplicate-order handling, reconciliation, and telemetry verification.
