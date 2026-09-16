@@ -65,6 +65,9 @@ REQUIRED = {
         "thesis invalidation must be below entry price",
         "protective stop must be below thesis invalidation",
         "final TP must be above TP2",
+        "thesis invalidation must be above entry price",
+        "protective stop must be above thesis invalidation",
+        "final TP must be below TP2",
     ],
     "telegram-bridge/app/models.py": [
         "invalidation = Column(Float, nullable=True)",
@@ -102,7 +105,7 @@ def main() -> int:
         print(f"\n{len(errors)} edge-lineage problem(s) found.", file=sys.stderr)
         return 1
 
-    print("Edge-lineage validation: strategy authority, setup ownership, durable thesis/provenance, bridge persistence, and fail-closed return path present.")
+    print("Edge-lineage validation: strategy authority, setup ownership, durable thesis/provenance, bridge persistence, symmetric geometry validation, and fail-closed return path present.")
     return 0
 
 
