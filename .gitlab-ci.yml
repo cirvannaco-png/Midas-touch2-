@@ -54,22 +54,7 @@ medis-touch-python:
   script:
     - ruff check app/ tests/
     - bandit -r app/ -q
-    - PYTHONPATH="$PWD/.." pytest -v
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - when: on_success
-
-telegram-bridge:
-  stage: test
-  image: python:3.11-slim
-  before_script:
-    - cd telegram-bridge
-    - python -m pip install --disable-pip-version-check -r requirements-dev.txt
-  script:
-    - ruff check app/ migrations/ scripts/ tests/
-    - bandit -r app/ scripts/ -q
-    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python scripts/render_sync_secrets.py --dry-run
-    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-webhook-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
+    - PYTHONPATH="$CI_PROJECT_DIR" pytest -v
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: on_success
@@ -95,6 +80,10 @@ tools-tests:
   script:
     - cd ..
     - PYTHONPATH="$PWD/telegram-bridge:$PWD/tools" pytest -v tools/tests
+    - ruff check telegram-bridge/app/ telegram-bridge/migrations/ telegram-bridge/scripts/ telegram-bridge/tests/
+    - bandit -r telegram-bridge/app/ telegram-bridge/scripts/ -q
+    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python telegram-bridge/scripts/render_sync_secrets.py --dry-run
+    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-webhook-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in telegram-bridge/tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: on_success
