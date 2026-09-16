@@ -24,6 +24,7 @@ private:
    CEnvironmentPolicy m_environment;
 
    double            CurrentSpreadPoints() const;
+   bool              ValidateSetupGeometry(const TradeSetup &setup) const;
 
 public:
                      CDecisionEngine();
@@ -65,6 +66,37 @@ double CDecisionEngine::CurrentSpreadPoints() const
    return (ask - bid) / point;
   }
 //+------------------------------------------------------------------+
+bool CDecisionEngine::ValidateSetupGeometry(const TradeSetup &setup) const
+  {
+   if(!MathIsValidNumber(setup.entry_top) || !MathIsValidNumber(setup.entry_bottom) ||
+      !MathIsValidNumber(setup.invalidation) || !MathIsValidNumber(setup.stop_loss) ||
+      !MathIsValidNumber(setup.tp1) || !MathIsValidNumber(setup.tp2) ||
+      !MathIsValidNumber(setup.final_tp) || !MathIsValidNumber(setup.confidence))
+      return false;
+
+   if(setup.entry_top <= 0.0 || setup.entry_bottom <= 0.0 || setup.invalidation <= 0.0 ||
+      setup.stop_loss <= 0.0 || setup.tp1 <= 0.0 || setup.tp2 <= 0.0 || setup.final_tp <= 0.0)
+      return false;
+
+   if(setup.entry_top < setup.entry_bottom || setup.confidence < 0.0 || setup.confidence > 100.0)
+      return false;
+
+   // The thesis boundary is intentionally checked independently from the
+   // broker stop. The protective stop must remain on the invalid side of
+   // the thesis boundary, while targets must remain beyond the entry zone.
+   if(setup.type == ORDER_TYPE_BUY)
+      return setup.invalidation < setup.entry_bottom &&
+             setup.stop_loss < setup.invalidation &&
+             setup.tp1 > setup.entry_top && setup.tp2 > setup.tp1 && setup.final_tp > setup.tp2;
+
+   if(setup.type == ORDER_TYPE_SELL)
+      return setup.invalidation > setup.entry_top &&
+             setup.stop_loss > setup.invalidation &&
+             setup.tp1 < setup.entry_bottom && setup.tp2 < setup.tp1 && setup.final_tp < setup.tp2;
+
+   return false;
+  }
+//+------------------------------------------------------------------+
 TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
   {
    TradeDecisionRecord rec;
@@ -82,6 +114,13 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
       rec.reason = "setup inactive";
       return rec;
      }
+
+   if(!ValidateSetupGeometry(setup))
+     {
+      rec.reason = "setup rejected: invalid entry/invalidation/stop/target geometry";
+      return rec;
+     }
+
    if(!m_enableExecution && !m_enableSignals)
      {
       rec.reason = "execution and signals both disabled";
