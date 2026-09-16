@@ -9,10 +9,12 @@
 #include "../Analysis/TFContext.mqh"
 #include "Targets.mqh"
 
-// This class does not select strategies. It receives an authoritative
-// selection and constructs the setup for THAT strategy only. A missing or
-// structurally ambiguous strategy read fails closed; SMC is never used as
-// a silent fallback for a challenger.
+// Strategy construction is deliberately separated from selection. The EA's
+// current TradeSetup ABI does not yet expose the backend's canonical
+// `invalidation` field, so this layer never pretends that stop_loss is a
+// thesis boundary. The canonical cross-service contract remains the next
+// schema migration; until then the existing protective-stop semantics are
+// preserved without inventing a second field that cannot cross the EA ABI.
 class CStrategySetupBuilders
   {
 private:
@@ -63,15 +65,15 @@ private:
      {
       if(!setup.active) return false;
       if(!MathIsValidNumber(setup.entry_top) || !MathIsValidNumber(setup.entry_bottom) ||
-         !MathIsValidNumber(setup.invalidation) || !MathIsValidNumber(setup.stop_loss) ||
-         !MathIsValidNumber(setup.tp1) || !MathIsValidNumber(setup.tp2) ||
-         !MathIsValidNumber(setup.final_tp) || !MathIsValidNumber(setup.confidence)) return false;
+         !MathIsValidNumber(setup.stop_loss) || !MathIsValidNumber(setup.tp1) ||
+         !MathIsValidNumber(setup.tp2) || !MathIsValidNumber(setup.final_tp) ||
+         !MathIsValidNumber(setup.confidence)) return false;
       if(setup.entry_top < setup.entry_bottom) return false;
       if(forBuy)
-        return setup.stop_loss < setup.entry_bottom && setup.invalidation < setup.entry_bottom &&
-               setup.tp1 > setup.entry_top && setup.tp2 > setup.tp1 && setup.final_tp > setup.tp2;
-      return setup.stop_loss > setup.entry_top && setup.invalidation > setup.entry_top &&
-             setup.tp1 < setup.entry_bottom && setup.tp2 < setup.tp1 && setup.final_tp < setup.tp2;
+        return setup.stop_loss < setup.entry_bottom && setup.tp1 > setup.entry_top &&
+               setup.tp2 > setup.tp1 && setup.final_tp > setup.tp2;
+      return setup.stop_loss > setup.entry_top && setup.tp1 < setup.entry_bottom &&
+             setup.tp2 < setup.tp1 && setup.final_tp < setup.tp2;
      }
 
 public:
@@ -94,15 +96,13 @@ public:
       out.type = forBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
       out.entry_top = price;
       out.entry_bottom = price;
-      out.invalidation = forBuy ? bos.price - 0.15 * atr : bos.price + 0.15 * atr;
-      out.stop_loss = forBuy ? out.invalidation - 0.10 * atr : out.invalidation + 0.10 * atr;
+      out.stop_loss = forBuy ? bos.price - 0.35 * atr : bos.price + 0.35 * atr;
       CTargetSelector::AssignTargets(out, liqCtx, priceCtx.candles.Symbol(), atr, price);
       out.confidence = MathMax(0.0, MathMin(confidence, 100.0));
       out.creation_time = TimeCurrent();
-      out.expiry_time = 0;
       out.active = true;
       out.reasons = r;
-      out.reasons.risk_warning = StringFormat("Momentum breakout owner: BOS %.5f, chase %.2f ATR", bos.price, chase);
+      out.reasons.risk_warning = StringFormat("Momentum owner: BOS %.5f, chase %.2f ATR", bos.price, chase);
       return ValidateCandidate(out, forBuy);
      }
 
@@ -127,12 +127,10 @@ public:
       out.type = forBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
       out.entry_top = price;
       out.entry_bottom = price;
-      out.invalidation = forBuy ? level - 0.25 * atr : level + 0.25 * atr;
-      out.stop_loss = forBuy ? out.invalidation - 0.15 * atr : out.invalidation + 0.15 * atr;
+      out.stop_loss = forBuy ? level - 0.40 * atr : level + 0.40 * atr;
       CTargetSelector::AssignTargets(out, liqCtx, priceCtx.candles.Symbol(), atr, price);
       out.confidence = MathMax(0.0, MathMin(confidence, 100.0));
       out.creation_time = TimeCurrent();
-      out.expiry_time = 0;
       out.active = true;
       out.reasons = r;
       out.reasons.risk_warning = StringFormat("Mean-reversion owner: reference %.5f%s", level,
@@ -160,12 +158,10 @@ public:
       out.type = forBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
       out.entry_top = price;
       out.entry_bottom = price;
-      out.invalidation = forBuy ? level - 0.25 * atr : level + 0.25 * atr;
-      out.stop_loss = forBuy ? out.invalidation - 0.15 * atr : out.invalidation + 0.15 * atr;
+      out.stop_loss = forBuy ? level - 0.40 * atr : level + 0.40 * atr;
       CTargetSelector::AssignTargets(out, liqCtx, priceCtx.candles.Symbol(), atr, price);
       out.confidence = MathMax(0.0, MathMin(confidence, 100.0));
       out.creation_time = TimeCurrent();
-      out.expiry_time = 0;
       out.active = true;
       out.reasons = r;
       out.reasons.risk_warning = StringFormat("Key-level owner: level %.5f, %d touches, reaction %s",
