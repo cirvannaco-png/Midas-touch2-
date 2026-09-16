@@ -21,8 +21,8 @@ def test_ea_terminal_csv_audit_contract_is_explicit():
     assert 'FileWrite(m_fileHandle,dec.decision_id,TimeToString(dec.decided_time,TIME_DATE|TIME_MINUTES),dec.symbol,dir,entry,dec.setup.stop_loss,dec.setup.tp1,dec.setup.tp2,dec.setup.final_tp,dec.setup.confidence,EnumToString(dec.action)' in publisher
     # The network payload is canonical; the CSV remains an intentionally
     # compact terminal-delivery audit rather than a second source of truth.
-    assert '"invalidation":%.5f' in publisher
-    assert '"strategy":"%s"' in publisher
+    assert '\"invalidation\":%.5f' in publisher
+    assert '\"strategy\":\"%s\"' in publisher
 
 
 def test_bridge_accepts_and_persists_complete_setup_provenance():
