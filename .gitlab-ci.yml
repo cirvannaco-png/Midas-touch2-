@@ -1,6 +1,6 @@
 workflow:
   rules:
-    - when: on_success
+    - when: always
 
 stages:
   - validate
@@ -66,7 +66,7 @@ telegram-bridge:
     - ruff check app/ migrations/ scripts/ tests/
     - bandit -r app/ scripts/ -q
     - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python scripts/render_sync_secrets.py --dry-run
-    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
+    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-webhook-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
   rules:
     - when: on_success
 
