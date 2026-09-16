@@ -42,7 +42,7 @@ REQUIRED = {
     "EA/includes/Decision/DecisionStore.mqh": [
         "rec.setup.invalidation",
         "rec.setup.reasons.selected_strategy",
-        "historical decisions predate the first-class thesis boundary",
+        "Legacy decisions predate the first-class thesis boundary",
     ],
     "EA/includes/Signals/SignalPublisher.mqh": [
         "invalidation",
