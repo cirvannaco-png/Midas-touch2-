@@ -9,6 +9,8 @@ BROKER=ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh"
 RECOVERY=ROOT/"EA"/"includes"/"Recovery"/"RecoveryEngine.mqh"
 ORDERS=ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh"
 CONFIG_SYNC=ROOT/"EA"/"includes"/"Signals"/"ConfigSync.mqh"
+DECISION_STORE=ROOT/"EA"/"includes"/"Decision"/"DecisionStore.mqh"
+TRADE_ZONE=ROOT/"EA"/"includes"/"Trading"/"TradeZone.mqh"
 GATING=ROOT/"tools"/"gating.py"
 CI=ROOT/".gitlab-ci.yml"
 
@@ -36,6 +38,18 @@ def test_ea_uses_broker_deal_fill_and_close_events():
 
 def test_ea_fails_closed_on_decision_persistence():
     t=EA.read_text();assert "if(!g_store.Save(decision))" in t;assert "if(!g_store.SaveExecution(decision.decision_id,lots,ticket))" in t
+
+def test_decision_store_persists_thesis_invalidation_and_strategy():
+    t=DECISION_STORE.read_text();assert "p[5]=DoubleToString(rec.setup.invalidation,_Digits)" in t;assert "p[14]=IntegerToString((int)rec.setup.reasons.selected_strategy)" in t;assert "rec.setup.invalidation=StringToDouble(f[5])" in t;assert "rec.setup.reasons.selected_strategy=(ENUM_SELECTED_STRATEGY)(int)StringToInteger(f[14])" in t
+
+def test_legacy_decisions_do_not_fabricate_invalidation():
+    t=DECISION_STORE.read_text();assert "rec.setup.invalidation=0.0" in t;assert "historical thesis boundary" in t
+
+def test_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
+    t=TRADE_ZONE.read_text();assert "TradeSetup rejected;ZeroMemory(rejected);return rejected;" in t;assert "return TradeSetup();" not in t
+
+def test_trade_zone_applies_spread_floor_then_rechecks_invalidation():
+    t=TRADE_ZONE.read_text();assert "out.stop_loss=EnforceSpreadFloor" in t;assert "out.stop_loss>=out.invalidation" in t;assert "out.stop_loss<=out.invalidation" in t
 
 def test_normal_opportunity_floor_is_below_transition_floor():
     t=EA.read_text();assert "input double InpMinConfidenceExecute=68.0;" in t;assert "input double InpMinConfidenceSignal=58.0;" in t
