@@ -44,8 +44,8 @@ CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCt
 void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,
                           double slBufferATR,double minStopSpreadMult,double fvgMaxDistATR,
                           CTFContext* srCtx,CTFContext* bosCtx)
-  {m_priceRef=priceRef;m_fvgCtx=fvgCtx;m_liqCtx=liqCtx;m_srCtx=srCtx;m_bosCtx=bosCtx;m_scoring=scoring;
-   m_slBufferATR=(slBufferATR>0?slBufferATR:0.25);m_minStopSpreadMult=(minStopSpreadMult>=0?minStopSpreadMult:3.0);
+  {m_priceRef=priceRef;m_fvgCtx=fvgCtx;m_liqCtx=liqCtx;m_srCtx=(srCtx!=NULL?srCtx:fvgCtx);m_bosCtx=(bosCtx!=NULL?bosCtx:fvgCtx);
+   m_scoring=scoring;m_slBufferATR=(slBufferATR>0?slBufferATR:0.25);m_minStopSpreadMult=(minStopSpreadMult>=0?minStopSpreadMult:3.0);
    m_fvgMaxDistATR=(fvgMaxDistATR>0?fvgMaxDistATR:1.25);}
 
 double CTradeDecision::EnforceSpreadFloor(string symbol,double entry,double stopLoss,bool isBuy)
@@ -74,8 +74,10 @@ TradeSetup CTradeDecision::BuildSMC(bool forBuy)
    setup.confidence=conf;setup.creation_time=TimeCurrent();setup.active=true;
    m_scoring.EvaluateReasons(forBuy,setup.reasons);m_scoring.PopulateConfidenceDiagnostics(setup.reasons,setup.confidence);
    m_scoring.PopulateStrategyDiagnostics(forBuy,setup.confidence,setup.reasons);
-   if(setup.reasons.selected_strategy!=STRATEGY_SMC)
-     {setup.active=false;setup.reasons.risk_warning="Authoritative selector chose a challenger; SMC fallback blocked";}
+   // The selector is authoritative, but the baseline setup remains intact
+   // long enough for the selected strategy's dedicated builder to consume
+   // the exact same market snapshot. Generate*() performs the ownership
+   // handoff below; no challenger inherits this SMC setup.
    return setup;}
 
 TradeSetup CTradeDecision::BuildAuthoritativeStrategy(bool forBuy,const TradeSetup &smc)
@@ -92,14 +94,12 @@ TradeSetup CTradeDecision::BuildAuthoritativeStrategy(bool forBuy,const TradeSet
    return out;}
 
 TradeSetup CTradeDecision::GenerateBuySetup()
-  {TradeSetup smc=BuildSMC(true);if(smc.active){TradeSetup owned=BuildAuthoritativeStrategy(true,smc);if(owned.active){m_lastSetup=owned;return owned;}}
-   // Challenger selection is authoritative. If its dedicated builder cannot
-   // produce a complete setup, abstain rather than silently execute SMC.
+  {TradeSetup smc=BuildSMC(true);if(smc.reasons.selected_strategy!=STRATEGY_SMC){TradeSetup owned=BuildAuthoritativeStrategy(true,smc);if(owned.active){m_lastSetup=owned;return owned;}}
    if(smc.reasons.selected_strategy==STRATEGY_SMC&&smc.active){m_lastSetup=smc;return smc;}
    ZeroMemory(smc);m_lastSetup=smc;return smc;}
 
 TradeSetup CTradeDecision::GenerateSellSetup()
-  {TradeSetup smc=BuildSMC(false);if(smc.active){TradeSetup owned=BuildAuthoritativeStrategy(false,smc);if(owned.active){m_lastSetup=owned;return owned;}}
+  {TradeSetup smc=BuildSMC(false);if(smc.reasons.selected_strategy!=STRATEGY_SMC){TradeSetup owned=BuildAuthoritativeStrategy(false,smc);if(owned.active){m_lastSetup=owned;return owned;}}
    if(smc.reasons.selected_strategy==STRATEGY_SMC&&smc.active){m_lastSetup=smc;return smc;}
    ZeroMemory(smc);m_lastSetup=smc;return smc;}
 
