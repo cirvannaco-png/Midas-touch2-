@@ -43,7 +43,7 @@ def test_decision_store_persists_thesis_invalidation_and_strategy():
     t=DECISION_STORE.read_text();assert "p[5]=DoubleToString(rec.setup.invalidation,_Digits)" in t;assert "p[14]=IntegerToString((int)rec.setup.reasons.selected_strategy)" in t;assert "rec.setup.invalidation=StringToDouble(f[5])" in t;assert "rec.setup.reasons.selected_strategy=(ENUM_SELECTED_STRATEGY)(int)StringToInteger(f[14])" in t
 
 def test_legacy_decisions_do_not_fabricate_invalidation():
-    t=DECISION_STORE.read_text();assert "rec.setup.invalidation=0.0" in t;assert "historical thesis boundary" in t
+    t=DECISION_STORE.read_text();assert "rec.setup.invalidation=0.0" in t;assert "Legacy decisions predate the first-class thesis boundary" in t
 
 def test_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
     t=TRADE_ZONE.read_text();assert "TradeSetup rejected;ZeroMemory(rejected);return rejected;" in t;assert "return TradeSetup();" not in t
