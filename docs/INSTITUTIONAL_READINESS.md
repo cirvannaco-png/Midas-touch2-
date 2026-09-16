@@ -31,14 +31,19 @@ This checklist separates software maturity from external infrastructure and brok
 - [x] Final Ruff lint remediation pass
 - [x] Regime-aware EA strategy authority and explicit abstention
 - [x] Strategy-specific EA setup builders for momentum breakout, mean reversion and key-level reaction
+- [x] Durable thesis invalidation and selected-strategy persistence across EA restart
+- [x] Canonical EA signal publication of invalidation, final TP, strategy and regime provenance
+- [x] Telegram bridge validation and persistence of the canonical setup contract
+- [x] Signal database migration for invalidation, final TP and strategy provenance
+- [x] Copy-feed preservation of invalidation, final TP and strategy provenance
+- [x] Static lineage gate spanning EA → DecisionStore → bridge → database → copy feed
 
 ## Active hardening / final validation gates
 
 - [ ] Restore CI only when computation budget permits, then obtain a green hardened-branch pipeline.
-- [ ] Complete end-to-end provenance assertions through decision → child order → fill → reconciliation → TCA → outcome.
+- [ ] Complete end-to-end runtime provenance assertions through decision → child order → fill → reconciliation → TCA → outcome.
 - [ ] Keep negative/fault-injection paths green for restart, timeout, duplicate, stale-data, unknown-position and reconciliation failure cases.
-- [ ] Final branch/static invariant audit is clean.
-- [ ] Wire the EA's live `TradeSetup` ABI to the backend's canonical invalidation field so thesis invalidation and protective stop remain distinct across the wire.
+- [ ] Final branch/static invariant audit is clean in an executable environment.
 - [ ] Run authoritative MetaEditor/MQL5 compilation after the strategy-builder integration.
 
 ## External gates deliberately not claimed as complete
