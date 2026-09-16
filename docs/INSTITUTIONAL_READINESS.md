@@ -22,7 +22,7 @@ This checklist separates software maturity from external infrastructure and brok
 - [x] Execution rate/repetition throttle primitives
 - [x] Adversarial execution stress scenarios
 - [x] PSI/Jensen-Shannon drift monitoring
-- [x] ECE/Brier/calibration monitoring
+- [x] ECE/Brier calibration monitoring
 - [x] Fail-closed broker metadata validation
 - [x] Audit-grade decision record primitive
 - [x] Strategy/regime/venue execution-cost attribution helpers
@@ -36,22 +36,24 @@ This checklist separates software maturity from external infrastructure and brok
 - [x] Telegram bridge validation and persistence of the canonical setup contract
 - [x] Signal database migration for invalidation, final TP and strategy provenance
 - [x] Copy-feed preservation of invalidation, final TP and strategy provenance
-- [x] Static lineage gate spanning EA → DecisionStore → bridge → database → copy feed
+- [x] Static lineage gate spanning EA -> DecisionStore -> bridge -> database -> copy feed
+- [x] Blocking CI restored and green on main after institutional hardening
 
-## Active hardening / final validation gates
+## Active final validation gates
 
-- [ ] Restore CI only when computation budget permits, then obtain a green hardened-branch pipeline.
-- [ ] Complete end-to-end runtime provenance assertions through decision → child order → fill → reconciliation → TCA → outcome.
-- [ ] Keep negative/fault-injection paths green for restart, timeout, duplicate, stale-data, unknown-position and reconciliation failure cases.
-- [ ] Final branch/static invariant audit is clean in an executable environment.
-- [ ] Run authoritative MetaEditor/MQL5 compilation after the strategy-builder integration.
+- [ ] Complete end-to-end runtime provenance assertions through decision -> child order -> fill -> reconciliation -> TCA -> outcome using executable integration fixtures
+- [ ] Keep negative/fault-injection paths green for restart, timeout, duplicate, stale-data, unknown-position and reconciliation-failure cases as runtime integrations expand
+- [ ] Run authoritative MetaEditor/MQL5 compilation on the target MetaTrader terminal after the strategy-builder integration
+- [ ] Validate controlled MT5 demo broker execution, recovery and reconciliation behavior
+- [ ] Accumulate long-horizon forward-test evidence and leakage-resistant walk-forward/OOS results
+- [ ] Confirm production-grade always-on infrastructure, monitoring and broker-validated operation
 
 ## External gates deliberately not claimed as complete
 
-- MetaEditor/MQL5 compilation on the authoritative terminal.
-- Live/demo broker validation.
-- Long-horizon forward performance evidence.
-- Production-grade always-on infrastructure.
+- MetaEditor/MQL5 compilation on the authoritative terminal
+- Live/demo broker validation
+- Long-horizon forward performance evidence
+- Production-grade always-on infrastructure
 
 ## Render Free boundary
 
