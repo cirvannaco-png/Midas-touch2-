@@ -11,6 +11,12 @@
 #include "StrategySetupBuilders.mqh"
 #include "Targets.mqh"
 
+// These are owned by the EA entry point. The explicit extern bindings keep
+// strategy setup construction on the same contexts already used by the
+// authoritative scoring/regime layer, without duplicating detectors.
+extern CTFContext* g_chartCtx;
+extern CTFContext* g_bosCtx;
+
 class CTradeDecision
   {
 private:
@@ -44,7 +50,8 @@ CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCt
 void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,
                           double slBufferATR,double minStopSpreadMult,double fvgMaxDistATR,
                           CTFContext* srCtx,CTFContext* bosCtx)
-  {m_priceRef=priceRef;m_fvgCtx=fvgCtx;m_liqCtx=liqCtx;m_srCtx=(srCtx!=NULL?srCtx:fvgCtx);m_bosCtx=(bosCtx!=NULL?bosCtx:fvgCtx);
+  {m_priceRef=priceRef;m_fvgCtx=fvgCtx;m_liqCtx=liqCtx;
+   m_srCtx=(srCtx!=NULL?srCtx:g_chartCtx);m_bosCtx=(bosCtx!=NULL?bosCtx:g_bosCtx);
    m_scoring=scoring;m_slBufferATR=(slBufferATR>0?slBufferATR:0.25);m_minStopSpreadMult=(minStopSpreadMult>=0?minStopSpreadMult:3.0);
    m_fvgMaxDistATR=(fvgMaxDistATR>0?fvgMaxDistATR:1.25);}
 
@@ -74,10 +81,6 @@ TradeSetup CTradeDecision::BuildSMC(bool forBuy)
    setup.confidence=conf;setup.creation_time=TimeCurrent();setup.active=true;
    m_scoring.EvaluateReasons(forBuy,setup.reasons);m_scoring.PopulateConfidenceDiagnostics(setup.reasons,setup.confidence);
    m_scoring.PopulateStrategyDiagnostics(forBuy,setup.confidence,setup.reasons);
-   // The selector is authoritative, but the baseline setup remains intact
-   // long enough for the selected strategy's dedicated builder to consume
-   // the exact same market snapshot. Generate*() performs the ownership
-   // handoff below; no challenger inherits this SMC setup.
    return setup;}
 
 TradeSetup CTradeDecision::BuildAuthoritativeStrategy(bool forBuy,const TradeSetup &smc)
