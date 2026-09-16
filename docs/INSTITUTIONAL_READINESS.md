@@ -4,7 +4,7 @@ This checklist separates software maturity from external infrastructure and brok
 
 ## Completed in repository
 
-- [x] Canonical TradeSetup contract and fail-closed strategy pipeline
+- [x] Canonical TradeSetup contract and fail-closed backend strategy pipeline
 - [x] Fail-closed pre-trade risk and persistent portfolio admission
 - [x] Governed OMS/execution policy and venue abstraction
 - [x] Durable parent/child/client-order recovery journal
@@ -29,14 +29,17 @@ This checklist separates software maturity from external infrastructure and brok
 - [x] Leakage-resistant walk-forward/OOS window construction
 - [x] OMS-boundary failure cleanup and reservation-release fault fixture
 - [x] Final Ruff lint remediation pass
-- [x] Full CI validation pipeline restored for final verification
+- [x] Regime-aware EA strategy authority and explicit abstention
+- [x] Strategy-specific EA setup builders for momentum breakout, mean reversion and key-level reaction
 
-## Final validation gates
+## Active hardening / final validation gates
 
-- [ ] Complete Python/Telegram/tools pipeline is green on the hardened branch.
-- [ ] End-to-end provenance assertions remain green through decision → child order → fill → reconciliation → TCA → outcome.
-- [ ] Negative/fault-injection paths remain green for restart, timeout, duplicate, stale-data, unknown-position and reconciliation failure cases.
+- [ ] Restore CI only when computation budget permits, then obtain a green hardened-branch pipeline.
+- [ ] Complete end-to-end provenance assertions through decision → child order → fill → reconciliation → TCA → outcome.
+- [ ] Keep negative/fault-injection paths green for restart, timeout, duplicate, stale-data, unknown-position and reconciliation failure cases.
 - [ ] Final branch/static invariant audit is clean.
+- [ ] Wire the EA's live `TradeSetup` ABI to the backend's canonical invalidation field so thesis invalidation and protective stop remain distinct across the wire.
+- [ ] Run authoritative MetaEditor/MQL5 compilation after the strategy-builder integration.
 
 ## External gates deliberately not claimed as complete
 
