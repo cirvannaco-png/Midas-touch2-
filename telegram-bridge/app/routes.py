@@ -44,12 +44,20 @@ class SignalRequest(BaseModel):
     symbol: str = Field(..., min_length=1, max_length=20)
     direction: Literal["BUY", "SELL"]
     entry: float = Field(..., gt=0)
+    # Canonical TradeSetup fields. Thesis invalidation is deliberately
+    # distinct from the broker protective stop, and final_tp is distinct
+    # from the runner's intermediate targets. Both are optional so older
+    # EA builds remain wire-compatible while newer builds retain the full
+    # setup contract instead of silently losing these fields in Pydantic.
+    invalidation: float | None = Field(default=None, gt=0)
     sl: float = Field(..., gt=0)
     tp1: float = Field(..., gt=0)
     tp2: float = Field(..., gt=0)
+    final_tp: float | None = Field(default=None, gt=0)
     confidence: int = Field(..., ge=0, le=100)
     reasons: list[str] = Field(..., min_length=1)
     timeframe: str
+    strategy: str | None = Field(default=None, max_length=64)
     # v2.9: optional so pre-v2.9 EA builds keep working unmodified — see
     # models.py:Signal.extra. Not validated field-by-field on purpose;
     # this is display-only diagnostic data (sweep grade, BOS strength,
@@ -127,12 +135,6 @@ class OutcomeRequest(BaseModel):
     signal_id: str = Field(..., min_length=1, max_length=100)
     symbol: str = Field(..., min_length=1, max_length=20)
     direction: Literal["BUY", "SELL"]
-    # "win" | "loss" | "scratch" | "no_fill" | "ambiguous" — deliberately a
-    # free string, not an enum: the EA's outcome labels (Timeout, FinalTP_Hit,
-    # SL_Hit, Ambiguous_*, etc.) get normalized to this coarser set on the
-    # EA side (see SignalPublisher::BuildOutcomeJsonPayload), and adding a
-    # new EA-side label should never require a bridge migration to keep
-    # accepting it.
     outcome: Literal["win", "loss", "scratch", "no_fill", "ambiguous"]
     realized_r: float | None = Field(default=None)
     mfe_r: float | None = Field(default=None)
@@ -174,8 +176,6 @@ class SignalResponse(BaseModel):
 
 # ---------- Auth Dependency ----------
 async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
-    # Timing-safe comparison - a naive `!=` leaks how many leading bytes
-    # matched via response-time variance.
     if not secrets.compare_digest(x_api_key, settings.SECRET_KEY):
         logger.warning("Invalid API key attempt")
         raise HTTPException(status_code=401, detail="Invalid API key")
@@ -186,13 +186,6 @@ async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
 @router.get("/", response_model=HealthResponse)
 @router.head("/")
 async def health_check():
-    # Liveness probe: deliberately cheap, no DB round-trip. Use /health/db
-    # for a readiness check that verifies the database is reachable.
-    # HEAD is registered alongside GET because Render's platform health
-    # check probes with HEAD / before a deploy is marked live - FastAPI
-    # doesn't add HEAD support to a GET route automatically, so without
-    # this it 405s on every deploy (harmless, but noisy in logs and a
-    # false-down for any external monitor that defaults to HEAD).
     return {"status": "online", "version": APP_VERSION, "database": "not checked"}
 
 
@@ -211,14 +204,6 @@ async def telegram_webhook(
     request: Request,
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ):
-    """
-    Telegram delivers inbound updates (users typing /start, /positions,
-    etc. to the bot) here. Telegram signs every delivery with the secret
-    token set via bot.set_webhook(secret_token=...) in app/bot.py; anything
-    that doesn't match is rejected before the payload is even parsed, so
-    this endpoint can't be used to inject fake commands from outside
-    Telegram.
-    """
     if not secrets.compare_digest(
         x_telegram_bot_api_secret_token or "", settings.WEBHOOK_SECRET_TOKEN
     ):
@@ -226,10 +211,6 @@ async def telegram_webhook(
         raise HTTPException(status_code=401, detail="Invalid secret token")
 
     payload = await request.json()
-
-    # Temporary discovery aid: log the chat id of every inbound update so
-    # the group's chat id can be read straight out of the service logs and
-    # set as GROUP_CHAT_ID. Safe to remove once that's configured.
     try:
         _chat = (payload.get("message") or payload.get("channel_post") or {}).get("chat") or {}
         _from = (payload.get("message") or {}).get("from") or {}
@@ -244,9 +225,6 @@ async def telegram_webhook(
     try:
         await bot_module.process_update(payload)
     except Exception as e:
-        # Never let a malformed/unexpected update 500 back to Telegram -
-        # Telegram retries 5xx responses, which would hammer this endpoint
-        # for an update it will never be able to parse successfully.
         logger.error(f"Failed to process Telegram update ({type(e).__name__}): {e}")
 
     return {"ok": True}
@@ -264,7 +242,6 @@ async def receive_signal(
     log = logger.bind(signal_id=payload.signal_id)
     log.info("Signal received")
 
-    # Business rule validation (SL/TP side-of-entry, ordering)
     valid, errors = validate_signal(payload.model_dump())
     if not valid:
         raise HTTPException(
@@ -272,29 +249,20 @@ async def receive_signal(
             detail={"signal_id": payload.signal_id, "errors": errors}
         )
 
-    # ---- Reserve signal_id BEFORE contacting Telegram ----
-    # Previously the duplicate check was a pre-check SELECT followed by an
-    # INSERT *after* the Telegram call: two concurrent requests for the same
-    # signal_id could both pass the SELECT and both call Telegram, producing
-    # two messages even though only one DB row would ultimately survive the
-    # unique-constraint race. That's a real duplicate-alert bug for a trading
-    # signal, not a cosmetic one.
-    #
-    # Fix: insert a PENDING placeholder row first and rely on the unique
-    # constraint on signal_id as the single source of truth. Only the
-    # request that wins this insert is allowed to proceed to the external
-    # call, so Telegram is contacted at most once per signal_id.
     db_signal = Signal(
         signal_id=payload.signal_id,
         symbol=payload.symbol,
         direction=payload.direction,
         entry=payload.entry,
+        invalidation=payload.invalidation,
         sl=payload.sl,
         tp1=payload.tp1,
         tp2=payload.tp2,
+        final_tp=payload.final_tp,
         confidence=payload.confidence,
         reasons=payload.reasons,
         timeframe=payload.timeframe,
+        strategy=payload.strategy,
         status=SignalStatus.PENDING,
         extra=payload.extra,
         regime=payload.regime,
@@ -311,16 +279,6 @@ async def receive_signal(
         log.info("Duplicate signal ignored (reservation lost)")
         return SignalResponse(status="duplicate", signal_id=payload.signal_id, duplicate=True)
 
-    # From here on this request exclusively owns signal_id - safe to call
-    # Telegram exactly once.
-    #
-    # /mute <SYMBOL> and /pause (Telegram, admin-only - see bot_handlers.py)
-    # write here: a muted symbol or a global pause suppresses the outbound
-    # broadcast without touching the EA at all, and without losing the
-    # signal - it's still recorded as ACTIVE (nothing about the signal
-    # itself failed) with telegram_message_id left null. This mirrors
-    # what /muted and /signal already show, since a muted signal still
-    # counts toward win-rate stats.
     if await is_broadcast_paused(session) or await is_symbol_muted(session, payload.symbol):
         db_signal.status = SignalStatus.ACTIVE
         db_signal.error_message = "Broadcast suppressed (paused or symbol muted)"
@@ -365,13 +323,6 @@ async def receive_signal(
     return SignalResponse(status="sent", signal_id=payload.signal_id, telegram_message_id=msg_id)
 
 
-# v2.9 addition — signal lifecycle (review: "SCANNING -> QUALIFIED ->
-# POSTED -> ACTIVE -> TP/SL/EXPIRED/INVALIDATED"). This endpoint handles
-# the STALE/EXPIRED/INVALIDATED transitions the EA detects post-publish
-# (see EA/includes/Signals/SignalPublisher.mqh::PublishStatusUpdate()).
-# TP/SL resolution is already covered separately by POST /trade's
-# closed_tp1/closed_tp2/closed_sl events — this endpoint is only for "this
-# setup is no longer a valid reason to enter", not fills/closes.
 class LifecycleUpdateRequest(BaseModel):
     status: Literal["stale", "expired", "invalidated", "valid"]
     reason: str = Field(..., min_length=1, max_length=300)
@@ -397,9 +348,6 @@ async def update_signal_lifecycle(
         raise HTTPException(status_code=404, detail=f"No signal found with signal_id={signal_id}")
 
     new_status = SignalLifecycleStatus(payload.status)
-    # A signal that was never successfully delivered (no telegram_message_id)
-    # has nothing to edit — still record the status change, just skip the
-    # Telegram call rather than erroring the whole request over it.
     edited = False
     if db_signal.telegram_message_id is not None and new_status != SignalLifecycleStatus.VALID:
         original_text = format_signal_message(
@@ -408,9 +356,12 @@ async def update_signal_lifecycle(
                 "symbol": db_signal.symbol,
                 "direction": db_signal.direction,
                 "entry": db_signal.entry,
+                "invalidation": db_signal.invalidation,
                 "sl": db_signal.sl,
                 "tp1": db_signal.tp1,
                 "tp2": db_signal.tp2,
+                "final_tp": db_signal.final_tp,
+                "strategy": db_signal.strategy,
                 "timeframe": db_signal.timeframe,
                 "confidence": db_signal.confidence,
                 "reasons": db_signal.reasons,
@@ -439,15 +390,6 @@ async def receive_trade_event(
     _auth: bool = Depends(verify_api_key),
     _rate: None = Depends(enforce_rate_limit),
 ):
-    """
-    Receives a trade lifecycle event from the EA's OrderManager/PositionManager
-    after it has actually placed, modified, or closed an order with the
-    broker - as distinct from POST /signal, which is a pre-trade alert with
-    no guarantee an order was ever opened. Same idempotency shape as
-    /signal: reserve a PENDING row keyed on the caller-supplied event_id
-    before contacting Telegram, so a WebRequest retry from the EA after a
-    dropped response can never produce a duplicate Telegram message.
-    """
     start_time = time.time()
     log = logger.bind(event_id=payload.event_id, trade_id=payload.trade_id)
     log.info("Trade event received")
@@ -465,7 +407,7 @@ async def receive_trade_event(
         signal_id=payload.signal_id,
         symbol=payload.symbol,
         direction=payload.direction,
-        event=payload.event,  # already a TradeEventType; Pydantic coerced it
+        event=payload.event,
         volume=payload.volume,
         price=payload.price,
         sl=payload.sl,
@@ -524,16 +466,7 @@ async def receive_trade_event(
     )
 
 
-# ---------- Retry Failed Trade Events (core + HTTP endpoint) ----------
-# Split into a plain async function (retry_failed_trade_events_core) and a
-# thin route wrapper so app/bot_handlers.py's /retry command can call the
-# exact same logic from an already-open session, instead of the bot having
-# to make an HTTP call to itself with its own SECRET_KEY (which it doesn't
-# have configured, on purpose - see verify_api_key).
 async def retry_failed_trade_events_core(session: AsyncSession) -> dict:
-    """Mirrors retry_failed_signals_core but for the trade_events table -
-    see that function's comments for why PENDING rows older than
-    PENDING_STALE_SECONDS are reclaimed alongside FAILED ones."""
     stale_before = datetime.now(timezone.utc) - timedelta(seconds=settings.PENDING_STALE_SECONDS)
     result = await session.execute(
         select(TradeEvent)
@@ -598,19 +531,6 @@ async def receive_outcome(
     _auth: bool = Depends(verify_api_key),
     _rate: None = Depends(enforce_rate_limit),
 ):
-    """
-    v2.11 — foundation of the trade-tagging system. This is the endpoint
-    that closes the gap: a signal's tags were already reaching Postgres
-    (POST /signal), but what happened to it never did. Without this,
-    "why did we lose" was a CSV grep on the MT5 terminal; with it, it's a
-    query against signal_outcomes.
-
-    Upsert on signal_id (not insert-only like /signal's PENDING-row
-    reservation pattern) because an outcome POST failing transiently and
-    getting retried by the EA is a normal case here, not a race to guard
-    against — there's no external side effect (no Telegram call) to
-    dedupe against, just a row to get right.
-    """
     log = logger.bind(signal_id=payload.signal_id)
 
     existing = await session.scalar(
@@ -646,18 +566,6 @@ async def receive_outcome(
 
 
 class ConfigResponse(BaseModel):
-    """
-    v2.11 — dormant until a real promotion happens. `symbol` is accepted
-    in the URL for forward-compatibility with eventual per-symbol
-    assignment, but approved_weight_versions has no symbol column today
-    (see app/models.py) — every symbol currently gets told the same
-    "most recently approved, if any" answer. `params` is reserved for a
-    not-yet-built numeric-parameter-proposal engine (the actual C4W/C2W
-    bounded-adjustment values — confidence threshold, FVG proximity,
-    etc.) and is always null until that exists; an EA polling this today
-    can detect "a different weight_version was approved than the one I'm
-    running" but nothing here yet tells it WHAT changed about it.
-    """
     symbol: str
     approved_weight_version: str | None
     approved_at: str | None
@@ -670,15 +578,6 @@ async def get_config(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
 ):
-    """
-    Polled by the EA's ConfigSync (see EA/includes/Signals/ConfigSync.mqh)
-    to check whether a newer weight_version has been approved than the
-    one it's currently running. Read-only, side-effect-free — this
-    endpoint never changes anything, it only reports the current state of
-    `approved_weight_versions`. Returns nulls (not a 404) when nothing
-    has ever been approved, which is the expected state until the first
-    real PROMOTE decision clears a human tap — see app/calibration.py.
-    """
     latest = await session.scalar(
         select(ApprovedWeightVersion).order_by(ApprovedWeightVersion.approved_at.desc()).limit(1)
     )
@@ -694,31 +593,6 @@ async def get_config(
 
 @router.post("/admin/run-cycle")
 async def run_calibration_cycle(_auth: bool = Depends(verify_api_key)):
-    """
-    v2.11 step 6. Triggers one recalibration cycle: metrics_engine report
-    over the trailing window -> persisted as a CalibrationCycle -> gating
-    decision per weight_version -> promotion card / auto-rollback notice
-    via Telegram. See app/calibration.py:run_cycle for the actual work;
-    this endpoint is deliberately a thin trigger.
-
-    Same X-API-Key auth as /signal and /trade — this endpoint doesn't sit
-    behind Telegram admin auth because the thing calling it isn't a
-    person tapping a button, it's a scheduled job (see
-    the GitLab scheduled CI job) or a manual curl.
-
-    Free-tier Render web services spin down after 15 minutes idle (see
-    /render.yaml) — an in-process scheduler would never fire on its own
-    while sleeping. This endpoint is designed to be hit from OUTSIDE the
-    service (GitLab scheduled pipeline, or a Render Cron Job) specifically
-    because that also wakes the service back up; it was not built as an
-    in-app APScheduler job for that reason.
-    Deliberately imports app.calibration lazily (inside this handler) rather
-    than at module load time: app.calibration imports tools/gating.py and
-    tools/metrics_engine.py (see that module's docstring for the two
-    supported directory layouts), and if that ever fails to resolve, the
-    failure should take down this one endpoint, not crash-loop the entire
-    service at startup the way a top-level import would.
-    """
     from app.calibration import run_cycle
     result = await run_cycle()
     return result
@@ -735,15 +609,6 @@ async def retry_failed_trade_events(
 
 # ---------- Retry Failed Signals (core + HTTP endpoint) ----------
 async def retry_failed_signals_core(session: AsyncSession) -> dict:
-    # FAILED (transient) signals are retried. PERMANENTLY_FAILED signals
-    # (NonRetryableError - e.g. malformed chat_id, bot blocked) are excluded
-    # on purpose, otherwise they'd be re-selected and re-fail forever.
-    #
-    # PENDING rows older than PENDING_STALE_SECONDS are also reclaimed: a
-    # process crash/restart between reserving signal_id and resolving the
-    # Telegram send leaves the row at PENDING with no other path back to
-    # ACTIVE/FAILED. A fresh PENDING row (still in-flight in another
-    # request right now) is excluded via the age cutoff.
     stale_before = datetime.now(timezone.utc) - timedelta(seconds=settings.PENDING_STALE_SECONDS)
     result = await session.execute(
         select(Signal)
@@ -764,9 +629,12 @@ async def retry_failed_signals_core(session: AsyncSession) -> dict:
             "symbol": db_signal.symbol,
             "direction": db_signal.direction,
             "entry": db_signal.entry,
+            "invalidation": db_signal.invalidation,
             "sl": db_signal.sl,
             "tp1": db_signal.tp1,
             "tp2": db_signal.tp2,
+            "final_tp": db_signal.final_tp,
+            "strategy": db_signal.strategy,
             "confidence": db_signal.confidence,
             "reasons": db_signal.reasons,
             "timeframe": db_signal.timeframe
@@ -811,9 +679,12 @@ class CopySignalItem(BaseModel):
     symbol: str
     direction: Literal["BUY", "SELL"]
     entry: float
+    invalidation: float | None = None
     sl: float
     tp1: float
     tp2: float
+    final_tp: float | None = None
+    strategy: str | None = None
     confidence: int
     timeframe: str
     received_at: str
@@ -829,28 +700,6 @@ async def get_copy_feed(
     x_copy_key: str = Header(..., alias="X-Copy-Key"),
     session: AsyncSession = Depends(get_session),
 ):
-    """
-    Polled by a paying subscriber's OWN copier script/EA against THEIR
-    OWN broker account — this service places no trades and never sees a
-    subscriber's broker credentials. See app/copy_trading.py's module
-    docstring for the load-bearing invariant this endpoint depends on:
-    nothing here is reachable from POST /signal's request path, so
-    signal ingestion/broadcast is identical whether this endpoint is
-    called zero times or a thousand times a second, and whether the
-    global copy-trading switch (app/copytrading_admin.py) is on or off.
-
-    Auth is a per-subscriber bearer key (X-Copy-Key), NOT the shared
-    X-API-Key used by the EA's /signal and /trade endpoints — a leaked
-    copy-feed key only exposes the signal feed to whoever holds it,
-    never the ingestion endpoints, and can be invalidated for one
-    subscriber (next payment mints a new one — see
-    subscriptions.record_payment) without touching anyone else's.
-
-    401 for an unrecognized key; 403 (not 401) for a recognized key
-    that just isn't currently entitled — this is a real subscriber who
-    exists, being told exactly why they're refused (unpaid or globally
-    disabled) rather than being told their credential itself is bad.
-    """
     subscriber = await get_subscriber_by_copy_feed_key(session, x_copy_key)
     if subscriber is None:
         raise HTTPException(status_code=401, detail="Unrecognized copy-feed key")
@@ -874,9 +723,12 @@ async def get_copy_feed(
                 symbol=s.symbol,
                 direction=s.direction,
                 entry=s.entry,
+                invalidation=s.invalidation,
                 sl=s.sl,
                 tp1=s.tp1,
                 tp2=s.tp2,
+                final_tp=s.final_tp,
+                strategy=s.strategy,
                 confidence=s.confidence,
                 timeframe=s.timeframe,
                 received_at=s.received_at.isoformat() if s.received_at else "",
@@ -889,20 +741,6 @@ async def get_copy_feed(
 # ---------- Subscription enforcement (admin cron trigger) ----------
 @router.post("/admin/check-subscriptions")
 async def check_subscriptions(_auth: bool = Depends(verify_api_key)):
-    """
-    Triggers one pass of app.group_enforcement.run_subscription_enforcement:
-    warns subscribers approaching expiry, transitions lapsed ACTIVE rows
-    to EXPIRED, and removes (ban+unban — see app/telegram.py) anyone
-    whose grace period has also run out from GROUP_CHAT_ID.
-
-    Same X-API-Key auth and same "designed to be hit from OUTSIDE the
-    service" rationale as POST /admin/run-cycle above — see that
-    endpoint's docstring for the free-tier-Render-sleeps reasoning,
-    which applies identically here. See
-    GitLab's scheduled pipeline for the actual cron
-    trigger, or run it manually via /checkpayments in Telegram
-    (app/copytrading_admin.py).
-    """
     from app.database import async_session
     from app.group_enforcement import run_subscription_enforcement
 
