@@ -25,7 +25,7 @@ def _evidence(**overrides):
 def test_promotion_is_fail_closed_on_missing_sample():
     assert promotion_gate(_evidence(sample_count=29)) is GateResult.HOLD
     assert promotion_gate(_evidence(stress_test=False)) is GateResult.FAIL
-    assert promotion_gate(_evidence()) is GateResult.PASS
+    assert promotion_gate(_evidence()) is GateResult.PASSED
 
 
 def test_control_state_halts_on_integrity_failures():

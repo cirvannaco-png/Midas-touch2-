@@ -31,9 +31,8 @@ def validate_signal(data: dict) -> tuple[bool, list[str] | None]:
                 errors.append("For BUY, thesis invalidation must be below entry price")
             if sl >= invalidation:
                 errors.append("For BUY, protective stop must be below thesis invalidation")
-        if final_tp is not None:
-            if final_tp <= tp2:
-                errors.append("For BUY, final TP must be above TP2")
+        if final_tp is not None and final_tp <= tp2:
+            errors.append("For BUY, final TP must be above TP2")
     elif direction == "SELL":
         if sl <= entry:
             errors.append("For SELL, stop loss must be above entry price")
@@ -48,9 +47,8 @@ def validate_signal(data: dict) -> tuple[bool, list[str] | None]:
                 errors.append("For SELL, thesis invalidation must be above entry price")
             if sl <= invalidation:
                 errors.append("For SELL, protective stop must be above thesis invalidation")
-        if final_tp is not None:
-            if final_tp >= tp2:
-                errors.append("For SELL, final TP must be below TP2")
+        if final_tp is not None and final_tp >= tp2:
+            errors.append("For SELL, final TP must be below TP2")
 
     if errors:
         return False, errors

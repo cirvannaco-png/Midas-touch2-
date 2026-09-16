@@ -17,7 +17,7 @@ class ControlState(str, Enum):
 
 
 class GateResult(str, Enum):
-    PASS = "PASS"
+    PASSED = "PASS"
     FAIL = "FAIL"
     HOLD = "HOLD"
 
@@ -97,7 +97,7 @@ def promotion_gate(evidence: PromotionEvidence) -> GateResult:
     checks = (evidence.code_validation, evidence.data_validation, evidence.out_of_sample, evidence.walk_forward, evidence.stress_test, evidence.execution_cost_test, evidence.calibration_test, evidence.risk_test, evidence.paper_trade)
     if evidence.sample_count < evidence.minimum_sample:
         return GateResult.HOLD
-    return GateResult.PASS if all(checks) else GateResult.FAIL
+    return GateResult.PASSED if all(checks) else GateResult.FAIL
 
 
 @dataclass(frozen=True)
