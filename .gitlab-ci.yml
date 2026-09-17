@@ -1,6 +1,6 @@
 workflow:
   rules:
-    - when: never
+    - when: always
 
 stages:
   - validate
