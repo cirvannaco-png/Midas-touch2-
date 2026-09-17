@@ -45,6 +45,7 @@ private:
    EnvironmentMemoryRecord m_records[];
    string m_filename;
    int m_minSample;
+   int m_degradedMinSample;
    double m_bonus;
    double m_penalty;
 
@@ -131,12 +132,13 @@ private:
      }
 
 public:
-   CEnvironmentStrategyMemory():m_filename(""),m_minSample(30),m_bonus(2.0),m_penalty(2.0){}
+   CEnvironmentStrategyMemory():m_filename(""),m_minSample(30),m_degradedMinSample(60),m_bonus(2.0),m_penalty(2.0){}
 
    void Init(string symbol,int minSample=30,double bonus=2.0,double penalty=2.0)
      {
       m_filename="MedisTouch_EnvironmentMemory_"+symbol+".csv";
       m_minSample=MathMax(1,minSample);
+      m_degradedMinSample=m_minSample*2;
       m_bonus=MathMax(0.0,bonus);
       m_penalty=MathMax(0.0,penalty);
       Load();
@@ -193,7 +195,7 @@ public:
          out.status="UNKNOWN";out.adjustment=0.0;return n>0;
         }
       bool qualified=(out.avg_r>0.0&&out.profit_factor>1.0&&out.wilson_low>=0.50);
-      bool degraded=(out.avg_r<0.0||(out.profit_factor>0.0&&out.profit_factor<1.0)||out.wilson_high<0.50);
+      bool degraded=(out.sample_size>=m_degradedMinSample&&out.avg_r<0.0&&out.profit_factor>0.0&&out.profit_factor<1.0&&out.wilson_high<0.50);
       if(qualified){out.status="QUALIFIED";out.adjustment=m_bonus;}
       else if(degraded){out.status="DEGRADED";out.adjustment=-m_penalty;}
       else {out.status="NEUTRAL";out.adjustment=0.0;}
@@ -202,6 +204,7 @@ public:
 
    int Count() const { return ArraySize(m_records); }
    int MinimumSample() const { return m_minSample; }
+   int DegradedMinimumSample() const { return m_degradedMinSample; }
   };
 #endif
 //+------------------------------------------------------------------+
