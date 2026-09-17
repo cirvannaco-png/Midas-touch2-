@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from tools.environment_memory import aggregate, wilson_interval
 
@@ -63,6 +62,13 @@ def test_restart_safe_storage_contract_is_present_in_ea_memory():
     assert "m_degradedMinSample=m_minSample*2" in memory
 
 
+def test_backtest_memory_isolated_from_persistent_live_history():
+    memory = _read("EA/includes/Trading/EnvironmentStrategyMemory.mqh")
+    assert "m_persistent=(MQLInfoInteger(MQL_TESTER)==0)" in memory
+    assert "if(!m_persistent||StringLen(m_filename)==0)return;" in memory
+    assert "if(!m_persistent||StringLen(m_filename)==0||!FileIsExist(m_filename))return;" in memory
+
+
 def test_adaptive_router_uses_historical_evidence_but_keeps_raw_score_authoritative():
     router = _read("EA/includes/Trading/StrategyTradeZone.mqh")
     assert "GetEvidence(reasons,challenger,challengerEvidence)" in router
@@ -77,12 +83,3 @@ def test_ci_remains_explicitly_paused():
     ci = _read(".gitlab-ci.yml")
     assert "workflow:" in ci
     assert "- when: never" in ci
-
-
-def test_environment_memory_does_not_use_temp_process_only_storage():
-    # Documentation-level guard: production EA persistence is file-backed,
-    # not an in-memory-only dictionary. This keeps restart/reconnect state.
-    with TemporaryDirectory() as d:
-        path = Path(d) / "memory.csv"
-        path.write_text("header\nrecord\n", encoding="utf-8")
-        assert path.exists() and path.read_text(encoding="utf-8").startswith("header")
