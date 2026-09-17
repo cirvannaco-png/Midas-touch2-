@@ -105,7 +105,6 @@ class Signal(Base):
     symbol = Column(String, nullable=False)
     direction = Column(String, nullable=False)
     entry = Column(Float, nullable=False)
-    # Canonical TradeSetup contract: thesis invalidation is NOT the broker stop.
     invalidation = Column(Float, nullable=True)
     sl = Column(Float, nullable=False)
     tp1 = Column(Float, nullable=False)
@@ -128,13 +127,17 @@ class Signal(Base):
     regime = Column(String, nullable=True, index=True)
     session = Column(String, nullable=True, index=True)
     sweep_grade = Column(String, nullable=True, index=True)
-    htf_ob_aligned = Column(sa.Boolean, nullable=True)
+    htf_ob_aligned = sa.Column(sa.Boolean, nullable=True)
     weight_version = Column(String, nullable=True, index=True)
 
 
 class SignalOutcome(Base):
     __tablename__ = "signal_outcomes"
-    __table_args__ = (Index("ix_signal_outcomes_regime_session", "regime", "session"),)
+    __table_args__ = (
+        Index("ix_signal_outcomes_regime_session", "regime", "session"),
+        Index("ix_signal_outcomes_strategy", "strategy"),
+        Index("ix_signal_outcomes_environment_key", "environment_key"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     signal_id = Column(String, unique=True, nullable=False, index=True)
@@ -146,15 +149,19 @@ class SignalOutcome(Base):
     mae_r = Column(Float, nullable=True)
     bars_held = Column(Integer, nullable=True)
     bars_to_fill = Column(Integer, nullable=True)
-    filled = Column(sa.Boolean, nullable=False, default=False)
+    filled = sa.Column(sa.Boolean, nullable=False, default=False)
     regime = Column(String, nullable=True, index=True)
     session = Column(String, nullable=True, index=True)
     sweep_grade = Column(String, nullable=True, index=True)
-    htf_ob_aligned = Column(sa.Boolean, nullable=True)
+    htf_ob_aligned = sa.Column(sa.Boolean, nullable=True)
     weight_version = Column(String, nullable=True, index=True)
     confidence_at_signal = Column(Float, nullable=True)
     confidence_decayed = Column(Float, nullable=True)
     decay_bars = Column(Integer, nullable=True)
+    strategy = Column(String(64), nullable=True, index=True)
+    environment_key = Column(String(512), nullable=True, index=True)
+    environment = Column(JSON, nullable=True)
+    exit_reason = Column(String(64), nullable=True)
     received_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
