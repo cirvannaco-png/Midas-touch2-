@@ -1,7 +1,3 @@
-//+------------------------------------------------------------------+
-//|                                                   Core/Config.mqh |
-//|                                            Medis Touch Indicator  |
-//+------------------------------------------------------------------+
 #property copyright "Medis Touch"
 #property version   "2.00"
 
@@ -10,7 +6,6 @@
 
 #include "NewsFilter.mqh"
 
-// --- Enums ---
 enum ENUM_TREND_STATE { TREND_BULL_STRONG, TREND_BULL, TREND_NEUTRAL, TREND_BEAR, TREND_BEAR_STRONG };
 enum ENUM_FVG_DIR { FVG_BULL, FVG_BEAR };
 enum ENUM_FVG_STATE { FVG_FRESH, FVG_TESTED, FVG_MITIGATED, FVG_INVALIDATED };
@@ -54,13 +49,19 @@ struct SetupReasons {
    double exec_score; double env_exec_confidence; ENUM_MARKET_REGIME regime; double momentum_score; double breakout_score; ENUM_BREAKOUT_CLASS breakout_class;
    double reversion_score; ENUM_REVERSION_CLASS reversion_class; ENUM_KEYLEVEL_SOURCE keylevel_source; ENUM_KEYLEVEL_REACTION keylevel_reaction; double keylevel_score;
    ENUM_SELECTED_STRATEGY selected_strategy; double selected_strategy_score;
+   // Environment telemetry. These are observations only and never act as
+   // standalone trading gates.
+   double trend_strength; double liquidity_score; int liquidity_bucket;
+   double spread_points; double point_size; double atr_value;
+   string environment_memory_status; int environment_memory_sample;
+   double environment_memory_win_rate; double environment_memory_avg_r;
+   double environment_memory_profit_factor; double environment_memory_adjustment;
 };
 
 struct TradeSetup {
    ENUM_ORDER_TYPE type;
    double entry_top;
    double entry_bottom;
-   // Strategy thesis boundary. This is deliberately distinct from the broker protective stop.
    double invalidation;
    double stop_loss;
    double tp1;
