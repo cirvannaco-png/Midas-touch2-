@@ -1,17 +1,15 @@
 """Environment -> Strategy -> Outcome memory analytics.
 
-This module is deliberately observational. It aggregates immutable resolved
-outcomes into an environment/strategy matrix and assigns conservative quality
-states. It does not modify trading thresholds or promote configurations.
+Historical evidence is advisory only. It cannot bypass setup validation,
+risk, portfolio, news, or broker execution gates.
 """
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from math import sqrt
+from math import inf, sqrt
 from statistics import mean
 
 RESOLVED = {"win", "loss", "scratch"}
-
 
 @dataclass(frozen=True)
 class EnvironmentMemoryEvidence:
@@ -29,12 +27,16 @@ class EnvironmentMemoryEvidence:
     avg_mfe_r: float | None
     avg_duration: float | None
     status: str
+    adjustment: float = 0.0
 
 
 def wilson_interval(wins: int, n: int, confidence: float = 0.95) -> tuple[float | None, float | None]:
     if n <= 0:
         return None, None
-    z = 1.959963984540054 if abs(confidence - 0.95) < 1e-9 else 1.959963984540054
+    # 95% is the supported production confidence level for now.
+    z = 1.959963984540054
+    if abs(confidence - 0.95) > 1e-9:
+        raise ValueError("only 95% Wilson intervals are supported")
     p = wins / n
     den = 1.0 + z * z / n
     centre = p + z * z / (2.0 * n)
@@ -43,21 +45,28 @@ def wilson_interval(wins: int, n: int, confidence: float = 0.95) -> tuple[float 
 
 
 def _quality(evidence: EnvironmentMemoryEvidence, min_sample: int = 30) -> str:
-    if evidence.trades < min_sample:
+    if evidence.trades == 0 or evidence.win_rate_ci_low is None:
         return "UNKNOWN"
+    # Positive evidence may qualify at the base sample threshold, but a
+    # negative environment needs twice the evidence before it can penalise
+    # selection. This is deliberate hysteresis against short losing streaks.
     if (
-        evidence.expectancy_r is not None
+        evidence.trades >= min_sample
+        and evidence.expectancy_r is not None
         and evidence.expectancy_r > 0
         and evidence.profit_factor is not None
         and evidence.profit_factor > 1.0
-        and evidence.win_rate_ci_low is not None
         and evidence.win_rate_ci_low >= 0.50
     ):
         return "QUALIFIED"
     if (
-        (evidence.expectancy_r is not None and evidence.expectancy_r < 0)
-        or (evidence.profit_factor is not None and evidence.profit_factor < 1.0)
-        or (evidence.win_rate_ci_high is not None and evidence.win_rate_ci_high < 0.50)
+        evidence.trades >= (2 * min_sample)
+        and evidence.expectancy_r is not None
+        and evidence.expectancy_r < 0
+        and evidence.profit_factor is not None
+        and 0.0 < evidence.profit_factor < 1.0
+        and evidence.win_rate_ci_high is not None
+        and evidence.win_rate_ci_high < 0.50
     ):
         return "DEGRADED"
     return "NEUTRAL"
@@ -68,7 +77,7 @@ def _env(row, key: str):
     return environment.get(key) if isinstance(environment, dict) else None
 
 
-def aggregate(rows, *, min_sample: int = 30) -> dict[tuple, EnvironmentMemoryEvidence]:
+def aggregate(rows, *, min_sample: int = 30, adjustment_points: float = 2.0) -> dict[tuple, EnvironmentMemoryEvidence]:
     buckets: dict[tuple, list] = {}
     for row in rows:
         if getattr(row, "outcome", None) not in RESOLVED:
@@ -90,7 +99,7 @@ def aggregate(rows, *, min_sample: int = 30) -> dict[tuple, EnvironmentMemoryEvi
 
     result: dict[tuple, EnvironmentMemoryEvidence] = {}
     for key, group in buckets.items():
-        ordered = sorted(group, key=lambda r: getattr(r, "received_at", None))
+        ordered = sorted(group, key=lambda r: getattr(r, "received_at", None) or 0)
         n = len(ordered)
         wins = sum(1 for r in ordered if r.outcome == "win")
         losses = sum(1 for r in ordered if r.outcome == "loss")
@@ -106,25 +115,28 @@ def aggregate(rows, *, min_sample: int = 30) -> dict[tuple, EnvironmentMemoryEvi
         mae = [r.mae_r for r in ordered if r.mae_r is not None]
         mfe = [r.mfe_r for r in ordered if r.mfe_r is not None]
         durations = [r.bars_held for r in ordered if r.bars_held is not None]
-        ci_low, ci_high = wilson_interval(wins, wins + losses)
+        resolved = wins + losses
+        ci_low, ci_high = wilson_interval(wins, resolved)
         evidence = EnvironmentMemoryEvidence(
             trades=n,
             wins=wins,
             losses=losses,
             scratches=scratches,
-            win_rate=(wins / (wins + losses)) if wins + losses else None,
+            win_rate=(wins / resolved) if resolved else None,
             win_rate_ci_low=ci_low,
             win_rate_ci_high=ci_high,
             expectancy_r=(mean(r_values) if r_values else None),
-            profit_factor=(gains / loss_abs if loss_abs else None),
+            profit_factor=(gains / loss_abs if loss_abs else (inf if gains > 0 else 0.0)),
             max_drawdown_r=max_dd if r_values else None,
             avg_mae_r=(mean(mae) if mae else None),
             avg_mfe_r=(mean(mfe) if mfe else None),
             avg_duration=(mean(durations) if durations else None),
             status="UNKNOWN",
+            adjustment=0.0,
         )
-        evidence = EnvironmentMemoryEvidence(**{**asdict(evidence), "status": _quality(evidence, min_sample)})
-        result[key] = evidence
+        status = _quality(evidence, min_sample=min_sample)
+        adjustment = adjustment_points if status == "QUALIFIED" else -adjustment_points if status == "DEGRADED" else 0.0
+        result[key] = EnvironmentMemoryEvidence(**{**asdict(evidence), "status": status, "adjustment": adjustment})
     return result
 
 
@@ -133,11 +145,7 @@ def as_report(rows, *, min_sample: int = 30) -> list[dict]:
     output = []
     for key, evidence in matrix.items():
         record = dict(zip(
-            [
-                "symbol", "strategy", "environment_key", "regime", "vol_regime",
-                "news_risk", "session", "htf_ob_state", "va_zone", "market_phase",
-                "structure_state",
-            ],
+            ["symbol", "strategy", "environment_key", "regime", "vol_regime", "news_risk", "session", "htf_ob_state", "va_zone", "market_phase", "structure_state"],
             key,
         ))
         record.update(asdict(evidence))
