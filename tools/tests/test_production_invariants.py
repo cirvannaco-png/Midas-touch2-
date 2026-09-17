@@ -6,11 +6,11 @@ TRACKER=ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh"
 RISK_GUARD=ROOT/"EA"/"includes"/"Portfolio"/"RiskGuard.mqh"
 PORTFOLIO=ROOT/"EA"/"includes"/"Portfolio"/"PortfolioManager.mqh"
 BROKER=ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh"
-RECOVERY=ROOT/"EA"/"includes"/"Recovery"/"RecoveryEngine.mqh"
-ORDERS=ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh"
-CONFIG_SYNC=ROOT/"EA"/"includes"/"Signals"/"ConfigSync.mqh"
-DECISION_STORE=ROOT/"EA"/"includes"/"Decision"/"DecisionStore.mqh"
-TRADE_ZONE=ROOT/"EA"/"includes"/"Trading"/"TradeZone.mqh"
+RECOVERY=ROOT/"EA"/"includes"/"Recovery/RecoveryEngine.mqh"
+ORDERS=ROOT/"EA"/"includes"/"Execution/OrderManager.mqh"
+CONFIG_SYNC=ROOT/"EA"/"includes"/"Signals/ConfigSync.mqh"
+DECISION_STORE=ROOT/"EA"/"includes"/"Decision/DecisionStore.mqh"
+TRADE_ZONE=ROOT/"EA"/"includes"/"Trading/TradeZone.mqh"
 GATING=ROOT/"tools"/"gating.py"
 CI=ROOT/".gitlab-ci.yml"
 
@@ -29,6 +29,9 @@ def test_restart_restores_tracker_state():
 
 def test_ea_initializes_tracker_on_chart_execution_timeframe():
     t=EA.read_text();assert "g_tracker.Init(&g_logger,_Symbol,_Period" in t;assert "g_tracker.Update(g_chartCtx);" in t;assert "g_tracker.Update(g_fvgCtx);" not in t
+
+def test_ea_restores_config_sync_timer_callback():
+    t=EA.read_text();assert "EventSetTimer(MathMax(60,InpConfigSyncPollMinutes*60));" in t;assert "void OnTimer(){if(StringLen(InpConfigSyncEndpoint)>0)g_configSync.Poll();}" in t
 
 def test_outcomes_advance_before_entry_gates():
     t=EA.read_text();assert t.index("g_tracker.Update(g_chartCtx);")<t.index("g_riskGuard.IsHardHalted")
