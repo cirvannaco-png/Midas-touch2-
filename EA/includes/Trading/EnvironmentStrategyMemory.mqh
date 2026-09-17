@@ -59,13 +59,14 @@ private:
    string EnvironmentKey(const SetupReasons &r) const
      {
       double spreadAtr=0.0;
-      if(r.atr_value>0.0) spreadAtr=r.spread_points*r.point_size/r.atr_value;
+      if(r.atr_value>0.0&&r.point_size>0.0) spreadAtr=r.spread_points*r.point_size/r.atr_value;
       string structure=EnumToString(r.sweep_grade)+"/"+
                        IntegerToString((int)r.breakout_class)+"/"+
                        IntegerToString((int)r.reversion_class)+"/"+
                        IntegerToString((int)r.keylevel_reaction);
+      string trendBucket=Bucket(MathAbs(r.trend_strength),0.25,0.60,0.85);
       return EnumToString(r.regime)+"|"+
-             EnumToString(r.vol_regime)+"|T"+DoubleToString(r.trend_strength_bucket,0)+"|L"+IntegerToString(r.liquidity_bucket)+
+             EnumToString(r.vol_regime)+"|T"+trendBucket+"|L"+IntegerToString(r.liquidity_bucket)+
              "|N"+EnumToString(r.news_risk)+"|S"+EnumToString(r.session)+
              "|SP"+Bucket(spreadAtr,0.02,0.05,0.10)+"|A"+EnumToString(r.vol_regime)+
              "|H"+(r.htf_ob_confluence?"1":"0")+"/"+IntegerToString((int)r.htf_ob_state)+
@@ -170,7 +171,7 @@ public:
       int n=0,wins=0,losses=0,scratches=0;
       for(int i=0;i<ArraySize(m_records);i++)
         {
-         const EnvironmentMemoryRecord rec=m_records[i];
+         EnvironmentMemoryRecord rec=m_records[i];
          if(!rec.counted||rec.strategy!=(int)strategy||rec.environment_key!=key)continue;
          n++;sumR+=rec.realized_r;sumMAE+=rec.mae_r;sumMFE+=rec.mfe_r;sumDuration+=rec.duration;
          cumulative+=rec.realized_r;if(cumulative>peak)peak=cumulative;double dd=peak-cumulative;if(dd>out.max_drawdown_r)out.max_drawdown_r=dd;
@@ -192,7 +193,7 @@ public:
          out.status="UNKNOWN";out.adjustment=0.0;return n>0;
         }
       bool qualified=(out.avg_r>0.0&&out.profit_factor>1.0&&out.wilson_low>=0.50);
-      bool degraded=(out.avg_r<0.0||out.profit_factor>0.0&&out.profit_factor<1.0||out.wilson_high<0.50);
+      bool degraded=(out.avg_r<0.0||(out.profit_factor>0.0&&out.profit_factor<1.0)||out.wilson_high<0.50);
       if(qualified){out.status="QUALIFIED";out.adjustment=m_bonus;}
       else if(degraded){out.status="DEGRADED";out.adjustment=-m_penalty;}
       else {out.status="NEUTRAL";out.adjustment=0.0;}
