@@ -11,6 +11,7 @@
 #include "../Analysis/Scoring.mqh"
 #include "StrategySetupBuilders.mqh"
 #include "Targets.mqh"
+#include "EnvironmentStrategyMemory.mqh"
 
 extern CTFContext* g_chartCtx;
 extern CTFContext* g_bosCtx;
@@ -18,17 +19,18 @@ extern CTFContext* g_bosCtx;
 class CTradeDecision
   {
 private:
-   CCandleData*      m_priceRef;
-   CTFContext*       m_fvgCtx;
-   CTFContext*       m_liqCtx;
-   CTFContext*       m_srCtx;
-   CTFContext*       m_bosCtx;
-   CScoringEngine*   m_scoring;
-   TradeSetup        m_lastSetup;
-   double            m_slBufferATR;
-   double            m_minStopSpreadMult;
-   double            m_fvgMaxDistATR;
-   double            m_minSelectionScore;
+   CCandleData*                    m_priceRef;
+   CTFContext*                     m_fvgCtx;
+   CTFContext*                     m_liqCtx;
+   CTFContext*                     m_srCtx;
+   CTFContext*                     m_bosCtx;
+   CScoringEngine*                 m_scoring;
+   CEnvironmentStrategyMemory*     m_environmentMemory;
+   TradeSetup                      m_lastSetup;
+   double                          m_slBufferATR;
+   double                          m_minStopSpreadMult;
+   double                          m_fvgMaxDistATR;
+   double                          m_minSelectionScore;
 
    bool FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out);
    double EnforceSpreadFloor(string symbol,double entry,double stopLoss,bool isBuy);
@@ -45,7 +47,8 @@ public:
    void Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,
              CScoringEngine* scoring,double slBufferATR=0.25,
              double minStopSpreadMult=3.0,double fvgMaxDistATR=1.25,
-             double minSelectionScore=60.0,CTFContext* srCtx=NULL,CTFContext* bosCtx=NULL);
+             double minSelectionScore=60.0,CTFContext* srCtx=NULL,
+             CTFContext* bosCtx=NULL,CEnvironmentStrategyMemory* environmentMemory=NULL);
    TradeSetup GenerateBuySetup();
    TradeSetup GenerateSellSetup();
    TradeSetup GetLastSetup()const{return m_lastSetup;}
@@ -60,6 +63,7 @@ CTradeDecision::CTradeDecision()
    m_srCtx=NULL;
    m_bosCtx=NULL;
    m_scoring=NULL;
+   m_environmentMemory=NULL;
    m_slBufferATR=0.25;
    m_minStopSpreadMult=3.0;
    m_fvgMaxDistATR=1.25;
@@ -69,7 +73,8 @@ CTradeDecision::CTradeDecision()
 void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,
                           CScoringEngine* scoring,double slBufferATR,double minStopSpreadMult,
                           double fvgMaxDistATR,double minSelectionScore,
-                          CTFContext* srCtx,CTFContext* bosCtx)
+                          CTFContext* srCtx,CTFContext* bosCtx,
+                          CEnvironmentStrategyMemory* environmentMemory)
   {
    m_priceRef=priceRef;
    m_fvgCtx=fvgCtx;
@@ -77,6 +82,7 @@ void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* l
    m_srCtx=(srCtx!=NULL?srCtx:g_chartCtx);
    m_bosCtx=(bosCtx!=NULL?bosCtx:g_bosCtx);
    m_scoring=scoring;
+   m_environmentMemory=environmentMemory;
    m_slBufferATR=(slBufferATR>0?slBufferATR:0.25);
    m_minStopSpreadMult=(minStopSpreadMult>=0?minStopSpreadMult:3.0);
    m_fvgMaxDistATR=(fvgMaxDistATR>0?fvgMaxDistATR:1.25);
@@ -128,12 +134,24 @@ void CTradeDecision::PopulateStrategyReads(bool forBuy,SetupReasons &out)
   {
    ZeroMemory(out);
    if(m_scoring==NULL)return;
-   // This pass is intentionally SMC-neutral: it populates regime and the
-   // independent strategy reads without calculating SMC confidence first.
+   // SMC-neutral read pass: regime and independent strategy diagnostics are
+   // populated before any SMC candidate is allowed to compete.
    m_scoring.EvaluateReasons(forBuy,out);
    m_scoring.PopulateStrategyDiagnostics(forBuy,0.0,out);
    out.selected_strategy=STRATEGY_NONE;
    out.selected_strategy_score=0.0;
+
+   // Snapshot the execution environment at decision time. These fields are
+   // telemetry/memory keys only; they do not independently gate a trade.
+   if(m_priceRef!=NULL&&m_priceRef.Total()>0)
+     {
+      out.spread_points=(double)SymbolInfoInteger(m_priceRef.Symbol(),SYMBOL_SPREAD);
+      out.point_size=SymbolInfoDouble(m_priceRef.Symbol(),SYMBOL_POINT);
+      out.atr_value=m_priceRef.GetATR(0);
+     }
+   out.trend_strength=out.trend_aligned?1.0:0.0;
+   out.liquidity_score=out.liquidity_swept?1.0:0.0;
+   out.liquidity_bucket=out.liquidity_swept?2:0;
   }
 
 void CTradeDecision::SelectPeerStrategy(bool forBuy,SetupReasons &reasons,
@@ -143,8 +161,6 @@ void CTradeDecision::SelectPeerStrategy(bool forBuy,SetupReasons &reasons,
    selectedScore=0.0;
    if(m_scoring==NULL||reasons.regime==REGIME_UNDEFINED)return;
 
-   // Regime is authoritative for which non-SMC family is eligible. This
-   // selection is completely independent of SMC confidence.
    ENUM_SELECTED_STRATEGY challenger=STRATEGY_NONE;
    double challengerScore=-1.0;
    if(reasons.regime==REGIME_TRENDING)
@@ -175,20 +191,55 @@ void CTradeDecision::SelectPeerStrategy(bool forBuy,SetupReasons &reasons,
         }
      }
 
-   if(challenger!=STRATEGY_NONE&&challengerScore>=m_minSelectionScore)
+   bool challengerEligible=(challenger!=STRATEGY_NONE&&challengerScore>=m_minSelectionScore);
+   double challengerAdjusted=challengerScore;
+   EnvironmentMemoryEvidence challengerEvidence;ZeroMemory(challengerEvidence);
+   bool challengerMemory=false;
+   if(challengerEligible&&m_environmentMemory!=NULL)
+      challengerMemory=m_environmentMemory.GetEvidence(reasons,challenger,challengerEvidence);
+   if(challengerEligible&&challengerMemory)challengerAdjusted=challengerScore+challengerEvidence.adjustment;
+
+   // SMC is a peer candidate, not a prerequisite. Its own confidence may
+   // still be zero because the SMC engine did not validate its sequence;
+   // that does not invalidate a non-SMC challenger.
+   double smcScore=m_scoring.CalculateConfidence(forBuy);
+   bool smcEligible=(smcScore>=m_minSelectionScore);
+   double smcAdjusted=smcScore;
+   EnvironmentMemoryEvidence smcEvidence;ZeroMemory(smcEvidence);
+   bool smcMemory=false;
+   if(smcEligible&&m_environmentMemory!=NULL)
+      smcMemory=m_environmentMemory.GetEvidence(reasons,STRATEGY_SMC,smcEvidence);
+   if(smcEligible&&smcMemory)smcAdjusted=smcScore+smcEvidence.adjustment;
+
+   if(challengerEligible&&(!smcEligible||challengerAdjusted>smcAdjusted))
      {
       selected=challenger;
-      selectedScore=challengerScore;
+      selectedScore=challengerScore; // raw score remains authoritative in telemetry
+      if(challengerMemory)
+        {
+         reasons.environment_memory_status=challengerEvidence.status;
+         reasons.environment_memory_sample=challengerEvidence.sample_size;
+         reasons.environment_memory_win_rate=challengerEvidence.win_rate*100.0;
+         reasons.environment_memory_avg_r=challengerEvidence.avg_r;
+         reasons.environment_memory_profit_factor=challengerEvidence.profit_factor;
+         reasons.environment_memory_adjustment=challengerEvidence.adjustment;
+        }
+      else reasons.environment_memory_status="UNKNOWN";
      }
-
-   // SMC is now a peer candidate, not a prerequisite. It is evaluated only
-   // after the regime/strategy reads above are available, so a failing SMC
-   // gate cannot prevent a valid non-SMC setup from being built.
-   double smcScore=m_scoring.CalculateConfidence(forBuy);
-   if(smcScore>=m_minSelectionScore&&(selected==STRATEGY_NONE||smcScore>selectedScore))
+   else if(smcEligible)
      {
       selected=STRATEGY_SMC;
-      selectedScore=smcScore;
+      selectedScore=smcScore; // raw score remains authoritative in telemetry
+      if(smcMemory)
+        {
+         reasons.environment_memory_status=smcEvidence.status;
+         reasons.environment_memory_sample=smcEvidence.sample_size;
+         reasons.environment_memory_win_rate=smcEvidence.win_rate*100.0;
+         reasons.environment_memory_avg_r=smcEvidence.avg_r;
+         reasons.environment_memory_profit_factor=smcEvidence.profit_factor;
+         reasons.environment_memory_adjustment=smcEvidence.adjustment;
+        }
+      else reasons.environment_memory_status="UNKNOWN";
      }
 
    reasons.selected_strategy=selected;
@@ -287,15 +338,8 @@ TradeSetup CTradeDecision::Generate(bool forBuy)
    return out;
   }
 
-TradeSetup CTradeDecision::GenerateBuySetup()
-  {
-   return Generate(true);
-  }
-
-TradeSetup CTradeDecision::GenerateSellSetup()
-  {
-   return Generate(false);
-  }
+TradeSetup CTradeDecision::GenerateBuySetup(){ return Generate(true); }
+TradeSetup CTradeDecision::GenerateSellSetup(){ return Generate(false); }
 
 #endif
 //+------------------------------------------------------------------+
