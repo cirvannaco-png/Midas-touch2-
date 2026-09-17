@@ -107,5 +107,11 @@ bool CDecisionStore::SaveExecution(long decisionId,double volume,ulong ticket)
 int CDecisionStore::LoadAll(TradeDecisionRecord &out[]){int n=ArraySize(m_decisions);ArrayResize(out,n);for(int i=0;i<n;i++)out[i]=m_decisions[i];return n;}
 int CDecisionStore::LoadAllExecutions(ExecutionRecord &out[]){int n=ArraySize(m_executions);ArrayResize(out,n);for(int i=0;i<n;i++)out[i]=m_executions[i];return n;}
 bool CDecisionStore::FindById(long decisionId,TradeDecisionRecord &out){for(int i=ArraySize(m_decisions)-1;i>=0;i--)if(m_decisions[i].decision_id==decisionId){out=m_decisions[i];return true;}return false;}
+
+// EA-wide durable decision store instance. The EA references this object from
+// OnInit/OnTick; keeping the instance here guarantees it is available wherever
+// DecisionStore.mqh is included without altering trading logic.
+CDecisionStore g_store;
+
 #endif
 //+------------------------------------------------------------------+
