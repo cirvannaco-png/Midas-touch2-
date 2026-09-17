@@ -63,6 +63,11 @@ def _quality(evidence: EnvironmentMemoryEvidence, min_sample: int = 30) -> str:
     return "NEUTRAL"
 
 
+def _env(row, key: str):
+    environment = getattr(row, "environment", None) or {}
+    return environment.get(key) if isinstance(environment, dict) else None
+
+
 def aggregate(rows, *, min_sample: int = 30) -> dict[tuple, EnvironmentMemoryEvidence]:
     buckets: dict[tuple, list] = {}
     for row in rows:
@@ -71,18 +76,15 @@ def aggregate(rows, *, min_sample: int = 30) -> dict[tuple, EnvironmentMemoryEvi
         key = (
             getattr(row, "symbol", None) or "(unknown)",
             getattr(row, "strategy", None) or "STRATEGY_NONE",
-            getattr(row, "regime", None) or "REGIME_UNDEFINED",
-            getattr(row, "vol_regime", None) or "VOL_REGIME_UNDEFINED",
-            getattr(row, "trend_strength_bucket", None),
-            getattr(row, "liquidity_bucket", None),
-            getattr(row, "news_risk", None) or "NEWS_NONE",
-            getattr(row, "session", None) or "SESSION_DEAD",
-            getattr(row, "spread_bucket", None),
-            getattr(row, "atr_regime", None) or getattr(row, "vol_regime", None),
-            getattr(row, "htf_ob_state", None),
-            getattr(row, "va_zone", None),
-            getattr(row, "market_phase", None),
-            getattr(row, "structure_state", None),
+            getattr(row, "environment_key", None) or "(legacy-unkeyed)",
+            _env(row, "regime") or getattr(row, "regime", None) or "REGIME_UNDEFINED",
+            _env(row, "volatility_state") or "VOL_REGIME_UNDEFINED",
+            _env(row, "news_state") or "NEWS_NONE",
+            _env(row, "session") or getattr(row, "session", None) or "SESSION_DEAD",
+            _env(row, "htf_ob_state"),
+            _env(row, "value_area_zone"),
+            _env(row, "market_phase"),
+            _env(row, "market_structure"),
         )
         buckets.setdefault(key, []).append(row)
 
@@ -114,7 +116,7 @@ def aggregate(rows, *, min_sample: int = 30) -> dict[tuple, EnvironmentMemoryEvi
             win_rate_ci_low=ci_low,
             win_rate_ci_high=ci_high,
             expectancy_r=(mean(r_values) if r_values else None),
-            profit_factor=(gains / loss_abs if loss_abs else (float("inf") if gains else None)),
+            profit_factor=(gains / loss_abs if loss_abs else None),
             max_drawdown_r=max_dd if r_values else None,
             avg_mae_r=(mean(mae) if mae else None),
             avg_mfe_r=(mean(mfe) if mfe else None),
@@ -132,9 +134,9 @@ def as_report(rows, *, min_sample: int = 30) -> list[dict]:
     for key, evidence in matrix.items():
         record = dict(zip(
             [
-                "symbol", "strategy", "regime", "vol_regime", "trend_strength_bucket",
-                "liquidity_bucket", "news_risk", "session", "spread_bucket", "atr_regime",
-                "htf_ob_state", "va_zone", "market_phase", "structure_state",
+                "symbol", "strategy", "environment_key", "regime", "vol_regime",
+                "news_risk", "session", "htf_ob_state", "va_zone", "market_phase",
+                "structure_state",
             ],
             key,
         ))
