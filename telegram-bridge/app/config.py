@@ -85,7 +85,12 @@ class Settings(BaseSettings):
     @property
     def webhook_url(self) -> str:
         base = (self.WEBHOOK_URL or self.RENDER_EXTERNAL_URL).rstrip("/")
-        return f"{base}{self.WEBHOOK_PATH}"
+        path = self.WEBHOOK_PATH.strip("/")
+        if not base:
+            return f"/{path}"
+        if base.endswith(f"/{path}"):
+            return base
+        return f"{base}/{path}"
 
     @property
     def authorized_chat_id(self) -> str:
