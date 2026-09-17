@@ -141,7 +141,7 @@ void CTradeDecision::SelectPeerStrategy(bool forBuy,SetupReasons &reasons,
   {
    selected=STRATEGY_NONE;
    selectedScore=0.0;
-   if(m_scoring==NULL)return;
+   if(m_scoring==NULL||reasons.regime==REGIME_UNDEFINED)return;
 
    // Regime is authoritative for which non-SMC family is eligible. This
    // selection is completely independent of SMC confidence.
