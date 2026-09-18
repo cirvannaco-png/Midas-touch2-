@@ -1,0 +1,12 @@
+{
+  "test_id": "SYNC-2026-09-18-001",
+  "source_commit": "60ef61f3d1a5cf602f6d2eb049256f39440cc203",
+  "source_branch": "sync-test/github-to-gitlab-20260918",
+  "target_commit_before_result": "16a63f1cf193701a7eac7aaaf9358e026f6f22d5025c4ed18e40bfa7363daa7a",
+  "target_branch": "sync-test/github-to-gitlab-20260918",
+  "exact_content_match": true,
+  "main_untouched": true,
+  "production_untouched": true,
+  "release_surface": "GitLab production",
+  "release_surface_state": "unchanged"
+}
