@@ -69,6 +69,8 @@ Before promotion, record evidence for the commit being released:
 
 ## 5. Production bootstrap
 
+The SHA-1 `midas-touch2-sync` repository is a transport staging surface and is not a production promotion target. Production promotion must establish the release state independently in the active GitHub and active GitLab engineering repositories.
+
 The production boundary is **not currently bootstrapped on both providers**.
 
 As of the 2026-09-18 pre-protection audit:
