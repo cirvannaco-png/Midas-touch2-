@@ -23,9 +23,11 @@ Create one GitHub Actions repository secret:
 
 The token must be allowed to push to:
 
-`kelsonkiiru15/midas-touch2`
+`midas-touch-group1/midas-touch2`
 
 Do not commit tokens, credential files, or URLs containing credentials.
+
+GitHub and GitLab currently use different Git object formats (SHA-1 on GitHub, SHA-256 on the active GitLab project). Never use literal cross-provider SHA equality as the parity test.
 
 ## Manual mirror procedure
 
