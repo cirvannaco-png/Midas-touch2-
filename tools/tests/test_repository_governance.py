@@ -13,20 +13,25 @@ README = ROOT / "README.md"
 
 
 ACTIVE_GITLAB_REPO = "midas-touch-group1/midas-touch2"
+SYNC_GITLAB_REPO = "midas-touch-group1/midas-touch2-sync"
 OBSOLETE_GITLAB_REPO = "midas-touch-group1/midas-touchsync"
 
 
-def test_mirror_targets_only_the_active_gitlab_repository():
+def test_mirror_targets_only_the_sha1_sync_repository():
     text = MIRROR.read_text()
-    assert ACTIVE_GITLAB_REPO in text
+    assert SYNC_GITLAB_REPO in text
+    assert ACTIVE_GITLAB_REPO not in text
     assert OBSOLETE_GITLAB_REPO not in text
 
 
-def test_governance_documents_use_the_active_gitlab_repository():
-    for path in (OPERATING_MODEL, SYNC_RUNBOOK):
-        text = path.read_text()
-        assert ACTIVE_GITLAB_REPO in text
-        assert "kelsonkiiru15/midas-touch2" not in text
+def test_governance_documents_declare_active_and_sync_gitlab_repositories():
+    operating = OPERATING_MODEL.read_text()
+    runbook = SYNC_RUNBOOK.read_text()
+    assert ACTIVE_GITLAB_REPO in operating
+    assert SYNC_GITLAB_REPO in operating
+    assert SYNC_GITLAB_REPO in runbook
+    assert "kelsonkiiru15/midas-touch2" not in operating
+    assert "kelsonkiiru15/midas-touch2" not in runbook
     assert OBSOLETE_GITLAB_REPO not in MIRROR.read_text()
 
 
