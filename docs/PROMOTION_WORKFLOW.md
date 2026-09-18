@@ -67,7 +67,20 @@ Before promotion, record evidence for the commit being released:
 - Controlled forward-test evidence is available.
 - Critical audit findings are closed or explicitly waived by the release owner.
 
-## 5. Promotion
+## 5. Production bootstrap
+
+The first `production` refs have already been bootstrapped from the validated `main` commit `74cabb8d61564c1bebec2287df6ad44f82dea2aa` on both active providers.
+
+For a future repository reconstruction, bootstrap must be:
+
+1. Verify GitHub `main` and GitLab `main` are identical.
+2. Identify the exact validated `main` SHA.
+3. Create `production` from that exact SHA on both providers.
+4. Verify GitHub `production` == GitLab `production`.
+5. Apply the protected/ref-rule configuration before normal release use.
+6. Record the bootstrap SHA in the release evidence.
+
+## 6. Promotion
 
 Promote the exact validated `main` commit to `production`.
 
@@ -79,7 +92,7 @@ Promotion must verify:
 
 If any verification fails, STOP.
 
-## 6. Forward test
+## 7. Forward test
 
 Use the production release candidate in a controlled environment first.
 
@@ -94,7 +107,7 @@ Observe:
 
 Forward-test success is evidence, not a guarantee of future trading performance.
 
-## 7. Live rollout
+## 8. Live rollout
 
 Only after the controlled forward-test gate is satisfied should live deployment be considered.
 
@@ -107,4 +120,30 @@ A software promotion does not itself authorize capital deployment.
 
 ## Rollback
 
-Rollback must point both providers back to a previously validated production commit. Do not rewrite history to hide a faulty release.
+### Preferred rollback: revert-and-repromote
+
+For a normal incident:
+
+1. Freeze further promotion.
+2. Identify the faulty release and affected commits.
+3. Create a dedicated rollback/fix branch from current `main`.
+4. Revert the faulty change(s) rather than rewriting history.
+5. Run the same compile, audit, parity, backtest, and controlled-forward-test gates.
+6. Merge the validated rollback fix into `main`.
+7. Promote that exact new `main` commit to `production`.
+8. Mirror the exact release commit to both providers and record the incident evidence.
+
+This is the default because it preserves an auditable history.
+
+### Emergency exact-SHA restoration
+
+If an incident requires the production ref itself to point immediately to a previously validated commit:
+
+- Stop all automatic synchronization.
+- Record the target known-good SHA and incident/change-approval identifier.
+- The release owner/admin must explicitly authorize the protected-ref reset on **both** providers.
+- Use a lease-checked, audited non-fast-forward update; never use an unqualified force-push.
+- Verify both `production` refs equal the exact target SHA before resuming operations.
+- The cross-provider sync controller must never perform this operation automatically.
+
+This emergency path is exceptional and requires provider-level protection bypass/admin authority. It must never be used to conceal an unreviewed release.
