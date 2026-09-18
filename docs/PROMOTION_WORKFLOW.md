@@ -90,13 +90,13 @@ Do not promote the existing GitHub `production` ref merely because it exists; it
 
 ## 6. Promotion
 
-Promote the exact validated `main` commit to `production`.
+Promote the exact validated `main` release state to `production`.
 
 Promotion must verify:
-1. GitHub `main` == GitLab `main`
-2. GitHub `production` == GitLab `production`
-3. `production` is an ancestor of `main`
-4. The release commit is the same SHA on both providers
+1. GitHub `main` and GitLab `main` represent the same intended source tree/release state using provider-specific commit IDs.
+2. GitHub `production` and GitLab `production` exist and represent that same intended release state.
+3. On each provider, `production` is an ancestor of that provider's `main`.
+4. The provider-specific release commit IDs and cross-provider source-tree verification evidence are recorded.
 
 If any verification fails, STOP.
 
@@ -143,15 +143,15 @@ For a normal incident:
 
 This is the default because it preserves an auditable history.
 
-### Emergency exact-SHA restoration
+### Emergency exact-release restoration
 
 If an incident requires the production ref itself to point immediately to a previously validated commit:
 
 - Stop all automatic synchronization.
-- Record the target known-good SHA and incident/change-approval identifier.
+- Record the provider-specific target commit IDs and incident/change-approval identifier.
 - The release owner/admin must explicitly authorize the protected-ref reset on **both** providers.
-- Use a lease-checked, audited non-fast-forward update; never use an unqualified force-push.
-- Verify both `production` refs equal the exact target SHA before resuming operations.
+- Use a lease-checked, audited non-fast-forward update on each provider; never use an unqualified force-push.
+- Verify both `production` refs resolve to their recorded target commits and that the source trees match before resuming operations.
 - The cross-provider sync controller must never perform this operation automatically.
 
 This emergency path is exceptional and requires provider-level protection bypass/admin authority. It must never be used to conceal an unreviewed release.
