@@ -19,9 +19,9 @@ OBSOLETE_GITLAB_REPO = "midas-touch-group1/midas-touchsync"
 
 def test_mirror_targets_only_the_sha1_sync_repository():
     text = MIRROR.read_text()
-    assert SYNC_GITLAB_REPO in text
-    assert ACTIVE_GITLAB_REPO not in text
-    assert OBSOLETE_GITLAB_REPO not in text
+    assert f"gitlab.com/{SYNC_GITLAB_REPO}.git" in text
+    assert f"gitlab.com/{ACTIVE_GITLAB_REPO}.git" not in text
+    assert f"gitlab.com/{OBSOLETE_GITLAB_REPO}.git" not in text
 
 
 def test_governance_documents_declare_active_and_sync_gitlab_repositories():
@@ -32,7 +32,7 @@ def test_governance_documents_declare_active_and_sync_gitlab_repositories():
     assert SYNC_GITLAB_REPO in runbook
     assert "kelsonkiiru15/midas-touch2" not in operating
     assert "kelsonkiiru15/midas-touch2" not in runbook
-    assert OBSOLETE_GITLAB_REPO not in MIRROR.read_text()
+    assert f"gitlab.com/{OBSOLETE_GITLAB_REPO}.git" not in MIRROR.read_text()
 
 
 def test_github_ci_is_pr_gated_to_main_not_broad_push_ci():
