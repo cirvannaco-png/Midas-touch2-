@@ -69,16 +69,24 @@ Before promotion, record evidence for the commit being released:
 
 ## 5. Production bootstrap
 
-The first `production` refs have already been bootstrapped from the validated `main` commit `74cabb8d61564c1bebec2287df6ad44f82dea2aa` on both active providers.
+The production boundary is **not currently bootstrapped on both providers**.
 
-For a future repository reconstruction, bootstrap must be:
+As of the 2026-09-18 pre-protection audit:
 
-1. Verify GitHub `main` and GitLab `main` are identical.
-2. Identify the exact validated `main` SHA.
-3. Create `production` from that exact SHA on both providers.
-4. Verify GitHub `production` == GitLab `production`.
+- GitHub `production` exists at `74cabb8d61564c1bebec2287df6ad44f82dea2aa` and is 18 commits behind GitHub `main`.
+- GitLab `production` does not exist.
+- GitHub and GitLab use different Git object formats, so a literal SHA comparison across providers is invalid.
+
+For the first valid production bootstrap, use this procedure:
+
+1. Verify the intended release source tree on GitHub and GitLab is identical using provider-specific commit IDs and tree/content verification.
+2. Identify the exact validated release commit on the provider where the release is prepared.
+3. Create `production` from that exact release source tree on both providers.
+4. Verify each provider's `production` ref resolves to the recorded release state and that the source trees are identical across providers.
 5. Apply the protected/ref-rule configuration before normal release use.
-6. Record the bootstrap SHA in the release evidence.
+6. Record the provider-specific production commit IDs and the cross-provider tree verification evidence.
+
+Do not promote the existing GitHub `production` ref merely because it exists; it is stale relative to the current `main`.
 
 ## 6. Promotion
 
