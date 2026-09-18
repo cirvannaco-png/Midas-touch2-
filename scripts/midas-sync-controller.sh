@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Default behavior is VERIFY ONLY.
 # Set ALLOW_FAST_FORWARD_PUSH=1 only when an explicit caller has approved
-# a one-way GitHub -> GitLab fast-forward for an unprotected development ref.
+# a one-way GitHub -> GitLab update for an unprotected development ref.
 #
 # Never force-pushes, auto-merges, or resolves divergence.
 
@@ -41,11 +41,17 @@ stop() {
   exit 2
 }
 
+push_mirror() {
+  # Plain git push is intentionally used. Git rejects non-fast-forward updates
+  # by default, so a remote race cannot silently rewrite history.
+  git push "$GITLAB_REMOTE" "$GITHUB_REMOTE/$REF:refs/heads/$REF" ||     stop "GitLab push was rejected; provider state changed or is protected"
+}
+
 echo "Midas Touch sync controller"
 echo "GitHub remote: $GITHUB_REMOTE"
 echo "GitLab remote:  $GITLAB_REMOTE"
 echo "Ref:            ${REF:-<missing>}"
-echo "Policy:         equal=no-op; GitLab-behind=fast-forward only; divergence/ahead=STOP"
+echo "Policy:         equal=no-op; GitHub-ahead=fast-forward only; GitLab-ahead/divergence=STOP"
 echo
 
 [[ -n "$REF" ]] || stop "branch/ref name is required"
@@ -72,11 +78,11 @@ if ! git rev-parse --verify "$GL_REF" >/dev/null 2>&1; then
   echo "GitLab ref '$REF' does not exist."
   echo "GitHub source: $GH_SHA"
   if [[ "$ALLOW_FAST_FORWARD_PUSH" == "1" ]]; then
-    git push --ff-only "$GITLAB_REMOTE" "$GH_REF:refs/heads/$REF"
+    push_mirror
     echo "CREATED: GitLab '$REF' at $GH_SHA"
     exit 0
   fi
-  echo "VERIFY ONLY: creation would be a fast-forward-safe mirror of GitHub."
+  echo "VERIFY ONLY: creation would mirror GitHub without rewriting history."
   exit 0
 fi
 
@@ -92,7 +98,7 @@ fi
 if git merge-base --is-ancestor "$GL_SHA" "$GH_SHA"; then
   echo "GitLab is strictly behind GitHub."
   if [[ "$ALLOW_FAST_FORWARD_PUSH" == "1" ]]; then
-    git push --ff-only "$GITLAB_REMOTE" "$GH_REF:refs/heads/$REF"
+    push_mirror
     echo "FAST-FORWARDED: GitLab '$REF' -> $GH_SHA"
   else
     echo "VERIFY ONLY: fast-forward push would update GitLab to $GH_SHA"
