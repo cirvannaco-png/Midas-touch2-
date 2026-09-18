@@ -3,10 +3,10 @@
 ## Repositories
 
 - Active GitHub: `cirvannaco-png/Midas-touch2-`
-- Active GitLab: `kelsonkiiru15/midas-touch2`
+- Canonical GitLab: `midas-touch-group1/midas-touch2`
 - Historical archive: original SHA-256 `midas-touch2` — immutable reference only.
 
-The GitHub/GitLab active pair uses SHA-1 and is intended to carry the same source tree and branch topology.
+The GitHub/GitLab active pair uses provider-specific object IDs but is intended to carry the same source tree and branch topology on synchronized development refs.
 
 ## Authority and safety
 
@@ -75,13 +75,16 @@ The controller may:
 - compare branch tips
 - report equality
 - fast-forward an unprotected branch when one side is strictly ahead
+- create a missing unprotected development ref from the GitHub source when explicitly approved
 
 The controller must not:
 - force-push protected branches
 - merge conflicts automatically
-- overwrite a branch because one provider is considered authoritative
-- auto-resolve divergence
+- overwrite a divergent branch
+- reverse-sync GitLab back to GitHub
 - create webhook loops
+
+The canonical GitLab transport target is `midas-touch-group1/midas-touch2`.
 
 ## CI policy
 
