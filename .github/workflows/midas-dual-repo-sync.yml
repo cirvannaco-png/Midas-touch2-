@@ -1,10 +1,6 @@
 name: Midas dual-repo sync
 
 on:
-  push:
-    branches-ignore:
-      - main
-      - production
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
