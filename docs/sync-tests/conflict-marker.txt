@@ -1,0 +1,1 @@
+SOURCE=GITLAB\nCONFLICT_TEST=shared-path\n
