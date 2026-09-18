@@ -29,7 +29,9 @@ services:
     dockerContext: .
     plan: free          # upgrade to starter/standard for production SLAs; free web
                          # services spin down after 15 min idle (~1 min cold start)
-    healthCheckPath: /
+    # Render readiness must include the persistence dependency. The root
+    # liveness endpoint intentionally does not query the database.
+    healthCheckPath: /health/db
     envVars:
       - key: DATABASE_URL
         # Render injects postgres:// -- config.py normalises it to
