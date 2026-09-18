@@ -3,7 +3,7 @@
 ## Repositories
 
 - Active GitHub: `cirvannaco-png/Midas-touch2-`
-- Active GitLab: `midas-touch-group1/Midas-touchsync`
+- Active GitLab: `kelsonkiiru15/midas-touch2`
 - Historical archive: original SHA-256 `midas-touch2` — immutable reference only.
 
 The GitHub/GitLab active pair uses SHA-1 and is intended to carry the same source tree and branch topology.
