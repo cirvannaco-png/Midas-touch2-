@@ -193,11 +193,14 @@ async def health_check():
 @router.get("/health/db", response_model=HealthResponse)
 async def health_db():
     db_ok = await check_db_connection()
-    return {
+    body = {
         "status": "online" if db_ok else "degraded",
         "version": APP_VERSION,
-        "database": "connected" if db_ok else "disconnected"
+        "database": "connected" if db_ok else "disconnected",
     }
+    if not db_ok:
+        return JSONResponse(status_code=503, content=body)
+    return body
 
 
 @router.post("/telegram/webhook")
