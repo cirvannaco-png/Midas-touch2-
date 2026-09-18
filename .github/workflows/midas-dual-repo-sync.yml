@@ -1,0 +1,45 @@
+name: Midas dual-repo sync
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - production
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout controller history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure GitLab authentication
+        env:
+          GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
+        run: |
+          test -n "$GITLAB_SYNC_TOKEN"
+          git remote add gitlab-sync "https://oauth2:$GITLAB_SYNC_TOKEN@gitlab.com/midas-touch-group1/Midas-touchsync.git"
+
+      - name: Configure GitHub authentication
+        run: |
+          git config user.name "midas-sync-bot"
+          git config user.email "midas-sync-bot@users.noreply.github.com"
+
+      - name: Run conflict-safe synchronization
+        run: |
+          chmod +x tools/midas-sync-controller.sh
+          ./tools/midas-sync-controller.sh
+
+      - name: Verify main parity
+        run: |
+          gh_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          gl_sha="$(git ls-remote gitlab-sync refs/heads/main | awk '{print $1}')"
+          test "$gh_sha" = "$gl_sha"
