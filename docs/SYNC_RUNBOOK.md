@@ -4,6 +4,8 @@
 
 GitHub is the **manual transport origin** for ordinary development branches when one controlled GitHub change must appear on GitLab. This does not make GitHub the authority for policy or releases.
 
+**Canonical GitLab repository:** `midas-touch-group1/midas-touch2`
+
 Current rules:
 
 - `main` and `production` are never mutated by the mirror controller.
@@ -23,7 +25,7 @@ Create one GitHub Actions repository secret:
 
 The token must be allowed to push to:
 
-`kelsonkiiru15/midas-touch2`
+`midas-touch-group1/midas-touch2`
 
 Do not commit tokens, credential files, or URLs containing credentials.
 
@@ -55,4 +57,3 @@ Those refs move only through the promotion workflow and exact-commit release pro
 ## Future automation
 
 Once branch protection, ownership, credentials, and release controls are fully confirmed, this workflow may be promoted to a narrowly scoped event-driven mirror. Do not add blanket `push` triggers while CI minutes are constrained.
-
