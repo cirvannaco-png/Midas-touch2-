@@ -1,0 +1,111 @@
+name: Midas — Manual GitHub to GitLab Mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch to mirror (never main or production)"
+        required: true
+        type: string
+      dry_run:
+        description: "Verify only; do not push"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: midas-github-to-gitlab-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Verify and fast-forward GitLab
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+
+      - name: Validate ref policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="${{ inputs.ref }}"
+          case "$REF" in
+            main|production)
+              echo "STOP: protected release ref '$REF' is never mirrored by this workflow."
+              exit 1
+              ;;
+            feature/*|fix/*|audit/*|chore/*|ops/*|integration/*|sync-test/*)
+              ;;
+            *)
+              echo "STOP: branch '$REF' is outside the approved mirror namespaces."
+              exit 1
+              ;;
+          esac
+
+      - name: Fetch GitLab state
+        env:
+          GITLAB_TOKEN: ${{ secrets.MIDAS_GITLAB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GITLAB_TOKEN" || {
+            echo "STOP: repository secret MIDAS_GITLAB_TOKEN is not configured."
+            exit 1
+          }
+
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@gitlab.com/midas-touch-group1/midas-touchsync.git"
+          git fetch --prune gitlab
+
+      - name: Compare ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="${{ inputs.ref }}"
+
+          if ! git show-ref --verify --quiet "refs/remotes/gitlab/$REF"; then
+            echo "GitLab branch '$REF' does not exist."
+            echo "It will be created as a mirror of GitHub '$REF'."
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "DRY RUN: no push performed."
+              exit 0
+            fi
+            git push gitlab "HEAD:refs/heads/$REF"
+            exit 0
+          fi
+
+          GH_SHA="$(git rev-parse HEAD)"
+          GL_SHA="$(git rev-parse "refs/remotes/gitlab/$REF")"
+
+          echo "GitHub: $GH_SHA"
+          echo "GitLab: $GL_SHA"
+
+          if [ "$GH_SHA" = "$GL_SHA" ]; then
+            echo "OK: refs are identical."
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$GL_SHA" "$GH_SHA"; then
+            echo "GitLab is strictly behind GitHub."
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "DRY RUN: fast-forward push would be performed."
+              exit 0
+            fi
+            git push --ff-only gitlab "HEAD:refs/heads/$REF"
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$GH_SHA" "$GL_SHA"; then
+            echo "STOP: GitLab is ahead of GitHub. No reverse sync is performed."
+            exit 1
+          fi
+
+          echo "STOP: GitHub and GitLab have diverged."
+          echo "Resolve through a normal PR/MR; never force-push or auto-merge."
+          exit 1
