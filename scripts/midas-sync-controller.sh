@@ -2,11 +2,18 @@
 set -euo pipefail
 
 # Midas Touch cross-provider synchronizer.
-# Safe default: inspection + fast-forward of UNPROTECTED refs only.
-# It never force-pushes, auto-merges, or resolves divergence.
+# Fail-closed transport controller.
+#
+# Default behavior is VERIFY ONLY.
+# Set ALLOW_FAST_FORWARD_PUSH=1 only when an explicit caller has approved
+# a one-way GitHub -> GitLab fast-forward for an unprotected development ref.
+#
+# Never force-pushes, auto-merges, or resolves divergence.
 
-GITHUB_REPO="${GITHUB_REPO:-cirvannaco-png/Midas-touch2-}"
-GITLAB_REPO="${GITLAB_REPO:-midas-touch-group1/Midas-touchsync}"
+GITHUB_REMOTE="${GITHUB_REMOTE:-origin}"
+GITLAB_REMOTE="${GITLAB_REMOTE:-gitlab}"
+REF="${1:-${GITHUB_REF_NAME:-}}"
+ALLOW_FAST_FORWARD_PUSH="${ALLOW_FAST_FORWARD_PUSH:-0}"
 
 PROTECTED_REFS=("main" "production")
 
@@ -18,28 +25,83 @@ is_protected() {
   return 1
 }
 
+is_allowed_development_ref() {
+  case "$1" in
+    feature/*|fix/*|audit/*|chore/*|ops/*|integration/*|sync-test/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+stop() {
+  echo "STOP: $*" >&2
+  exit 2
+}
+
 echo "Midas Touch sync controller"
-echo "GitHub: $GITHUB_REPO"
-echo "GitLab:  $GITLAB_REPO"
-echo
-echo "Policy:"
-echo "  equal             -> no-op"
-echo "  one side ancestor -> fast-forward only when ref is unprotected"
-echo "  divergence        -> STOP"
+echo "GitHub remote: $GITHUB_REMOTE"
+echo "GitLab remote:  $GITLAB_REMOTE"
+echo "Ref:            ${REF:-<missing>}"
+echo "Policy:         equal=no-op; GitLab-behind=fast-forward only; divergence/ahead=STOP"
 echo
 
-# This controller is intentionally transport-agnostic. Provider authentication,
-# branch protection checks, and push operations must be wired by the deployment
-# environment. Never embed tokens in this file.
-#
-# Recommended implementation:
-#   1. Fetch GitHub and GitLab into separate remotes.
-#   2. For each non-protected branch, compare:
-#        git merge-base --is-ancestor github/<branch> gitlab/<branch>
-#        git merge-base --is-ancestor gitlab/<branch> github/<branch>
-#   3. If both are false, report CONFLICT and exit non-zero.
-#   4. For main/production, report divergence and require human promotion.
-#
-# This file is a policy implementation skeleton rather than an unattended
-# credential-bearing daemon.
-exit 0
+[[ -n "$REF" ]] || stop "branch/ref name is required"
+
+if is_protected "$REF"; then
+  stop "protected ref '$REF' is never mutated by this controller"
+fi
+
+is_allowed_development_ref "$REF" || stop "ref '$REF' is outside the approved mirror namespaces"
+
+git rev-parse --git-dir >/dev/null 2>&1 || stop "not running inside a Git repository"
+
+git fetch --prune "$GITHUB_REMOTE" "$REF" || stop "failed to fetch GitHub ref '$REF'"
+git fetch --prune "$GITLAB_REMOTE" "$REF" || stop "failed to fetch GitLab ref '$REF'"
+
+GH_REF="refs/remotes/$GITHUB_REMOTE/$REF"
+GL_REF="refs/remotes/$GITLAB_REMOTE/$REF"
+
+git rev-parse --verify "$GH_REF" >/dev/null 2>&1 || stop "GitHub ref '$REF' is unavailable after fetch"
+
+GH_SHA="$(git rev-parse "$GH_REF")"
+
+if ! git rev-parse --verify "$GL_REF" >/dev/null 2>&1; then
+  echo "GitLab ref '$REF' does not exist."
+  echo "GitHub source: $GH_SHA"
+  if [[ "$ALLOW_FAST_FORWARD_PUSH" == "1" ]]; then
+    git push --ff-only "$GITLAB_REMOTE" "$GH_REF:refs/heads/$REF"
+    echo "CREATED: GitLab '$REF' at $GH_SHA"
+    exit 0
+  fi
+  echo "VERIFY ONLY: creation would be a fast-forward-safe mirror of GitHub."
+  exit 0
+fi
+
+GL_SHA="$(git rev-parse "$GL_REF")"
+echo "GitHub: $GH_SHA"
+echo "GitLab:  $GL_SHA"
+
+if [[ "$GH_SHA" == "$GL_SHA" ]]; then
+  echo "OK: refs are identical."
+  exit 0
+fi
+
+if git merge-base --is-ancestor "$GL_SHA" "$GH_SHA"; then
+  echo "GitLab is strictly behind GitHub."
+  if [[ "$ALLOW_FAST_FORWARD_PUSH" == "1" ]]; then
+    git push --ff-only "$GITLAB_REMOTE" "$GH_REF:refs/heads/$REF"
+    echo "FAST-FORWARDED: GitLab '$REF' -> $GH_SHA"
+  else
+    echo "VERIFY ONLY: fast-forward push would update GitLab to $GH_SHA"
+  fi
+  exit 0
+fi
+
+if git merge-base --is-ancestor "$GH_SHA" "$GL_SHA"; then
+  stop "GitLab is ahead of GitHub; reverse sync is not automatic"
+fi
+
+stop "GitHub and GitLab have diverged; resolve through a normal PR/MR"
