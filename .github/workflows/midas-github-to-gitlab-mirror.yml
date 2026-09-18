@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@gitlab.com/midas-touch-group1/midas-touchsync.git"
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@gitlab.com/midas-touch-group1/midas-touch2-sync.git"
 
       - name: Run safe sync controller
         env:

@@ -69,26 +69,36 @@ Before promotion, record evidence for the commit being released:
 
 ## 5. Production bootstrap
 
-The first `production` refs have already been bootstrapped from the validated `main` commit `74cabb8d61564c1bebec2287df6ad44f82dea2aa` on both active providers.
+The SHA-1 `midas-touch2-sync` repository is a transport staging surface and is not a production promotion target. Production promotion must establish the release state independently in the active GitHub and active GitLab engineering repositories.
 
-For a future repository reconstruction, bootstrap must be:
+The production boundary is **not currently bootstrapped on both providers**.
 
-1. Verify GitHub `main` and GitLab `main` are identical.
-2. Identify the exact validated `main` SHA.
-3. Create `production` from that exact SHA on both providers.
-4. Verify GitHub `production` == GitLab `production`.
+As of the 2026-09-18 pre-protection audit:
+
+- GitHub `production` exists at `74cabb8d61564c1bebec2287df6ad44f82dea2aa` and is 18 commits behind GitHub `main`.
+- GitLab `production` does not exist.
+- GitHub and GitLab use different Git object formats, so a literal SHA comparison across providers is invalid.
+
+For the first valid production bootstrap, use this procedure:
+
+1. Verify the intended release source tree on GitHub and GitLab is identical using provider-specific commit IDs and tree/content verification.
+2. Identify the exact validated release commit on the provider where the release is prepared.
+3. Create `production` from that exact release source tree on both providers.
+4. Verify each provider's `production` ref resolves to the recorded release state and that the source trees are identical across providers.
 5. Apply the protected/ref-rule configuration before normal release use.
-6. Record the bootstrap SHA in the release evidence.
+6. Record the provider-specific production commit IDs and the cross-provider tree verification evidence.
+
+Do not promote the existing GitHub `production` ref merely because it exists; it is stale relative to the current `main`.
 
 ## 6. Promotion
 
-Promote the exact validated `main` commit to `production`.
+Promote the exact validated `main` release state to `production`.
 
 Promotion must verify:
-1. GitHub `main` == GitLab `main`
-2. GitHub `production` == GitLab `production`
-3. `production` is an ancestor of `main`
-4. The release commit is the same SHA on both providers
+1. GitHub `main` and GitLab `main` represent the same intended source tree/release state using provider-specific commit IDs.
+2. GitHub `production` and GitLab `production` exist and represent that same intended release state.
+3. On each provider, `production` is an ancestor of that provider's `main`.
+4. The provider-specific release commit IDs and cross-provider source-tree verification evidence are recorded.
 
 If any verification fails, STOP.
 
@@ -135,15 +145,15 @@ For a normal incident:
 
 This is the default because it preserves an auditable history.
 
-### Emergency exact-SHA restoration
+### Emergency exact-release restoration
 
 If an incident requires the production ref itself to point immediately to a previously validated commit:
 
 - Stop all automatic synchronization.
-- Record the target known-good SHA and incident/change-approval identifier.
+- Record the provider-specific target commit IDs and incident/change-approval identifier.
 - The release owner/admin must explicitly authorize the protected-ref reset on **both** providers.
-- Use a lease-checked, audited non-fast-forward update; never use an unqualified force-push.
-- Verify both `production` refs equal the exact target SHA before resuming operations.
+- Use a lease-checked, audited non-fast-forward update on each provider; never use an unqualified force-push.
+- Verify both `production` refs resolve to their recorded target commits and that the source trees match before resuming operations.
 - The cross-provider sync controller must never perform this operation automatically.
 
 This emergency path is exceptional and requires provider-level protection bypass/admin authority. It must never be used to conceal an unreviewed release.
