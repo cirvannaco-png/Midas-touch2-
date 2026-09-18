@@ -17,6 +17,14 @@ def test_health_db_reports_connected(client):
     assert resp.json()["database"] == "connected"
 
 
+def test_health_db_reports_unhealthy_when_database_is_down(client):
+    with patch("app.routes.check_db_connection", new=AsyncMock(return_value=False)):
+        resp = client.get("/health/db")
+    assert resp.status_code == 503
+    assert resp.json()["status"] == "degraded"
+    assert resp.json()["database"] == "disconnected"
+
+
 def test_signal_without_api_key_rejected(client):
     resp = client.post("/signal", json=VALID_BUY_SIGNAL)
     assert resp.status_code == 422  # missing required header
