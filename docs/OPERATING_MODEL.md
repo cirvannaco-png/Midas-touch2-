@@ -3,10 +3,10 @@
 ## Repositories
 
 - Active GitHub: `cirvannaco-png/Midas-touch2-`
-- Active GitLab: `kelsonkiiru15/midas-touch2`
+- Active GitLab: `midas-touch-group1/midas-touch2`
 - Historical archive: original SHA-256 `midas-touch2` — immutable reference only.
 
-The GitHub/GitLab active pair uses SHA-1 and is intended to carry the same source tree and branch topology.
+GitHub currently uses SHA-1 repository objects. The active GitLab repository currently uses SHA-256 repository objects. Cross-provider parity therefore must never depend on literal SHA equality; it is established by provider-specific commit IDs plus verified source-tree/ref identity and release evidence.
 
 ## Authority and safety
 
@@ -94,6 +94,18 @@ Future validation should be scoped to:
 - synchronization integrity checks
 
 Do not reintroduce blanket CI for every branch push.
+
+## Current provider-state audit — 2026-09-18
+
+The final pre-protection sweep found these provider-state facts:
+
+- GitHub `main` is currently unprotected.
+- GitHub `production` exists but is currently unprotected and is 18 commits behind GitHub `main`.
+- GitLab `main` is protected, but the current project settings still allow developers to push and merge directly.
+- GitLab `production` does not currently exist.
+- GitLab CI is intentionally paused at the repository configuration level to conserve runner minutes.
+
+These are provider configuration facts, not application behavior. Do not treat the production branch as an active cross-provider release boundary until the missing GitLab `production` ref and both providers' protection/release controls are explicitly established and verified.
 
 ## Emergency rule
 
