@@ -23,7 +23,7 @@ Create one GitHub Actions repository secret:
 
 The token must be allowed to push to:
 
-`midas-touch-group1/midas-touchsync`
+`kelsonkiiru15/midas-touch2`
 
 Do not commit tokens, credential files, or URLs containing credentials.
 
