@@ -1,0 +1,1 @@
+SOURCE=GITHUB\nCONFLICT_TEST=shared-path\n
