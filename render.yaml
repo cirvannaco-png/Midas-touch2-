@@ -11,15 +11,15 @@
 # never go healthy until this step is done, no matter how many times you
 # redeploy.
 databases:
-  - name: medis-touch-db
+  - name: midas-touch-github-shadow-db
     plan: free          # upgrade to starter/standard for production SLAs; free tier
                          # hard-deletes after 30 days regardless of usage/logins
-    databaseName: medis_touch
-    user: medis_touch
+    databaseName: midas_touch_github_shadow
+    user: midas_touch_github_shadow
 
 services:
   - type: web
-    name: medis-touch-telegram
+    name: midas-touch-telegram-github-shadow
     runtime: docker
     dockerfilePath: ./telegram-bridge/Dockerfile
     # dockerContext sets the Docker build context to the repository root so
@@ -29,7 +29,9 @@ services:
     dockerContext: .
     plan: free          # upgrade to starter/standard for production SLAs; free web
                          # services spin down after 15 min idle (~1 min cold start)
-    healthCheckPath: /
+    # Render readiness must include the persistence dependency. The root
+    # liveness endpoint intentionally does not query the database.
+    healthCheckPath: /health/db
     envVars:
       - key: DATABASE_URL
         # Render injects postgres:// -- config.py normalises it to
