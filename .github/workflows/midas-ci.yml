@@ -4,14 +4,9 @@ on:
   push:
     branches:
       - main
-      - "hardening/**"
-      - "feature/**"
-      - "ci/**"
   pull_request:
     branches:
       - main
-      - "hardening/**"
-      - "feature/**"
   workflow_dispatch:
 
 permissions:
@@ -38,10 +33,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: telegram-bridge/requirements.txt
+          cache-dependency-path: telegram-bridge/requirements-dev.txt
 
-      - name: Install bridge dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pytest pytest-asyncio
+      - name: Install bridge test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
 
       - name: Run bridge tests
         env:
@@ -53,7 +48,7 @@ jobs:
           DATABASE_URL: "sqlite+aiosqlite:///./ci_test.db"
           RATE_LIMIT_MAX_REQUESTS: "5"
           RATE_LIMIT_WINDOW_SECONDS: "60"
-        run: python -m pytest -q ../telegram-bridge/tests
+        run: python -m pytest -q tests
 
   research-tests:
     name: Research tools tests
@@ -68,8 +63,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install bridge dependencies and test runner
-        run: python -m pip install --upgrade pip && python -m pip install -r telegram-bridge/requirements.txt pytest
+      - name: Install research test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r telegram-bridge/requirements.txt pytest==9.1.1
 
       - name: Run tools tests
         env:
@@ -97,4 +92,78 @@ jobs:
           python-version: "3.12"
 
       - name: Validate MQL5 include tree
-        run: python tools/validate_mql5.py EA
+        run: |
+          python tools/validate_mql5.py EA
+          python tools/validate_edge_lineage.py
+          python tools/phase_a_d_manifest.py
+
+  handbook-tests:
+    name: Handbook reference tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install handbook dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r medis_touch/requirements-dev.txt
+
+      - name: Run handbook tests
+        run: python -m pytest -q medis_touch/tests
+
+  bridge-quality:
+    name: Bridge quality and security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bridge development tooling
+        run: python -m pip install --upgrade pip && python -m pip install -r telegram-bridge/requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check telegram-bridge/app telegram-bridge/migrations telegram-bridge/scripts telegram-bridge/tests
+
+      - name: Bandit
+        run: bandit -r telegram-bridge/app telegram-bridge/scripts -q
+
+      - name: Dependency audit
+        run: pip-audit -r telegram-bridge/requirements.txt
+
+      - name: Render secret contract tests
+        env:
+          BOT_TOKEN: "123456:ci-placeholder"
+          CHAT_ID: "-1000000000"
+          ADMIN_CHAT_ID: "777000777"
+          SECRET_KEY: "ci-placeholder-secret"
+        run: python telegram-bridge/scripts/render_sync_secrets.py --dry-run
+
+  repository-governance:
+    name: Repository governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test runner
+        run: python -m pip install --upgrade pip && python -m pip install pytest==9.1.1
+
+      - name: Run repository governance checks
+        run: python -m pytest -q tools/tests/test_repository_governance.py
