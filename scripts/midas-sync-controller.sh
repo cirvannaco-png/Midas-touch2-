@@ -65,7 +65,9 @@ is_allowed_development_ref "$REF" || stop "ref '$REF' is outside the approved mi
 git rev-parse --git-dir >/dev/null 2>&1 || stop "not running inside a Git repository"
 
 git fetch --prune "$GITHUB_REMOTE" "$REF" || stop "failed to fetch GitHub ref '$REF'"
-git fetch --prune "$GITLAB_REMOTE" "$REF" || stop "failed to fetch GitLab ref '$REF'"
+# Fetch all GitLab refs so a legitimately missing target branch can be detected
+# without confusing "branch absent" with "remote unavailable".
+git fetch --prune "$GITLAB_REMOTE" || stop "failed to fetch GitLab refs"
 
 GH_REF="refs/remotes/$GITHUB_REMOTE/$REF"
 GL_REF="refs/remotes/$GITLAB_REMOTE/$REF"
