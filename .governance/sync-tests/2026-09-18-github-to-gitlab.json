@@ -1,0 +1,14 @@
+{
+  "test_id": "SYNC-2026-09-18-001",
+  "purpose": "Controlled non-release GitHub-to-GitLab synchronization test",
+  "source_provider": "github",
+  "source_repository": "cirvannaco-png/Midas-touch2-",
+  "source_branch": "sync-test/github-to-gitlab-20260918",
+  "source_commit": "14e4a11ddbd4d79877f5d737f602deda44517f41",
+  "transport_policy": "No direct production ref update; synchronize only to a dedicated GitLab integration branch.",
+  "target_provider": "gitlab",
+  "target_repository": "midas-touch-group1/midas-touch2",
+  "target_branch": "sync-test/github-to-gitlab-20260918",
+  "release_branch_untouched": true,
+  "production_branch_untouched": true
+}
