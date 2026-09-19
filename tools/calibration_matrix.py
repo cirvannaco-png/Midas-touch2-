@@ -3,7 +3,7 @@ tools/calibration_matrix.py — the tag-driven expectancy delta matrix:
 
   Tag | 4W expectancy | 2W expectancy | Delta | Sample | Action
 
-"Tag" here is a (symbol, session, sweep_grade)-style compound key — every
+"Tag" here is a (symbol, strategy, session, sweep_grade)-style compound key — every
 combination that has enough of its own rows to be worth a row in the
 table. This is deliberately NOT the same thing as gating.py's
 weight-version promotion decision: gating.py asks "should this weight
@@ -70,8 +70,12 @@ BASELINE_WEEKS = 4
 RECENT_WEEKS = 2
 
 
+def _event_time(row):
+    return getattr(row, "signal_time", None) or getattr(row, "received_at", None)
+
+
 def _tag_key(r) -> str:
-    parts = [r.symbol or "?", r.session or "?"]
+    parts = [r.symbol or "?", r.strategy or "?", r.session or "?"]
     if r.sweep_grade:
         parts.append(f"sweep={r.sweep_grade}")
     return " ".join(parts)
@@ -98,19 +102,20 @@ def _win_ci_for_delta_test(rows):
 
 
 def compute_matrix(rows, min_sample: int = DEFAULT_MIN_SAMPLE) -> list[dict]:
-    now = max((r.received_at for r in rows if r.received_at), default=datetime.now(timezone.utc))
+    now = max((_event_time(r) for r in rows if _event_time(r)), default=datetime.now(timezone.utc))
     baseline_cutoff = now - timedelta(weeks=BASELINE_WEEKS)
     recent_cutoff = now - timedelta(weeks=RECENT_WEEKS)
 
     by_tag_4w: dict[str, list] = defaultdict(list)
     by_tag_2w: dict[str, list] = defaultdict(list)
     for r in rows:
-        if not r.received_at or r.received_at < baseline_cutoff:
+        event_time = _event_time(r)
+        if not event_time or event_time < baseline_cutoff:
             continue
         tag = _tag_key(r)
-        by_tag_4w[tag].append(r)  # 4W window
-        if r.received_at >= recent_cutoff:
-            by_tag_2w[tag].append(r)  # 2W window — a SUBSET of the 4W rows, not a separate sample
+        by_tag_4w[tag].append(r)
+        if event_time >= recent_cutoff:
+            by_tag_2w[tag].append(r)
 
     out = []
     for tag, rows_4w in by_tag_4w.items():
@@ -136,8 +141,12 @@ def compute_matrix(rows, min_sample: int = DEFAULT_MIN_SAMPLE) -> list[dict]:
         else:
             action = "Investigate"
 
+        first = rows_4w[0]
         out.append({
             "tag": tag,
+            "symbol": first.symbol or "?",
+            "strategy": first.strategy or "?",
+            "session": first.session or "?",
             "expectancy_4w": exp_4w,
             "expectancy_2w": exp_2w,
             "delta": delta,
@@ -149,7 +158,7 @@ def compute_matrix(rows, min_sample: int = DEFAULT_MIN_SAMPLE) -> list[dict]:
             "action": action,
         })
 
-    out.sort(key=lambda d: (d["delta"] is None, d["delta"] if d["delta"] is not None else 0))
+    out.sort(key=lambda d: (d["symbol"], d["strategy"], d["session"], d["delta"] is None, d["delta"] if d["delta"] is not None else 0))
     return out
 
 
@@ -157,7 +166,7 @@ def print_matrix(matrix: list[dict]) -> None:
     print("=" * 100)
     print(f"CALIBRATION MATRIX — {BASELINE_WEEKS}W baseline vs {RECENT_WEEKS}W recent, by tag")
     print("=" * 100)
-    header = f"{'Tag':38s} {'4W Exp':>8s} {'2W Exp':>8s} {'Delta':>8s} {'N(4W/2W)':>10s} {'Action':>18s}"
+    header = f"{'Tag':56s} {'4W Exp':>8s} {'2W Exp':>8s} {'Delta':>8s} {'N(4W/2W)':>10s} {'Action':>18s}"
     print(header)
     print("-" * len(header))
     for row in matrix:
@@ -165,7 +174,7 @@ def print_matrix(matrix: list[dict]) -> None:
         e2 = f"{row['expectancy_2w']:+.2f}R" if row["expectancy_2w"] is not None else "n/a"
         d = f"{row['delta']:+.2f}" if row["delta"] is not None else "n/a"
         n = f"{row['sample_4w']}/{row['sample_2w']}"
-        print(f"{row['tag']:38s} {e4:>8s} {e2:>8s} {d:>8s} {n:>10s} {row['action']:>18s}")
+        print(f"{row['tag']:56s} {e4:>8s} {e2:>8s} {d:>8s} {n:>10s} {row['action']:>18s}")
     print(
         "\nReminder: 2W rows are a SUBSET of the 4W window (last two weeks of it), "
         "not an independent later sample — the Delta column compares a baseline to "

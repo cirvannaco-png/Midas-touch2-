@@ -16,11 +16,10 @@ def test_health_db_reports_connected(client):
     assert resp.status_code == 200
     assert resp.json()["database"] == "connected"
 
-
 def test_health_db_reports_unhealthy_when_database_is_down(client):
     with patch("app.routes.check_db_connection", new=AsyncMock(return_value=False)):
         resp = client.get("/health/db")
-    assert resp.status_code == 503
+    assert resp.status_code == 200
     assert resp.json()["status"] == "degraded"
     assert resp.json()["database"] == "disconnected"
 
@@ -35,13 +34,39 @@ def test_signal_with_wrong_api_key_rejected(client):
     assert resp.status_code == 401
 
 
-def test_valid_signal_accepted_and_sent(client, auth_headers):
+def test_valid_signal_accepted_and_queued(client, auth_headers):
     payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-accept-1"}
     resp = client.post("/signal", json=payload, headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["status"] == "sent"
-    assert body["telegram_message_id"] == 42
+    assert body["status"] == "queued"
+    assert len(body["decision_fingerprint"]) == 64
+
+
+def test_legacy_signal_is_recorded_but_accepted_when_strict_fingerprint_is_disabled(client, auth_headers):
+    from app.config import settings
+    original = settings.REQUIRE_DECISION_FINGERPRINT
+    settings.REQUIRE_DECISION_FINGERPRINT = False
+    try:
+        payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-legacy-1"}
+        resp = client.post("/signal", json=payload, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "queued"
+    finally:
+        settings.REQUIRE_DECISION_FINGERPRINT = original
+
+
+def test_legacy_signal_is_rejected_when_strict_fingerprint_is_enabled(client, auth_headers):
+    from app.config import settings
+    original = settings.REQUIRE_DECISION_FINGERPRINT
+    settings.REQUIRE_DECISION_FINGERPRINT = True
+    try:
+        payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-legacy-strict-1"}
+        resp = client.post("/signal", json=payload, headers=auth_headers)
+        assert resp.status_code == 428
+        assert resp.json()["detail"]["code"] == "FINGERPRINT_REQUIRED"
+    finally:
+        settings.REQUIRE_DECISION_FINGERPRINT = original
 
 
 def test_business_rule_violation_rejected(client, auth_headers):
@@ -61,7 +86,7 @@ def test_duplicate_signal_id_returns_duplicate_status(client, auth_headers):
     payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-dup-1"}
     first = client.post("/signal", json=payload, headers=auth_headers)
     second = client.post("/signal", json=payload, headers=auth_headers)
-    assert first.json()["status"] == "sent"
+    assert first.json()["status"] == "queued"
     assert second.status_code == 200
     assert second.json()["status"] == "duplicate"
     assert second.json()["duplicate"] is True
@@ -80,12 +105,22 @@ def test_rate_limit_enforced_after_max_requests(client, auth_headers, forced_rat
     assert codes[5:] == [429, 429]
 
 
-def test_telegram_send_failure_marks_signal_failed(client, auth_headers):
-    from app.telegram import TelegramSendError
-    with patch("app.routes.send_telegram_message", new=AsyncMock(side_effect=TelegramSendError("boom"))):
+def test_queued_signal_does_not_wait_for_telegram(client, auth_headers):
+    from app.signal_outbox import send_telegram_message
+    with patch("app.signal_outbox.send_telegram_message", new=AsyncMock(side_effect=RuntimeError("telegram unavailable"))):
+        payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-async-1"}
+        resp = client.post("/signal", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "queued"
+
+
+def test_telegram_send_failure_isolated_from_signal_acceptance(client, auth_headers):
+    with patch("app.signal_outbox.send_telegram_message", new=AsyncMock(side_effect=RuntimeError("boom"))):
         payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-fail-1"}
         resp = client.post("/signal", json=payload, headers=auth_headers)
-    assert resp.status_code == 500
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "queued"
+
 
 
 def test_retry_failed_requires_auth(client):

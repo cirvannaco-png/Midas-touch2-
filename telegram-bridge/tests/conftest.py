@@ -81,7 +81,7 @@ def forced_rate_limit():
 @pytest.fixture()
 def client():
     """TestClient with Telegram sends mocked; persisted rows are cleared per test."""
-    with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)):
+    with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)), patch("app.signal_outbox.send_telegram_message", new=AsyncMock(return_value=42)):
         from fastapi.testclient import TestClient
 
         from app.config_evaluation_model import ConfigurationEvaluation
@@ -89,7 +89,7 @@ def client():
         from app.config_sync_state_model import ConfigSyncState
         from app.database import engine
         from app.main import app
-        from app.models import BotSetting, Payment, Signal, Subscriber, TradeEvent
+        from app.models import BotSetting, Payment, Signal, SignalDeliveryOutbox, Subscriber, TradeEvent
 
         with TestClient(app) as c:
             yield c
@@ -99,7 +99,7 @@ def client():
             async with engine.begin() as conn:
                 for model in (
                     ConfigurationEvaluation, ConfigSyncState, ConfigurationRegistry,
-                    Signal, TradeEvent, BotSetting, Payment, Subscriber,
+                    Signal, SignalDeliveryOutbox, TradeEvent, BotSetting, Payment, Subscriber,
                 ):
                     await conn.run_sync(lambda sync_conn, table=model.__table__: sync_conn.execute(table.delete()))
             await engine.dispose()
