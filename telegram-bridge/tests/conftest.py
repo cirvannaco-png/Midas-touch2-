@@ -84,7 +84,6 @@ def client():
     with (
         patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)),
         patch("app.signal_outbox.send_telegram_message", new=AsyncMock(return_value=42)),
-        patch("app.main.run_outbox_worker", new=AsyncMock()),
     ):
         from fastapi.testclient import TestClient
 
