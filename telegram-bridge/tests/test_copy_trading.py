@@ -93,4 +93,4 @@ def test_signal_ingestion_unaffected_by_copy_trading_on(client, auth_headers):
 
     resp = client.post("/signal", json={**VALID_BUY_SIGNAL, "signal_id": "ct-on-1"}, headers=auth_headers)
     assert resp.status_code == 200
-    assert resp.json()["status"] == "sent"
+    assert resp.json()["status"] == "queued"
