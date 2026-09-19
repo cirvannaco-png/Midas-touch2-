@@ -4,7 +4,6 @@ from sqlalchemy.orm import declarative_base
 
 from app.config import settings
 
-
 # SQLite + aiosqlite connections are bound to the event loop that created
 # them. TestClient-based suites intentionally create and destroy multiple
 # event loops in one process, so pooling SQLite connections across those
