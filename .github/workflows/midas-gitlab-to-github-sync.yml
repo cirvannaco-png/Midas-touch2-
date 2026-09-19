@@ -1,0 +1,62 @@
+name: Midas Touch - GitLab to GitHub Sync
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: midas-gitlab-to-github-main
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout GitHub main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch canonical GitLab main
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/midas-touch-gitlab
+          git clone --depth=1 --branch main https://gitlab.com/midas-touch-group1/midas-touch2.git /tmp/midas-touch-gitlab
+
+      - name: Mirror canonical source tree
+        run: |
+          set -euo pipefail
+          rsync -a --delete             --exclude='.git/'             --exclude='.github/'             /tmp/midas-touch-gitlab/ ./
+
+      - name: Commit source synchronization
+        run: |
+          set -euo pipefail
+          git config user.name "midas-touch-sync[bot]"
+          git config user.email "midas-touch-sync[bot]@users.noreply.github.com"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "SYNC_OK: GitHub source tree already matches GitLab main."
+            exit 0
+          fi
+
+          git commit -m "chore(sync): mirror GitLab main [skip ci]"
+          git push origin HEAD:main
+
+      - name: Verify synchronized source tree
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/midas-touch-verify
+          git clone --depth=1 --branch main https://github.com/cirvannaco-png/Midas-touch2-.git /tmp/midas-touch-verify
+
+          diff -qr             --exclude='.git'             --exclude='.github'             /tmp/midas-touch-gitlab             /tmp/midas-touch-verify
+
+          echo "SYNC_VERIFIED: GitLab main == GitHub main (excluding GitHub control-plane workflows)."
