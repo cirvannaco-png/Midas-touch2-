@@ -15,9 +15,10 @@ concurrency:
 
 jobs:
   sync:
-    name: Sync GitHub main to GitLab main
+    name: Sync GitHub main to GitLab main (non-blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    continue-on-error: true
     steps:
       - name: Checkout GitHub source
         uses: actions/checkout@v4
@@ -42,11 +43,6 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-
-          # GitLab's repository-files/commits API cannot authenticate with a
-          # write_repository-only token. Use Git-over-HTTPS instead, which is
-          # the supported write path for that scope. The token stays in a
-          # temporary credential file and is never embedded in a remote URL.
           git config --global user.name "midas-sync-bot"
           git config --global user.email "midas-sync-bot@users.noreply.github.com"
           git config --global credential.helper store
@@ -65,9 +61,6 @@ jobs:
           tmp_branch="sync-from-github-${after}"
           git checkout -b "${tmp_branch}" "gitlab/main"
 
-          # The GitHub source of truth intentionally excludes .github/ and the
-          # GitLab-owned .gitlab-ci.yml from synchronization. Everything else
-          # is applied as a delta, preserving GitLab-only governance state.
           python - <<'PY'
           import os
           import subprocess
@@ -140,8 +133,6 @@ jobs:
             exit 0
           fi
 
-          # Hard guard: synchronization must never modify GitLab's own CI
-          # definition or import GitHub Actions into the GitLab release surface.
           if git diff --cached --name-only | grep -E '(^|/)\.github/|^\.gitlab-ci\.yml$' >/dev/null; then
             echo "::error::Sync boundary violation: provider-control files would change."
             exit 1
@@ -160,3 +151,9 @@ jobs:
           fi
 
           echo "SYNC_VERIFIED: GitLab main at ${actual}."
+
+      - name: Explain non-blocking external failure
+        if: ${{ failure() }}
+        run: |
+          echo "::warning::GitHub -> GitLab synchronization failed; core GitHub CI remains authoritative."
+          echo "::warning::Repair GITLAB_SYNC_TOKEN with a valid GitLab write_repository-capable credential for project 86337573."
