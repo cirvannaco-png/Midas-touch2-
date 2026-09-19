@@ -146,12 +146,10 @@ async def test_mysubscription_refuses_in_group_chat():
 
 
 @pytest.mark.asyncio
-async def test_mysubscription_shows_status_in_private_chat(monkeypatch):
+async def test_mysubscription_shows_status_in_private_chat():
     payment = _FakeSuccessfulPayment("charge-mysub", 500, "XTR", "medistouch_sub:5007")
     await successful_payment_callback(_FakeUpdate(user_id=5007, successful_payment=payment), None)
 
-    # my_subscription should only inspect the database; no Telegram network call is required.
-    monkeypatch.setattr("app.payments_bot.send_dm", AsyncMock(return_value=True))
     update = _FakeUpdate(user_id=5007, chat_type="private")
     await my_subscription(update, None)
     assert update.message.replies
