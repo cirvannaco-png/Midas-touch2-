@@ -88,7 +88,22 @@ def client():
         from app.config_registry_model import ConfigurationRegistry
         from app.config_sync_state_model import ConfigSyncState
         from app.database import engine
+        import app.bot as bot_module
         from app.main import app
+        import app.main as main_module
+
+        async def _offline_init_bot():
+            # Build the real handler graph, but do not initialize the Telegram
+            # client or call api.telegram.org. CI tests the webhook routing and
+            # handlers; Telegram transport is covered by isolated mocks.
+            bot_module.application = bot_module._build_application()
+
+        async def _offline_shutdown_bot():
+            bot_module.application = None
+
+        main_module.check_bot_token = AsyncMock(return_value=True)
+        main_module.init_bot = _offline_init_bot
+        main_module.shutdown_bot = _offline_shutdown_bot
         from app.models import BotSetting, Payment, Signal, SignalDeliveryOutbox, Subscriber, TradeEvent
 
         with TestClient(app) as c:
