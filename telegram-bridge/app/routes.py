@@ -10,8 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import bot as bot_module
-from app.config import APP_VERSION, settings
 from tools.decision_fingerprint import canonical_serialize, fingerprint
 
 from app import bot as bot_module
