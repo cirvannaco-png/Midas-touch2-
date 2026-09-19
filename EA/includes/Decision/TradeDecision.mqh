@@ -38,6 +38,16 @@ struct TradeDecisionRecord
    double            spread_points;
    datetime          decided_time;
    string            reason;
+   ENUM_TIMEFRAMES   timeframe;
+   string            decision_schema_version;
+   string            strategy_version;
+   string            model_version;
+   string            calibration_version;
+   string            feature_schema_version;
+   string            environment_schema_version;
+   string            weight_version;
+   string            environment_key;
+   string            decision_fingerprint;
   };
 
 struct ExecutionRecord
