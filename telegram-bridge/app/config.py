@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     TELEGRAM_TIMEOUT_SECONDS: float = 8.0
     TELEGRAM_MAX_RETRIES: int = 3
     TELEGRAM_RETRY_MAX_WAIT_SECONDS: float = 4.0
+    # Roll out strict EA/backend fingerprint enforcement only after the
+    # fingerprint-capable EA build has been compiled and deployed.
+    REQUIRE_DECISION_FINGERPRINT: bool = False
 
     # Recalibration promotion policy is deliberately opt-in. If any required
     # threshold is absent, the lifecycle stays HOLD rather than inventing a

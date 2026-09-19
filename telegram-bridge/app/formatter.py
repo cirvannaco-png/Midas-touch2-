@@ -179,6 +179,10 @@ def format_signal_message(signal: dict) -> str:
             news_line += f" — {news_label} {when}"
         lines += ["", "News Risk", news_line]
 
+    fingerprint = signal.get("decision_fingerprint")
+    if fingerprint:
+        lines += ["", "Decision Fingerprint", fingerprint]
+
     lines += ["", "Reasons", ""]
     for reason in signal["reasons"]:
         lines.append(f"\u2713 {reason}")

@@ -33,8 +33,10 @@ else:
 from gating import GatingError, decide, load_cycles_from_db
 from metrics_engine import compute_report
 from regime_allocation import build_regime_allocations
+from environment_memory import as_report as build_environment_memory
 
 CYCLE_WINDOW_WEEKS = 2
+ENVIRONMENT_MEMORY_MIN_SAMPLE = 30
 
 
 async def _fetch_window_rows(since: datetime) -> list:
@@ -44,13 +46,6 @@ async def _fetch_window_rows(since: datetime) -> list:
 
 
 async def _latest_regime_allocations() -> dict[str, float]:
-    """Return the last accepted/observed allocation map, if one exists.
-
-    Calibration cycles are append-only. A new cycle therefore starts from
-    the previous cycle's allocation map rather than silently resetting every
-    regime to the 0.50 cold-start default. This preserves conservative
-    hysteresis while still allowing statistically qualified changes.
-    """
     async with async_session() as session:
         previous = await session.scalar(
             select(CalibrationCycle)
@@ -115,6 +110,16 @@ def _format_summary(weight_version: str, decision, cycle_report: dict) -> str:
         f"Coverage this cycle: {cov.get('total_signals', 0)} signals, no-fill rate {no_fill_str}",
     ]
 
+    memory = cycle_report.get("environment_strategy_memory", [])
+    if memory:
+        qualified = sum(1 for row in memory if row.get("status") == "QUALIFIED")
+        degraded = sum(1 for row in memory if row.get("status") == "DEGRADED")
+        lines += [
+            "",
+            f"Environment→strategy memory: {len(memory)} observed cells; {qualified} qualified, {degraded} degraded.",
+            f"Minimum evidence threshold: {ENVIRONMENT_MEMORY_MIN_SAMPLE} resolved trades per cell.",
+        ]
+
     allocations = cycle_report.get("regime_allocations", {})
     if allocations:
         lines.append("\nRegime risk allocations (statistically gated):")
@@ -127,7 +132,6 @@ def _format_summary(weight_version: str, decision, cycle_report: dict) -> str:
 
 
 async def _send_config_promotion_cards(promotion_ids: list[int]) -> None:
-    """Attach the same human approval surface to config-bound promotions."""
     if not promotion_ids:
         return
     if bot_module.application is None or bot_module.application.bot is None:
@@ -173,11 +177,11 @@ async def run_cycle() -> dict:
         return {"status": "no_data", "since": since.isoformat()}
 
     report = compute_report(rows)
+    report["environment_strategy_memory"] = build_environment_memory(
+        rows,
+        min_sample=ENVIRONMENT_MEMORY_MIN_SAMPLE,
+    )
 
-    # Regime allocation is part of the recalibration evidence now. It is
-    # intentionally derived from the same resolved SignalOutcome population
-    # used by metrics_engine, and each proposed change must clear the
-    # independent statistical gate in tools/regime_allocation.py.
     previous_allocations = await _latest_regime_allocations()
     report["regime_allocations"] = build_regime_allocations(
         rows,
@@ -192,7 +196,8 @@ async def run_cycle() -> dict:
     cycle = await _persist_cycle(report)
     logger.info(
         f"app.calibration.run_cycle: persisted cycle {cycle.cycle_id} "
-        f"({len(rows)} rows, {report['expectancy']['resolved_count']} resolved)."
+        f"({len(rows)} rows, {report['expectancy']['resolved_count']} resolved, "
+        f"{len(report['environment_strategy_memory'])} environment-memory cells)."
     )
 
     weight_versions = list(report.get("expectancy", {}).get("by_weight_version_stats", {}).keys())
@@ -246,10 +251,6 @@ async def run_cycle() -> dict:
                 f"({type(e).__name__}): {e}"
             )
 
-    # Config-linked recalibration is deliberately separate from the legacy
-    # weight-version gate above. It evaluates immutable CHALLENGER rows
-    # against their latest persisted evidence and creates a PromotionRequest
-    # that is bound to an exact config_hash. No trading code is involved.
     async with async_session() as session:
         config_lifecycle = await evaluate_registered_challengers(session)
     await _send_config_promotion_cards(config_lifecycle.get("promotion_ids", []))
@@ -258,6 +259,7 @@ async def run_cycle() -> dict:
         "status": "ok",
         "cycle_id": cycle.cycle_id,
         "resolved_count": report["expectancy"]["resolved_count"],
+        "environment_strategy_memory_cells": len(report["environment_strategy_memory"]),
         "regime_allocations": report["regime_allocations"],
         "decisions": decisions,
         "config_lifecycle": config_lifecycle,
