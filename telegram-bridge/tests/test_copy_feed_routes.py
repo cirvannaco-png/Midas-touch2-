@@ -2,9 +2,9 @@
 POST /admin/check-subscriptions."""
 import asyncio
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from app.database import async_session
 from app.models import SUBSCRIBER_STATUS_ACTIVE
