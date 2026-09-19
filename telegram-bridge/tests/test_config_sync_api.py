@@ -2,7 +2,6 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from sqlalchemy import delete
 
 from app.config_registry import ConfigurationIdentity
