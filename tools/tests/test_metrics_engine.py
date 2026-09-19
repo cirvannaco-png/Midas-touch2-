@@ -136,3 +136,35 @@ def test_compute_regime_matrix_pf_is_none_with_no_losses(make_outcome):
     # never a fabricated large number or float("inf") -- see the
     # function's own docstring on this exact point.
     assert matrix[0]["profit_factor"] is None
+
+
+def test_regime_matrix_preserves_strategy_and_asset_class(make_outcome):
+    rows = [
+        make_outcome(symbol="EURUSD", strategy="SMC", session="London", regime="TRENDING", outcome="win", realized_r=1.0),
+        make_outcome(symbol="US500", strategy="MOMENTUM_BREAKOUT", session="NewYork", regime="TRENDING", outcome="loss", realized_r=-1.0),
+    ]
+    matrix = compute_regime_matrix(rows)
+    assert {(r["symbol"], r["strategy"], r["asset_class"]) for r in matrix} == {
+        ("EURUSD", "SMC", "fx"), ("US500", "MOMENTUM_BREAKOUT", "indices")
+    }
+
+
+def test_strategy_and_asset_breakdowns_do_not_cross_contaminate(make_outcome):
+    rows = [
+        make_outcome(symbol="EURUSD", strategy="SMC", outcome="win", realized_r=1.0, confidence_at_signal=80),
+        make_outcome(symbol="US500", strategy="MOMENTUM_BREAKOUT", outcome="loss", realized_r=-1.0, confidence_at_signal=80),
+    ]
+    report = compute_report(rows)
+    assert report["expectancy"]["by_strategy"]["SMC"]["resolved_count"] == 1
+    assert report["expectancy"]["by_strategy"]["MOMENTUM_BREAKOUT"]["resolved_count"] == 1
+    assert set(report["expectancy"]["by_asset_class"]) == {"fx", "indices"}
+
+
+def test_execution_costs_are_reported_separately_from_expectancy(make_outcome):
+    rows = [make_outcome(outcome="win", realized_r=1.0, filled=True, commission_cost=2.0, spread_cost=0.5, slippage_cost=0.25)]
+    report = compute_report(rows)
+    stats = report["expectancy"]["by_strategy"]["SMC"]
+    assert stats["avg_r"] == 1.0
+    assert stats["commission_cost_total"] == 2.0
+    assert stats["spread_cost_total"] == 0.5
+    assert stats["slippage_cost_total"] == 0.25

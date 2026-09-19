@@ -68,3 +68,29 @@ def test_decision_persistence_database_schema_and_migration_match():
     assert 'sa.Column("final_tp", sa.Float(), nullable=True)' in migration
     assert 'sa.Column("strategy", sa.String(64), nullable=True)' in migration
     assert 'op.create_index("ix_signals_strategy", "signals", ["strategy"])' in migration
+
+
+def test_outcome_provenance_contract_is_complete():
+    publisher = _read("EA/includes/Signals/SignalPublisher.mqh")
+    tracker = _read("EA/includes/Trading/OutcomeTracker.mqh")
+    routes = _read("telegram-bridge/app/routes.py")
+    model = _read("telegram-bridge/app/models.py")
+    assert "resolution" in publisher and "commission_cost" in publisher and "strategy" in publisher
+    assert "PublishIfConfigured(m_pending[idx], coarseOutcome, outcome, ambiguous)" in tracker
+    assert "EnumToString(r.selected_strategy)" in tracker
+    assert "strategy: str | None" in routes and "resolution: str | None" in routes
+    assert "commission_cost: float | None" in routes and "slippage_cost: float | None" in routes
+    assert "strategy = Column(String(64), nullable=True, index=True)" in model
+    assert "resolution = Column(String(64), nullable=True, index=True)" in model
+
+
+def test_temporal_outcome_contract_uses_signal_timestamp():
+    model = _read("telegram-bridge/app/models.py")
+    routes = _read("telegram-bridge/app/routes.py")
+    migration = _read("telegram-bridge/migrations/versions/0013_outcome_provenance_and_execution_costs.py")
+    walk = _read("tools/walk_forward.py")
+    assert "signal_time = Column(DateTime(timezone=True), nullable=True, index=True)" in model
+    assert "row.signal_time = source_signal.received_at" in routes
+    assert 'sa.Column("signal_time", sa.DateTime(timezone=True), nullable=True)' in migration
+    assert 'getattr(row, "signal_time", None) or getattr(row, "received_at", None)' in walk
+    assert "time_basis" in walk
