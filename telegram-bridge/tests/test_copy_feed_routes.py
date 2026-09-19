@@ -1,6 +1,8 @@
 """Regression tests for copy-feed entitlement and subscription enforcement."""
 from datetime import datetime, timedelta, timezone
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import HTTPException
 
@@ -43,7 +45,7 @@ async def test_copy_feed_rejects_when_switch_off():
 
 
 @pytest.mark.asyncio
-async def test_copy_feed_returns_active_signals_when_entitled_and_enabled():
+async def test_copy_feed_returns_active_signals_when_entitled_and_enabled(monkeypatch):
     key = await _entitled_subscriber("3002")
 
     async with async_session() as session:
@@ -59,6 +61,8 @@ async def test_copy_feed_returns_active_signals_when_entitled_and_enabled():
         assert result.status == "queued"
 
     # The outbox worker promotes the authoritative Signal row from PENDING to ACTIVE.
+    # This unit test bypasses TestClient, so mock Telegram at the outbox boundary.
+    monkeypatch.setattr("app.signal_outbox.send_telegram_message", AsyncMock(return_value=42))
     assert await deliver_pending_once() is True
 
     async with async_session() as session:
