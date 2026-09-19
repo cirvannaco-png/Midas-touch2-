@@ -139,7 +139,7 @@ def test_muted_command_lists_muted_symbols():
     from app.bot_handlers import mute as mute_handler
     from app.bot_handlers import muted_command
 
-    _run(mute_handler, _FakeUpdate(), _FakeContext(["GBPJPY"]), client=client)
+    _run(mute_handler, _FakeUpdate(), _FakeContext(["GBPJPY"]))
     replies = _run(muted_command, _FakeUpdate(), _FakeContext())
     assert replies and "GBPJPY" in replies[0]
 
