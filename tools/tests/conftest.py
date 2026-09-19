@@ -50,6 +50,12 @@ class FakeOutcome:
     for zero benefit -- these functions can't tell the difference.
     """
     symbol: str = "XAUUSD"
+    strategy: str | None = "SMC"
+    resolution: str | None = "FinalTP_Hit"
+    commission_cost: float | None = None
+    spread_cost: float | None = None
+    slippage_cost: float | None = None
+    signal_time: datetime | None = None
     direction: str = "BUY"
     outcome: str = "win"          # win | loss | scratch | no_fill | ambiguous
     realized_r: float | None = None
@@ -60,6 +66,10 @@ class FakeOutcome:
     weight_version: str | None = "v2.11-baseline"
     confidence_at_signal: float | None = None
     received_at: datetime | None = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self):
+        if self.signal_time is None:
+            self.signal_time = self.received_at
 
 
 @pytest.fixture

@@ -38,6 +38,7 @@ except ImportError as exc:  # pragma: no cover
     sys.exit(1)
 
 from stats import auc_with_ci, pearson_ci, wilson_ci
+from instrument_taxonomy import classify_symbol
 
 RESOLVED_OUTCOMES = {"win", "loss", "scratch"}
 CONFIDENCE_BUCKET_WIDTH = 10.0
@@ -51,6 +52,10 @@ class TagBreakdown:
     by_direction: dict = field(default_factory=lambda: defaultdict(int))
     realized_r_sum: float = 0.0
     realized_r_count: int = 0
+    commission_cost_sum: float = 0.0
+    spread_cost_sum: float = 0.0
+    slippage_cost_sum: float = 0.0
+    cost_count: int = 0
 
     @property
     def resolved_count(self) -> int:
@@ -93,6 +98,11 @@ def _bucket(rows, keyfn):
         if r.outcome in RESOLVED_OUTCOMES and r.realized_r is not None:
             tb.realized_r_sum += r.realized_r
             tb.realized_r_count += 1
+        if getattr(r, "filled", False) and all(v is not None for v in (getattr(r, "commission_cost", None), getattr(r, "spread_cost", None), getattr(r, "slippage_cost", None))):
+            tb.commission_cost_sum += r.commission_cost
+            tb.spread_cost_sum += r.spread_cost
+            tb.slippage_cost_sum += r.slippage_cost
+            tb.cost_count += 1
     return dict(sorted(out.items(), key=lambda kv: -kv[1].total))
 
 
@@ -143,6 +153,9 @@ def compute_report(rows) -> dict:
         "by_regime": {k: _tb_to_coverage_dict(v) for k, v in _bucket(rows, lambda r: r.regime).items()},
         "by_session": {k: _tb_to_coverage_dict(v) for k, v in _bucket(rows, lambda r: r.session).items()},
         "by_weight_version": {k: _tb_to_coverage_dict(v) for k, v in _bucket(rows, lambda r: r.weight_version).items()},
+        "by_symbol": {k: _tb_to_coverage_dict(v) for k, v in _bucket(rows, lambda r: r.symbol).items()},
+        "by_asset_class": {k: _tb_to_coverage_dict(v) for k, v in _bucket(rows, lambda r: classify_symbol(r.symbol)).items()},
+        "by_strategy": {k: _tb_to_coverage_dict(v) for k, v in _bucket(rows, lambda r: r.strategy).items()},
     }
 
     expectancy = {
@@ -165,6 +178,11 @@ def compute_report(rows) -> dict:
             for k, v in _bucket(rows, lambda r: "aligned" if r.htf_ob_aligned else "not_aligned").items()
         },
         "by_weight_version": {k: _tb_to_expectancy_dict(v) for k, v in _bucket(rows, lambda r: r.weight_version).items()},
+        "by_symbol": {k: _tb_to_expectancy_dict(v) for k, v in _bucket(rows, lambda r: r.symbol).items()},
+        "by_asset_class": {k: _tb_to_expectancy_dict(v) for k, v in _bucket(rows, lambda r: classify_symbol(r.symbol)).items()},
+        "by_strategy": {k: _tb_to_expectancy_dict(v) for k, v in _bucket(rows, lambda r: r.strategy).items()},
+        "by_strategy_stats": {k: _resolved_stats(group_rows) for k, group_rows in _group_by(rows, lambda r: r.strategy).items()},
+        "by_resolution": {k: _tb_to_expectancy_dict(v) for k, v in _bucket(rows, lambda r: r.resolution).items()},
         "realized_r_by_confidence_decile": _confidence_deciles(resolved),
     }
     return {"generated_at": datetime.now(timezone.utc).isoformat(), "coverage": coverage, "expectancy": expectancy}
@@ -175,7 +193,15 @@ def _tb_to_coverage_dict(tb: TagBreakdown) -> dict:
 
 
 def _tb_to_expectancy_dict(tb: TagBreakdown) -> dict:
-    return {"resolved_count": tb.resolved_count, "win_rate": tb.win_rate, "avg_r": tb.avg_r}
+    return {
+        "resolved_count": tb.resolved_count,
+        "win_rate": tb.win_rate,
+        "avg_r": tb.avg_r,
+        "cost_observations": tb.cost_count,
+        "commission_cost_total": tb.commission_cost_sum if tb.cost_count else None,
+        "spread_cost_total": tb.spread_cost_sum if tb.cost_count else None,
+        "slippage_cost_total": tb.slippage_cost_sum if tb.cost_count else None,
+    }
 
 
 def _confidence_deciles(resolved_rows) -> dict:
@@ -194,12 +220,12 @@ def compute_regime_matrix(rows) -> list[dict]:
     for r in rows:
         if r.outcome not in RESOLVED_OUTCOMES:
             continue
-        key = (r.symbol, r.session or "(untagged)", r.regime or "(untagged)")
+        key = (r.symbol, r.strategy or "(untagged)", r.session or "(untagged)", r.regime or "(untagged)")
         buckets[key].append(r)
 
     out = []
-    for (symbol, session_tag, regime), bucket_rows in buckets.items():
-        bucket_rows.sort(key=lambda r: r.received_at or datetime.min.replace(tzinfo=timezone.utc))
+    for (symbol, strategy, session_tag, regime), bucket_rows in buckets.items():
+        bucket_rows.sort(key=lambda r: (getattr(r, "signal_time", None) or r.received_at or datetime.min.replace(tzinfo=timezone.utc)))
         n = len(bucket_rows)
         wins = sum(1 for r in bucket_rows if r.outcome == "win")
         r_values = [r.realized_r for r in bucket_rows if r.realized_r is not None]
@@ -212,7 +238,8 @@ def compute_regime_matrix(rows) -> list[dict]:
             peak = max(peak, cum)
             max_dd = max(max_dd, peak - cum)
         out.append({
-            "symbol": symbol, "session": session_tag, "regime": regime, "trades": n,
+            "symbol": symbol, "strategy": strategy, "asset_class": classify_symbol(symbol),
+            "session": session_tag, "regime": regime, "trades": n,
             "win_rate": (wins / n) if n else None,
             "avg_r": (sum(r_values) / len(r_values)) if r_values else None,
             "profit_factor": pf, "max_drawdown_r": max_dd,
@@ -225,14 +252,14 @@ def print_regime_matrix(matrix: list[dict]) -> None:
     print("=" * 96)
     print("REGIME MATRIX — Symbol x Session x Volatility (resolved trades only)")
     print("=" * 96)
-    header = f"{'Symbol':10s} {'Session':10s} {'Volatility':10s} {'Trades':>7s} {'Win %':>8s} {'Avg R':>8s} {'PF':>6s} {'MaxDD(R)':>9s}"
+    header = f"{'Symbol':10s} {'Strategy':18s} {'Asset':10s} {'Session':10s} {'Regime':12s} {'Trades':>7s} {'Win %':>8s} {'Avg R':>8s} {'PF':>6s} {'MaxDD(R)':>9s}"
     print(header)
     print("-" * len(header))
     for row in matrix:
         win_pct = f"{row['win_rate'] * 100:.1f}%" if row["win_rate"] is not None else "n/a"
         avg_r = f"{row['avg_r']:+.2f}" if row["avg_r"] is not None else "n/a"
         pf = f"{row['profit_factor']:.2f}" if row["profit_factor"] is not None else "n/a"
-        print(f"{row['symbol']:10s} {row['session']:10s} {row['regime']:10s} {row['trades']:7d} {win_pct:>8s} {avg_r:>8s} {pf:>6s} {row['max_drawdown_r']:9.2f}")
+        print(f"{row['symbol']:10s} {row['strategy']:18s} {row['asset_class']:10s} {row['session']:10s} {row['regime']:12s} {row['trades']:7d} {win_pct:>8s} {avg_r:>8s} {pf:>6s} {row['max_drawdown_r']:9.2f}")
     print()
 
 
