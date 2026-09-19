@@ -106,7 +106,6 @@ def test_rate_limit_enforced_after_max_requests(client, auth_headers, forced_rat
 
 
 def test_queued_signal_does_not_wait_for_telegram(client, auth_headers):
-    from app.signal_outbox import send_telegram_message
     with patch("app.signal_outbox.send_telegram_message", new=AsyncMock(side_effect=RuntimeError("telegram unavailable"))):
         payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-async-1"}
         resp = client.post("/signal", json=payload, headers=auth_headers)
