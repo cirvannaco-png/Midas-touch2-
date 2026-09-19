@@ -11,6 +11,8 @@ process_update() even when Telegram itself was unreachable at startup.
 
 import os
 
+import pytest
+
 from tests.conftest import VALID_BUY_SIGNAL, VALID_TRADE_OPENED
 
 AUTHORIZED_CHAT_ID = int(os.environ["ADMIN_CHAT_ID"])
@@ -81,7 +83,8 @@ def test_start_replies_only_to_authorized_chat(client):
     assert resp.status_code == 200
 
 
-def test_signal_handler_reflects_stored_signal(client, auth_headers):
+@pytest.mark.asyncio
+async def test_signal_handler_reflects_stored_signal(client, auth_headers):
     """/signal should reflect a signal that was actually POSTed and stored,
     not a canned response - exercises the real DB query path."""
     from app.bot_handlers import signal as signal_handler
@@ -106,17 +109,16 @@ def test_signal_handler_reflects_stored_signal(client, auth_headers):
         effective_user = _FakeUser()
         message = _FakeMessage()
 
-    import asyncio
-
     update = _FakeUpdate()
-    asyncio.run(signal_handler(update, context=None))
+    await signal_handler(update, context=None)
 
     assert update.message.replies, "handler did not reply"
     assert VALID_BUY_SIGNAL["symbol"] in update.message.replies[0]
     assert VALID_BUY_SIGNAL["direction"] in update.message.replies[0]
 
 
-def test_positions_handler_reflects_open_trade(client, auth_headers):
+@pytest.mark.asyncio
+async def test_positions_handler_reflects_open_trade(client, auth_headers):
     """/positions should list a trade that was opened but never closed."""
     from app.bot_handlers import positions as positions_handler
 
@@ -140,20 +142,17 @@ def test_positions_handler_reflects_open_trade(client, auth_headers):
         effective_user = _FakeUser()
         message = _FakeMessage()
 
-    import asyncio
-
     update = _FakeUpdate()
-    asyncio.run(positions_handler(update, context=None))
+    await positions_handler(update, context=None)
 
     assert update.message.replies
     assert VALID_TRADE_OPENED["symbol"] in update.message.replies[0]
 
 
-def test_unauthorized_chat_gets_no_reply():
+@pytest.mark.asyncio
+async def test_unauthorized_chat_gets_no_reply():
     """The _authorized_only decorator must short-circuit before touching
     the DB or replying, for any chat_id other than settings.ADMIN_CHAT_ID."""
-    import asyncio
-
     from app.bot_handlers import start as start_handler
 
     class _FakeMessage:
@@ -175,16 +174,15 @@ def test_unauthorized_chat_gets_no_reply():
         message = _FakeMessage()
 
     update = _FakeUpdate()
-    asyncio.run(start_handler(update, context=None))
+    await start_handler(update, context=None)
 
     assert update.message.replies == []
 
 
-def test_admin_user_authorized_from_group_chat():
+@pytest.mark.asyncio
+async def test_admin_user_authorized_from_group_chat():
     """Authorization is by *user* id, so the admin can run commands from
     inside the signal group, not just the DM."""
-    import asyncio
-
     from app.bot_handlers import start as start_handler
 
     class _FakeMessage:
@@ -206,7 +204,7 @@ def test_admin_user_authorized_from_group_chat():
         message = _FakeMessage()
 
     update = _FakeUpdate()
-    asyncio.run(start_handler(update, context=None))
+    await start_handler(update, context=None)
 
     assert update.message.replies, "admin should be answered inside the group"
 
