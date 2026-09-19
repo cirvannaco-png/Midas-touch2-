@@ -7,12 +7,13 @@ for the same reason documented there.
 """
 import asyncio
 import os
-from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import delete
 
 from app.copytrading_admin import checkpayments_command, confirm_text_handler, copytrading_command
 from app.database import async_session
+from app.models import BotSetting
 from app.settings_store import is_copy_trading_enabled
 
 AUTHORIZED_USER_ID = int(os.environ["ADMIN_CHAT_ID"])
@@ -20,10 +21,16 @@ UNAUTHORIZED_USER_ID = 999999999
 
 
 @pytest.fixture(autouse=True)
-def disable_background_outbox_worker():
-    """Keep direct Telegram-admin protocol tests independent of the delivery worker."""
-    with patch("app.main.run_outbox_worker", new=AsyncMock()):
-        yield
+def reset_copy_trading_state():
+    """Keep direct-handler tests isolated without starting FastAPI/TestClient."""
+    async def _reset():
+        async with async_session() as session:
+            await session.execute(delete(BotSetting))
+            await session.commit()
+
+    asyncio.run(_reset())
+    yield
+    asyncio.run(_reset())
 
 
 class _FakeMessage:
@@ -70,7 +77,7 @@ def _flag_is_enabled() -> bool:
     return asyncio.run(_go())
 
 
-def test_status_when_off_by_default(client):
+def test_status_when_off_by_default():
     replies = _run(copytrading_command, _FakeUpdate(), _FakeContext(["status"]))
     assert replies and "OFF" in replies[0]
 
@@ -142,7 +149,7 @@ def test_unauthorized_user_cannot_toggle(client):
     assert _flag_is_enabled() is False
 
 
-def test_checkpayments_command_runs_and_reports(client, monkeypatch):
+def test_checkpayments_command_runs_and_reports(monkeypatch):
     from app import telegram
 
     monkeypatch.setattr(telegram, "send_dm", lambda *a, **k: _noop_true())
