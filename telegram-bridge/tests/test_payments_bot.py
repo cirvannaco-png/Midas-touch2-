@@ -1,24 +1,11 @@
-"""Tests for app.payments_bot. Telegram's actual Payments network flow
-can't run in this sandbox (no egress to api.telegram.org — see
-test_bot.py's module docstring for the same constraint elsewhere in this
-suite), so context.bot.send_invoice / answer_pre_checkout_query are
-mocked; everything else (payload validation, DB writes, entitlement,
-the private-chat guard on /mysubscription) is real.
-"""
-import asyncio
+"""Tests for app.payments_bot using direct async handler invocation."""
+from unittest.mock import AsyncMock
+
+import pytest
 
 from app.database import async_session
-from app.payments_bot import (
-    my_subscription,
-    precheckout_callback,
-    subscribe,
-    successful_payment_callback,
-)
+from app.payments_bot import my_subscription, precheckout_callback, subscribe, successful_payment_callback
 from app.subscriptions import get_subscriber_by_user_id, is_entitled
-
-
-def _run(coro):
-    return asyncio.run(coro)
 
 
 class _FakeMessage:
@@ -93,87 +80,80 @@ class _FakeContext:
         self.bot = _FakeBot()
 
 
-# ---------- /subscribe ----------
-
-def test_subscribe_sends_invoice_and_creates_subscriber(client):
+@pytest.mark.asyncio
+async def test_subscribe_sends_invoice_and_creates_subscriber():
     update = _FakeUpdate(user_id=5001)
     context = _FakeContext()
 
-    _run(subscribe(update, context))
+    await subscribe(update, context)
 
     assert len(context.bot.sent_invoices) == 1
-    invoice = context.bot.sent_invoices[0]
-    assert invoice["payload"] == "medistouch_sub:5001"
+    assert context.bot.sent_invoices[0]["payload"] == "medistouch_sub:5001"
 
-    async def _check():
-        async with async_session() as session:
-            sub = await get_subscriber_by_user_id(session, "5001")
-            assert sub is not None
-    _run(_check())
+    async with async_session() as session:
+        sub = await get_subscriber_by_user_id(session, "5001")
+        assert sub is not None
 
 
-# ---------- pre-checkout ----------
-
-def test_precheckout_accepts_matching_payload(client):
+@pytest.mark.asyncio
+async def test_precheckout_accepts_matching_payload():
     query = _FakePreCheckoutQuery(5002, "medistouch_sub:5002")
-    _run(precheckout_callback(_FakePreCheckoutUpdate(query), None))
+    await precheckout_callback(_FakePreCheckoutUpdate(query), None)
     assert query.answers == [{"ok": True, "error_message": None}]
 
 
-def test_precheckout_rejects_mismatched_payload(client):
-    """Payload for a different user id must be refused — this is the one
-    real validation possible before Telegram's 10-second checkout window
-    closes."""
+@pytest.mark.asyncio
+async def test_precheckout_rejects_mismatched_payload():
     query = _FakePreCheckoutQuery(5003, "medistouch_sub:someone-else")
-    _run(precheckout_callback(_FakePreCheckoutUpdate(query), None))
+    await precheckout_callback(_FakePreCheckoutUpdate(query), None)
     assert query.answers[0]["ok"] is False
 
 
-# ---------- successful_payment ----------
-
-def test_successful_payment_activates_entitlement_and_replies(client):
+@pytest.mark.asyncio
+async def test_successful_payment_activates_entitlement_and_replies():
     payment = _FakeSuccessfulPayment("charge-abc", 500, "XTR", "medistouch_sub:5004")
     update = _FakeUpdate(user_id=5004, successful_payment=payment)
 
-    _run(successful_payment_callback(update, None))
+    await successful_payment_callback(update, None)
 
     assert update.message.replies
     assert "Payment received" in update.message.replies[0]
 
-    async def _check():
-        async with async_session() as session:
-            sub = await get_subscriber_by_user_id(session, "5004")
-            assert is_entitled(sub) is True
-    _run(_check())
+    async with async_session() as session:
+        sub = await get_subscriber_by_user_id(session, "5004")
+        assert is_entitled(sub) is True
 
 
-def test_duplicate_successful_payment_does_not_reply_twice(client):
+@pytest.mark.asyncio
+async def test_duplicate_successful_payment_does_not_reply_twice():
     payment = _FakeSuccessfulPayment("charge-dup", 500, "XTR", "medistouch_sub:5005")
 
     update1 = _FakeUpdate(user_id=5005, successful_payment=payment)
-    _run(successful_payment_callback(update1, None))
+    await successful_payment_callback(update1, None)
     assert len(update1.message.replies) == 1
 
     update2 = _FakeUpdate(user_id=5005, successful_payment=payment)
-    _run(successful_payment_callback(update2, None))
-    assert len(update2.message.replies) == 0  # redelivery — already recorded, no second reply
+    await successful_payment_callback(update2, None)
+    assert len(update2.message.replies) == 0
 
 
-# ---------- /mysubscription ----------
-
-def test_mysubscription_refuses_in_group_chat(client):
+@pytest.mark.asyncio
+async def test_mysubscription_refuses_in_group_chat():
     update = _FakeUpdate(user_id=5006, chat_type="group")
-    _run(my_subscription(update, None))
+    await my_subscription(update, None)
     assert update.message.replies
     assert "DM" in update.message.replies[0]
 
 
-def test_mysubscription_shows_status_in_private_chat(client):
+@pytest.mark.asyncio
+async def test_mysubscription_shows_status_in_private_chat(monkeypatch):
     payment = _FakeSuccessfulPayment("charge-mysub", 500, "XTR", "medistouch_sub:5007")
-    _run(successful_payment_callback(_FakeUpdate(user_id=5007, successful_payment=payment), None))
+    await successful_payment_callback(_FakeUpdate(user_id=5007, successful_payment=payment), None)
 
+    # my_subscription should only inspect the database; no Telegram network call is required.
+    monkeypatch.setattr("app.payments_bot.send_dm", AsyncMock(return_value=True))
     update = _FakeUpdate(user_id=5007, chat_type="private")
-    _run(my_subscription(update, None))
+    await my_subscription(update, None)
     assert update.message.replies
     reply = update.message.replies[0]
     assert "active" in reply.lower()
