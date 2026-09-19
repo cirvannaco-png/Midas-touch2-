@@ -14,7 +14,6 @@ from app.models import (
 from app.subscriptions import get_or_create_subscriber
 
 
-
 async def _make_subscriber(session, user_id, status, period_end, warned_at=None):
     sub = await get_or_create_subscriber(session, user_id, f"user-{user_id}")
     sub.status = status
