@@ -51,7 +51,12 @@ jobs:
           DATABASE_URL: "sqlite+aiosqlite:///./ci_test.db"
           RATE_LIMIT_MAX_REQUESTS: "5"
           RATE_LIMIT_WINDOW_SECONDS: "60"
-        run: python -m pytest -q tests
+        run: |
+          set -euo pipefail
+          for test_file in tests/test_*.py; do
+            echo "=== $test_file ==="
+            timeout 240 python -m pytest -q "$test_file"
+          done
 
   research-tests:
     name: Research tools tests
