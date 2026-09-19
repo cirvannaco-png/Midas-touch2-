@@ -27,8 +27,47 @@ from app.database import async_session  # noqa: E402
 from app.models import SignalOutcome  # noqa: E402
 from metrics_engine import compute_report  # noqa: E402
 from stats import intervals_overlap, wilson_ci  # noqa: E402
+from instrument_taxonomy import classify_symbol
+from oos_firewall import OOSPurityError, validate_records
 
 RESOLVED_OUTCOMES = {"win", "loss", "scratch"}
+
+def _oos_record(row) -> dict:
+    fields = (
+        "decision_id", "signal_id", "signal_time", "decision_time", "execution_time",
+        "outcome_time", "data_received_time", "strategy_version", "model_version",
+        "weight_version", "calibration_version", "feature_schema_version",
+        "environment_schema_version", "decision_fingerprint", "original_decision_fingerprint",
+        "strategy", "symbol", "asset_class", "filled", "commission_cost", "spread_cost",
+        "slippage_cost", "source_type",
+    )
+    out = {}
+    for field in fields:
+        if isinstance(row, dict):
+            out[field] = row.get(field)
+        else:
+            out[field] = getattr(row, field, None)
+    if not out.get("signal_id"):
+        out["signal_id"] = out.get("decision_id")
+    if not out.get("decision_id"):
+        out["decision_id"] = out.get("signal_id")
+    if not out.get("asset_class") and out.get("symbol"):
+        out["asset_class"] = classify_symbol(str(out["symbol"]))
+    return out
+
+def validate_locked_oos(rows) -> None:
+    validate_records([_oos_record(r) for r in rows])
+
+
+
+def _event_time(row) -> datetime | None:
+    """Use signal creation time; outcome receipt is a legacy fallback."""
+    return getattr(row, "signal_time", None) or getattr(row, "received_at", None)
+
+
+def _filter_scope(rows, *, symbol: str | None = None, strategy: str | None = None):
+    out = [r for r in rows if symbol is None or r.symbol == symbol]
+    return [r for r in out if strategy is None or r.strategy == strategy]
 
 
 def split_train_holdout(rows, reference_weeks: int = 4, holdout_weeks: int = 1,
@@ -36,20 +75,22 @@ def split_train_holdout(rows, reference_weeks: int = 4, holdout_weeks: int = 1,
     if reference_weeks <= holdout_weeks or holdout_weeks <= 0:
         raise ValueError("reference_weeks must be greater than holdout_weeks > 0")
     if now is None:
-        now = max((r.received_at for r in rows if r.received_at), default=datetime.now(timezone.utc))
+        now = max((_event_time(r) for r in rows if _event_time(r)), default=datetime.now(timezone.utc))
     reference_start = now - timedelta(weeks=reference_weeks)
     holdout_start = now - timedelta(weeks=holdout_weeks)
     train, holdout = [], []
     for r in rows:
-        if not r.received_at or r.received_at < reference_start:
+        event_time = _event_time(r)
+        if not event_time or event_time < reference_start:
             continue
-        (holdout if r.received_at >= holdout_start else train).append(r)
+        (holdout if event_time >= holdout_start else train).append(r)
     return train, holdout
 
 
 def compute_walk_forward_report(rows, weight_version: str, reference_weeks: int = 4,
-                                holdout_weeks: int = 1) -> dict:
-    tagged = [r for r in rows if r.weight_version == weight_version]
+                                holdout_weeks: int = 1, *, symbol: str | None = None,
+                                strategy: str | None = None) -> dict:
+    tagged = _filter_scope([r for r in rows if r.weight_version == weight_version], symbol=symbol, strategy=strategy)
     train, holdout = split_train_holdout(tagged, reference_weeks, holdout_weeks)
     train_resolved = [r for r in train if r.outcome in RESOLVED_OUTCOMES]
     holdout_resolved = [r for r in holdout if r.outcome in RESOLVED_OUTCOMES]
@@ -60,6 +101,10 @@ def compute_walk_forward_report(rows, weight_version: str, reference_weeks: int 
         "weight_version": weight_version,
         "reference_weeks": reference_weeks,
         "holdout_weeks": holdout_weeks,
+        "symbol": symbol,
+        "asset_class": classify_symbol(symbol) if symbol else "multi_asset",
+        "strategy": strategy,
+        "time_basis": "signal_time_with_received_at_legacy_fallback",
         "train": compute_report(train) if train else None,
         "holdout": compute_report(holdout) if holdout else None,
         "train_win_rate_ci": train_ci.to_dict(),
@@ -68,6 +113,51 @@ def compute_walk_forward_report(rows, weight_version: str, reference_weeks: int 
         "verdict": "insufficient_data" if overlap is None else ("consistent" if overlap else "diverged"),
     }
 
+
+
+
+def compute_rolling_walk_forward_report(rows, weight_version: str, train_weeks: int = 4,
+                                        holdout_weeks: int = 1, step_weeks: int = 1,
+                                        folds: int = 3, *, symbol: str | None = None,
+                                        strategy: str | None = None) -> dict:
+    """Run multiple chronological train/holdout folds without future leakage."""
+    if train_weeks <= 0 or holdout_weeks <= 0 or step_weeks <= 0 or folds <= 0:
+        raise ValueError("train_weeks, holdout_weeks, step_weeks, and folds must be > 0")
+    tagged = _filter_scope([r for r in rows if r.weight_version == weight_version], symbol=symbol, strategy=strategy)
+    events = [(r, _event_time(r)) for r in tagged if _event_time(r) is not None]
+    if not events:
+        return {"weight_version": weight_version, "folds": [], "verdict": "insufficient_data", "time_basis": "signal_time_with_received_at_legacy_fallback", "symbol": symbol, "asset_class": classify_symbol(symbol) if symbol else "multi_asset", "strategy": strategy}
+    start = min(t for _, t in events)
+    end = max(t for _, t in events)
+    train_delta = timedelta(weeks=train_weeks)
+    holdout_delta = timedelta(weeks=holdout_weeks)
+    step_delta = timedelta(weeks=step_weeks)
+    reports = []
+    cursor = start
+    while cursor + train_delta + holdout_delta <= end and len(reports) < folds:
+        train_end = cursor + train_delta
+        holdout_end = train_end + holdout_delta
+        train = [r for r, t in events if cursor <= t < train_end]
+        holdout = [r for r, t in events if train_end <= t < holdout_end]
+        if train and holdout:
+            train_resolved = [r for r in train if r.outcome in RESOLVED_OUTCOMES]
+            holdout_resolved = [r for r in holdout if r.outcome in RESOLVED_OUTCOMES]
+            train_ci = wilson_ci(sum(r.outcome == "win" for r in train_resolved), len(train_resolved))
+            holdout_ci = wilson_ci(sum(r.outcome == "win" for r in holdout_resolved), len(holdout_resolved))
+            overlap = intervals_overlap(train_ci, holdout_ci)
+            reports.append({
+                "train_start": cursor.isoformat(), "train_end": train_end.isoformat(),
+                "holdout_start": train_end.isoformat(), "holdout_end": holdout_end.isoformat(),
+                "train_count": len(train), "holdout_count": len(holdout),
+                "train_win_rate_ci": train_ci.to_dict(), "holdout_win_rate_ci": holdout_ci.to_dict(),
+                "overlap": overlap,
+                "verdict": "insufficient_data" if overlap is None else ("consistent" if overlap else "diverged"),
+                "train_max_signal_time": max(_event_time(r) for r in train).isoformat(),
+                "holdout_min_signal_time": min(_event_time(r) for r in holdout).isoformat(),
+            })
+        cursor += step_delta
+    verdict = "insufficient_data" if not reports else ("diverged" if any(f["verdict"] == "diverged" for f in reports) else ("insufficient_data" if any(f["verdict"] == "insufficient_data" for f in reports) else "consistent"))
+    return {"weight_version": weight_version, "train_weeks": train_weeks, "holdout_weeks": holdout_weeks, "step_weeks": step_weeks, "symbol": symbol, "asset_class": classify_symbol(symbol) if symbol else "multi_asset", "strategy": strategy, "time_basis": "signal_time_with_received_at_legacy_fallback", "folds": reports, "verdict": verdict}
 
 def _pick(row: dict[str, str], aliases: tuple[str, ...], required: bool = False) -> str | None:
     normalized = {k.strip().lower().replace(" ", "_"): (v or "").strip() for k, v in row.items()}
@@ -121,6 +211,17 @@ def ingest_tester_csv(path: str) -> list[dict]:
 
 def print_walk_forward(report: dict) -> None:
     print("=" * 88)
+    if "folds" in report:
+        print(f"ROLLING WALK-FORWARD — {report['weight_version']} ({len(report['folds'])} folds)")
+        print("=" * 88)
+        print(f"Verdict: {report['verdict']}")
+        for i, fold in enumerate(report["folds"], start=1):
+            print(
+                f"Fold {i}: train={fold['train_count']} holdout={fold['holdout_count']} "
+                f"verdict={fold['verdict']} train_max={fold['train_max_signal_time']} "
+                f"holdout_min={fold['holdout_min_signal_time']}"
+            )
+        return
     print(f"WALK-FORWARD VALIDATION — {report['weight_version']} ({report['reference_weeks']}W reference, last {report['holdout_weeks']}W holdout)")
     print("=" * 88)
     print(f"Verdict: {report['verdict']}")
@@ -141,7 +242,16 @@ async def run(args) -> int:
     if not rows:
         print("walk_forward: no rows in signal_outcomes yet.", file=sys.stderr)
         return 1
-    report = compute_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks)
+    if args.certification_mode:
+        try:
+            validate_locked_oos(rows)
+        except OOSPurityError as exc:
+            print(f"walk_forward: OOS purity firewall rejected dataset: {exc}", file=sys.stderr)
+            return 2
+    if args.rolling:
+        report = compute_rolling_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks, args.step_weeks, args.folds, symbol=args.symbol, strategy=args.strategy)
+    else:
+        report = compute_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks, symbol=args.symbol, strategy=args.strategy)
     if args.json:
         print(json.dumps(report, indent=2, default=str))
     else:
@@ -155,7 +265,13 @@ def main():
     parser.add_argument("--reference-weeks", type=int, default=4)
     parser.add_argument("--holdout-weeks", type=int, default=1)
     parser.add_argument("--tester-csv")
+    parser.add_argument("--symbol")
+    parser.add_argument("--strategy")
+    parser.add_argument("--rolling", action="store_true")
+    parser.add_argument("--folds", type=int, default=3)
+    parser.add_argument("--step-weeks", type=int, default=1)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--certification-mode", action="store_true", help="enforce locked-OOS provenance and temporal purity before evaluation")
     args = parser.parse_args()
     if args.tester_csv:
         rows = ingest_tester_csv(args.tester_csv)

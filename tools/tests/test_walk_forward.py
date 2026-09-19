@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from walk_forward import compute_walk_forward_report, ingest_tester_csv, split_train_holdout
+from walk_forward import compute_rolling_walk_forward_report, compute_walk_forward_report, ingest_tester_csv, split_train_holdout
 
 NOW = datetime(2026, 8, 1, tzinfo=timezone.utc)
 
@@ -97,3 +97,22 @@ def test_ingest_tester_csv_rejects_unknown_outcome(tmp_path):
     path.write_text("signal_id,outcome\n42,pending\n", encoding="utf-8")
     with pytest.raises(ValueError, match="unsupported outcome"):
         ingest_tester_csv(str(path))
+
+
+def test_rolling_walk_forward_uses_signal_time_and_keeps_temporal_order(make_outcome):
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = []
+    for i in range(70):
+        rows.append(make_outcome(
+            symbol="EURUSD", strategy="SMC", weight_version="v2.11-baseline",
+            received_at=base + timedelta(days=i + 2), signal_time=base + timedelta(days=i),
+            outcome=("win" if i % 2 == 0 else "loss"), realized_r=(1.0 if i % 2 == 0 else -1.0),
+        ))
+    report = compute_rolling_walk_forward_report(
+        rows, "v2.11-baseline", train_weeks=4, holdout_weeks=1,
+        step_weeks=1, folds=3, symbol="EURUSD", strategy="SMC"
+    )
+    assert len(report["folds"]) == 3
+    for fold in report["folds"]:
+        assert fold["train_max_signal_time"] < fold["holdout_min_signal_time"]
+    assert report["asset_class"] == "fx"
