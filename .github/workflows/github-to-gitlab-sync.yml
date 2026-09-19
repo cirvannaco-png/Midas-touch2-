@@ -31,42 +31,60 @@ jobs:
           set -euo pipefail
           if [ -z "${GITLAB_SYNC_TOKEN}" ]; then
             echo "::error::Missing GitHub Actions secret GITLAB_SYNC_TOKEN."
-            echo "Create a GitLab project access token or personal access token with repository write permission and store it as GITLAB_SYNC_TOKEN."
+            echo "Use a GitLab token with write_repository scope (or api + write_repository) that can push to project 86337573."
             exit 1
           fi
 
-      - name: Push source changes to GitLab
+      - name: Apply source-tree delta to GitLab
         env:
           GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
-          GITLAB_PROJECT_ID: "86337573"
-          GITLAB_API: "https://gitlab.com/api/v4"
           GITHUB_BEFORE: ${{ github.event.before }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+
+          # GitLab's repository-files/commits API cannot authenticate with a
+          # write_repository-only token. Use Git-over-HTTPS instead, which is
+          # the supported write path for that scope. The token stays in a
+          # temporary credential file and is never embedded in a remote URL.
+          git config --global user.name "midas-sync-bot"
+          git config --global user.email "midas-sync-bot@users.noreply.github.com"
+          git config --global credential.helper store
+          printf 'https://oauth2:%s@gitlab.com\n' "${GITLAB_SYNC_TOKEN}" > "${HOME}/.git-credentials"
+          chmod 600 "${HOME}/.git-credentials"
+          trap 'rm -f "${HOME}/.git-credentials"' EXIT
+
+          git remote add gitlab https://gitlab.com/midas-touch-group1/midas-touch2.git
+          git ls-remote gitlab refs/heads/main >/dev/null
+          git fetch --prune gitlab main
+
+          before="${GITHUB_BEFORE}"
+          after="${GITHUB_SHA}"
+          zero="0000000000000000000000000000000000000000"
+
+          tmp_branch="sync-from-github-${after}"
+          git checkout -b "${tmp_branch}" "gitlab/main"
+
+          # The GitHub source of truth intentionally excludes .github/ and the
+          # GitLab-owned .gitlab-ci.yml from synchronization. Everything else
+          # is applied as a delta, preserving GitLab-only governance state.
           python - <<'PY'
-          import base64
-          import json
           import os
           import subprocess
-          import urllib.request
 
           before = os.environ["GITHUB_BEFORE"]
           after = os.environ["GITHUB_SHA"]
-          token = os.environ["GITLAB_SYNC_TOKEN"]
-          project_id = os.environ["GITLAB_PROJECT_ID"]
-          api = os.environ["GITLAB_API"]
-
           zero = "0" * 40
+
           if before == zero:
-              names = subprocess.check_output(
+              raw = subprocess.check_output(
                   ["git", "ls-tree", "-r", "--name-only", after],
                   text=True,
-              ).splitlines()
-              changes = [("A", path) for path in names]
+              )
+              changes = [("A", path) for path in raw.splitlines()]
           else:
               raw = subprocess.check_output(
-                  ["git", "diff-tree", "--no-commit-id", "--name-status", "-r", before, after],
+                  ["git", "diff", "--name-status", "-M", before, after],
                   text=True,
               )
               changes = []
@@ -85,80 +103,60 @@ jobs:
               if path
               and not path.startswith(".github/")
               and path != ".gitlab-ci.yml"
-              and ".git/" not in path
+              and not path.startswith(".git/")
           ]
 
-          if not changes:
-              print("SYNC_OK: no source-tree changes require GitLab updates.")
-              raise SystemExit(0)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"SYNC_CHANGE_COUNT={len(changes)}\n")
 
-          actions = []
-          for status, path in changes:
-              if status == "D":
-                  actions.append({"action": "delete", "file_path": path})
-                  continue
-
-              data = subprocess.check_output(["git", "show", f"{after}:{path}"])
-              if b"\x00" in data:
-                  content = base64.b64encode(data).decode("ascii")
-                  encoding = "base64"
-              else:
-                  content = data.decode("utf-8")
-                  encoding = "text"
-
-              actions.append({
-                  "action": "update" if status == "M" else "create",
-                  "file_path": path,
-                  "content": content,
-                  "encoding": encoding,
-              })
-
-          total_batches = (len(actions) + 79) // 80
-          for batch_index in range(0, len(actions), 80):
-              batch = actions[batch_index:batch_index + 80]
-              payload = {
-                  "branch": "main",
-                  "commit_message": (
-                      f"chore(sync): GitHub main -> GitLab main "
-                      f"({batch_index // 80 + 1}/{total_batches})"
-                  ),
-                  "actions": batch,
-              }
-
-              request = urllib.request.Request(
-                  f"{api}/projects/{project_id}/repository/commits",
-                  data=json.dumps(payload).encode("utf-8"),
-                  headers={
-                      "PRIVATE-TOKEN": token,
-                      "Content-Type": "application/json",
-                  },
-                  method="POST",
-              )
-              with urllib.request.urlopen(request, timeout=60) as response:
-                  body = json.loads(response.read().decode("utf-8"))
-
-              print(f"SYNC_COMMIT: {body.get('id')}")
-
-          print(f"SYNC_OK: applied {len(actions)} source file action(s) to GitLab main.")
+          with open("/tmp/midas-sync-actions.tsv", "w", encoding="utf-8") as out:
+              for status, path in changes:
+                  out.write(f"{status}\t{path}\n")
           PY
 
-      - name: Verify GitLab branch
-        env:
-          GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
-          GITLAB_PROJECT_ID: "86337573"
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
+          if [ "${SYNC_CHANGE_COUNT}" = "0" ]; then
+            echo "SYNC_OK: no source-tree changes require GitLab updates."
+            exit 0
+          fi
 
-          request = urllib.request.Request(
-              f"https://gitlab.com/api/v4/projects/{os.environ['GITLAB_PROJECT_ID']}/repository/branches/main",
-              headers={"PRIVATE-TOKEN": os.environ["GITLAB_SYNC_TOKEN"]},
-          )
-          with urllib.request.urlopen(request, timeout=30) as response:
-              branch = json.loads(response.read().decode("utf-8"))
+          while IFS=$'\t' read -r status path; do
+            [ -n "${path}" ] || continue
+            case "${status}" in
+              D)
+                git rm -f --ignore-unmatch -- "${path}"
+                ;;
+              A|M)
+                git restore --source="${after}" --worktree --staged -- "${path}"
+                ;;
+              *)
+                echo "::error::Unsupported sync status '${status}' for '${path}'."
+                exit 1
+                ;;
+            esac
+          done < /tmp/midas-sync-actions.tsv
 
-          print(f"SYNC_VERIFIED: GitLab main at {branch['commit']['short_id']}.")
-          PY
+          if git diff --cached --quiet; then
+            echo "SYNC_OK: source delta produced no GitLab tree change."
+            exit 0
+          fi
+
+          # Hard guard: synchronization must never modify GitLab's own CI
+          # definition or import GitHub Actions into the GitLab release surface.
+          if git diff --cached --name-only | grep -E '(^|/)\.github/|^\.gitlab-ci\.yml$' >/dev/null; then
+            echo "::error::Sync boundary violation: provider-control files would change."
+            exit 1
+          fi
+
+          git diff --cached --name-status
+          git commit -m "chore(sync): GitHub main -> GitLab main"
+          git push gitlab HEAD:refs/heads/main
+
+          git fetch --prune gitlab main
+          expected="$(git rev-parse HEAD)"
+          actual="$(git rev-parse gitlab/main)"
+          if [ "${expected}" != "${actual}" ]; then
+            echo "::error::GitLab main verification failed: expected ${expected}, got ${actual}."
+            exit 1
+          fi
+
+          echo "SYNC_VERIFIED: GitLab main at ${actual}."
