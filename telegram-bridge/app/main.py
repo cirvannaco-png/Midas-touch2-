@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -5,10 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, Response
 
 from app.api.config_sync import router as config_sync_router
+from app.api.environment_outcomes import router as environment_outcome_router
 from app.bot import init_bot, shutdown_bot
 from app.config import APP_VERSION, settings
 from app.logger import logger
 from app.routes import router
+from app.signal_outbox import run_outbox_worker
 from app.telegram import check_bot_token, close_http_client, init_http_client
 
 
@@ -67,11 +70,21 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         logger.info("Starting application...")
         await init_http_client()
+        outbox_stop = asyncio.Event()
+        outbox_task = None
         token_valid = await check_bot_token()
         if not token_valid:
             logger.warning("Telegram bot token is invalid or could not be verified. Signals will fail.")
         await init_bot()
+        outbox_task = asyncio.create_task(run_outbox_worker(outbox_stop))
         yield
+        outbox_stop.set()
+        if outbox_task is not None:
+            outbox_task.cancel()
+            try:
+                await outbox_task
+            except asyncio.CancelledError:
+                pass
         await shutdown_bot()
         await close_http_client()
         logger.info("Shutdown complete.")
@@ -94,10 +107,11 @@ def create_app() -> FastAPI:
     async def body_too_large_handler(request, exc):
         return JSONResponse(status_code=413, content={"detail": "Request body too large"})
 
-    # Mount the immutable config-sync protocol first. The legacy /config/{symbol}
-    # route remains in app.routes.py for backward compatibility, but this
-    # router owns the path now and returns the full fail-closed envelope.
+    # Mount the immutable config-sync protocol first. The rich environment
+    # outcome boundary is also mounted before the legacy /outcome route so
+    # upgraded EA payloads are persisted without breaking older clients.
     app.include_router(config_sync_router)
+    app.include_router(environment_outcome_router)
     app.include_router(router)
 
     return app

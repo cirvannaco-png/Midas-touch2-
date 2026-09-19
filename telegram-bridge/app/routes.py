@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -15,6 +14,7 @@ from app import bot as bot_module
 from app.config import APP_VERSION, settings
 from app.copy_trading import can_copy
 from app.database import check_db_connection, get_session
+from tools.decision_fingerprint import fingerprint, canonical_serialize
 from app.formatter import format_lifecycle_banner, format_signal_message, format_trade_message
 from app.logger import logger
 from app.models import (
@@ -22,6 +22,7 @@ from app.models import (
     Signal,
     SignalLifecycleStatus,
     SignalOutcome,
+    SignalDeliveryOutbox,
     SignalStatus,
     TradeEvent,
     TradeEventStatus,
@@ -37,6 +38,14 @@ from app.validator import validate_signal, validate_trade_event
 router = APIRouter()
 
 VALID_TIMEFRAMES = {"M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN"}
+
+def canonical_decision_payload(payload: "SignalRequest") -> dict:
+    data = payload.model_dump(by_alias=True)
+    data["schema_version"] = data.get("decision_schema_version")
+    data["action"] = data.get("policy_action")
+    data["session"] = data.get("session") or ""
+    return data
+
 
 
 # ---------- Request/Response Schemas ----------
@@ -59,6 +68,19 @@ class SignalRequest(BaseModel):
     reasons: list[str] = Field(..., min_length=1)
     timeframe: str
     strategy: str | None = Field(default=None, max_length=64)
+    decision_schema_version: str | None = Field(default="decision-v1", max_length=64)
+    strategy_version: str | None = Field(default=None, max_length=64)
+    model_version: str | None = Field(default=None, max_length=64)
+    calibration_version: str | None = Field(default=None, max_length=64)
+    feature_schema_version: str | None = Field(default=None, max_length=64)
+    environment_schema_version: str | None = Field(default=None, max_length=64)
+    decision_fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
+    policy_action: str | None = Field(default=None, max_length=32)
+    reduce_risk: bool | None = Field(default=None)
+    spread_points: float | None = Field(default=None)
+    environment_key: str | None = Field(default=None, max_length=512)
+    signal_time: datetime | None = None
+    decision_time: datetime | None = None
     # v2.9: optional so pre-v2.9 EA builds keep working unmodified — see
     # models.py:Signal.extra. Not validated field-by-field on purpose;
     # this is display-only diagnostic data (sweep grade, BOS strength,
@@ -125,14 +147,6 @@ class TradeEventResponse(BaseModel):
 
 
 class OutcomeRequest(BaseModel):
-    """
-    v2.11. What the EA's OutcomeTracker simulator (see
-    EA/includes/Trading/OutcomeTracker.mqh::FinalizeExit/Resolve) resolves
-    a signal to, once resolved — this previously only ever reached a
-    local CSV on the MT5 terminal (SignalLogger::LogOutcome) and never
-    touched Postgres. One row per signal_id; a retried POST for the same
-    signal_id upserts rather than duplicating (see receive_outcome).
-    """
     signal_id: str = Field(..., min_length=1, max_length=100)
     symbol: str = Field(..., min_length=1, max_length=20)
     direction: Literal["BUY", "SELL"]
@@ -147,7 +161,20 @@ class OutcomeRequest(BaseModel):
     session_tag: str | None = Field(default=None, max_length=32, alias="session")
     sweep_grade: str | None = Field(default=None, max_length=16)
     htf_ob_aligned: bool | None = Field(default=None)
+    strategy: str | None = Field(default=None, max_length=64)
+    resolution: str | None = Field(default=None, max_length=64)
+    commission_cost: float | None = Field(default=None, ge=0)
+    spread_cost: float | None = Field(default=None, ge=0)
+    slippage_cost: float | None = Field(default=None, ge=0)
     weight_version: str | None = Field(default=None, max_length=64)
+    strategy_version: str | None = Field(default=None, max_length=64)
+    model_version: str | None = Field(default=None, max_length=64)
+    calibration_version: str | None = Field(default=None, max_length=64)
+    feature_schema_version: str | None = Field(default=None, max_length=64)
+    environment_schema_version: str | None = Field(default=None, max_length=64)
+    decision_fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
+    execution_time: datetime | None = None
+    outcome_time: datetime | None = None
     confidence_at_signal: float | None = Field(default=None)
     confidence_decayed: float | None = Field(default=None)
     decay_bars: int | None = Field(default=None, ge=0)
@@ -170,6 +197,7 @@ class HealthResponse(BaseModel):
 class SignalResponse(BaseModel):
     status: str
     signal_id: str
+    decision_fingerprint: str | None = None
     duplicate: bool = False
     telegram_message_id: int | None = None
     details: str | None = None
@@ -193,14 +221,11 @@ async def health_check():
 @router.get("/health/db", response_model=HealthResponse)
 async def health_db():
     db_ok = await check_db_connection()
-    body = {
+    return {
         "status": "online" if db_ok else "degraded",
         "version": APP_VERSION,
-        "database": "connected" if db_ok else "disconnected",
+        "database": "connected" if db_ok else "disconnected"
     }
-    if not db_ok:
-        return JSONResponse(status_code=503, content=body)
-    return body
 
 
 @router.post("/telegram/webhook")
@@ -244,14 +269,23 @@ async def receive_signal(
 ):
     start_time = time.time()
     log = logger.bind(signal_id=payload.signal_id)
+    received_at = datetime.now(timezone.utc)
     log.info("Signal received")
 
     valid, errors = validate_signal(payload.model_dump())
     if not valid:
-        raise HTTPException(
-            status_code=400,
-            detail={"signal_id": payload.signal_id, "errors": errors}
-        )
+        raise HTTPException(status_code=400, detail={"signal_id": payload.signal_id, "errors": errors})
+
+    decision_payload = canonical_decision_payload(payload)
+    expected_fingerprint = fingerprint(decision_payload)
+    claimed_fingerprint = (payload.decision_fingerprint or "").upper()
+    parity_status = (
+        "PARITY_OK"
+        if claimed_fingerprint == expected_fingerprint
+        else "PARITY_MISMATCH"
+        if claimed_fingerprint
+        else "FINGERPRINT_MISSING"
+    )
 
     db_signal = Signal(
         signal_id=payload.signal_id,
@@ -267,7 +301,23 @@ async def receive_signal(
         reasons=payload.reasons,
         timeframe=payload.timeframe,
         strategy=payload.strategy,
-        status=SignalStatus.PENDING,
+        decision_schema_version=payload.decision_schema_version,
+        strategy_version=payload.strategy_version,
+        model_version=payload.model_version,
+        calibration_version=payload.calibration_version,
+        feature_schema_version=payload.feature_schema_version,
+        environment_schema_version=payload.environment_schema_version,
+        decision_fingerprint=claimed_fingerprint or None,
+        canonical_decision=canonical_serialize(decision_payload),
+        parity_status=parity_status,
+        policy_action=payload.policy_action,
+        reduce_risk=payload.reduce_risk,
+        spread_points=payload.spread_points,
+        environment_key=payload.environment_key,
+        signal_time=payload.signal_time or payload.decision_time or received_at,
+        decision_time=payload.decision_time or payload.signal_time or received_at,
+        data_received_time=received_at,
+        status=SignalStatus.PENDING if parity_status == "PARITY_OK" else SignalStatus.PERMANENTLY_FAILED,
         extra=payload.extra,
         regime=payload.regime,
         session=payload.session_tag,
@@ -275,56 +325,79 @@ async def receive_signal(
         htf_ob_aligned=payload.htf_ob_aligned,
         weight_version=payload.weight_version,
     )
+    if parity_status != "PARITY_OK":
+        db_signal.error_message = f"{parity_status}: expected {expected_fingerprint}, received {claimed_fingerprint or 'missing'}"
+
     session.add(db_signal)
     try:
         await session.commit()
     except IntegrityError:
         await session.rollback()
         log.info("Duplicate signal ignored (reservation lost)")
-        return SignalResponse(status="duplicate", signal_id=payload.signal_id, duplicate=True)
+        return SignalResponse(status="duplicate", signal_id=payload.signal_id, decision_fingerprint=claimed_fingerprint or None, duplicate=True)
+
+    if parity_status == "PARITY_MISMATCH":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PARITY_MISMATCH",
+                "signal_id": payload.signal_id,
+                "expected_fingerprint": expected_fingerprint,
+                "received_fingerprint": claimed_fingerprint,
+            },
+        )
+    if parity_status == "FINGERPRINT_MISSING" and settings.REQUIRE_DECISION_FINGERPRINT:
+        raise HTTPException(
+            status_code=428,
+            detail={
+                "code": "FINGERPRINT_REQUIRED",
+                "signal_id": payload.signal_id,
+                "expected_fingerprint": expected_fingerprint,
+                "received_fingerprint": None,
+            },
+        )
 
     if await is_broadcast_paused(session) or await is_symbol_muted(session, payload.symbol):
         db_signal.status = SignalStatus.ACTIVE
         db_signal.error_message = "Broadcast suppressed (paused or symbol muted)"
         await session.commit()
-        log.info(f"Signal broadcast suppressed for {payload.symbol}")
         return SignalResponse(
             status="suppressed",
             signal_id=payload.signal_id,
+            decision_fingerprint=expected_fingerprint,
             details="Broadcast paused or symbol muted - signal recorded, not sent to Telegram.",
         )
 
-    message_text = format_signal_message(payload.model_dump())
+    message_payload = payload.model_dump(by_alias=True, mode="json")
+    message_payload["decision_fingerprint"] = expected_fingerprint
+    outbox = SignalDeliveryOutbox(
+        signal_id=payload.signal_id,
+        payload=message_payload,
+        status="pending",
+        attempts=0,
+        next_attempt_at=received_at,
+    )
+    session.add(outbox)
+    db_signal.status = SignalStatus.PENDING
+    db_signal.latency_ms = measure_latency(start_time)
     try:
-        msg_id = await send_telegram_message(message_text)
-        status_signal = SignalStatus.ACTIVE
-        error_msg = None
-    except NonRetryableError as e:
-        log.error(f"Non-retryable failure: {e}")
-        msg_id = None
-        status_signal = SignalStatus.PERMANENTLY_FAILED
-        error_msg = str(e)
-    except Exception as e:
-        log.error(f"Sending failed after retries ({type(e).__name__}): {e}")
-        msg_id = None
-        status_signal = SignalStatus.FAILED
-        error_msg = str(e)
-
-    latency = measure_latency(start_time)
-
-    db_signal.telegram_message_id = msg_id
-    db_signal.status = status_signal
-    db_signal.error_message = error_msg
-    db_signal.latency_ms = latency
-    await session.commit()
-
-    if status_signal in (SignalStatus.FAILED, SignalStatus.PERMANENTLY_FAILED):
-        raise HTTPException(
-            status_code=500,
-            detail=f"Telegram sending failed. Signal saved with status '{status_signal.value}'."
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        log.info("Delivery outbox reservation lost for %s", payload.signal_id)
+        return SignalResponse(
+            status="duplicate",
+            signal_id=payload.signal_id,
+            decision_fingerprint=expected_fingerprint,
+            duplicate=True,
         )
+    return SignalResponse(
+        status="queued",
+        signal_id=payload.signal_id,
+        decision_fingerprint=expected_fingerprint,
+        details="Signal persisted; Telegram delivery queued asynchronously.",
+    )
 
-    return SignalResponse(status="sent", signal_id=payload.signal_id, telegram_message_id=msg_id)
 
 
 class LifecycleUpdateRequest(BaseModel):
@@ -370,6 +443,7 @@ async def update_signal_lifecycle(
                 "confidence": db_signal.confidence,
                 "reasons": db_signal.reasons,
                 "extra": db_signal.extra,
+                "decision_fingerprint": db_signal.decision_fingerprint,
             }
         )
         banner = format_lifecycle_banner(new_status.value, payload.reason)
@@ -536,12 +610,50 @@ async def receive_outcome(
     _rate: None = Depends(enforce_rate_limit),
 ):
     log = logger.bind(signal_id=payload.signal_id)
+    received_at = datetime.now(timezone.utc)
 
     existing = await session.scalar(
         select(SignalOutcome).where(SignalOutcome.signal_id == payload.signal_id)
     )
     upserted = existing is not None
     row = existing or SignalOutcome(signal_id=payload.signal_id)
+
+    source_signal = await session.scalar(
+        select(Signal).where(Signal.signal_id == payload.signal_id)
+    )
+    if source_signal is not None:
+        row.signal_time = source_signal.signal_time or source_signal.received_at
+        row.decision_time = source_signal.decision_time
+        row.original_decision_fingerprint = source_signal.decision_fingerprint
+        row.canonical_decision = source_signal.canonical_decision
+        row.decision_fingerprint = payload.decision_fingerprint or source_signal.decision_fingerprint
+        row.environment_key = source_signal.environment_key
+        row.parity_status = (
+            "PARITY_MISMATCH"
+            if payload.decision_fingerprint
+            and source_signal.decision_fingerprint
+            and payload.decision_fingerprint.upper() != source_signal.decision_fingerprint.upper()
+            else source_signal.parity_status or "FINGERPRINT_MISSING"
+        )
+        row.decision_schema_version = (source_signal.decision_schema_version if source_signal else None)
+        row.strategy_version = payload.strategy_version or (source_signal.strategy_version if source_signal else None)
+        row.model_version = payload.model_version or source_signal.model_version
+        row.calibration_version = payload.calibration_version or source_signal.calibration_version
+        row.feature_schema_version = payload.feature_schema_version or source_signal.feature_schema_version
+        row.environment_schema_version = payload.environment_schema_version or source_signal.environment_schema_version
+        row.weight_version = payload.weight_version or source_signal.weight_version
+        row.data_received_time = received_at
+    else:
+        row.decision_fingerprint = payload.decision_fingerprint
+        row.parity_status = "ORPHAN_SIGNAL"
+        row.data_received_time = received_at
+        row.decision_schema_version = "decision-v1"
+        row.strategy_version = payload.strategy_version
+        row.model_version = payload.model_version
+        row.calibration_version = payload.calibration_version
+        row.feature_schema_version = payload.feature_schema_version
+        row.environment_schema_version = payload.environment_schema_version
+        row.weight_version = payload.weight_version
 
     row.symbol = payload.symbol
     row.direction = payload.direction
@@ -552,11 +664,17 @@ async def receive_outcome(
     row.bars_held = payload.bars_held
     row.bars_to_fill = payload.bars_to_fill
     row.filled = payload.filled
+    row.execution_time = payload.execution_time
+    row.outcome_time = payload.outcome_time
     row.regime = payload.regime
     row.session = payload.session_tag
     row.sweep_grade = payload.sweep_grade
     row.htf_ob_aligned = payload.htf_ob_aligned
-    row.weight_version = payload.weight_version
+    row.strategy = payload.strategy or (source_signal.strategy if source_signal else None)
+    row.resolution = payload.resolution
+    row.commission_cost = payload.commission_cost
+    row.spread_cost = payload.spread_cost
+    row.slippage_cost = payload.slippage_cost
     row.confidence_at_signal = payload.confidence_at_signal
     row.confidence_decayed = payload.confidence_decayed
     row.decay_bars = payload.decay_bars
@@ -564,6 +682,12 @@ async def receive_outcome(
     if not upserted:
         session.add(row)
     await session.commit()
+
+    if row.parity_status == "PARITY_MISMATCH":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "PARITY_MISMATCH", "signal_id": payload.signal_id},
+        )
 
     log.info(f"Outcome recorded: {payload.outcome}" + (" (updated)" if upserted else ""))
     return OutcomeResponse(status="ok", signal_id=payload.signal_id, upserted=upserted)
