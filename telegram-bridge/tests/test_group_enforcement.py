@@ -1,6 +1,5 @@
 """Tests for app.group_enforcement.sweep_subscriber_statuses and
 run_subscription_enforcement."""
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 from app.database import async_session
@@ -13,9 +12,6 @@ from app.models import (
 from app.subscriptions import get_or_create_subscriber
 
 
-def _run(coro):
-    return asyncio.run(coro)
-
 
 async def _make_subscriber(session, user_id, status, period_end, warned_at=None):
     sub = await get_or_create_subscriber(session, user_id, f"user-{user_id}")
@@ -26,7 +22,10 @@ async def _make_subscriber(session, user_id, status, period_end, warned_at=None)
     return sub
 
 
-def test_active_subscriber_nearing_expiry_gets_warned_once(client):
+import pytest
+
+@pytest.mark.asyncio
+async def test_active_subscriber_nearing_expiry_gets_warned_once():
     now = datetime.now(timezone.utc)
 
     async def _go():
@@ -40,10 +39,11 @@ def test_active_subscriber_nearing_expiry_gets_warned_once(client):
             result2 = await sweep_subscriber_statuses(session)
             assert len(result2["warn"]) == 0
 
-    _run(_go())
+    await _go()
 
 
-def test_active_subscriber_past_expiry_becomes_expired(client):
+@pytest.mark.asyncio
+async def test_active_subscriber_past_expiry_becomes_expired():
     now = datetime.now(timezone.utc)
 
     async def _go():
@@ -59,7 +59,8 @@ def test_active_subscriber_past_expiry_becomes_expired(client):
     _run(_go())
 
 
-def test_expired_subscriber_within_grace_period_is_not_removed(client):
+@pytest.mark.asyncio
+async def test_expired_subscriber_within_grace_period_is_not_removed():
     now = datetime.now(timezone.utc)
 
     async def _go():
@@ -72,7 +73,8 @@ def test_expired_subscriber_within_grace_period_is_not_removed(client):
     _run(_go())
 
 
-def test_expired_subscriber_past_grace_period_is_removed(client):
+@pytest.mark.asyncio
+async def test_expired_subscriber_past_grace_period_is_removed():
     now = datetime.now(timezone.utc)
 
     async def _go():
@@ -88,7 +90,8 @@ def test_expired_subscriber_past_grace_period_is_removed(client):
     _run(_go())
 
 
-def test_enforcement_calls_telegram_helpers_and_never_raises_on_dm_failure(client, monkeypatch):
+@pytest.mark.asyncio
+async def test_enforcement_calls_telegram_helpers_and_never_raises_on_dm_failure(monkeypatch):
     """One subscriber the bot can't DM (blocked it) must not stop the rest
     of the sweep, and must not surface as an exception from the endpoint."""
     from app import telegram
@@ -128,7 +131,8 @@ def test_enforcement_calls_telegram_helpers_and_never_raises_on_dm_failure(clien
     _run(_go())
 
 
-def test_removal_without_group_chat_id_configured_logs_but_does_not_crash(client, monkeypatch):
+@pytest.mark.asyncio
+async def test_removal_without_group_chat_id_configured_logs_but_does_not_crash(monkeypatch):
     """GROUP_CHAT_ID unset (e.g. a fresh deploy before it's configured)
     must not raise — the subscriber still gets marked REMOVED and DM'd,
     just with no group membership actually changing."""
