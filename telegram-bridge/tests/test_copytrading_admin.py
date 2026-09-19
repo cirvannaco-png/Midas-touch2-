@@ -8,12 +8,29 @@ for the same reason documented there.
 import asyncio
 import os
 
+import pytest
+from sqlalchemy import delete
+
 from app.copytrading_admin import checkpayments_command, confirm_text_handler, copytrading_command
 from app.database import async_session
+from app.models import BotSetting
 from app.settings_store import is_copy_trading_enabled
 
 AUTHORIZED_USER_ID = int(os.environ["ADMIN_CHAT_ID"])
 UNAUTHORIZED_USER_ID = 999999999
+
+
+@pytest.fixture(autouse=True)
+def reset_copy_trading_state():
+    """Keep direct-handler tests isolated without starting FastAPI/TestClient."""
+    async def _reset():
+        async with async_session() as session:
+            await session.execute(delete(BotSetting))
+            await session.commit()
+
+    asyncio.run(_reset())
+    yield
+    asyncio.run(_reset())
 
 
 class _FakeMessage:
@@ -56,34 +73,35 @@ def _flag_is_enabled() -> bool:
     async def _go():
         async with async_session() as session:
             return await is_copy_trading_enabled(session)
+
     return asyncio.run(_go())
 
 
-def test_status_when_off_by_default(client):
+def test_status_when_off_by_default():
     replies = _run(copytrading_command, _FakeUpdate(), _FakeContext(["status"]))
     assert replies and "OFF" in replies[0]
 
 
-def test_on_requires_confirmation_not_enabled_immediately(client):
+def test_on_requires_confirmation_not_enabled_immediately():
     replies = _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     assert replies and "yes" in replies[0].lower()
     assert _flag_is_enabled() is False
 
 
-def test_yes_from_same_admin_confirms(client):
+def test_yes_from_same_admin_confirms():
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     replies = _run(confirm_text_handler, _FakeUpdate(text="yes"))
     assert replies and "ON" in replies[0]
     assert _flag_is_enabled() is True
 
 
-def test_yes_without_pending_request_is_a_silent_noop(client):
+def test_yes_without_pending_request_is_a_silent_noop():
     replies = _run(confirm_text_handler, _FakeUpdate(text="yes"))
     assert replies == []
     assert _flag_is_enabled() is False
 
 
-def test_unrelated_text_does_not_confirm_pending_request(client):
+def test_unrelated_text_does_not_confirm_pending_request():
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     replies = _run(confirm_text_handler, _FakeUpdate(text="sure thing"))
     assert replies == []
@@ -94,7 +112,7 @@ def test_unrelated_text_does_not_confirm_pending_request(client):
     assert replies2 and "ON" in replies2[0]
 
 
-def test_yes_from_different_user_does_not_confirm(client):
+def test_yes_from_different_user_does_not_confirm():
     _run(copytrading_command, _FakeUpdate(AUTHORIZED_USER_ID), _FakeContext(["on"]))
     # confirm_text_handler itself only proceeds for the authorized admin id
     # (settings.authorized_user_id) — a different id is rejected before
@@ -105,7 +123,7 @@ def test_yes_from_different_user_does_not_confirm(client):
     assert _flag_is_enabled() is False
 
 
-def test_off_applies_immediately_no_confirmation(client):
+def test_off_applies_immediately_no_confirmation():
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     _run(confirm_text_handler, _FakeUpdate(text="yes"))
     assert _flag_is_enabled() is True
@@ -115,7 +133,7 @@ def test_off_applies_immediately_no_confirmation(client):
     assert _flag_is_enabled() is False
 
 
-def test_off_clears_any_pending_on_request(client):
+def test_off_clears_any_pending_on_request():
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["off"]))
 
@@ -125,13 +143,13 @@ def test_off_clears_any_pending_on_request(client):
     assert _flag_is_enabled() is False
 
 
-def test_unauthorized_user_cannot_toggle(client):
+def test_unauthorized_user_cannot_toggle():
     replies = _run(copytrading_command, _FakeUpdate(UNAUTHORIZED_USER_ID), _FakeContext(["on"]))
     assert replies == []
     assert _flag_is_enabled() is False
 
 
-def test_checkpayments_command_runs_and_reports(client, monkeypatch):
+def test_checkpayments_command_runs_and_reports(monkeypatch):
     from app import telegram
 
     monkeypatch.setattr(telegram, "send_dm", lambda *a, **k: _noop_true())

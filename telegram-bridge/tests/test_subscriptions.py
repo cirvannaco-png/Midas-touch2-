@@ -12,7 +12,12 @@ from app.subscriptions import (
 )
 
 
-def _run(coro):
+def _run(coro, client=None):
+    if client is not None:
+        assert client.portal is not None
+        async def _await_coro(coro):
+            return await coro
+        return client.portal.call(_await_coro, coro)
     return asyncio.run(coro)
 
 
@@ -24,7 +29,7 @@ def test_get_or_create_subscriber_is_idempotent(client):
             assert a.id == b.id
             assert a.status == SUBSCRIBER_STATUS_PENDING
 
-    _run(_go())
+    _run(_go(), client=client)
 
 
 def test_get_or_create_subscriber_updates_username(client):
@@ -34,7 +39,7 @@ def test_get_or_create_subscriber_updates_username(client):
             updated = await get_or_create_subscriber(session, "222", "new_name")
             assert updated.telegram_username == "new_name"
 
-    _run(_go())
+    _run(_go(), client=client)
 
 
 def test_fresh_subscriber_is_not_entitled(client):
@@ -43,7 +48,7 @@ def test_fresh_subscriber_is_not_entitled(client):
             sub = await get_or_create_subscriber(session, "333", "bob")
             assert is_entitled(sub) is False
 
-    _run(_go())
+    _run(_go(), client=client)
 
 
 def test_record_payment_grants_entitlement(client):
@@ -64,7 +69,7 @@ def test_record_payment_grants_entitlement(client):
             assert is_entitled(sub) is True
             assert sub.copy_feed_api_key  # a key was minted
 
-    _run(_go())
+    _run(_go(), client=client)
 
 
 def test_duplicate_charge_id_is_ignored(client):
@@ -88,7 +93,7 @@ def test_duplicate_charge_id_is_ignored(client):
             # wall-clock value, not tzinfo identity (see subscriptions._as_utc).
             assert sub.current_period_end.replace(tzinfo=None) == end_after_first.replace(tzinfo=None)
 
-    _run(_go())
+    _run(_go(), client=client)
 
 
 def test_early_renewal_stacks_on_remaining_time(client):
@@ -107,7 +112,7 @@ def test_early_renewal_stacks_on_remaining_time(client):
             expected_min = datetime.now(timezone.utc) + timedelta(days=39)
             assert sub.current_period_end > expected_min
 
-    _run(_go())
+    _run(_go(), client=client)
 
 
 def test_lapsed_subscriber_is_not_entitled(client):
@@ -119,4 +124,4 @@ def test_lapsed_subscriber_is_not_entitled(client):
             await session.commit()
             assert is_entitled(sub) is False
 
-    _run(_go())
+    _run(_go(), client=client)

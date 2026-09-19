@@ -26,7 +26,7 @@ async def _make_subscriber(session, user_id, status, period_end, warned_at=None)
     return sub
 
 
-def test_active_subscriber_nearing_expiry_gets_warned_once(client):
+def test_active_subscriber_nearing_expiry_gets_warned_once():
     now = datetime.now(timezone.utc)
 
     async def _go():
@@ -43,7 +43,7 @@ def test_active_subscriber_nearing_expiry_gets_warned_once(client):
     _run(_go())
 
 
-def test_active_subscriber_past_expiry_becomes_expired(client):
+def test_active_subscriber_past_expiry_becomes_expired():
     now = datetime.now(timezone.utc)
 
     async def _go():
@@ -59,7 +59,7 @@ def test_active_subscriber_past_expiry_becomes_expired(client):
     _run(_go())
 
 
-def test_expired_subscriber_within_grace_period_is_not_removed(client):
+def test_expired_subscriber_within_grace_period_is_not_removed():
     now = datetime.now(timezone.utc)
 
     async def _go():
@@ -72,7 +72,7 @@ def test_expired_subscriber_within_grace_period_is_not_removed(client):
     _run(_go())
 
 
-def test_expired_subscriber_past_grace_period_is_removed(client):
+def test_expired_subscriber_past_grace_period_is_removed():
     now = datetime.now(timezone.utc)
 
     async def _go():
@@ -88,7 +88,7 @@ def test_expired_subscriber_past_grace_period_is_removed(client):
     _run(_go())
 
 
-def test_enforcement_calls_telegram_helpers_and_never_raises_on_dm_failure(client, monkeypatch):
+def test_enforcement_calls_telegram_helpers_and_never_raises_on_dm_failure(monkeypatch):
     """One subscriber the bot can't DM (blocked it) must not stop the rest
     of the sweep, and must not surface as an exception from the endpoint."""
     from app import telegram
@@ -128,7 +128,7 @@ def test_enforcement_calls_telegram_helpers_and_never_raises_on_dm_failure(clien
     _run(_go())
 
 
-def test_removal_without_group_chat_id_configured_logs_but_does_not_crash(client, monkeypatch):
+def test_removal_without_group_chat_id_configured_logs_but_does_not_crash(monkeypatch):
     """GROUP_CHAT_ID unset (e.g. a fresh deploy before it's configured)
     must not raise — the subscriber still gets marked REMOVED and DM'd,
     just with no group membership actually changing."""

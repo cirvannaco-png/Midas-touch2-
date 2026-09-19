@@ -1,4 +1,3 @@
-import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -21,7 +20,7 @@ def make_identity(*, strategy="SMC", instrument="XAUUSD", timeframe="M15", thres
     )
 
 
-def seed_registry(*identities_and_statuses):
+def seed_registry(client, *identities_and_statuses):
     async def _seed():
         async with async_session() as session:
             await session.execute(delete(ConfigSyncState).where(ConfigSyncState.symbol == "XAUUSD"))
@@ -34,7 +33,8 @@ def seed_registry(*identities_and_statuses):
                 session.add(row)
             await session.commit()
 
-    asyncio.run(_seed())
+    assert client.portal is not None
+    client.portal.call(_seed)
 
 
 def activate(client, headers, identity):
@@ -52,7 +52,7 @@ def activate(client, headers, identity):
 
 def test_get_config_returns_verified_champion(client, auth_headers):
     identity = make_identity(threshold=90)
-    seed_registry((identity, "CHAMPION"))
+    seed_registry(client, (identity, "CHAMPION"))
     response = client.get("/config/XAUUSD", headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
@@ -64,14 +64,14 @@ def test_get_config_returns_verified_champion(client, auth_headers):
 
 def test_get_config_fails_when_no_champion_exists(client, auth_headers):
     identity = make_identity(threshold=91)
-    seed_registry((identity, "CHALLENGER"))
+    seed_registry(client, (identity, "CHALLENGER"))
     response = client.get("/config/XAUUSD", headers=auth_headers)
     assert response.status_code == 404
 
 
 def test_ack_requires_exact_registered_hash_and_metadata(client, auth_headers):
     identity = make_identity(threshold=92)
-    seed_registry((identity, "CHAMPION"))
+    seed_registry(client, (identity, "CHAMPION"))
     wrong = client.post(
         "/config/XAUUSD/ack",
         headers=auth_headers,
@@ -99,7 +99,7 @@ def test_ack_requires_exact_registered_hash_and_metadata(client, auth_headers):
 
 def test_exact_ack_activates_and_get_reports_active(client, auth_headers):
     identity = make_identity(threshold=93)
-    seed_registry((identity, "CHAMPION"))
+    seed_registry(client, (identity, "CHAMPION"))
     ack = activate(client, auth_headers, identity)
     assert ack.status_code == 200
     assert ack.json()["action"] == "ACTIVATE"
@@ -112,7 +112,7 @@ def test_exact_ack_activates_and_get_reports_active(client, auth_headers):
 def test_challenger_cannot_be_activated_directly(client, auth_headers):
     champion = make_identity(threshold=94)
     challenger = make_identity(threshold=95)
-    seed_registry((champion, "CHAMPION"), (challenger, "CHALLENGER"))
+    seed_registry(client, (champion, "CHAMPION"), (challenger, "CHALLENGER"))
     ack = activate(client, auth_headers, challenger)
     assert ack.status_code == 409
     response = client.get("/config/XAUUSD", headers=auth_headers)
@@ -123,7 +123,7 @@ def test_challenger_cannot_be_activated_directly(client, auth_headers):
 
 def test_runtime_rejects_unknown_or_non_active_hash(client, auth_headers):
     identity = make_identity(threshold=96)
-    seed_registry((identity, "CHAMPION"))
+    seed_registry(client, (identity, "CHAMPION"))
     unknown = client.post(
         "/config/XAUUSD/runtime",
         headers=auth_headers,
@@ -140,7 +140,7 @@ def test_runtime_rejects_unknown_or_non_active_hash(client, auth_headers):
 
 def test_runtime_rejects_registered_but_non_deployable_hash(client, auth_headers):
     identity = make_identity(threshold=97)
-    seed_registry((identity, "VALIDATED"))
+    seed_registry(client, (identity, "VALIDATED"))
     response = client.post(
         "/config/XAUUSD/runtime",
         headers=auth_headers,
@@ -152,7 +152,7 @@ def test_runtime_rejects_registered_but_non_deployable_hash(client, auth_headers
 def test_unhealthy_champion_stages_previous_champion_and_requires_new_ack(client, auth_headers):
     old_champion = make_identity(threshold=98)
     new_champion = make_identity(threshold=99)
-    seed_registry((old_champion, "CHAMPION"), (new_champion, "CHAMPION"))
+    seed_registry(client, (old_champion, "CHAMPION"), (new_champion, "CHAMPION"))
     first_ack = activate(client, auth_headers, new_champion)
     assert first_ack.status_code == 200
 
@@ -179,7 +179,7 @@ def test_unhealthy_champion_stages_previous_champion_and_requires_new_ack(client
 
 def test_unhealthy_champion_enters_defensive_state(client, auth_headers):
     champion = make_identity(threshold=100)
-    seed_registry((champion, "CHAMPION"))
+    seed_registry(client, (champion, "CHAMPION"))
     ack = activate(client, auth_headers, champion)
     assert ack.status_code == 200
     runtime = client.post(

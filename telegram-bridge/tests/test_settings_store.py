@@ -51,8 +51,12 @@ class _FakeContext:
         self.args = args or []
 
 
-def _run(handler, update, context=None):
-    asyncio.run(handler(update, context))
+def _run(handler, update, context=None, client=None):
+    if client is not None:
+        assert client.portal is not None
+        client.portal.call(handler, update, context)
+    else:
+        asyncio.run(handler(update, context))
     return update.message.replies
 
 
@@ -66,7 +70,8 @@ def test_muted_symbol_suppresses_broadcast(client, auth_headers):
         async with async_session() as session:
             await mute_symbol(session, "EURUSD")
 
-    asyncio.run(_mute())
+    assert client.portal is not None
+    client.portal.call(_mute)
 
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
     assert resp.status_code == 200
@@ -78,7 +83,7 @@ def test_muted_symbol_suppresses_broadcast(client, auth_headers):
 def test_unmuted_symbol_still_broadcasts(client, auth_headers):
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
     assert resp.status_code == 200
-    assert resp.json()["status"] == "sent"
+    assert resp.json()["status"] == "queued"
 
 
 def test_paused_broadcast_suppresses_all_symbols(client, auth_headers):
@@ -89,7 +94,8 @@ def test_paused_broadcast_suppresses_all_symbols(client, auth_headers):
         async with async_session() as session:
             await set_broadcast_paused(session, True)
 
-    asyncio.run(_pause())
+    assert client.portal is not None
+    client.portal.call(_pause)
 
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
     assert resp.status_code == 200
@@ -101,7 +107,7 @@ def test_paused_broadcast_suppresses_all_symbols(client, auth_headers):
 def test_mute_command_then_signal_suppressed(client, auth_headers):
     from app.bot_handlers import mute as mute_handler
 
-    replies = _run(mute_handler, _FakeUpdate(), _FakeContext(["EURUSD"]))
+    replies = _run(mute_handler, _FakeUpdate(), _FakeContext(["EURUSD"]), client=client)
     assert replies and "EURUSD" in replies[0]
 
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
@@ -112,12 +118,12 @@ def test_unmute_command_restores_broadcast(client, auth_headers):
     from app.bot_handlers import mute as mute_handler
     from app.bot_handlers import unmute as unmute_handler
 
-    _run(mute_handler, _FakeUpdate(), _FakeContext(["EURUSD"]))
-    replies = _run(unmute_handler, _FakeUpdate(), _FakeContext(["EURUSD"]))
+    _run(mute_handler, _FakeUpdate(), _FakeContext(["EURUSD"]), client=client)
+    replies = _run(unmute_handler, _FakeUpdate(), _FakeContext(["EURUSD"]), client=client)
     assert replies and "unmuted" in replies[0].lower()
 
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
-    assert resp.json()["status"] == "sent"
+    assert resp.json()["status"] == "queued"
 
 
 def test_mute_command_without_symbol_argument_shows_usage():
@@ -143,11 +149,11 @@ def test_unauthorized_chat_cannot_mute(client, auth_headers):
     outside ADMIN_CHAT_ID must not be able to mute a symbol."""
     from app.bot_handlers import mute as mute_handler
 
-    replies = _run(mute_handler, _FakeUpdate(UNAUTHORIZED_CHAT_ID), _FakeContext(["EURUSD"]))
+    replies = _run(mute_handler, _FakeUpdate(UNAUTHORIZED_CHAT_ID), _FakeContext(["EURUSD"]), client=client)
     assert replies == []  # _authorized_only short-circuits before any reply
 
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
-    assert resp.json()["status"] == "sent"  # mute never actually applied
+    assert resp.json()["status"] == "queued"  # mute never actually applied
 
 
 # ---------- /pause, /resume ----------
@@ -159,13 +165,13 @@ def test_pause_then_resume_commands(client, auth_headers):
     signal_a = {**VALID_BUY_SIGNAL, "signal_id": "pause-test-1"}
     signal_b = {**VALID_BUY_SIGNAL, "signal_id": "pause-test-2"}
 
-    _run(pause_handler, _FakeUpdate(), _FakeContext())
+    _run(pause_handler, _FakeUpdate(), _FakeContext(), client=client)
     resp = client.post("/signal", json=signal_a, headers=auth_headers)
     assert resp.json()["status"] == "suppressed"
 
-    _run(resume_handler, _FakeUpdate(), _FakeContext())
+    _run(resume_handler, _FakeUpdate(), _FakeContext(), client=client)
     resp = client.post("/signal", json=signal_b, headers=auth_headers)
-    assert resp.json()["status"] == "sent"
+    assert resp.json()["status"] == "queued"
 
 
 # ---------- reply-only commands: stats, symbols, status, version, retry ----------
@@ -174,7 +180,7 @@ def test_stats_command_reflects_stored_signal(client, auth_headers):
     from app.bot_handlers import stats as stats_handler
 
     client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
-    replies = _run(stats_handler, _FakeUpdate(), _FakeContext())
+    replies = _run(stats_handler, _FakeUpdate(), _FakeContext(), client=client)
     assert replies and "Signals received: 1" in replies[0]
 
 
@@ -185,7 +191,7 @@ def test_symbols_command_lists_muted_and_active(client, auth_headers):
     client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
     _run(mute_handler, _FakeUpdate(), _FakeContext(["GBPJPY"]))
 
-    replies = _run(symbols_command, _FakeUpdate(), _FakeContext())
+    replies = _run(symbols_command, _FakeUpdate(), _FakeContext(), client=client)
     assert replies
     assert VALID_BUY_SIGNAL["symbol"] in replies[0]
     assert "GBPJPY" in replies[0] and "muted" in replies[0]

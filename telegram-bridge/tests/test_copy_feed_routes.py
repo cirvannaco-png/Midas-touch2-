@@ -2,6 +2,9 @@
 POST /admin/check-subscriptions."""
 import asyncio
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.database import async_session
 from app.models import SUBSCRIBER_STATUS_ACTIVE
@@ -10,11 +13,23 @@ from app.subscriptions import get_or_create_subscriber
 from tests.conftest import VALID_BUY_SIGNAL
 
 
-def _run(coro):
+def _run(coro, client=None):
+    if client is not None:
+        assert client.portal is not None
+        async def _await_coro(coro):
+            return await coro
+        return client.portal.call(_await_coro, coro)
     return asyncio.run(coro)
 
 
-def _entitled_subscriber(user_id: str) -> str:
+@pytest.fixture(autouse=True)
+def disable_background_outbox_worker():
+    """Keep copy-feed protocol tests on one deterministic delivery path."""
+    with patch("app.main.run_outbox_worker", new=AsyncMock()):
+        yield
+
+
+def _entitled_subscriber(client, user_id: str) -> str:
     """Creates an ACTIVE, entitled subscriber and returns their copy-feed key."""
     async def _go():
         async with async_session() as session:
@@ -24,7 +39,7 @@ def _entitled_subscriber(user_id: str) -> str:
             sub.copy_feed_api_key = f"key-{user_id}"
             await session.commit()
             return sub.copy_feed_api_key
-    return _run(_go())
+    return _run(_go(), client=client)
 
 
 def test_copy_feed_rejects_unknown_key(client):
@@ -33,26 +48,32 @@ def test_copy_feed_rejects_unknown_key(client):
 
 
 def test_copy_feed_rejects_when_switch_off(client):
-    key = _entitled_subscriber("3001")
+    key = _entitled_subscriber(client, "3001")
 
     async def _off():
         async with async_session() as session:
             await set_copy_trading_enabled(session, False)
-    _run(_off())
+    _run(_off(), client=client)
 
     resp = client.get("/copy/feed", headers={"X-Copy-Key": key})
     assert resp.status_code == 403
 
 
 def test_copy_feed_returns_active_signals_when_entitled_and_enabled(client, auth_headers):
-    key = _entitled_subscriber("3002")
+    key = _entitled_subscriber(client, "3002")
 
     async def _on():
         async with async_session() as session:
             await set_copy_trading_enabled(session, True)
-    _run(_on())
+    _run(_on(), client=client)
 
     client.post("/signal", json={**VALID_BUY_SIGNAL, "signal_id": "feed-sig-1"}, headers=auth_headers)
+
+    # Signal ingestion is intentionally decoupled from Telegram delivery.  Drain
+    # one outbox item explicitly so this test verifies the copy-feed contract
+    # without depending on background-worker scheduling.
+    from app.signal_outbox import deliver_pending_once
+    _run(deliver_pending_once(), client=client)
 
     resp = client.get("/copy/feed", headers={"X-Copy-Key": key})
     assert resp.status_code == 200
@@ -70,7 +91,7 @@ def test_copy_feed_rejects_lapsed_subscriber(client):
             sub.copy_feed_api_key = "lapsed-key"
             await set_copy_trading_enabled(session, True)
             await session.commit()
-    _run(_go())
+    _run(_go(), client=client)
 
     resp = client.get("/copy/feed", headers={"X-Copy-Key": "lapsed-key"})
     assert resp.status_code == 403

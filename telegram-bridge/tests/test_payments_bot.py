@@ -17,7 +17,12 @@ from app.payments_bot import (
 from app.subscriptions import get_subscriber_by_user_id, is_entitled
 
 
-def _run(coro):
+def _run(coro, client=None):
+    if client is not None:
+        assert client.portal is not None
+        async def _await_coro(coro):
+            return await coro
+        return client.portal.call(_await_coro, coro)
     return asyncio.run(coro)
 
 
@@ -99,7 +104,7 @@ def test_subscribe_sends_invoice_and_creates_subscriber(client):
     update = _FakeUpdate(user_id=5001)
     context = _FakeContext()
 
-    _run(subscribe(update, context))
+    _run(subscribe(update, context), client=client)
 
     assert len(context.bot.sent_invoices) == 1
     invoice = context.bot.sent_invoices[0]
@@ -109,14 +114,14 @@ def test_subscribe_sends_invoice_and_creates_subscriber(client):
         async with async_session() as session:
             sub = await get_subscriber_by_user_id(session, "5001")
             assert sub is not None
-    _run(_check())
+    _run(_check(), client=client)
 
 
 # ---------- pre-checkout ----------
 
 def test_precheckout_accepts_matching_payload(client):
     query = _FakePreCheckoutQuery(5002, "medistouch_sub:5002")
-    _run(precheckout_callback(_FakePreCheckoutUpdate(query), None))
+    _run(precheckout_callback(_FakePreCheckoutUpdate(query), None), client=client)
     assert query.answers == [{"ok": True, "error_message": None}]
 
 
@@ -125,7 +130,7 @@ def test_precheckout_rejects_mismatched_payload(client):
     real validation possible before Telegram's 10-second checkout window
     closes."""
     query = _FakePreCheckoutQuery(5003, "medistouch_sub:someone-else")
-    _run(precheckout_callback(_FakePreCheckoutUpdate(query), None))
+    _run(precheckout_callback(_FakePreCheckoutUpdate(query), None), client=client)
     assert query.answers[0]["ok"] is False
 
 
@@ -135,7 +140,7 @@ def test_successful_payment_activates_entitlement_and_replies(client):
     payment = _FakeSuccessfulPayment("charge-abc", 500, "XTR", "medistouch_sub:5004")
     update = _FakeUpdate(user_id=5004, successful_payment=payment)
 
-    _run(successful_payment_callback(update, None))
+    _run(successful_payment_callback(update, None), client=client)
 
     assert update.message.replies
     assert "Payment received" in update.message.replies[0]
@@ -144,18 +149,18 @@ def test_successful_payment_activates_entitlement_and_replies(client):
         async with async_session() as session:
             sub = await get_subscriber_by_user_id(session, "5004")
             assert is_entitled(sub) is True
-    _run(_check())
+    _run(_check(), client=client)
 
 
 def test_duplicate_successful_payment_does_not_reply_twice(client):
     payment = _FakeSuccessfulPayment("charge-dup", 500, "XTR", "medistouch_sub:5005")
 
     update1 = _FakeUpdate(user_id=5005, successful_payment=payment)
-    _run(successful_payment_callback(update1, None))
+    _run(successful_payment_callback(update1, None), client=client)
     assert len(update1.message.replies) == 1
 
     update2 = _FakeUpdate(user_id=5005, successful_payment=payment)
-    _run(successful_payment_callback(update2, None))
+    _run(successful_payment_callback(update2, None), client=client)
     assert len(update2.message.replies) == 0  # redelivery — already recorded, no second reply
 
 
@@ -163,17 +168,17 @@ def test_duplicate_successful_payment_does_not_reply_twice(client):
 
 def test_mysubscription_refuses_in_group_chat(client):
     update = _FakeUpdate(user_id=5006, chat_type="group")
-    _run(my_subscription(update, None))
+    _run(my_subscription(update, None), client=client)
     assert update.message.replies
     assert "DM" in update.message.replies[0]
 
 
 def test_mysubscription_shows_status_in_private_chat(client):
     payment = _FakeSuccessfulPayment("charge-mysub", 500, "XTR", "medistouch_sub:5007")
-    _run(successful_payment_callback(_FakeUpdate(user_id=5007, successful_payment=payment), None))
+    _run(successful_payment_callback(_FakeUpdate(user_id=5007, successful_payment=payment), None), client=client)
 
     update = _FakeUpdate(user_id=5007, chat_type="private")
-    _run(my_subscription(update, None))
+    _run(my_subscription(update, None), client=client)
     assert update.message.replies
     reply = update.message.replies[0]
     assert "active" in reply.lower()
