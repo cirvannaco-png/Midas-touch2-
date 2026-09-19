@@ -84,13 +84,13 @@ def client():
     with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)), patch("app.signal_outbox.send_telegram_message", new=AsyncMock(return_value=42)):
         from fastapi.testclient import TestClient
 
+        import app.bot as bot_module
+        import app.main as main_module
         from app.config_evaluation_model import ConfigurationEvaluation
         from app.config_registry_model import ConfigurationRegistry
         from app.config_sync_state_model import ConfigSyncState
         from app.database import engine
-        import app.bot as bot_module
         from app.main import app
-        import app.main as main_module
 
         async def _offline_init_bot():
             # Build the real handler graph, but do not initialize the Telegram
