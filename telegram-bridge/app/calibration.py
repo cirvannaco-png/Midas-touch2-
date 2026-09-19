@@ -30,10 +30,10 @@ else:
         "POST /admin/run-cycle will fail until this is fixed."
     )
 
+from environment_memory import as_report as build_environment_memory
 from gating import GatingError, decide, load_cycles_from_db
 from metrics_engine import compute_report
 from regime_allocation import build_regime_allocations
-from environment_memory import as_report as build_environment_memory
 
 CYCLE_WINDOW_WEEKS = 2
 ENVIRONMENT_MEMORY_MIN_SAMPLE = 30
