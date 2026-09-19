@@ -17,7 +17,7 @@ jobs:
   sync:
     name: Sync GitHub main to GitLab main
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout GitHub source
         uses: actions/checkout@v4
@@ -51,14 +51,14 @@ jobs:
           import subprocess
           import urllib.request
 
-          before = os.environ["GITHUB_BEFORE"]
+          before = os.environ.get("GITHUB_BEFORE", "")
           after = os.environ["GITHUB_SHA"]
           token = os.environ["GITLAB_SYNC_TOKEN"]
           project_id = os.environ["GITLAB_PROJECT_ID"]
           api = os.environ["GITLAB_API"]
 
           zero = "0" * 40
-          if before == zero:
+          if not before or before == zero:
               names = subprocess.check_output(
                   ["git", "ls-tree", "-r", "--name-only", after],
                   text=True,
@@ -142,7 +142,7 @@ jobs:
           print(f"SYNC_OK: applied {len(actions)} source file action(s) to GitLab main.")
           PY
 
-      - name: Verify GitLab branch
+      - name: Verify GitLab branch exists
         env:
           GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
           GITLAB_PROJECT_ID: "86337573"
@@ -161,4 +161,72 @@ jobs:
               branch = json.loads(response.read().decode("utf-8"))
 
           print(f"SYNC_VERIFIED: GitLab main at {branch['commit']['short_id']}.")
+          PY
+
+      - name: Verify GitHub-to-GitLab content parity
+        env:
+          GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
+          GITLAB_PROJECT_ID: "86337573"
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/github-tree /tmp/gitlab-tree /tmp/gitlab-archive.tar.gz
+          mkdir -p /tmp/github-tree /tmp/gitlab-tree
+
+          git archive "${GITHUB_SHA}" --format=tar | tar -xf - -C /tmp/github-tree
+
+          curl --fail --silent --show-error --location             --header "PRIVATE-TOKEN: ${GITLAB_SYNC_TOKEN}"             "https://gitlab.com/api/v4/projects/${GITLAB_PROJECT_ID}/repository/archive.tar.gz?sha=main"             --output /tmp/gitlab-archive.tar.gz
+
+          python - <<'PY'
+          import hashlib
+          import os
+          import tarfile
+          from pathlib import Path
+
+          EXCLUDED = (".github/", ".gitlab-ci.yml")
+
+          with tarfile.open("/tmp/gitlab-archive.tar.gz", "r:gz") as archive:
+              archive.extractall("/tmp/gitlab-tree", filter="data")
+
+          def manifest(root: Path):
+              result = {}
+              for path in root.rglob("*"):
+                  if not path.is_file():
+                      continue
+                  rel = path.relative_to(root).as_posix()
+                  if rel == ".gitlab-ci.yml" or rel.startswith(".github/"):
+                      continue
+                  # GitLab archives include a single project-root directory.
+                  parts = rel.split("/", 1)
+                  if len(parts) == 2 and parts[0]:
+                      rel = parts[1]
+                  if rel == ".gitlab-ci.yml" or rel.startswith(".github/"):
+                      continue
+                  result[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+              return result
+
+          github = manifest(Path("/tmp/github-tree"))
+          gitlab = manifest(Path("/tmp/gitlab-tree"))
+
+          missing = sorted(set(github) - set(gitlab))
+          extra = sorted(set(gitlab) - set(github))
+          mismatched = sorted(
+              path for path in set(github) & set(gitlab)
+              if github[path] != gitlab[path]
+          )
+
+          if missing or extra or mismatched:
+              print("::error::GitHub -> GitLab source-tree parity verification failed.")
+              if missing:
+                  print("Missing on GitLab:")
+                  print("\n".join(missing))
+              if extra:
+                  print("Extra on GitLab:")
+                  print("\n".join(extra))
+              if mismatched:
+                  print("Content mismatches:")
+                  print("\n".join(mismatched))
+              raise SystemExit(1)
+
+          print(f"SYNC_PARITY_OK: {len(github)} source files match GitHub main.")
           PY
