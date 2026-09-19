@@ -14,15 +14,15 @@ from app import bot as bot_module
 from app.config import APP_VERSION, settings
 from app.copy_trading import can_copy
 from app.database import check_db_connection, get_session
-from tools.decision_fingerprint import fingerprint, canonical_serialize
+from tools.decision_fingerprint import canonical_serialize, fingerprint
 from app.formatter import format_lifecycle_banner, format_signal_message, format_trade_message
 from app.logger import logger
 from app.models import (
     ApprovedWeightVersion,
     Signal,
+    SignalDeliveryOutbox,
     SignalLifecycleStatus,
     SignalOutcome,
-    SignalDeliveryOutbox,
     SignalStatus,
     TradeEvent,
     TradeEventStatus,
