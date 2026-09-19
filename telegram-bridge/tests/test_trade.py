@@ -108,8 +108,7 @@ def test_event_id_reserved_before_telegram_is_called_once(client, auth_headers):
     """Same race-condition regression test as signals: a pre-existing
     PENDING row for this event_id must short-circuit to duplicate without
     calling Telegram again."""
-    import asyncio
-
+    
     from app.database import async_session
     from app.models import TradeEvent, TradeEventStatus, TradeEventType
 
@@ -133,7 +132,8 @@ def test_event_id_reserved_before_telegram_is_called_once(client, auth_headers):
             ))
             await session.commit()
 
-    asyncio.run(_seed_pending_row())
+    assert client.portal is not None
+    client.portal.call(_seed_pending_row)
 
     with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=99)) as mock_send:
         resp = client.post("/trade", json=payload, headers=auth_headers)
@@ -172,7 +172,8 @@ def test_trade_retry_failed_reclaims_stale_pending_rows(client, auth_headers):
             ))
             await session.commit()
 
-    asyncio.run(_seed_stale_pending_row())
+    assert client.portal is not None
+    client.portal.call(_seed_stale_pending_row)
 
     resp = client.post("/trade/retry-failed", headers=auth_headers)
     assert resp.status_code == 200
