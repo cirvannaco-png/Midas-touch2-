@@ -1,0 +1,164 @@
+name: Midas Touch - GitHub to GitLab Sync
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: midas-github-to-gitlab-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync GitHub main to GitLab main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout GitHub source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require GitLab synchronization credential
+        env:
+          GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GITLAB_SYNC_TOKEN}" ]; then
+            echo "::error::Missing GitHub Actions secret GITLAB_SYNC_TOKEN."
+            echo "Create a GitLab project access token or personal access token with repository write permission and store it as GITLAB_SYNC_TOKEN."
+            exit 1
+          fi
+
+      - name: Push source changes to GitLab
+        env:
+          GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
+          GITLAB_PROJECT_ID: "86337573"
+          GITLAB_API: "https://gitlab.com/api/v4"
+          GITHUB_BEFORE: ${{ github.event.before }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import subprocess
+          import urllib.request
+
+          before = os.environ["GITHUB_BEFORE"]
+          after = os.environ["GITHUB_SHA"]
+          token = os.environ["GITLAB_SYNC_TOKEN"]
+          project_id = os.environ["GITLAB_PROJECT_ID"]
+          api = os.environ["GITLAB_API"]
+
+          zero = "0" * 40
+          if before == zero:
+              names = subprocess.check_output(
+                  ["git", "ls-tree", "-r", "--name-only", after],
+                  text=True,
+              ).splitlines()
+              changes = [("A", path) for path in names]
+          else:
+              raw = subprocess.check_output(
+                  ["git", "diff-tree", "--no-commit-id", "--name-status", "-r", before, after],
+                  text=True,
+              )
+              changes = []
+              for line in raw.splitlines():
+                  parts = line.split("\t")
+                  status = parts[0]
+                  if status.startswith("R") and len(parts) == 3:
+                      changes.append(("D", parts[1]))
+                      changes.append(("M", parts[2]))
+                  elif len(parts) >= 2:
+                      changes.append((status[0], parts[1]))
+
+          changes = [
+              (status, path)
+              for status, path in changes
+              if path
+              and not path.startswith(".github/")
+              and path != ".gitlab-ci.yml"
+              and ".git/" not in path
+          ]
+
+          if not changes:
+              print("SYNC_OK: no source-tree changes require GitLab updates.")
+              raise SystemExit(0)
+
+          actions = []
+          for status, path in changes:
+              if status == "D":
+                  actions.append({"action": "delete", "file_path": path})
+                  continue
+
+              data = subprocess.check_output(["git", "show", f"{after}:{path}"])
+              if b"\x00" in data:
+                  content = base64.b64encode(data).decode("ascii")
+                  encoding = "base64"
+              else:
+                  content = data.decode("utf-8")
+                  encoding = "text"
+
+              actions.append({
+                  "action": "update" if status == "M" else "create",
+                  "file_path": path,
+                  "content": content,
+                  "encoding": encoding,
+              })
+
+          total_batches = (len(actions) + 79) // 80
+          for batch_index in range(0, len(actions), 80):
+              batch = actions[batch_index:batch_index + 80]
+              payload = {
+                  "branch": "main",
+                  "commit_message": (
+                      f"chore(sync): GitHub main -> GitLab main "
+                      f"({batch_index // 80 + 1}/{total_batches})"
+                  ),
+                  "actions": batch,
+              }
+
+              request = urllib.request.Request(
+                  f"{api}/projects/{project_id}/repository/commits",
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "PRIVATE-TOKEN": token,
+                      "Content-Type": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  body = json.loads(response.read().decode("utf-8"))
+
+              print(f"SYNC_COMMIT: {body.get('id')}")
+
+          print(f"SYNC_OK: applied {len(actions)} source file action(s) to GitLab main.")
+          PY
+
+      - name: Verify GitLab branch
+        env:
+          GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
+          GITLAB_PROJECT_ID: "86337573"
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          request = urllib.request.Request(
+              f"https://gitlab.com/api/v4/projects/{os.environ['GITLAB_PROJECT_ID']}/repository/branches/main",
+              headers={"PRIVATE-TOKEN": os.environ["GITLAB_SYNC_TOKEN"]},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              branch = json.loads(response.read().decode("utf-8"))
+
+          print(f"SYNC_VERIFIED: GitLab main at {branch['commit']['short_id']}.")
+          PY
