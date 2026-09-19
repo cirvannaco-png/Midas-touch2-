@@ -2,6 +2,8 @@
 run_subscription_enforcement."""
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.database import async_session
 from app.group_enforcement import run_subscription_enforcement, sweep_subscriber_statuses
 from app.models import (
@@ -21,8 +23,6 @@ async def _make_subscriber(session, user_id, status, period_end, warned_at=None)
     await session.commit()
     return sub
 
-
-import pytest
 
 @pytest.mark.asyncio
 async def test_active_subscriber_nearing_expiry_gets_warned_once():
@@ -56,7 +56,7 @@ async def test_active_subscriber_past_expiry_becomes_expired():
             sub = await get_subscriber_by_user_id(session, "4002")
             assert sub.status == SUBSCRIBER_STATUS_EXPIRED
 
-    _run(_go())
+    await _go()
 
 
 @pytest.mark.asyncio
@@ -70,7 +70,7 @@ async def test_expired_subscriber_within_grace_period_is_not_removed():
             result = await sweep_subscriber_statuses(session)
             assert not any(s.telegram_user_id == "4003" for s in result["remove"])
 
-    _run(_go())
+    await _go()
 
 
 @pytest.mark.asyncio
@@ -87,7 +87,7 @@ async def test_expired_subscriber_past_grace_period_is_removed():
             sub = await get_subscriber_by_user_id(session, "4004")
             assert sub.status == SUBSCRIBER_STATUS_REMOVED
 
-    _run(_go())
+    await _go()
 
 
 @pytest.mark.asyncio
@@ -128,7 +128,7 @@ async def test_enforcement_calls_telegram_helpers_and_never_raises_on_dm_failure
             assert set(calls["ban"]) == {"4005", "4006"}
             assert set(calls["unban"]) == {"4005", "4006"}
 
-    _run(_go())
+    await _go()
 
 
 @pytest.mark.asyncio
@@ -154,4 +154,4 @@ async def test_removal_without_group_chat_id_configured_logs_but_does_not_crash(
             result = await run_subscription_enforcement(session)
             assert result["removed"] == 1
 
-    _run(_go())
+    await _go()
