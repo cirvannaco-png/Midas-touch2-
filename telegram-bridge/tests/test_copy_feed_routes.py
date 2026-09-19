@@ -6,7 +6,7 @@ from fastapi import HTTPException
 
 from app.database import async_session
 from app.models import SUBSCRIBER_STATUS_ACTIVE
-from app.routes import get_copy_feed, check_subscriptions, receive_signal
+from app.routes import SignalRequest, check_subscriptions, get_copy_feed, receive_signal
 from app.settings_store import set_copy_trading_enabled
 from app.signal_outbox import deliver_pending_once
 from app.subscriptions import get_or_create_subscriber
@@ -51,7 +51,7 @@ async def test_copy_feed_returns_active_signals_when_entitled_and_enabled():
         payload = dict(VALID_BUY_SIGNAL, signal_id="feed-sig-1")
         result = await receive_signal(
             request=None,
-            payload=__import__("app.routes", fromlist=["SignalRequest"]).SignalRequest(**payload),
+            payload=SignalRequest(**payload),
             session=session,
             _auth=True,
             _rate=None,
