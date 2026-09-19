@@ -1,8 +1,6 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.pool import NullPool
-
 from app.config import settings
 
 
@@ -14,6 +12,8 @@ from app.config import settings
 # production.
 _engine_options = {}
 if settings.DATABASE_URL.startswith("sqlite"):
+    from sqlalchemy.pool import NullPool
+
     _engine_options["poolclass"] = NullPool
 
 engine = create_async_engine(
