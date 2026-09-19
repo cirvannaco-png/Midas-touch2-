@@ -2,59 +2,48 @@
 
 ## Operating mode
 
-GitHub is the **manual transport origin** for ordinary development branches when one controlled GitHub change must appear on GitLab. This does not make GitHub the authority for policy or releases.
+GitHub `main` is the automatic transport origin for source changes. A successful push to GitHub `main` triggers the **Midas Touch - GitHub to GitLab Sync** workflow, which applies the source-tree delta to GitLab project `86337573` on GitLab `main`.
+
+This does not make GitHub the authority for application policy or production promotion; it defines the transport path only.
 
 Current rules:
 
-- `main` and `production` are never mutated by the mirror controller.
-- Approved development namespaces are `feature/*`, `fix/*`, `audit/*`, `chore/*`, `ops/*`, `integration/*`, and `sync-test/*`.
-- Ordinary branches may be mirrored GitHub → GitLab only when GitLab is equal to or strictly behind GitHub.
-- Divergence is a hard STOP.
-- A GitLab-ahead branch is a hard STOP; this workflow does not perform reverse sync.
-- No force-push, automatic merge, "ours/theirs", or conflict resolution is permitted.
-- GitLab CI remains paused.
-- The mirror workflow is manual (`workflow_dispatch`) rather than push-triggered, so routine development does not consume CI minutes automatically.
+- GitHub `main` → GitLab `main) is automatic through GitHub Actions.
+- GitHub Actions never force-pushes or rewrites GitLab history.
+- Provider-specific control files are intentionally excluded from source synchronization: `.github/**` and GitLab's root `.gitlab-ci.yml`.
+- The sync workflow verifies that GitLab `main` exists after the write and then verifies source-tree content parity.
+- GitHub and the active GitLab repository may use different Git object formats. Cross-provider SHA equality is therefore not the parity criterion; file/tree content parity is.
+- Any sync failure is a failed workflow and must be investigated before a release is considered synchronized.
 
 ## Required GitHub secret
 
 Create one GitHub Actions repository secret:
 
-`MIDAS_GITLAB_TOKEN`
+`GITLAB_SYNC_TOKEN`
 
-The token must be allowed to push to the SHA-1 transport repository:
+The token must have permission to write repository content in GitLab project `86337573` (`midas-touch2`). Do not commit tokens, credential files, or URLs containing credentials.
 
-`midas-touch-group1/midas-touch2-sync`
+## Automatic synchronization procedure
 
-Do not commit tokens, credential files, or URLs containing credentials.
+1. A change is merged or pushed to GitHub `main`.
+2. GitHub Actions starts **Midas Touch - GitHub to GitLab Sync**.
+3. The workflow computes the GitHub source delta and applies it to GitLab `main`.
+4. The workflow verifies the GitLab branch.
+5. The workflow downloads the GitLab `main` archive and compares SHA-256 file hashes against the GitHub source tree, excluding only `.github/**` and `.gitlab-ci.yml`.
+6. The workflow is green only when the write succeeds and the content-parity check passes.
 
-GitHub and the active GitLab engineering repository currently use different Git object formats (SHA-1 on GitHub, SHA-256 on the active GitLab project). The mirror workflow therefore targets the separate SHA-1 transport repository `midas-touch-group1/midas-touch2-sync`. Never use literal cross-provider SHA equality as the parity test, and never confuse the sync repository with the active GitLab engineering repository.
+## Development-branch controller
 
-## Manual mirror procedure
+`scripts/midas-sync-controller.sh` remains a separate fail-closed utility for controlled development branches. It deliberately refuses to mutate `main` or `production` and stops on GitLab-ahead or divergent refs.
 
-1. Push or merge development work onto the desired GitHub branch.
-2. Open **Actions → Midas — Manual GitHub to GitLab Mirror**.
-3. Enter the exact branch name.
-4. Run once with **dry_run = true**.
-5. Confirm the controller reports either:
-   - refs are identical,
-   - GitLab is strictly behind and a fast-forward is available, or
-   - a new GitLab ref would be created from the GitHub commit.
-6. Run again with **dry_run = false** to perform the allowed fast-forward/create operation.
-7. Verify the branch tips on both providers.
-8. For any STOP condition, resolve through the normal PR/MR workflow and rerun verification.
+Approved development namespaces are:
 
-The underlying `scripts/midas-sync-controller.sh` is fail-closed: missing provider state, unsupported refs, GitLab-ahead state, and divergence do not return success.
+`feature/*`, `fix/*`, `audit/*`, `chore/*`, `ops/*`, `integration/*`, and `sync-test/*`.
 
 ## Release refs
 
-Do not use the mirror workflow for:
+Synchronization is not production promotion. Production still moves through the explicit release process and remains subject to branch protection, validation, MetaEditor/MQL5 compilation, broker/demo testing, and forward-test evidence.
 
-- `main`
-- `production`
+## Credential and failure policy
 
-Those refs move only through the promotion workflow and exact-commit release procedure.
-
-## Future automation
-
-Once branch protection, ownership, credentials, and release controls are fully confirmed, this workflow may be promoted to a narrowly scoped event-driven mirror. Do not add blanket `push` triggers while CI minutes are constrained.
-
+Never bypass a failed sync by force-pushing or manually overwriting GitLab history. A failed parity check means the providers are not synchronized and must be reconciled through the normal controlled repository process.
