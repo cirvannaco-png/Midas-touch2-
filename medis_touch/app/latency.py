@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from tools.latency_budget import violations as latency_budget_violations
+
 
 @dataclass
 class LatencyTrace:
@@ -88,6 +90,16 @@ class LatencyTrace:
     def total_signal_to_fill_ms(self) -> float | None:
         return self._delta_ms("t0", "t7")
 
+    def budget_violations(self) -> dict[str, float]:
+        return latency_budget_violations({
+            "detection_latency_ms": self.detection_latency_ms,
+            "decision_latency_ms": self.decision_latency_ms,
+            "risk_latency_ms": self.risk_latency_ms,
+            "submission_latency_ms": self.submission_latency_ms,
+            "broker_latency_ms": self.broker_latency_ms,
+            "total_signal_to_fill_ms": self.total_signal_to_fill_ms,
+        })
+
     def as_record(self) -> dict:
         """Flat dict ready for a telemetry sink / DB row."""
         return {
@@ -112,4 +124,5 @@ class LatencyTrace:
             "total_signal_to_fill_ms": self.total_signal_to_fill_ms,
             "outcome": self.outcome,
             "failure_reason": self.failure_reason,
+            "latency_budget_violations": self.budget_violations(),
         }
