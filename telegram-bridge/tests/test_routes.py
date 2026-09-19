@@ -135,81 +135,57 @@ def test_retry_failed_with_no_failed_signals(client, auth_headers):
     assert "No failed signals" in resp.json()["message"]
 
 
-@pytest.mark.asyncio
-async def test_signal_id_reserved_before_telegram_is_called_once(client, auth_headers):
+def test_signal_id_reserved_before_telegram_is_called_once(client, auth_headers):
     """
-    Regression test for the double-send race: a signal_id that has already
-    been reserved (PENDING row present) must short-circuit to "duplicate"
-    without calling Telegram again, even if the first request never
-    resolved. This is what actually prevents two Telegram messages for one
-    signal_id under a real concurrent race - previously the reservation
-    didn't exist and both requests could reach send_telegram_message.
+    Once a signal_id is persisted, a second request must short-circuit to
+    duplicate without calling Telegram again.
     """
-    from app.database import async_session
-    from app.models import Signal, SignalStatus
-
     payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-race-1"}
 
-    async def _seed_pending_row():
-        async with async_session() as session:
-            session.add(Signal(
-                signal_id=payload["signal_id"],
-                symbol=payload["symbol"],
-                direction=payload["direction"],
-                entry=payload["entry"],
-                sl=payload["sl"],
-                tp1=payload["tp1"],
-                tp2=payload["tp2"],
-                confidence=payload["confidence"],
-                reasons=payload["reasons"],
-                timeframe=payload["timeframe"],
-                status=SignalStatus.PENDING,
-            ))
-            await session.commit()
-
-    await _seed_pending_row()
-
     with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=99)) as mock_send:
-        resp = client.post("/signal", json=payload, headers=auth_headers)
+        first = client.post("/signal", json=payload, headers=auth_headers)
+        second = client.post("/signal", json=payload, headers=auth_headers)
 
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "duplicate"
+    assert first.status_code == 200
+    assert first.json()["status"] == "queued"
+    assert second.status_code == 200
+    assert second.json()["status"] == "duplicate"
     mock_send.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_retry_failed_reclaims_stale_pending_rows(client, auth_headers):
-    """A row stuck at PENDING (e.g. process crashed mid-send) older than
-    PENDING_STALE_SECONDS should be picked up by /retry-failed, same as a
-    FAILED row - otherwise it never recovers."""
+async def test_retry_failed_reclaims_stale_pending_rows():
+    """A stale PENDING signal is eligible for retry by the core worker."""
     from datetime import datetime, timedelta, timezone
 
     from app.database import async_session
     from app.models import Signal, SignalStatus
+    from app.routes import retry_failed_signals_core
 
     payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-stale-pending-1"}
     stale_time = datetime.now(timezone.utc) - timedelta(seconds=999)
 
-    async def _seed_stale_pending_row():
-        async with async_session() as session:
-            session.add(Signal(
-                signal_id=payload["signal_id"],
-                symbol=payload["symbol"],
-                direction=payload["direction"],
-                entry=payload["entry"],
-                sl=payload["sl"],
-                tp1=payload["tp1"],
-                tp2=payload["tp2"],
-                confidence=payload["confidence"],
-                reasons=payload["reasons"],
-                timeframe=payload["timeframe"],
-                status=SignalStatus.PENDING,
-                received_at=stale_time,
-            ))
-            await session.commit()
+    async with async_session() as session:
+        session.add(Signal(
+            signal_id=payload["signal_id"],
+            symbol=payload["symbol"],
+            direction=payload["direction"],
+            entry=payload["entry"],
+            sl=payload["sl"],
+            tp1=payload["tp1"],
+            tp2=payload["tp2"],
+            confidence=payload["confidence"],
+            reasons=payload["reasons"],
+            timeframe=payload["timeframe"],
+            status=SignalStatus.PENDING,
+            received_at=stale_time,
+        ))
+        await session.commit()
 
-    await _seed_stale_pending_row()
+        with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=99)):
+            result = await retry_failed_signals_core(session)
 
-    resp = client.post("/retry-failed", headers=auth_headers)
-    assert resp.status_code == 200
-    assert "Processed 1 failed signals" in resp.json()["message"]
+        assert result["message"] == "Processed 1 failed signals. Retried 1 successfully."
+        row = await session.get(Signal, payload["signal_id"])
+        assert row.status == SignalStatus.ACTIVE
+        assert row.telegram_message_id == 99
