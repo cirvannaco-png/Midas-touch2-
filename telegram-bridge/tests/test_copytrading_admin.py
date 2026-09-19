@@ -7,6 +7,9 @@ for the same reason documented there.
 """
 import asyncio
 import os
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.copytrading_admin import checkpayments_command, confirm_text_handler, copytrading_command
 from app.database import async_session
@@ -14,6 +17,13 @@ from app.settings_store import is_copy_trading_enabled
 
 AUTHORIZED_USER_ID = int(os.environ["ADMIN_CHAT_ID"])
 UNAUTHORIZED_USER_ID = 999999999
+
+
+@pytest.fixture(autouse=True)
+def disable_background_outbox_worker():
+    """Keep direct Telegram-admin protocol tests independent of the delivery worker."""
+    with patch("app.main.run_outbox_worker", new=AsyncMock()):
+        yield
 
 
 class _FakeMessage:
@@ -56,6 +66,7 @@ def _flag_is_enabled() -> bool:
     async def _go():
         async with async_session() as session:
             return await is_copy_trading_enabled(session)
+
     return asyncio.run(_go())
 
 
