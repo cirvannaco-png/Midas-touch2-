@@ -78,7 +78,7 @@ def test_muted_symbol_suppresses_broadcast(client, auth_headers):
 def test_unmuted_symbol_still_broadcasts(client, auth_headers):
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
     assert resp.status_code == 200
-    assert resp.json()["status"] == "sent"
+    assert resp.json()["status"] == "queued"
 
 
 def test_paused_broadcast_suppresses_all_symbols(client, auth_headers):
@@ -117,7 +117,7 @@ def test_unmute_command_restores_broadcast(client, auth_headers):
     assert replies and "unmuted" in replies[0].lower()
 
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
-    assert resp.json()["status"] == "sent"
+    assert resp.json()["status"] == "queued"
 
 
 def test_mute_command_without_symbol_argument_shows_usage():
@@ -147,7 +147,7 @@ def test_unauthorized_chat_cannot_mute(client, auth_headers):
     assert replies == []  # _authorized_only short-circuits before any reply
 
     resp = client.post("/signal", json=VALID_BUY_SIGNAL, headers=auth_headers)
-    assert resp.json()["status"] == "sent"  # mute never actually applied
+    assert resp.json()["status"] == "queued"  # mute never actually applied
 
 
 # ---------- /pause, /resume ----------
@@ -165,7 +165,7 @@ def test_pause_then_resume_commands(client, auth_headers):
 
     _run(resume_handler, _FakeUpdate(), _FakeContext())
     resp = client.post("/signal", json=signal_b, headers=auth_headers)
-    assert resp.json()["status"] == "sent"
+    assert resp.json()["status"] == "queued"
 
 
 # ---------- reply-only commands: stats, symbols, status, version, retry ----------
