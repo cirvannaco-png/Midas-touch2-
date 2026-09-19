@@ -1,16 +1,11 @@
-"""Tests for app.copytrading_admin: the on/off/status command, the
-"yes"-confirmation gate for turning it ON, and /checkpayments.
-
-Mirrors tests/test_settings_store.py's direct-handler-invocation pattern
-(fake Update/Context) rather than going through the real Telegram webhook,
-for the same reason documented there.
-"""
-import asyncio
+"""Tests for app.copytrading_admin handlers and confirmation gates."""
 import os
+
+import pytest
 
 from app.copytrading_admin import checkpayments_command, confirm_text_handler, copytrading_command
 from app.database import async_session
-from app.settings_store import is_copy_trading_enabled
+from app.settings_store import is_copy_trading_enabled, set_copy_trading_enabled
 
 AUTHORIZED_USER_ID = int(os.environ["ADMIN_CHAT_ID"])
 UNAUTHORIZED_USER_ID = 999999999
@@ -47,101 +42,124 @@ class _FakeContext:
         self.args = args or []
 
 
-def _run(handler, update, context=None):
-    asyncio.run(handler(update, context))
-    return update.message.replies
+async def _flag_is_enabled() -> bool:
+    async with async_session() as session:
+        return await is_copy_trading_enabled(session)
 
 
-def _flag_is_enabled() -> bool:
-    async def _go():
-        async with async_session() as session:
-            return await is_copy_trading_enabled(session)
-    return asyncio.run(_go())
+async def _reset_copy_state():
+    async with async_session() as session:
+        await set_copy_trading_enabled(session, False)
 
 
-def test_status_when_off_by_default(client):
-    replies = _run(copytrading_command, _FakeUpdate(), _FakeContext(["status"]))
-    assert replies and "OFF" in replies[0]
+@pytest.mark.asyncio
+async def test_status_when_off_by_default():
+    await _reset_copy_state()
+    update = _FakeUpdate()
+    await copytrading_command(update, _FakeContext(["status"]))
+    assert update.message.replies and "OFF" in update.message.replies[0]
 
 
-def test_on_requires_confirmation_not_enabled_immediately(client):
-    replies = _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
-    assert replies and "yes" in replies[0].lower()
-    assert _flag_is_enabled() is False
+@pytest.mark.asyncio
+async def test_on_requires_confirmation_not_enabled_immediately():
+    await _reset_copy_state()
+    update = _FakeUpdate()
+    await copytrading_command(update, _FakeContext(["on"]))
+    assert update.message.replies and "yes" in update.message.replies[0].lower()
+    assert await _flag_is_enabled() is False
 
 
-def test_yes_from_same_admin_confirms(client):
-    _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
-    replies = _run(confirm_text_handler, _FakeUpdate(text="yes"))
-    assert replies and "ON" in replies[0]
-    assert _flag_is_enabled() is True
+@pytest.mark.asyncio
+async def test_yes_from_same_admin_confirms():
+    await _reset_copy_state()
+    await copytrading_command(_FakeUpdate(), _FakeContext(["on"]))
+    update = _FakeUpdate(text="yes")
+    await confirm_text_handler(update)
+    assert update.message.replies and "ON" in update.message.replies[0]
+    assert await _flag_is_enabled() is True
 
 
-def test_yes_without_pending_request_is_a_silent_noop(client):
-    replies = _run(confirm_text_handler, _FakeUpdate(text="yes"))
-    assert replies == []
-    assert _flag_is_enabled() is False
+@pytest.mark.asyncio
+async def test_yes_without_pending_request_is_a_silent_noop():
+    await _reset_copy_state()
+    update = _FakeUpdate(text="yes")
+    await confirm_text_handler(update)
+    assert update.message.replies == []
+    assert await _flag_is_enabled() is False
 
 
-def test_unrelated_text_does_not_confirm_pending_request(client):
-    _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
-    replies = _run(confirm_text_handler, _FakeUpdate(text="sure thing"))
-    assert replies == []
-    assert _flag_is_enabled() is False
+@pytest.mark.asyncio
+async def test_unrelated_text_does_not_confirm_pending_request():
+    await _reset_copy_state()
+    await copytrading_command(_FakeUpdate(), _FakeContext(["on"]))
 
-    # The pending request is still alive — a correct "yes" afterwards still works.
-    replies2 = _run(confirm_text_handler, _FakeUpdate(text="YES"))
-    assert replies2 and "ON" in replies2[0]
+    update = _FakeUpdate(text="sure thing")
+    await confirm_text_handler(update)
+    assert update.message.replies == []
+    assert await _flag_is_enabled() is False
 
-
-def test_yes_from_different_user_does_not_confirm(client):
-    _run(copytrading_command, _FakeUpdate(AUTHORIZED_USER_ID), _FakeContext(["on"]))
-    # confirm_text_handler itself only proceeds for the authorized admin id
-    # (settings.authorized_user_id) — a different id is rejected before
-    # even checking the pending request, matching every other admin
-    # control in this bot.
-    replies = _run(confirm_text_handler, _FakeUpdate(UNAUTHORIZED_USER_ID, text="yes"))
-    assert replies == []
-    assert _flag_is_enabled() is False
+    update_yes = _FakeUpdate(text="YES")
+    await confirm_text_handler(update_yes)
+    assert update_yes.message.replies and "ON" in update_yes.message.replies[0]
 
 
-def test_off_applies_immediately_no_confirmation(client):
-    _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
-    _run(confirm_text_handler, _FakeUpdate(text="yes"))
-    assert _flag_is_enabled() is True
+@pytest.mark.asyncio
+async def test_yes_from_different_user_does_not_confirm():
+    await _reset_copy_state()
+    await copytrading_command(_FakeUpdate(AUTHORIZED_USER_ID), _FakeContext(["on"]))
 
-    replies = _run(copytrading_command, _FakeUpdate(), _FakeContext(["off"]))
-    assert replies and "OFF" in replies[0]
-    assert _flag_is_enabled() is False
-
-
-def test_off_clears_any_pending_on_request(client):
-    _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
-    _run(copytrading_command, _FakeUpdate(), _FakeContext(["off"]))
-
-    # A stray "yes" after the fact must not re-enable it.
-    replies = _run(confirm_text_handler, _FakeUpdate(text="yes"))
-    assert replies == []
-    assert _flag_is_enabled() is False
+    update = _FakeUpdate(UNAUTHORIZED_USER_ID, text="yes")
+    await confirm_text_handler(update)
+    assert update.message.replies == []
+    assert await _flag_is_enabled() is False
 
 
-def test_unauthorized_user_cannot_toggle(client):
-    replies = _run(copytrading_command, _FakeUpdate(UNAUTHORIZED_USER_ID), _FakeContext(["on"]))
-    assert replies == []
-    assert _flag_is_enabled() is False
+@pytest.mark.asyncio
+async def test_off_applies_immediately_no_confirmation():
+    await _reset_copy_state()
+    await copytrading_command(_FakeUpdate(), _FakeContext(["on"]))
+    await confirm_text_handler(_FakeUpdate(text="yes"))
+    assert await _flag_is_enabled() is True
+
+    update = _FakeUpdate()
+    await copytrading_command(update, _FakeContext(["off"]))
+    assert update.message.replies and "OFF" in update.message.replies[0]
+    assert await _flag_is_enabled() is False
 
 
-def test_checkpayments_command_runs_and_reports(client, monkeypatch):
+@pytest.mark.asyncio
+async def test_off_clears_any_pending_on_request():
+    await _reset_copy_state()
+    await copytrading_command(_FakeUpdate(), _FakeContext(["on"]))
+    await copytrading_command(_FakeUpdate(), _FakeContext(["off"]))
+
+    update = _FakeUpdate(text="yes")
+    await confirm_text_handler(update)
+    assert update.message.replies == []
+    assert await _flag_is_enabled() is False
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_user_cannot_toggle():
+    await _reset_copy_state()
+    update = _FakeUpdate(UNAUTHORIZED_USER_ID)
+    await copytrading_command(update, _FakeContext(["on"]))
+    assert update.message.replies == []
+    assert await _flag_is_enabled() is False
+
+
+@pytest.mark.asyncio
+async def test_checkpayments_command_runs_and_reports(monkeypatch):
     from app import telegram
 
-    monkeypatch.setattr(telegram, "send_dm", lambda *a, **k: _noop_true())
-    monkeypatch.setattr(telegram, "ban_chat_member", lambda *a, **k: _noop_true())
-    monkeypatch.setattr(telegram, "unban_chat_member", lambda *a, **k: _noop_true())
+    async def _noop_true(*_args, **_kwargs):
+        return True
 
-    replies = _run(checkpayments_command, _FakeUpdate(), _FakeContext())
-    assert len(replies) == 2
-    assert "Active subscribers" in replies[1]
+    monkeypatch.setattr(telegram, "send_dm", _noop_true)
+    monkeypatch.setattr(telegram, "ban_chat_member", _noop_true)
+    monkeypatch.setattr(telegram, "unban_chat_member", _noop_true)
 
-
-async def _noop_true():
-    return True
+    update = _FakeUpdate()
+    await checkpayments_command(update, _FakeContext())
+    assert len(update.message.replies) == 2
+    assert "Active subscribers" in update.message.replies[1]
