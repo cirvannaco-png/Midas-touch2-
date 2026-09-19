@@ -74,7 +74,7 @@ async def test_yes_from_same_admin_confirms():
     await _reset_copy_state()
     await copytrading_command(_FakeUpdate(), _FakeContext(["on"]))
     update = _FakeUpdate(text="yes")
-    await confirm_text_handler(update)
+    await confirm_text_handler(update, None)
     assert update.message.replies and "ON" in update.message.replies[0]
     assert await _flag_is_enabled() is True
 
@@ -83,7 +83,7 @@ async def test_yes_from_same_admin_confirms():
 async def test_yes_without_pending_request_is_a_silent_noop():
     await _reset_copy_state()
     update = _FakeUpdate(text="yes")
-    await confirm_text_handler(update)
+    await confirm_text_handler(update, None)
     assert update.message.replies == []
     assert await _flag_is_enabled() is False
 
@@ -94,7 +94,7 @@ async def test_unrelated_text_does_not_confirm_pending_request():
     await copytrading_command(_FakeUpdate(), _FakeContext(["on"]))
 
     update = _FakeUpdate(text="sure thing")
-    await confirm_text_handler(update)
+    await confirm_text_handler(update, None)
     assert update.message.replies == []
     assert await _flag_is_enabled() is False
 
@@ -109,7 +109,7 @@ async def test_yes_from_different_user_does_not_confirm():
     await copytrading_command(_FakeUpdate(AUTHORIZED_USER_ID), _FakeContext(["on"]))
 
     update = _FakeUpdate(UNAUTHORIZED_USER_ID, text="yes")
-    await confirm_text_handler(update)
+    await confirm_text_handler(update, None)
     assert update.message.replies == []
     assert await _flag_is_enabled() is False
 
@@ -118,7 +118,7 @@ async def test_yes_from_different_user_does_not_confirm():
 async def test_off_applies_immediately_no_confirmation():
     await _reset_copy_state()
     await copytrading_command(_FakeUpdate(), _FakeContext(["on"]))
-    await confirm_text_handler(_FakeUpdate(text="yes"))
+    await confirm_text_handler(_FakeUpdate(text="yes"), None)
     assert await _flag_is_enabled() is True
 
     update = _FakeUpdate()
@@ -134,7 +134,7 @@ async def test_off_clears_any_pending_on_request():
     await copytrading_command(_FakeUpdate(), _FakeContext(["off"]))
 
     update = _FakeUpdate(text="yes")
-    await confirm_text_handler(update)
+    await confirm_text_handler(update, None)
     assert update.message.replies == []
     assert await _flag_is_enabled() is False
 
