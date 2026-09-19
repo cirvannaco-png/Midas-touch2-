@@ -1,4 +1,7 @@
 import asyncio
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from sqlalchemy import delete
 
@@ -188,3 +191,10 @@ def test_unhealthy_champion_enters_defensive_state(client, auth_headers):
     assert runtime.status_code == 200
     assert runtime.json()["action"] == "DEFENSIVE"
     assert runtime.json()["state"] == "DEFENSIVE"
+
+
+@pytest.fixture(autouse=True)
+def disable_background_outbox_worker():
+    """Keep protocol tests deterministic; the worker has its own test surface."""
+    with patch("app.main.run_outbox_worker", new=AsyncMock()):
+        yield
