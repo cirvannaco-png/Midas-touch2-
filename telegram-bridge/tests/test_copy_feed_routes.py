@@ -54,6 +54,12 @@ def test_copy_feed_returns_active_signals_when_entitled_and_enabled(client, auth
 
     client.post("/signal", json={**VALID_BUY_SIGNAL, "signal_id": "feed-sig-1"}, headers=auth_headers)
 
+    # Signal ingestion is intentionally decoupled from Telegram delivery.  Drain
+    # one outbox item explicitly so this test verifies the copy-feed contract
+    # without depending on background-worker scheduling.
+    from app.signal_outbox import deliver_pending_once
+    _run(deliver_pending_once())
+
     resp = client.get("/copy/feed", headers={"X-Copy-Key": key})
     assert resp.status_code == 200
     body = resp.json()
