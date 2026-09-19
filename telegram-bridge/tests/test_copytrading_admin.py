@@ -82,26 +82,26 @@ def test_status_when_off_by_default():
     assert replies and "OFF" in replies[0]
 
 
-def test_on_requires_confirmation_not_enabled_immediately(client):
+def test_on_requires_confirmation_not_enabled_immediately():
     replies = _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     assert replies and "yes" in replies[0].lower()
     assert _flag_is_enabled() is False
 
 
-def test_yes_from_same_admin_confirms(client):
+def test_yes_from_same_admin_confirms():
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     replies = _run(confirm_text_handler, _FakeUpdate(text="yes"))
     assert replies and "ON" in replies[0]
     assert _flag_is_enabled() is True
 
 
-def test_yes_without_pending_request_is_a_silent_noop(client):
+def test_yes_without_pending_request_is_a_silent_noop():
     replies = _run(confirm_text_handler, _FakeUpdate(text="yes"))
     assert replies == []
     assert _flag_is_enabled() is False
 
 
-def test_unrelated_text_does_not_confirm_pending_request(client):
+def test_unrelated_text_does_not_confirm_pending_request():
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     replies = _run(confirm_text_handler, _FakeUpdate(text="sure thing"))
     assert replies == []
@@ -112,7 +112,7 @@ def test_unrelated_text_does_not_confirm_pending_request(client):
     assert replies2 and "ON" in replies2[0]
 
 
-def test_yes_from_different_user_does_not_confirm(client):
+def test_yes_from_different_user_does_not_confirm():
     _run(copytrading_command, _FakeUpdate(AUTHORIZED_USER_ID), _FakeContext(["on"]))
     # confirm_text_handler itself only proceeds for the authorized admin id
     # (settings.authorized_user_id) — a different id is rejected before
@@ -123,7 +123,7 @@ def test_yes_from_different_user_does_not_confirm(client):
     assert _flag_is_enabled() is False
 
 
-def test_off_applies_immediately_no_confirmation(client):
+def test_off_applies_immediately_no_confirmation():
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     _run(confirm_text_handler, _FakeUpdate(text="yes"))
     assert _flag_is_enabled() is True
@@ -133,7 +133,7 @@ def test_off_applies_immediately_no_confirmation(client):
     assert _flag_is_enabled() is False
 
 
-def test_off_clears_any_pending_on_request(client):
+def test_off_clears_any_pending_on_request():
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["on"]))
     _run(copytrading_command, _FakeUpdate(), _FakeContext(["off"]))
 
@@ -143,7 +143,7 @@ def test_off_clears_any_pending_on_request(client):
     assert _flag_is_enabled() is False
 
 
-def test_unauthorized_user_cannot_toggle(client):
+def test_unauthorized_user_cannot_toggle():
     replies = _run(copytrading_command, _FakeUpdate(UNAUTHORIZED_USER_ID), _FakeContext(["on"]))
     assert replies == []
     assert _flag_is_enabled() is False
