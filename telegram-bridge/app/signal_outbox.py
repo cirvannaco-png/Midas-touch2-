@@ -4,8 +4,6 @@ Signal acceptance never waits on Telegram. The database outbox is the durable
 boundary; this worker drains it and updates the authoritative Signal row only
 after Telegram acknowledges delivery.
 """
-from __future__ import annotations
-
 import asyncio
 from datetime import datetime, timedelta, timezone
 
