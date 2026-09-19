@@ -54,7 +54,7 @@ private:
                                       double &outExitPrice, bool &ambiguous);
    void              ProcessFilledBar(int idx, CandleData &bar0);
    void              ApplyDecay(PendingSetup &p) const;
-   void              PublishIfConfigured(const PendingSetup &p, string coarseOutcome, bool ambiguous);
+   void              PublishIfConfigured(const PendingSetup &p, string coarseOutcome, string resolution, bool ambiguous);
    void              FinalizeExit(int idx, PendingSetup &p, string outcome, double rawExitPrice,
                                   bool sameBarCollision, bool ambiguous);
 
@@ -265,11 +265,11 @@ void COutcomeTracker::FinalizeExit(int idx, PendingSetup &p, string outcome, dou
    else if(p.realizedPnL > 0.0000001) coarseOutcome = "win";
    else if(p.realizedPnL < -0.0000001) coarseOutcome = "loss";
    else coarseOutcome = "scratch";
-   PublishIfConfigured(m_pending[idx], coarseOutcome, ambiguous);
+   PublishIfConfigured(m_pending[idx], coarseOutcome, outcome, ambiguous);
    RemoveAt(idx);
   }
 
-void COutcomeTracker::PublishIfConfigured(const PendingSetup &p, string coarseOutcome, bool ambiguous)
+void COutcomeTracker::PublishIfConfigured(const PendingSetup &p, string coarseOutcome, string resolution, bool ambiguous)
   {
    if(m_publisher == NULL || p.decisionId < 0) return;
    bool isBuy = (p.setup.type == ORDER_TYPE_BUY);
@@ -286,7 +286,8 @@ void COutcomeTracker::PublishIfConfigured(const PendingSetup &p, string coarseOu
    string signalId = m_publisher.SignalIdForDecision(p.decisionId);
    string direction = isBuy ? "BUY" : "SELL";
    SetupReasons r = p.setup.reasons;
-   m_publisher.PublishOutcome(signalId, m_symbol, direction, coarseOutcome, realizedR, mfeR, maeR,
+   m_publisher.PublishOutcome(signalId, m_symbol, direction, coarseOutcome, resolution, EnumToString(r.selected_strategy),
+                              realizedR, mfeR, maeR, p.totalCommission, p.totalSpreadCost, p.totalSlippageCost,
                               p.barsElapsed, p.barsToFill, p.filled,
                               EnumToString(r.vol_regime), EnumToString(r.session), EnumToString(r.sweep_grade),
                               r.htf_ob_confluence, p.confidenceAtSignal, p.confidenceDecayed, p.decayBars);
@@ -348,7 +349,7 @@ void COutcomeTracker::RemoveAt(int idx)
 void COutcomeTracker::Resolve(int idx, string outcome, double exitPrice)
   {
    if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy);
-   PublishIfConfigured(m_pending[idx], "no_fill", false);
+   PublishIfConfigured(m_pending[idx], "no_fill", "no_fill", false);
    RemoveAt(idx);
   }
 
