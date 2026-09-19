@@ -81,7 +81,11 @@ def forced_rate_limit():
 @pytest.fixture()
 def client():
     """TestClient with Telegram sends mocked; persisted rows are cleared per test."""
-    with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)), patch("app.signal_outbox.send_telegram_message", new=AsyncMock(return_value=42)):
+    with (
+        patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)),
+        patch("app.signal_outbox.send_telegram_message", new=AsyncMock(return_value=42)),
+        patch("app.main.run_outbox_worker", new=AsyncMock()),
+    ):
         from fastapi.testclient import TestClient
 
         import app.bot as bot_module
