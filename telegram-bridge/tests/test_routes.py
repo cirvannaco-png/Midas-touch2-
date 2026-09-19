@@ -142,7 +142,6 @@ def test_signal_id_reserved_before_telegram_is_called_once(client, auth_headers)
     signal_id under a real concurrent race - previously the reservation
     didn't exist and both requests could reach send_telegram_message.
     """
-    import asyncio
 
     from app.database import async_session
     from app.models import Signal, SignalStatus
@@ -181,7 +180,6 @@ def test_retry_failed_reclaims_stale_pending_rows(client, auth_headers):
     """A row stuck at PENDING (e.g. process crashed mid-send) older than
     PENDING_STALE_SECONDS should be picked up by /retry-failed, same as a
     FAILED row - otherwise it never recovers."""
-    import asyncio
     from datetime import datetime, timedelta, timezone
 
     from app.database import async_session
