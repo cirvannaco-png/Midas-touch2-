@@ -1,6 +1,4 @@
 """Tests for app.payments_bot using direct async handler invocation."""
-from unittest.mock import AsyncMock
-
 import pytest
 
 from app.database import async_session
