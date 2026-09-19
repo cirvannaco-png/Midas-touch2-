@@ -7,13 +7,13 @@ after Telegram acknowledges delivery.
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
+
 from app.database import async_session
 from app.formatter import format_signal_message
 from app.logger import logger
 from app.models import Signal, SignalDeliveryOutbox, SignalStatus
 from app.telegram import NonRetryableError, send_telegram_message
-
-from sqlalchemy import select
 
 
 MAX_ATTEMPTS = 3

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import bot as bot_module
 from app.config import APP_VERSION, settings
 from app.copy_trading import can_copy
+
 from tools.decision_fingerprint import canonical_serialize, fingerprint
 
 from app.database import check_db_connection, get_session

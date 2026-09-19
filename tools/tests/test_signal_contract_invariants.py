@@ -90,7 +90,7 @@ def test_temporal_outcome_contract_uses_signal_timestamp():
     migration = _read("telegram-bridge/migrations/versions/0014_outcome_provenance_and_execution_costs.py")
     walk = _read("tools/walk_forward.py")
     assert "signal_time = Column(DateTime(timezone=True), nullable=True, index=True)" in model
-    assert "row.signal_time = source_signal.received_at" in routes
+    assert "row.signal_time = source_signal.signal_time or source_signal.received_at" in routes
     assert 'sa.Column("signal_time", sa.DateTime(timezone=True), nullable=True)' in migration
     assert 'getattr(row, "signal_time", None) or getattr(row, "received_at", None)' in walk
     assert "time_basis" in walk
