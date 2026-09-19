@@ -42,7 +42,7 @@ def test_positive_cell_requires_minimum_sample_and_can_qualify():
 def test_small_loss_streak_cannot_degrade_strategy():
     rows = [Row(outcome="loss", realized_r=-1.0, received_at=0)] + [Row(received_at=i) for i in range(1, 10)]
     evidence = next(iter(aggregate(rows, min_sample=30).values()))
-    assert evidence.status == "UNKNOWN"
+    assert evidence.status == "NEUTRAL"
     assert evidence.adjustment == 0.0
 
 

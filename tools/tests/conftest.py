@@ -65,6 +65,7 @@ class FakeOutcome:
     htf_ob_aligned: bool | None = None
     weight_version: str | None = "v2.11-baseline"
     confidence_at_signal: float | None = None
+    filled: bool = False
     received_at: datetime | None = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):

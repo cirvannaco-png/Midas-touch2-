@@ -21,7 +21,7 @@ def test_ea_terminal_csv_audit_contract_is_explicit():
     assert 'FileWrite(m_fileHandle,dec.decision_id,TimeToString(dec.decided_time,TIME_DATE|TIME_MINUTES),dec.symbol,dir,entry,dec.setup.stop_loss,dec.setup.tp1,dec.setup.tp2,dec.setup.final_tp,dec.setup.confidence,EnumToString(dec.action)' in publisher
     # The network payload is canonical; the CSV remains an intentionally
     # compact terminal-delivery audit rather than a second source of truth.
-    assert '\\"invalidation\\":%.5f' in publisher
+    assert '\\"invalidation\\":%.8f' in publisher
     assert '\\"strategy\\":\\"%s\\"' in publisher
 
 
@@ -87,7 +87,7 @@ def test_outcome_provenance_contract_is_complete():
 def test_temporal_outcome_contract_uses_signal_timestamp():
     model = _read("telegram-bridge/app/models.py")
     routes = _read("telegram-bridge/app/routes.py")
-    migration = _read("telegram-bridge/migrations/versions/0013_outcome_provenance_and_execution_costs.py")
+    migration = _read("telegram-bridge/migrations/versions/0014_outcome_provenance_and_execution_costs.py")
     walk = _read("tools/walk_forward.py")
     assert "signal_time = Column(DateTime(timezone=True), nullable=True, index=True)" in model
     assert "row.signal_time = source_signal.received_at" in routes
