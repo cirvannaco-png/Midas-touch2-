@@ -99,7 +99,7 @@ async def test_unrelated_text_does_not_confirm_pending_request():
     assert await _flag_is_enabled() is False
 
     update_yes = _FakeUpdate(text="YES")
-    await confirm_text_handler(update_yes)
+    await confirm_text_handler(update_yes, None)
     assert update_yes.message.replies and "ON" in update_yes.message.replies[0]
 
 
