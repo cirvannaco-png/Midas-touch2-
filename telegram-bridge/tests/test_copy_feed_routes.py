@@ -54,6 +54,11 @@ def test_copy_feed_returns_active_signals_when_entitled_and_enabled(client, auth
 
     client.post("/signal", json={**VALID_BUY_SIGNAL, "signal_id": "feed-sig-1"}, headers=auth_headers)
 
+    # POST /signal durably enqueues delivery; the outbox worker is what
+    # promotes the authoritative Signal row from PENDING to ACTIVE.
+    from app.signal_outbox import deliver_pending_once
+    assert _run(deliver_pending_once()) is True
+
     resp = client.get("/copy/feed", headers={"X-Copy-Key": key})
     assert resp.status_code == 200
     body = resp.json()
