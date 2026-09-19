@@ -37,9 +37,9 @@ def _http_client():
         patch.object(main_module, "init_bot", new=_offline_init_bot),
         patch.object(main_module, "shutdown_bot", new=_offline_shutdown_bot),
         patch.object(main_module, "run_outbox_worker", new=AsyncMock()),
+        TestClient(main_module.app) as client,
     ):
-        with TestClient(main_module.app) as client:
-            yield client
+        yield client
 
 
 def _make_entitled_subscriber_sync(user_id: str):
