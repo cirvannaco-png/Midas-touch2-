@@ -14,8 +14,6 @@ from app.formatter import format_signal_message
 from app.logger import logger
 from app.models import Signal, SignalDeliveryOutbox, SignalStatus
 from app.telegram import NonRetryableError, send_telegram_message
-
-
 MAX_ATTEMPTS = 3
 POLL_SECONDS = 0.25
 

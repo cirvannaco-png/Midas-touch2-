@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from tools.decision_fingerprint import canonical_serialize, fingerprint
 
 from app import bot as bot_module
