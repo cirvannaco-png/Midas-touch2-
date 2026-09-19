@@ -152,7 +152,6 @@ class SignalOutcome(Base):
     __table_args__ = (
         Index("ix_signal_outcomes_regime_session", "regime", "session"),
         Index("ix_signal_outcomes_symbol_strategy", "symbol", "strategy"),
-        Index("ix_signal_outcomes_environment_key", "environment_key"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
