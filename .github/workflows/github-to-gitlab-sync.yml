@@ -1,9 +1,6 @@
 name: Midas Touch - GitHub to GitLab Sync
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -15,10 +12,9 @@ concurrency:
 
 jobs:
   sync:
-    name: Sync GitHub main to GitLab main (non-blocking)
+    name: Sync GitHub main to GitLab main
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - name: Checkout GitHub source
         uses: actions/checkout@v4
