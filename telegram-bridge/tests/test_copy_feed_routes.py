@@ -3,6 +3,9 @@ POST /admin/check-subscriptions."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+import pytest
+from unittest.mock import AsyncMock, patch
+
 from app.database import async_session
 from app.models import SUBSCRIBER_STATUS_ACTIVE
 from app.settings_store import set_copy_trading_enabled
@@ -12,6 +15,13 @@ from tests.conftest import VALID_BUY_SIGNAL
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+@pytest.fixture(autouse=True)
+def disable_background_outbox_worker():
+    """Keep copy-feed protocol tests on one deterministic delivery path."""
+    with patch("app.main.run_outbox_worker", new=AsyncMock()):
+        yield
 
 
 def _entitled_subscriber(user_id: str) -> str:
