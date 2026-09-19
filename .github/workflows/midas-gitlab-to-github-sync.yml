@@ -2,7 +2,9 @@ name: Midas Touch - GitLab to GitHub Sync
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'sync/**'
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
