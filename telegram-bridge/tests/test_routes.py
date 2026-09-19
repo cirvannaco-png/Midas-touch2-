@@ -166,7 +166,8 @@ def test_signal_id_reserved_before_telegram_is_called_once(client, auth_headers)
             ))
             await session.commit()
 
-    asyncio.run(_seed_pending_row())
+    assert client.portal is not None
+    client.portal.call(_seed_pending_row)
 
     with patch("app.routes.send_telegram_message", new=AsyncMock(return_value=99)) as mock_send:
         resp = client.post("/signal", json=payload, headers=auth_headers)
@@ -207,7 +208,8 @@ def test_retry_failed_reclaims_stale_pending_rows(client, auth_headers):
             ))
             await session.commit()
 
-    asyncio.run(_seed_stale_pending_row())
+    assert client.portal is not None
+    client.portal.call(_seed_stale_pending_row)
 
     resp = client.post("/retry-failed", headers=auth_headers)
     assert resp.status_code == 200
