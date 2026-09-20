@@ -1,0 +1,107 @@
+name: Render Before/After Latency Benchmark
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BENCH_KEY: midas-render-benchmark-2026
+      BASE: https://midas-touch2-baseline2.onrender.com
+      OPT: https://midas-touch2-perf.onrender.com
+      TG: https://api.telegram.org/bot123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno/getMe
+    steps:
+      - uses: actions/checkout@v4
+      - name: Benchmark Render revisions
+        run: python - <<'PY'
+          import json, math, time, urllib.request, urllib.error, uuid, statistics, os
+
+          services = {"baseline": os.environ["BASE"], "optimized": os.environ["OPT"]}
+
+          def percentile(xs, q):
+              xs = sorted(xs)
+              return xs[max(0, min(len(xs)-1, math.ceil(q*len(xs))-1))]
+
+          def request(url, method="GET", payload=None):
+              data = None if payload is None else json.dumps(payload).encode()
+              headers = {"X-API-Key": os.environ["BENCH_KEY"], "Content-Type": "application/json"}
+              req = urllib.request.Request(url, data=data, headers=headers, method=method)
+              t = time.perf_counter()
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  status = r.status
+                  r.read()
+              return status, (time.perf_counter() - t) * 1000
+
+          def signal_payload(i):
+              return {
+                  "signal_id": f"bench-{uuid.uuid4()}-{i}",
+                  "symbol": "XAUUSD",
+                  "direction": "BUY",
+                  "entry": 2000.0,
+                  "sl": 1995.0,
+                  "tp1": 2005.0,
+                  "tp2": 2010.0,
+                  "confidence": 78,
+                  "reasons": ["latency-benchmark"],
+                  "timeframe": "M15",
+              }
+
+          report = {}
+          for label, base in services.items():
+              status, first_ms = request(base + "/")
+              assert status == 200, (label, status)
+
+              root = [request(base + "/")[1] for _ in range(30)]
+              db = [request(base + "/health/db")[1] for _ in range(30)]
+
+              sig = []
+              for i in range(50):
+                  status, ms = request(base + "/signal", "POST", signal_payload(i))
+                  assert status == 200, (label, status)
+                  sig.append(ms)
+
+              report[label] = {
+                  "post_deploy_first_request_ms": round(first_ms, 3),
+                  "root_warm_ms": {k: round(percentile(root, q), 3) for k, q in [("p50", .50), ("p95", .95), ("p99", .99)]},
+                  "db_health_ms": {k: round(percentile(db, q), 3) for k, q in [("p50", .50), ("p95", .95), ("p99", .99)]},
+                  "signal_ms": {k: round(percentile(sig, q), 3) for k, q in [("p50", .50), ("p95", .95), ("p99", .99)]},
+                  "signal_mean_ms": round(statistics.mean(sig), 3),
+              }
+
+          tg = []
+          for _ in range(20):
+              t = time.perf_counter()
+              try:
+                  with urllib.request.urlopen(os.environ["TG"], timeout=20) as r:
+                      r.read()
+              except urllib.error.HTTPError as e:
+                  e.read()
+              tg.append((time.perf_counter() - t) * 1000)
+          report["telegram_api_network_ms"] = {
+              k: round(percentile(tg, q), 3) for k, q in [("p50", .50), ("p95", .95), ("p99", .99)]
+          }
+
+          print(json.dumps(report, indent=2))
+          with open("render-before-after.json", "w") as f:
+              json.dump(report, f, indent=2)
+
+          b = report["baseline"]["signal_ms"]
+          o = report["optimized"]["signal_ms"]
+          print(f"signal p50 delta: {(o['p50']-b['p50']):.3f} ms")
+          print(f"signal p95 delta: {(o['p95']-b['p95']):.3f} ms")
+          print(f"signal p99 delta: {(o['p99']-b['p99']):.3f} ms")
+          print(f"signal p95 improvement: {((b['p95']-o['p95'])/b['p95']*100):.2f}%")
+          if o["signal_ms"]["p95"] > 250:
+              raise SystemExit(f"optimized /signal p95 regression: {o['signal_ms']['p95']:.2f} ms")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: render-before-after-latency
+          path: render-before-after.json
