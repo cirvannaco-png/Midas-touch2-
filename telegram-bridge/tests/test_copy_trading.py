@@ -33,7 +33,6 @@ def _http_client():
     with (
         patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)),
         patch("app.signal_outbox.send_telegram_message", new=AsyncMock(return_value=42)),
-        patch.object(main_module, "check_bot_token", new=AsyncMock(return_value=True)),
         patch.object(main_module, "init_bot", new=_offline_init_bot),
         patch.object(main_module, "shutdown_bot", new=_offline_shutdown_bot),
         patch.object(main_module, "run_outbox_worker", new=AsyncMock()),
