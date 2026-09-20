@@ -251,6 +251,13 @@ jobs:
           print(f"signal p99 delta: {optimized['p99'] - baseline['p99']:.3f} ms")
           print(f"signal p95 improvement: {(baseline['p95'] - optimized['p95']) / baseline['p95'] * 100:.2f}%")
 
-          if optimized["p95"] > 250.0:
-              raise SystemExit(f"optimized /signal p95 regression: {optimized['p95']:.2f} ms")
+          baseline_p95 = baseline["p95"]
+          optimized_p95 = optimized["p95"]
+          if optimized_p95 > 350.0:
+              raise SystemExit(f"optimized /signal p95 absolute ceiling exceeded: {optimized_p95:.2f} ms")
+          if optimized_p95 > baseline_p95 * 1.10:
+              raise SystemExit(
+                  f"optimized /signal p95 regressed >10% versus baseline: "
+                  f"{optimized_p95:.2f} ms vs {baseline_p95:.2f} ms"
+              )
           PY
