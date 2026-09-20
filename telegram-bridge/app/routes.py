@@ -29,7 +29,7 @@ from app.models import (
     TradeEventType,
 )
 from app.ratelimit import enforce_rate_limit
-from app.settings_store import is_broadcast_paused, is_symbol_muted
+from app.settings_store import get_signal_broadcast_controls
 from app.subscriptions import get_subscriber_by_copy_feed_key
 from app.telegram import NonRetryableError, edit_telegram_message, send_telegram_message
 from app.utils import measure_latency
@@ -329,24 +329,35 @@ async def receive_signal(
         db_signal.error_message = f"{parity_status}: expected {expected_fingerprint}, received {claimed_fingerprint or 'missing'}"
 
     session.add(db_signal)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        log.info("Duplicate signal ignored (reservation lost)")
-        return SignalResponse(status="duplicate", signal_id=payload.signal_id, decision_fingerprint=claimed_fingerprint or None, duplicate=True)
 
-    if parity_status == "PARITY_MISMATCH":
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "PARITY_MISMATCH",
-                "signal_id": payload.signal_id,
-                "expected_fingerprint": expected_fingerprint,
-                "received_fingerprint": claimed_fingerprint,
-            },
-        )
-    if parity_status == "FINGERPRINT_MISSING" and settings.REQUIRE_DECISION_FINGERPRINT:
+    # Persist audit failures before returning an HTTP error. Valid signals
+    # stay in one transaction through signal + outbox creation.
+    if parity_status == "PARITY_MISMATCH" or (
+        parity_status == "FINGERPRINT_MISSING" and settings.REQUIRE_DECISION_FINGERPRINT
+    ):
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            log.info("Duplicate signal ignored (reservation lost)")
+            return SignalResponse(
+                status="duplicate",
+                signal_id=payload.signal_id,
+                decision_fingerprint=claimed_fingerprint or None,
+                duplicate=True,
+            )
+
+        if parity_status == "PARITY_MISMATCH":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "PARITY_MISMATCH",
+                    "signal_id": payload.signal_id,
+                    "expected_fingerprint": expected_fingerprint,
+                    "received_fingerprint": claimed_fingerprint,
+                },
+            )
+
         raise HTTPException(
             status_code=428,
             detail={
@@ -357,10 +368,25 @@ async def receive_signal(
             },
         )
 
-    if await is_broadcast_paused(session) or await is_symbol_muted(session, payload.symbol):
+    # Keep the signal unflushed until the final commit so the valid path
+    # writes the signal and durable outbox reservation atomically.
+    with session.no_autoflush:
+        broadcast_paused, muted_symbols = await get_signal_broadcast_controls(session)
+
+    if broadcast_paused or payload.symbol.upper() in muted_symbols:
         db_signal.status = SignalStatus.ACTIVE
         db_signal.error_message = "Broadcast suppressed (paused or symbol muted)"
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            log.info("Duplicate signal ignored (reservation lost)")
+            return SignalResponse(
+                status="duplicate",
+                signal_id=payload.signal_id,
+                decision_fingerprint=expected_fingerprint,
+                duplicate=True,
+            )
         return SignalResponse(
             status="suppressed",
             signal_id=payload.signal_id,
