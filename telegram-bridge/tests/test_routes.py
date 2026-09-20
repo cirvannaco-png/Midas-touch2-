@@ -16,6 +16,7 @@ def test_health_db_reports_connected(client):
     assert resp.status_code == 200
     assert resp.json()["database"] == "connected"
 
+
 def test_health_db_reports_unhealthy_when_database_is_down(client):
     with patch("app.routes.check_db_connection", new=AsyncMock(return_value=False)):
         resp = client.get("/health/db")
@@ -26,7 +27,7 @@ def test_health_db_reports_unhealthy_when_database_is_down(client):
 
 def test_signal_without_api_key_rejected(client):
     resp = client.post("/signal", json=VALID_BUY_SIGNAL)
-    assert resp.status_code == 422  # missing required header
+    assert resp.status_code == 422
 
 
 def test_signal_with_wrong_api_key_rejected(client):
@@ -70,7 +71,7 @@ def test_legacy_signal_is_rejected_when_strict_fingerprint_is_enabled(client, au
 
 
 def test_business_rule_violation_rejected(client, auth_headers):
-    payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-bad-1", "sl": 1.15}  # SL wrong side
+    payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-bad-1", "sl": 1.15}
     resp = client.post("/signal", json=payload, headers=auth_headers)
     assert resp.status_code == 400
     assert "errors" in resp.json()["detail"]
@@ -93,9 +94,6 @@ def test_duplicate_signal_id_returns_duplicate_status(client, auth_headers):
 
 
 def test_rate_limit_enforced_after_max_requests(client, auth_headers, forced_rate_limit):
-    # The limiter is force-enabled at max_requests=5 by the fixture, so this
-    # test does not depend on RATE_LIMIT_* env vars (CI sets
-    # RATE_LIMIT_ENABLED=false, which would otherwise make 429 unreachable).
     codes = []
     for i in range(7):
         payload = {**VALID_BUY_SIGNAL, "signal_id": f"sig-rl-{i}"}
@@ -121,7 +119,6 @@ def test_telegram_send_failure_isolated_from_signal_acceptance(client, auth_head
     assert resp.json()["status"] == "queued"
 
 
-
 def test_retry_failed_requires_auth(client):
     resp = client.post("/retry-failed")
     assert resp.status_code == 422
@@ -134,15 +131,6 @@ def test_retry_failed_with_no_failed_signals(client, auth_headers):
 
 
 def test_signal_id_reserved_before_telegram_is_called_once(client, auth_headers):
-    """
-    Regression test for the double-send race: a signal_id that has already
-    been reserved (PENDING row present) must short-circuit to "duplicate"
-    without calling Telegram again, even if the first request never
-    resolved. This is what actually prevents two Telegram messages for one
-    signal_id under a real concurrent race - previously the reservation
-    didn't exist and both requests could reach send_telegram_message.
-    """
-
     from app.database import async_session
     from app.models import Signal, SignalStatus
 
@@ -177,11 +165,7 @@ def test_signal_id_reserved_before_telegram_is_called_once(client, auth_headers)
 
 
 def test_retry_failed_reclaims_stale_pending_rows(client, auth_headers):
-    """A row stuck at PENDING (e.g. process crashed mid-send) older than
-    PENDING_STALE_SECONDS should be picked up by /retry-failed, same as a
-    FAILED row - otherwise it never recovers."""
     from datetime import datetime, timedelta, timezone
-
     from app.database import async_session
     from app.models import Signal, SignalStatus
 
@@ -215,18 +199,11 @@ def test_retry_failed_reclaims_stale_pending_rows(client, auth_headers):
 
 
 def test_signal_warm_latency_regression_ceiling(client, auth_headers):
-    """Warm-path guard against accidental request-path latency regressions.
-
-    CI uses local SQLite and mocked Telegram transport, so this is not a
-    production benchmark. The ceiling is intentionally looser than the
-    production p95 target to tolerate shared-runner variance while still
-    catching major synchronous/blocking regressions.
-    """
+    """Warm-path guard against accidental request-path latency regressions."""
     import math
     import time
 
     samples_ms = []
-    # Keep the sample within the CI fixture's five-request rate-limit window.
     for i in range(5):
         payload = {**VALID_BUY_SIGNAL, "signal_id": f"sig-latency-{i}"}
         start = time.perf_counter()
@@ -236,5 +213,9 @@ def test_signal_warm_latency_regression_ceiling(client, auth_headers):
         samples_ms.append(elapsed_ms)
 
     samples_ms.sort()
+    p50 = samples_ms[len(samples_ms) // 2]
     p95 = samples_ms[max(0, math.ceil(0.95 * len(samples_ms)) - 1)]
+    p99 = samples_ms[max(0, math.ceil(0.99 * len(samples_ms)) - 1)]
+    assert p50 < 150.0, f"warm /signal p50 regression: {p50:.1f} ms"
     assert p95 < 250.0, f"warm /signal p95 regression: {p95:.1f} ms"
+    assert p99 < 300.0, f"warm /signal p99 regression: {p99:.1f} ms"
