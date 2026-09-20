@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import BotSetting
@@ -56,6 +57,23 @@ async def _set(session: AsyncSession, key: str, value) -> None:
 
 async def get_muted_symbols(session: AsyncSession) -> set[str]:
     return set(await _get(session, _KEY_MUTED_SYMBOLS, []))
+
+
+async def get_signal_broadcast_controls(session: AsyncSession) -> tuple[bool, set[str]]:
+    """Read both signal broadcast controls in one database round-trip.
+
+    This remains read-through to PostgreSQL rather than process-cached so
+    operator pause/mute changes take effect immediately across instances.
+    """
+    result = await session.execute(
+        select(BotSetting).where(
+            BotSetting.key.in_((_KEY_BROADCAST_PAUSED, _KEY_MUTED_SYMBOLS))
+        )
+    )
+    values = {row.key: row.value for row in result.scalars()}
+    return bool(values.get(_KEY_BROADCAST_PAUSED, False)), set(
+        values.get(_KEY_MUTED_SYMBOLS, []) or []
+    )
 
 
 async def mute_symbol(session: AsyncSession, symbol: str) -> set[str]:

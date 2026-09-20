@@ -12,7 +12,7 @@ from app.config import APP_VERSION, settings
 from app.logger import logger
 from app.routes import router
 from app.signal_outbox import run_outbox_worker
-from app.telegram import check_bot_token, close_http_client, init_http_client
+from app.telegram import close_http_client, init_http_client
 
 
 class RequestBodyTooLarge(Exception):
@@ -72,9 +72,9 @@ def create_app() -> FastAPI:
         await init_http_client()
         outbox_stop = asyncio.Event()
         outbox_task = None
-        token_valid = await check_bot_token()
-        if not token_valid:
-            logger.warning("Telegram bot token is invalid or could not be verified. Signals will fail.")
+        # init_bot() already performs Telegram API initialization and
+        # handles Telegram-side failures. Avoid a redundant getMe request
+        # on every cold start.
         await init_bot()
         outbox_task = asyncio.create_task(run_outbox_worker(outbox_stop))
         yield

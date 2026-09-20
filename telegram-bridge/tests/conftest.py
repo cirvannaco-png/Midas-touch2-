@@ -104,7 +104,6 @@ def client():
         async def _offline_shutdown_bot():
             bot_module.application = None
 
-        main_module.check_bot_token = AsyncMock(return_value=True)
         main_module.init_bot = _offline_init_bot
         main_module.shutdown_bot = _offline_shutdown_bot
         from app.models import BotSetting, Payment, Signal, SignalDeliveryOutbox, Subscriber, TradeEvent

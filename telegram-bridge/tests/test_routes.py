@@ -212,3 +212,29 @@ def test_retry_failed_reclaims_stale_pending_rows(client, auth_headers):
     resp = client.post("/retry-failed", headers=auth_headers)
     assert resp.status_code == 200
     assert "Processed 1 failed signals" in resp.json()["message"]
+
+
+def test_signal_warm_latency_regression_ceiling(client, auth_headers):
+    """Warm-path guard against accidental request-path latency regressions.
+
+    CI uses local SQLite and mocked Telegram transport, so this is not a
+    production benchmark. The ceiling is intentionally looser than the
+    production p95 target to tolerate shared-runner variance while still
+    catching major synchronous/blocking regressions.
+    """
+    import math
+    import time
+
+    samples_ms = []
+    # Keep the sample within the CI fixture's five-request rate-limit window.
+    for i in range(5):
+        payload = {**VALID_BUY_SIGNAL, "signal_id": f"sig-latency-{i}"}
+        start = time.perf_counter()
+        response = client.post("/signal", json=payload, headers=auth_headers)
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        assert response.status_code == 200
+        samples_ms.append(elapsed_ms)
+
+    samples_ms.sort()
+    p95 = samples_ms[max(0, math.ceil(0.95 * len(samples_ms)) - 1)]
+    assert p95 < 250.0, f"warm /signal p95 regression: {p95:.1f} ms"
