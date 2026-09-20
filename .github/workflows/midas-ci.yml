@@ -157,3 +157,100 @@ jobs:
           SECRET_KEY: "ci-placeholder-secret"
         run: python telegram-bridge/scripts/render_sync_secrets.py --dry-run
 
+  render-real-benchmark:
+    name: Real Render latency benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BENCH_KEY: midas-render-benchmark-2026
+      BASE: https://midas-touch2-baseline2.onrender.com
+      OPT: https://midas-touch2-perf.onrender.com
+      TG: https://api.telegram.org/bot123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno/getMe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Benchmark baseline and optimized Render services
+        run: |
+          python - <<'PY'
+          import json, math, os, statistics, time, urllib.error, urllib.request, uuid
+
+          def pct(values, q):
+              values = sorted(values)
+              return values[max(0, min(len(values) - 1, math.ceil(q * len(values)) - 1))]
+
+          def call(url, method="GET", payload=None):
+              data = None if payload is None else json.dumps(payload).encode()
+              req = urllib.request.Request(
+                  url,
+                  data=data,
+                  method=method,
+                  headers={
+                      "X-API-Key": os.environ["BENCH_KEY"],
+                      "Content-Type": "application/json",
+                  },
+              )
+              t0 = time.perf_counter()
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  status = r.status
+                  r.read()
+              return status, (time.perf_counter() - t0) * 1000.0
+
+          def payload(i):
+              return {
+                  "signal_id": f"ci-bench-{uuid.uuid4()}-{i}",
+                  "symbol": "XAUUSD",
+                  "direction": "BUY",
+                  "entry": 2000.0,
+                  "sl": 1995.0,
+                  "tp1": 2005.0,
+                  "tp2": 2010.0,
+                  "confidence": 78,
+                  "reasons": ["latency-benchmark"],
+                  "timeframe": "M15",
+              }
+
+          report = {}
+          for label, base in (("baseline", os.environ["BASE"]), ("optimized", os.environ["OPT"])):
+              code, first = call(base + "/")
+              if code != 200:
+                  raise SystemExit(f"{label} first request returned {code}")
+              root = [call(base + "/")[1] for _ in range(30)]
+              db = [call(base + "/health/db")[1] for _ in range(30)]
+              signal = []
+              for i in range(50):
+                  code, elapsed = call(base + "/signal", "POST", payload(i))
+                  if code != 200:
+                      raise SystemExit(f"{label} /signal returned {code}")
+                  signal.append(elapsed)
+              report[label] = {
+                  "post_deploy_first_request_ms": round(first, 3),
+                  "root_warm_ms": {k: round(pct(root, q), 3) for k, q in (("p50", .50), ("p95", .95), ("p99", .99))},
+                  "db_health_ms": {k: round(pct(db, q), 3) for k, q in (("p50", .50), ("p95", .95), ("p99", .99))},
+                  "signal_ms": {k: round(pct(signal, q), 3) for k, q in (("p50", .50), ("p95", .95), ("p99", .99))},
+                  "signal_mean_ms": round(statistics.mean(signal), 3),
+              }
+
+          tg = []
+          for _ in range(20):
+              t0 = time.perf_counter()
+              try:
+                  with urllib.request.urlopen(os.environ["TG"], timeout=20) as r:
+                      r.read()
+              except urllib.error.HTTPError as e:
+                  e.read()
+              tg.append((time.perf_counter() - t0) * 1000.0)
+          report["telegram_api_network_ms"] = {
+              k: round(pct(tg, q), 3) for k, q in (("p50", .50), ("p95", .95), ("p99", .99))
+          }
+
+          print(json.dumps(report, indent=2))
+          baseline = report["baseline"]["signal_ms"]
+          optimized = report["optimized"]["signal_ms"]
+          print(f"signal p50 delta: {optimized['p50'] - baseline['p50']:.3f} ms")
+          print(f"signal p95 delta: {optimized['p95'] - baseline['p95']:.3f} ms")
+          print(f"signal p99 delta: {optimized['p99'] - baseline['p99']:.3f} ms")
+          print(f"signal p95 improvement: {(baseline['p95'] - optimized['p95']) / baseline['p95'] * 100:.2f}%")
+
+          if optimized["p95"] > 250.0:
+              raise SystemExit(f"optimized /signal p95 regression: {optimized['p95']:.2f} ms")
+          PY
