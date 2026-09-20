@@ -12,7 +12,7 @@ from app.config import APP_VERSION, settings
 from app.logger import logger
 from app.routes import router
 from app.signal_outbox import run_outbox_worker
-from app.telegram import close_http_client, init_http_client
+from app.telegram import check_bot_token, close_http_client, init_http_client
 
 
 class RequestBodyTooLarge(Exception):
@@ -78,43 +78,3 @@ def create_app() -> FastAPI:
         await init_bot()
         outbox_task = asyncio.create_task(run_outbox_worker(outbox_stop))
         yield
-        outbox_stop.set()
-        if outbox_task is not None:
-            outbox_task.cancel()
-            try:
-                await outbox_task
-            except asyncio.CancelledError:
-                pass
-        await shutdown_bot()
-        await close_http_client()
-        logger.info("Shutdown complete.")
-
-    app = FastAPI(title="Medis Touch Telegram Bridge", version=APP_VERSION, lifespan=lifespan)
-
-    allowed_origins = settings.allowed_origins_list
-    if allowed_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=allowed_origins,
-            allow_credentials=True,
-            allow_methods=["POST", "GET"],
-            allow_headers=["X-API-Key", "Content-Type"],
-        )
-
-    app.add_middleware(MaxBodySizeMiddleware, max_size=settings.MAX_REQUEST_BODY_SIZE)
-
-    @app.exception_handler(RequestBodyTooLarge)
-    async def body_too_large_handler(request, exc):
-        return JSONResponse(status_code=413, content={"detail": "Request body too large"})
-
-    # Mount the immutable config-sync protocol first. The rich environment
-    # outcome boundary is also mounted before the legacy /outcome route so
-    # upgraded EA payloads are persisted without breaking older clients.
-    app.include_router(config_sync_router)
-    app.include_router(environment_outcome_router)
-    app.include_router(router)
-
-    return app
-
-
-app = create_app()
