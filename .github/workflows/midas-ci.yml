@@ -162,7 +162,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      BENCH_KEY: midas-render-benchmark-2026
+      BENCH_KEY: bench123456789
       BASE: https://midas-touch2-baseline2.onrender.com
       OPT: https://midas-touch2-perf.onrender.com
       TG: https://api.telegram.org/bot123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno/getMe
