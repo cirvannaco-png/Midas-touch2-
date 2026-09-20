@@ -2,6 +2,7 @@ import json
 import os
 import statistics
 import time
+import uuid
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -70,7 +71,7 @@ def benchmark_service(name, url):
     warm = []
     fingerprints = []
     for i in range(SAMPLES):
-        elapsed, status, response = timed_signal(url, f"render-bench-{name}-{i}")
+        elapsed, status, response = timed_signal(url, f"render-bench-{name}-{uuid.uuid4().hex}")
         if status != 200 or response.get("status") != "queued":
             raise RuntimeError(f"{name} /signal failed: {status} {response}")
         warm.append(elapsed)
