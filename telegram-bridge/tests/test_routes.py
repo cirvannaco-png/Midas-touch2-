@@ -226,7 +226,8 @@ def test_signal_warm_latency_regression_ceiling(client, auth_headers):
     import time
 
     samples_ms = []
-    for i in range(12):
+    # Keep the sample within the CI fixture's five-request rate-limit window.
+    for i in range(5):
         payload = {**VALID_BUY_SIGNAL, "signal_id": f"sig-latency-{i}"}
         start = time.perf_counter()
         response = client.post("/signal", json=payload, headers=auth_headers)
