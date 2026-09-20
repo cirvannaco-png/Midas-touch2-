@@ -236,5 +236,9 @@ def test_signal_warm_latency_regression_ceiling(client, auth_headers):
         samples_ms.append(elapsed_ms)
 
     samples_ms.sort()
+    p50 = samples_ms[len(samples_ms) // 2]
     p95 = samples_ms[max(0, math.ceil(0.95 * len(samples_ms)) - 1)]
+    p99 = samples_ms[max(0, math.ceil(0.99 * len(samples_ms)) - 1)]
+    assert p50 < 150.0, f"warm /signal p50 regression: {p50:.1f} ms"
     assert p95 < 250.0, f"warm /signal p95 regression: {p95:.1f} ms"
+    assert p99 < 300.0, f"warm /signal p99 regression: {p99:.1f} ms"

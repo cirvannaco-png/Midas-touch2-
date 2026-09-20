@@ -156,4 +156,3 @@ jobs:
           ADMIN_CHAT_ID: "777000777"
           SECRET_KEY: "ci-placeholder-secret"
         run: python telegram-bridge/scripts/render_sync_secrets.py --dry-run
-
