@@ -12,7 +12,7 @@ from app.config import APP_VERSION, settings
 from app.logger import logger
 from app.routes import router
 from app.signal_outbox import run_outbox_worker
-from app.telegram import check_bot_token, close_http_client, init_http_client
+from app.telegram import close_http_client, init_http_client
 
 
 class RequestBodyTooLarge(Exception):
