@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Build context is the repository root, set explicitly via `dockerContext: .`
 # in the root /render.yaml (a supported Render Blueprint field). All COPY
