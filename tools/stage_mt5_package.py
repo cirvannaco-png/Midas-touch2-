@@ -4,13 +4,6 @@
 The repository keeps development sources under EA/. MetaEditor compiles
 relative includes from the directory where the .mq5 entry point lives.
 This tool creates the exact runtime layout without copying tests or binaries.
-
-Example (PowerShell):
-  python tools/stage_mt5_package.py --destination "C:\\...\\MQL5\\Experts\\MedisTouch"
-
-Indicator (optional):
-  python tools/stage_mt5_package.py --destination "C:\\...\\MQL5\\Experts\\MedisTouch" \
-    --indicator-destination "C:\\...\\MQL5\\Indicators\\MedisTouch"
 """
 
 from __future__ import annotations
@@ -21,7 +14,7 @@ import shutil
 import sys
 from pathlib import Path
 
-INCLUDE_RE = re.compile(r'^\\s*#include\\s+"([^"]+)"', re.MULTILINE)
+INCLUDE_RE = re.compile(r'^\s*#include\s+"([^"]+)"', re.MULTILINE)
 LOCAL_SOURCE_SUFFIXES = {".mq5", ".mqh"}
 
 
@@ -93,20 +86,9 @@ def copy_tree(source: Path, destination: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--source-root",
-        default="EA",
-        help="Repository EA source directory (default: EA)",
-    )
-    parser.add_argument(
-        "--destination",
-        required=True,
-        help="MT5 MQL5/Experts/MedisTouch directory",
-    )
-    parser.add_argument(
-        "--indicator-destination",
-        help="Optional MT5 MQL5/Indicators/MedisTouch directory",
-    )
+    parser.add_argument("--source-root", default="EA")
+    parser.add_argument("--destination", required=True)
+    parser.add_argument("--indicator-destination")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
