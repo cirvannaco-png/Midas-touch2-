@@ -3,7 +3,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 EA = ROOT / "EA"
-INCLUDE_RE = re.compile(r'^\\s*#include\\s+"([^"]+)"', re.MULTILINE)
+INCLUDE_RE = re.compile(r'^\s*#include\s+"([^"]+)"', re.MULTILINE)
 
 
 def _read(path: Path) -> str:
@@ -63,9 +63,6 @@ def test_mt5_package_layout_is_unambiguous():
 
     placeholder = ROOT / "mql5" / "Experts" / "MedisTouch"
     assert (placeholder / "README.md").is_file()
-
-    # The repository source of truth is EA/. The mql5/Experts directory is
-    # documentation-only; deployment is performed by the staging script.
     assert not list(placeholder.glob("*.mq5"))
     assert not list(placeholder.glob("*.ex5"))
 
