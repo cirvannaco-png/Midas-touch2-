@@ -27,29 +27,45 @@ private:
    double m_tripleProbability;
    double m_minRawConfidence;
    int    m_minCalibrationSample;
+   double m_dualRiskFraction0;
+   double m_dualRiskFraction1;
+   double m_tripleRiskFraction0;
+   double m_tripleRiskFraction1;
+   double m_tripleRiskFraction2;
    bool   m_requireHedging;
 
 public:
    void Init(bool enabled,double dualProbability,double tripleProbability,
-             double minRawConfidence,int minCalibrationSample,bool requireHedging=true);
+             double minRawConfidence,int minCalibrationSample,
+             double dualRiskFraction0,double dualRiskFraction1,
+             double tripleRiskFraction0,double tripleRiskFraction1,double tripleRiskFraction2,
+             bool requireHedging=true);
    bool Build(const TradeSetup &setup,int availableSlots,MultiTradePlan &out);
    bool IsHedgingAccount() const;
   };
 
 void CMultiTradeEngine::Init(bool enabled,double dualProbability,double tripleProbability,
-                             double minRawConfidence,int minCalibrationSample,bool requireHedging)
+                             double minRawConfidence,int minCalibrationSample,
+                             double dualRiskFraction0,double dualRiskFraction1,
+                             double tripleRiskFraction0,double tripleRiskFraction1,double tripleRiskFraction2,
+                             bool requireHedging)
   {
    m_enabled=enabled;
    m_dualProbability=MathMax(0.0,MathMin(100.0,dualProbability));
    m_tripleProbability=MathMax(m_dualProbability,MathMin(100.0,tripleProbability));
    m_minRawConfidence=MathMax(0.0,MathMin(100.0,minRawConfidence));
    m_minCalibrationSample=MathMax(1,minCalibrationSample);
+   m_dualRiskFraction0=MathMax(0.0,dualRiskFraction0);
+   m_dualRiskFraction1=MathMax(0.0,dualRiskFraction1);
+   m_tripleRiskFraction0=MathMax(0.0,tripleRiskFraction0);
+   m_tripleRiskFraction1=MathMax(0.0,tripleRiskFraction1);
+   m_tripleRiskFraction2=MathMax(0.0,tripleRiskFraction2);
    m_requireHedging=requireHedging;
   }
 
 bool CMultiTradeEngine::IsHedgingAccount() const
   {
-   return ((ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
+   return (AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
   }
 
 bool CMultiTradeEngine::Build(const TradeSetup &setup,int availableSlots,MultiTradePlan &out)
@@ -82,8 +98,8 @@ bool CMultiTradeEngine::Build(const TradeSetup &setup,int availableSlots,MultiTr
    out.legCount=legs;
    if(legs==2)
      {
-      out.riskFraction[0]=0.60;
-      out.riskFraction[1]=0.40;
+      out.riskFraction[0]=m_dualRiskFraction0;
+      out.riskFraction[1]=m_dualRiskFraction1;
       out.target[0]=setup.tp1;
       out.target[1]=setup.final_tp;
       out.label[0]="TP1";
@@ -92,9 +108,9 @@ bool CMultiTradeEngine::Build(const TradeSetup &setup,int availableSlots,MultiTr
      }
    else
      {
-      out.riskFraction[0]=0.50;
-      out.riskFraction[1]=0.30;
-      out.riskFraction[2]=0.20;
+      out.riskFraction[0]=m_tripleRiskFraction0;
+      out.riskFraction[1]=m_tripleRiskFraction1;
+      out.riskFraction[2]=m_tripleRiskFraction2;
       out.target[0]=setup.tp1;
       out.target[1]=setup.tp2;
       out.target[2]=setup.final_tp;
