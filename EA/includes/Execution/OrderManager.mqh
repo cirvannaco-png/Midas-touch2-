@@ -191,12 +191,15 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    if(useMarket)
      {
       m_trades[idx].fsm.Transition(TS_PENDING);
+      string comment="MT#"+IntegerToString(decision.decision_id)+(legIndex>0?":L"+IntegerToString(legIndex):"");
       if(decision.setup.type==ORDER_TYPE_BUY)
-         string comment="MT#"+IntegerToString(decision.decision_id)+(legIndex>0?":L"+IntegerToString(legIndex):"");
+        {
          ok=m_broker.MarketBuy(decision.symbol,volume,sl,tp,ticket,fillPrice,comment);
+        }
       else
-         string comment="MT#"+IntegerToString(decision.decision_id)+(legIndex>0?":L"+IntegerToString(legIndex):"");
+        {
          ok=m_broker.MarketSell(decision.symbol,volume,sl,tp,ticket,fillPrice,comment);
+        }
       if(ok)
         {
          m_trades[idx].fsm.SetTicket(ticket);
