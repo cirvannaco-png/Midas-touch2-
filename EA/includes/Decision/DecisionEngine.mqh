@@ -97,6 +97,11 @@ bool CDecisionEngine::ValidateSetupGeometry(const TradeSetup &setup) const
    return false;
   }
 //+------------------------------------------------------------------+
+void CDecisionEngine::SeedNextId(long nextId)
+  {
+   m_nextId = MathMax(1, nextId);
+  }
+//+------------------------------------------------------------------+
 TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
   {
    TradeDecisionRecord rec;
