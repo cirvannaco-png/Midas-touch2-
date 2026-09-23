@@ -30,7 +30,7 @@ private:
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
    bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0);
-   bool              RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice=0.0);
+   bool              RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice=0.0,int legIndex=0);
    int               OpenCount();
    int               Total() { return ArraySize(m_trades); }
    void              Prune();
@@ -60,9 +60,17 @@ void COrderManager::Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMon
    ArrayResize(m_trades,0);
   }
 //+------------------------------------------------------------------+
-int COrderManager::FindByDecisionId(long id)
+int COrderManager::FindByDecisionAndLeg(long id,int legIndex)
   {
-   for(int i=0;i<ArraySize(m_trades);i++) if(m_trades[i].decision.decision_id==id) return i;
+   for(int i=0;i<ArraySize(m_trades);i++)
+      if(m_trades[i].decision.decision_id==id && m_trades[i].legIndex==legIndex) return i;
+   return -1;
+  }
+int COrderManager::FindByTicket(ulong ticket)
+  {
+   if(ticket==0) return -1;
+   for(int i=0;i<ArraySize(m_trades);i++)
+      if(m_trades[i].fsm.Ticket()==ticket) return i;
    return -1;
   }
 //+------------------------------------------------------------------+
@@ -209,9 +217,11 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    return ok;
   }
 //+------------------------------------------------------------------+
-bool COrderManager::RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice)
+bool COrderManager::RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice,int legIndex)
   {
-   if(FindByDecisionId(decision.decision_id)>=0) return false;
+   if(volume<=0 || ticket==0) return false;
+   if(FindByTicket(ticket)>=0) return false;
+   if(legIndex<0) return false;
    int idx=ArraySize(m_trades);
    ArrayResize(m_trades,idx+1);
    m_trades[idx].decision=decision;
