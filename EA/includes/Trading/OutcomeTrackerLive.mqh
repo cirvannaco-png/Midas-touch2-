@@ -28,7 +28,25 @@ public:
    void ConfigureExecutionMode(bool live){m_liveExecution=live;}void ConfigureSimulation(double risk,bool allow,double be,double partial,double frac,double trail,double comm,double spread,double slip){m_riskPercent=risk;m_allowMinLotOverride=allow;m_breakEvenAtR=be;m_partialAtR=partial;m_partialFraction=MathMax(0.0,MathMin(1.0,frac));m_trailATRMult=trail;m_commissionPerLot=MathMax(0.0,comm);m_spreadPoints=MathMax(0.0,spread);m_slippagePoints=MathMax(0.0,slip);}void ConfigureCalibration(bool enabled,int minSample=30){m_calibrationEnabled=enabled;m_calibration.Init(m_symbol,minSample);}void ConfigureConfidenceDecay(double halfLife=12.0){m_decayHalfLifeBars=halfLife;}void ConfigurePublishing(CSignalPublisher* p,string version){m_publisher=p;m_weightVersion=version;}void ConfigureEnvironmentMemory(CEnvironmentStrategyMemory* memory){m_environmentMemory=memory;}
    int ActiveCount()const{return m_count;}OutcomeStats GetStats()const{return m_stats;}double GetCalibratedProbability(double confidence,int &sample,bool &enough)const{return m_calibration.GetCalibratedProbability(confidence,sample,enough);}
    void AddSetup(TradeSetup &setup,long decisionId=-1,string decisionFingerprint=""){if(!setup.active||decisionId<=0||Find(decisionId)>=0)return;PendingSetup p;ZeroMemory(p);p.setup=setup;p.decisionId=decisionId;p.decision_fingerprint=decisionFingerprint;p.entryRef=ResolveExecutionEntry(setup);p.riskDist=MathAbs(p.entryRef-setup.stop_loss);p.sizingEntryPrice=p.entryRef;p.mgmtRiskDist=p.riskDist;p.mfePrice=p.entryRef;p.maePrice=p.entryRef;p.currentSL=setup.stop_loss;p.confidenceAtSignal=setup.confidence;p.confidenceDecayed=setup.confidence;int n=m_count++;ArrayResize(m_pending,m_count);m_pending[n]=p;}
-   bool MarkExecuted(long id,double fill,datetime t,double volume){int i=Find(id);if(i<0||fill<=0.0)return false;PendingSetup p=m_pending[i];if(p.filled)return true;p.filled=true;p.entryFillPrice=fill;p.entryRef=fill;p.fillTime=t;p.barsToFill=0;p.lots=volume;p.remainingLots=volume;p.riskDist=MathAbs(fill-p.setup.stop_loss);p.mgmtRiskDist=p.riskDist;p.mfePrice=fill;p.maePrice=fill;p.currentSL=p.setup.stop_loss;m_pending[i]=p;return true;}
+   bool MarkExecuted(long id,double fill,datetime t,double volume)
+     {
+      int i=Find(id);if(i<0||fill<=0.0||volume<=0.0)return false;
+      PendingSetup p=m_pending[i];
+      if(p.filled)
+        {
+         // Multi-trade: multiple execution legs belong to one parent
+         // decision. Keep one calibration record while aggregating the
+         // realized exposure across all child fills.
+         p.lots+=volume;
+         p.remainingLots+=volume;
+         m_pending[i]=p;
+         return true;
+        }
+      p.filled=true;p.entryFillPrice=fill;p.entryRef=fill;p.fillTime=t;p.barsToFill=0;
+      p.lots=volume;p.remainingLots=volume;p.riskDist=MathAbs(fill-p.setup.stop_loss);
+      p.mgmtRiskDist=p.riskDist;p.mfePrice=fill;p.maePrice=fill;p.currentSL=p.setup.stop_loss;
+      m_pending[i]=p;return true;
+     }
    bool RestoreExecuted(TradeSetup &setup,long id,double fill,datetime t,double volume){AddSetup(setup,id);return MarkExecuted(id,fill,t,volume);}
    bool MarkClosed(long id,double exitPrice,datetime t,double netPnl,double commission,double swap,double fee,bool stillOpen,string outcome){int i=Find(id);if(i<0)return false;PendingSetup p=m_pending[i];if(!p.filled)return false;p.realizedPnL+=netPnl;p.totalCommission+=commission;p.totalSpreadCost+=swap;p.totalSlippageCost+=fee;if(stillOpen){m_pending[i]=p;return true;}m_pending[i]=p;Finalize(i,outcome,exitPrice);return true;}
    void Update(CTFContext* ctx){if(ctx==NULL||ctx.candles.Total()<3||ctx.candles.Timeframe()!=m_entryTF)return;CandleData bar=ctx.candles.GetCandle(1);if(bar.time<=0)return;for(int i=m_count-1;i>=0;i--){PendingSetup p=m_pending[i];bool buy=p.setup.type==ORDER_TYPE_BUY;int fshift=iBarShift(m_symbol,m_entryTF,p.fillTime,false);datetime creationBar=0;if(!p.filled){int shift=iBarShift(m_symbol,m_entryTF,p.setup.creation_time,false);creationBar=shift>=0?iTime(m_symbol,m_entryTF,shift):p.setup.creation_time;}if(!p.filled&&!m_liveExecution&&bar.time>creationBar){bool touched=buy?(bar.low<=p.entryRef):(bar.high>=p.entryRef);if(touched)SimFill(i,p.entryRef,bar.time);}if(!p.filled){p.barsElapsed++;p.lastBarTime=bar.time;m_pending[i]=p;if(p.barsElapsed>=m_maxBars)Finalize(i,"no_fill",bar.close);continue;}if(fshift>=0){datetime fillBar=iTime(m_symbol,m_entryTF,fshift);if(bar.time<=fillBar)continue;}if(p.lastBarTime==bar.time)continue;p.barsElapsed++;p.lastBarTime=bar.time;if(buy){if(bar.high>p.mfePrice)p.mfePrice=bar.high;if(bar.low<p.maePrice)p.maePrice=bar.low;}else{if(bar.low<p.mfePrice)p.mfePrice=bar.low;if(bar.high>p.maePrice)p.maePrice=bar.high;}if(m_decayHalfLifeBars>0){p.decayBars=p.barsElapsed;p.confidenceDecayed=p.confidenceAtSignal*MathPow(0.5,(double)p.decayBars/m_decayHalfLifeBars);}m_pending[i]=p;if(p.barsElapsed>=m_maxBars)Finalize(i,"timeout",bar.close);}}
