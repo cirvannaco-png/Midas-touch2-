@@ -2,6 +2,11 @@ name: Midas Touch - GitHub to GitLab Sync
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Midas Touch CI
+    types:
+      - completed
 
 permissions:
   contents: read
@@ -12,13 +17,19 @@ concurrency:
 
 jobs:
   sync:
-    name: Sync GitHub main to GitLab main
+    name: Sync GitHub main to private GitLab main
+    if: >
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'workflow_run' &&
+           github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.head_branch == github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout GitHub source
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
       - name: Require GitLab synchronization credential
@@ -28,15 +39,14 @@ jobs:
           set -euo pipefail
           if [ -z "${GITLAB_SYNC_TOKEN}" ]; then
             echo "::error::Missing GitHub Actions secret GITLAB_SYNC_TOKEN."
-            echo "Use a GitLab token with write_repository scope (or api + write_repository) that can push to project 86337573."
+            echo "Configure a GitLab token with write_repository (or api + write_repository) access to private project 86337573."
             exit 1
           fi
 
-      - name: Apply source-tree delta to GitLab
+      - name: Reconcile GitLab main to GitHub source
         env:
           GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
-          GITHUB_BEFORE: ${{ github.event.before }}
-          GITHUB_SHA: ${{ github.sha }}
+          SYNC_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
           git config --global user.name "midas-sync-bot"
@@ -50,41 +60,28 @@ jobs:
           git ls-remote gitlab refs/heads/main >/dev/null
           git fetch --prune gitlab main
 
-          before="${GITHUB_BEFORE}"
-          after="${GITHUB_SHA}"
-          zero="0000000000000000000000000000000000000000"
-
-          tmp_branch="sync-from-github-${after}"
-          git checkout -b "${tmp_branch}" "gitlab/main"
+          tmp_branch="sync-from-github-${SYNC_SHA}"
+          git checkout -b "${tmp_branch}" gitlab/main
 
           python - <<'PY'
           import os
           import subprocess
 
-          before = os.environ["GITHUB_BEFORE"]
-          after = os.environ["GITHUB_SHA"]
-          zero = "0" * 40
+          sync_sha = os.environ["SYNC_SHA"]
+          raw = subprocess.check_output(
+              ["git", "diff", "--name-status", "-M", "gitlab/main", sync_sha],
+              text=True,
+          )
 
-          if before == zero:
-              raw = subprocess.check_output(
-                  ["git", "ls-tree", "-r", "--name-only", after],
-                  text=True,
-              )
-              changes = [("A", path) for path in raw.splitlines()]
-          else:
-              raw = subprocess.check_output(
-                  ["git", "diff", "--name-status", "-M", before, after],
-                  text=True,
-              )
-              changes = []
-              for line in raw.splitlines():
-                  parts = line.split("\t")
-                  status = parts[0]
-                  if status.startswith("R") and len(parts) == 3:
-                      changes.append(("D", parts[1]))
-                      changes.append(("M", parts[2]))
-                  elif len(parts) >= 2:
-                      changes.append((status[0], parts[1]))
+          changes = []
+          for line in raw.splitlines():
+              parts = line.split("\t")
+              status = parts[0]
+              if status.startswith("R") and len(parts) == 3:
+                  changes.append(("D", parts[1]))
+                  changes.append(("M", parts[2]))
+              elif len(parts) >= 2:
+                  changes.append((status[0], parts[1]))
 
           changes = [
               (status, path)
@@ -95,16 +92,13 @@ jobs:
               and not path.startswith(".git/")
           ]
 
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
-              env.write(f"SYNC_CHANGE_COUNT={len(changes)}\n")
-
           with open("/tmp/midas-sync-actions.tsv", "w", encoding="utf-8") as out:
               for status, path in changes:
                   out.write(f"{status}\t{path}\n")
           PY
 
-          if [ "${SYNC_CHANGE_COUNT}" = "0" ]; then
-            echo "SYNC_OK: no source-tree changes require GitLab updates."
+          if [ ! -s /tmp/midas-sync-actions.tsv ]; then
+            echo "SYNC_OK: private GitLab main already matches the GitHub source tree within the sync boundary."
             exit 0
           fi
 
@@ -115,7 +109,7 @@ jobs:
                 git rm -f --ignore-unmatch -- "${path}"
                 ;;
               A|M)
-                git restore --source="${after}" --worktree --staged -- "${path}"
+                git restore --source="${SYNC_SHA}" --worktree --staged -- "${path}"
                 ;;
               *)
                 echo "::error::Unsupported sync status '${status}' for '${path}'."
@@ -125,7 +119,7 @@ jobs:
           done < /tmp/midas-sync-actions.tsv
 
           if git diff --cached --quiet; then
-            echo "SYNC_OK: source delta produced no GitLab tree change."
+            echo "SYNC_OK: no source-tree changes remained after reconciliation."
             exit 0
           fi
 
@@ -139,17 +133,17 @@ jobs:
           git push gitlab HEAD:refs/heads/main
 
           git fetch --prune gitlab main
-          expected="$(git rev-parse HEAD)"
           actual="$(git rev-parse gitlab/main)"
-          if [ "${expected}" != "${actual}" ]; then
+          expected="$(git rev-parse HEAD)"
+          if [ "${actual}" != "${expected}" ]; then
             echo "::error::GitLab main verification failed: expected ${expected}, got ${actual}."
             exit 1
           fi
 
-          echo "SYNC_VERIFIED: GitLab main at ${actual}."
+          echo "SYNC_VERIFIED: private GitLab main reconciled at ${actual}."
 
       - name: Explain non-blocking external failure
         if: ${{ failure() }}
         run: |
-          echo "::warning::GitHub -> GitLab synchronization failed; core GitHub CI remains authoritative."
-          echo "::warning::Repair GITLAB_SYNC_TOKEN with a valid GitLab write_repository-capable credential for project 86337573."
+          echo "::warning::GitHub -> GitLab synchronization failed."
+          echo "::warning::Repair GITLAB_SYNC_TOKEN for private project 86337573."

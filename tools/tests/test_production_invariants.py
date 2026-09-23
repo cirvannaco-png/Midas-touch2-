@@ -40,7 +40,9 @@ def test_ea_uses_broker_deal_fill_and_close_events():
     t=EA.read_text();assert "g_tracker.MarkExecuted(decisionId,price,dealTime,volume)" in t;assert "g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome)" in t
 
 def test_ea_fails_closed_on_decision_persistence():
-    t=EA.read_text();assert "if(!g_store.Save(decision))" in t;assert "if(!g_store.SaveExecution(decision.decision_id,lots,ticket))" in t
+    t=EA.read_text()
+    assert "if(!g_store.Save(decision))" in t
+    assert "g_store.SaveExecution(decision.decision_id,legLots[leg],ticket)" in t
 
 def test_decision_store_persists_thesis_invalidation_and_strategy():
     t=DECISION_STORE.read_text();assert "p[5]=DoubleToString(rec.setup.invalidation,_Digits)" in t;assert "p[14]=IntegerToString((int)rec.setup.reasons.selected_strategy)" in t;assert "rec.setup.invalidation=StringToDouble(f[5])" in t;assert "rec.setup.reasons.selected_strategy=(ENUM_SELECTED_STRATEGY)(int)StringToInteger(f[14])" in t
@@ -70,7 +72,9 @@ def test_broker_retries_only_explicit_transient_codes():
     t=BROKER.read_text();assert "case TRADE_RETCODE_REQUOTE:" in t;assert "case TRADE_RETCODE_CONNECTION:" in t;assert "case TRADE_RETCODE_TIMEOUT:" in t;assert "default:" in t;assert "return false;" in t
 
 def test_recovery_restores_actual_broker_entry():
-    t=RECOVERY.read_text();assert "double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);" in t;assert "RestoreTrade(dec,currentVolume,ticket,state,actualEntry)" in t
+    t=RECOVERY.read_text()
+    assert "double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);" in t
+    assert "RestoreTrade(dec,currentVolume,ticket,state,actualEntry,legIndex)" in t
 
 def test_order_manager_exposes_real_fill():
     t=ORDERS.read_text();assert "FillPrice" in t;assert "fillPrice" in t
