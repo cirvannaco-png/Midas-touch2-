@@ -102,6 +102,7 @@ jobs:
       - name: Validate MQL5 include tree
         run: |
           python tools/validate_mql5.py EA
+          python tools/validate_mql5_architecture.py
           python tools/validate_edge_lineage.py
           python tools/phase_a_d_manifest.py
 
