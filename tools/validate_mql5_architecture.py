@@ -164,7 +164,7 @@ def check_interfaces(sources: list[Path], errors: list[str]) -> None:
             continue
         for method, expected_arity in methods.items():
             defs = re.findall(rf"\b{re.escape(class_name)}::{re.escape(method)}\s*\(([^)]*)\)", text)
-            inline = re.findall(rf"\b{re.escape(method)}\s*\(([^)]*)\)\s*\{", text)
+            inline = re.findall(rf"\b{re.escape(method)}\s*\(([^)]*)\)\s*{{", text)
             if not defs and not inline:
                 errors.append(f"{file_name}: {class_name}::{method} implementation is missing")
                 continue
