@@ -51,7 +51,10 @@ def test_legacy_decisions_do_not_fabricate_invalidation():
     t=DECISION_STORE.read_text();assert "rec.setup.invalidation=0.0" in t;assert "Legacy decisions predate the first-class thesis boundary" in t
 
 def test_strategy_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
-    t=TRADE_ZONE.read_text();assert "TradeSetup rejected;ZeroMemory(rejected);return rejected;" in t;assert "return TradeSetup();" not in t
+    t=TRADE_ZONE.read_text()
+    assert "if(!built)return false;" in t
+    assert "if(!out.active){ZeroMemory(out);m_lastSetup=out;return out;}" in t
+    assert "return TradeSetup();" not in t
 
 def test_strategy_trade_zone_applies_spread_floor_then_rechecks_invalidation():
     t=TRADE_ZONE.read_text();assert "out.stop_loss=EnforceSpreadFloor" in t;assert "out.stop_loss>=out.invalidation" in t;assert "out.stop_loss<=out.invalidation" in t
