@@ -11,7 +11,7 @@
 #include "../SmartMoney/FVG.mqh"
 #include "../SmartMoney/Liquidity.mqh"
 #include "../SmartMoney/SupportResistance.mqh"
-#include "../Trading/TradeZone.mqh"
+#include "../Trading/StrategyTradeZone.mqh"
 
 // Declutter fix: the original drew EVERY detected BOS/FVG/liquidity pool/
 // SR zone ever found in up to 500 bars of history, every single
