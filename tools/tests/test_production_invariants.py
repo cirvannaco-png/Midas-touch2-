@@ -10,7 +10,7 @@ RECOVERY=ROOT/"EA"/"includes"/"Recovery/RecoveryEngine.mqh"
 ORDERS=ROOT/"EA"/"includes"/"Execution/OrderManager.mqh"
 CONFIG_SYNC=ROOT/"EA"/"includes"/"Signals/ConfigSync.mqh"
 DECISION_STORE=ROOT/"EA"/"includes"/"Decision/DecisionStore.mqh"
-TRADE_ZONE=ROOT/"EA"/"includes"/"Trading/TradeZone.mqh"
+TRADE_ZONE=ROOT/"EA"/"includes"/"Trading"/"StrategyTradeZone.mqh"
 GATING=ROOT/"tools"/"gating.py"
 CI=ROOT/".gitlab-ci.yml"
 
