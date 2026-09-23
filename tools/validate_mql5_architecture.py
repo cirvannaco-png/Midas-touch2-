@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "EA"
 INCLUDE_RE = re.compile(r'^\s*#include\s+"([^"]+)"', re.MULTILINE)
-CLASS_RE = re.compile(r'^\s*class\s+([A-Za-z_]\w*)\b', re.MULTILINE)
+CLASS_RE = re.compile(r'^\s*class\s+([A-Za-z_]\w*)\b[^;{]*\{', re.MULTILINE)
 STRUCT_RE = re.compile(r'^\s*struct\s+([A-Za-z_]\w*)\b', re.MULTILINE)
 
 
@@ -164,10 +164,11 @@ def check_interfaces(sources: list[Path], errors: list[str]) -> None:
             continue
         for method, expected_arity in methods.items():
             defs = re.findall(rf"\b{re.escape(class_name)}::{re.escape(method)}\s*\(([^)]*)\)", text)
-            if not defs:
+            inline = re.findall(rf"\b{re.escape(method)}\s*\(([^)]*)\)\s*\{", text)
+            if not defs and not inline:
                 errors.append(f"{file_name}: {class_name}::{method} implementation is missing")
                 continue
-            actual = arg_count(defs[0])
+            actual = arg_count(defs[0] if defs else inline[0])
             if actual != expected_arity:
                 errors.append(
                     f"{file_name}: {class_name}::{method} expects {expected_arity} arguments, "
