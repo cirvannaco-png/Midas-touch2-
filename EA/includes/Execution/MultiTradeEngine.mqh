@@ -85,6 +85,15 @@ bool CMultiTradeEngine::Build(const TradeSetup &setup,int availableSlots,MultiTr
      { out.reason="calibration sample is insufficient for multi-trade scaling"; return true; }
    if(setup.confidence<m_minRawConfidence)
      { out.reason="raw confidence below multi-trade floor"; return true; }
+   // Fail closed on malformed calibration values. NaN comparisons are
+   // false, which could otherwise let a corrupted probability bypass the
+   // ordinary "< threshold" gate.
+   if(!MathIsValidNumber(setup.calibrated_probability) ||
+      setup.calibrated_probability<0.0 || setup.calibrated_probability>100.0)
+     { out.reason="calibrated probability is invalid"; return true; }
+   if(!MathIsValidNumber(setup.confidence) ||
+      setup.confidence<0.0 || setup.confidence>100.0)
+     { out.reason="raw confidence is invalid"; return true; }
    if(setup.calibrated_probability<m_dualProbability)
      { out.reason="calibrated probability below dual-trade threshold"; return true; }
    if(m_requireHedging && !IsHedgingAccount())
