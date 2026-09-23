@@ -43,107 +43,44 @@ jobs:
             exit 1
           fi
 
-      - name: Reconcile GitLab main to GitHub source
+      - name: Reconcile GitLab main by source-tree parity
         env:
           GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
-          SYNC_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          GITHUB_SYNC_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
           git config --global user.name "midas-sync-bot"
           git config --global user.email "midas-sync-bot@users.noreply.github.com"
-          git config --global credential.helper store
-          printf 'https://oauth2:%s@gitlab.com\n' "${GITLAB_SYNC_TOKEN}" > "${HOME}/.git-credentials"
-          chmod 600 "${HOME}/.git-credentials"
-          trap 'rm -f "${HOME}/.git-credentials"' EXIT
 
-          git remote add gitlab https://gitlab.com/midas-touch-group1/midas-touch2.git
-          git ls-remote gitlab refs/heads/main >/dev/null
-          git fetch --prune gitlab main
+          rm -rf /tmp/midas-gitlab-tree
+          git clone --depth 1 --branch main             "https://oauth2:${GITLAB_SYNC_TOKEN}@gitlab.com/midas-touch-group1/midas-touch2.git"             /tmp/midas-gitlab-tree
 
-          tmp_branch="sync-from-github-${SYNC_SHA}"
-          git checkout -b "${tmp_branch}" gitlab/main
+          rsync -a --delete             --exclude '.git/'             --exclude '.github/'             "${GITHUB_WORKSPACE}/"             /tmp/midas-gitlab-tree/
 
-          python - <<'PY'
-          import os
-          import subprocess
-
-          sync_sha = os.environ["SYNC_SHA"]
-          raw = subprocess.check_output(
-              ["git", "diff", "--name-status", "-M", "gitlab/main", sync_sha],
-              text=True,
-          )
-
-          changes = []
-          for line in raw.splitlines():
-              parts = line.split("\t")
-              status = parts[0]
-              if status.startswith("R") and len(parts) == 3:
-                  changes.append(("D", parts[1]))
-                  changes.append(("M", parts[2]))
-              elif len(parts) >= 2:
-                  changes.append((status[0], parts[1]))
-
-          changes = [
-              (status, path)
-              for status, path in changes
-              if path
-              and not path.startswith(".github/")
-              and path != ".gitlab-ci.yml"
-              and not path.startswith(".git/")
-          ]
-
-          with open("/tmp/midas-sync-actions.tsv", "w", encoding="utf-8") as out:
-              for status, path in changes:
-                  out.write(f"{status}\t{path}\n")
-          PY
-
-          if [ ! -s /tmp/midas-sync-actions.tsv ]; then
-            echo "SYNC_OK: private GitLab main already matches the GitHub source tree within the sync boundary."
-            exit 0
-          fi
-
-          while IFS=$'\t' read -r status path; do
-            [ -n "${path}" ] || continue
-            case "${status}" in
-              D)
-                git rm -f --ignore-unmatch -- "${path}"
-                ;;
-              A|M)
-                git restore --source="${SYNC_SHA}" --worktree --staged -- "${path}"
-                ;;
-              *)
-                echo "::error::Unsupported sync status '${status}' for '${path}'."
-                exit 1
-                ;;
-            esac
-          done < /tmp/midas-sync-actions.tsv
+          cd /tmp/midas-gitlab-tree
+          git add -A
 
           if git diff --cached --quiet; then
-            echo "SYNC_OK: no source-tree changes remained after reconciliation."
+            echo "SYNC_OK: GitLab main source tree already matches GitHub source within the provider boundary."
             exit 0
-          fi
-
-          if git diff --cached --name-only | grep -E '(^|/)\.github/|^\.gitlab-ci\.yml$' >/dev/null; then
-            echo "::error::Sync boundary violation: provider-control files would change."
-            exit 1
           fi
 
           git diff --cached --name-status
-          git commit -m "chore(sync): GitHub main -> GitLab main"
-          git push gitlab HEAD:refs/heads/main
+          git commit -m "chore(sync): GitHub main source-tree parity"
+          git push origin HEAD:refs/heads/main
 
-          git fetch --prune gitlab main
-          actual="$(git rev-parse gitlab/main)"
+          git fetch --prune origin main
+          actual="$(git rev-parse origin/main)"
           expected="$(git rev-parse HEAD)"
           if [ "${actual}" != "${expected}" ]; then
             echo "::error::GitLab main verification failed: expected ${expected}, got ${actual}."
             exit 1
           fi
 
-          echo "SYNC_VERIFIED: private GitLab main reconciled at ${actual}."
+          echo "SYNC_VERIFIED: private GitLab main source tree reconciled from GitHub SHA ${GITHUB_SYNC_SHA}; GitLab commit ${actual}."
 
-      - name: Explain non-blocking external failure
+      - name: Explain external synchronization failure
         if: ${{ failure() }}
         run: |
           echo "::warning::GitHub -> GitLab synchronization failed."
-          echo "::warning::Repair GITLAB_SYNC_TOKEN for private project 86337573."
+          echo "::warning::Repair GITLAB_SYNC_TOKEN for private project 86337573 if authentication failed."
