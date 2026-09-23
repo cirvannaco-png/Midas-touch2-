@@ -140,8 +140,12 @@ bool COrderManager::HasLiveTradeForDecision(long decisionId,ulong excludeTicket)
       if(m_trades[i].decision.decision_id!=decisionId) continue;
       if(excludeTicket!=0 && m_trades[i].fsm.Ticket()==excludeTicket) continue;
       ENUM_TRADE_STATE s=m_trades[i].fsm.State();
-      if(s==TS_PENDING || s==TS_FILLED || s==TS_PROTECTED || s==TS_PARTIAL || s==TS_RUNNER || s==TS_WAITING)
-         return true;
+      if(s==TS_PENDING || s==TS_WAITING) return true;
+      if(s==TS_FILLED || s==TS_PROTECTED || s==TS_PARTIAL || s==TS_RUNNER)
+        {
+         ulong ticket=m_trades[i].fsm.Ticket();
+         if(ticket!=0 && PositionSelectByTicket(ticket)) return true;
+        }
      }
    return false;
   }
