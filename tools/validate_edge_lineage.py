@@ -28,6 +28,9 @@ REQUIRED = {
         "invalidation",
         "ValidateCandidate",
     ],
+    "EA/includes/Trading/TradeZone.mqh": [
+        '#include "StrategyTradeZone.mqh"',
+    ],
     "EA/includes/Trading/StrategyTradeZone.mqh": [
         "PopulateStrategyReads",
         "SelectPeerStrategy",
