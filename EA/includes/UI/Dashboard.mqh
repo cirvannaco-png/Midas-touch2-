@@ -8,7 +8,7 @@
 #include "../Core/ObjectManager.mqh"
 #include "../Analysis/TFContext.mqh"
 #include "../Analysis/Scoring.mqh"
-#include "../Trading/TradeZone.mqh"
+#include "../Trading/StrategyTradeZone.mqh"
 #include "../Trading/OutcomeTracker.mqh"
 
 class CDashboard
