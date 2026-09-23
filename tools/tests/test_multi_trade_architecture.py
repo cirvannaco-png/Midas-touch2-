@@ -17,6 +17,14 @@ def test_multi_trade_is_hard_gated_by_calibrated_probability_and_sample():
     assert "m_tripleProbability" in t
 
 
+def test_multi_trade_fails_closed_on_non_finite_or_out_of_range_probability_and_confidence():
+    t = MULTI.read_text()
+    assert "MathIsValidNumber(setup.calibrated_probability)" in t
+    assert "setup.calibrated_probability<0.0" in t
+    assert "setup.calibrated_probability>100.0" in t
+    assert "MathIsValidNumber(setup.confidence)" in t
+
+
 def test_multi_trade_requires_strong_current_confidence_too():
     t = MULTI.read_text()
     assert "setup.confidence<m_minRawConfidence" in t
