@@ -1,5 +1,18 @@
 # Changelog
 
+## Research analytics — feature attribution, counterfactuals, scale-out, and OOS validation
+
+### Added
+- Research-only permutation feature importance and correlated-feature clustered MDA.
+- Paired counterfactual replay analysis that rejects unpaired historical subsets.
+- Replay-based scale-out policy value analysis covering expectancy, drawdown, MFE/MAE, holding time, costs, and paired deltas.
+- A fail-closed research validation gate requiring locked-OOS evidence and consistent walk-forward folds, plus feature/cluster/counterfactual evidence and exit-policy replay evidence for exit-affecting changes.
+- Architecture documentation at docs/RESEARCH_ANALYTICS_ARCHITECTURE.md.
+- Dedicated unit coverage for all new research modules.
+
+### Boundary
+These additions do not modify live EA scoring, strategy routing, risk, portfolio, MultiTrade/Dual Trade, execution, or reconciliation logic. Research results remain evidence for promotion review and are not live weights.
+
 ## v2.18 — G6: broker-side safety checks + first tests for tools/
 
 Two unrelated real gaps found by audit, fixed together since both were
