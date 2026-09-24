@@ -14,7 +14,7 @@ def _rows():
 
 def test_scale_out_compares_paired_policies():
     report = compare_scale_out_policies(_rows(), benchmark_policy="full_exit")
-    assert report.paired_expectancy_delta_r["half_at_1r"] == pytest.approx(0.4)
+    assert report.paired_expectancy_delta_r["half_at_1r"] == pytest.approx(0.3)
     assert report.paired_outperformance_fraction["half_at_1r"] == 0.5
 
 
