@@ -2,7 +2,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 EA = ROOT / "EA" / "MedisTouch_v2.8.mq5"
-MULTI = ROOT / "EA" / "includes" / "Execution" / "MultiTradeEngine.mqh"
+MULTI = ROOT / "EA" / "includes" / "Portfolio" / "MultiTradeEngine.mqh"
+EXECUTION_MULTI = ROOT / "EA" / "includes" / "Execution" / "MultiTradeEngine.mqh"
 ORDERS = ROOT / "EA" / "includes" / "Execution" / "OrderManager.mqh"
 PORTFOLIO = ROOT / "EA" / "includes" / "Portfolio" / "PortfolioManager.mqh"
 TRACKER = ROOT / "EA" / "includes" / "Trading" / "OutcomeTrackerLive.mqh"
@@ -61,14 +62,16 @@ def test_child_closes_do_not_finalize_parent_until_last_live_leg():
     assert "m_calibration.Record(p.confidenceAtSignal,p.realizedPnL)" in tracker
 
 
-def test_ea_wires_multi_trade_after_decision_and_before_order_submission():
+def test_ea_wires_multi_trade_through_portfolio_before_order_submission():
     t = EA.read_text()
-    assert '#include "includes/Execution/MultiTradeEngine.mqh"' in t
+    assert not EXECUTION_MULTI.exists()
+    assert '#include "includes/Portfolio/MultiTradeEngine.mqh"' in t
     assert "g_multiTrade.Init(" in t
     assert "MultiTradePlan plan" in t
-    assert "g_multiTrade.Build(decision.setup,availableSlots,plan)" in t
-    assert "g_portfolio.AllowNewTradeBatch" in t
-    assert "g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,ticket,leg)" in t
+    build = t.index("g_multiTrade.Build(decision.setup,availableSlots,plan)")
+    gate = t.index("g_portfolio.AllowNewTradeBatch", build)
+    submit = t.index("g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,ticket,leg)", gate)
+    assert build < gate < submit
 
 
 def test_multi_trade_capacity_supports_three_symbol_positions():
