@@ -4,9 +4,9 @@ from tools.research.clustered_mda import build_feature_clusters, clustered_permu
 def test_cluster_builder_groups_correlated_evidence():
     rows = [
         {"bos": 1.0, "impulse": 2.0, "trend": 0.0},
-        {"bos": 2.0, "impulse": 4.0, "trend": 1.0},
-        {"bos": 3.0, "impulse": 6.0, "trend": 2.0},
-        {"bos": 4.0, "impulse": 8.0, "trend": 3.0},
+        {"bos": 2.0, "impulse": 4.0, "trend": 2.0},
+        {"bos": 3.0, "impulse": 6.0, "trend": -1.0},
+        {"bos": 4.0, "impulse": 8.0, "trend": 1.0},
     ]
     clusters = build_feature_clusters(
         rows, ["bos", "impulse", "trend"], correlation_threshold=0.95
