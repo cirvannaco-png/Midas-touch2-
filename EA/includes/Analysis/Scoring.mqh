@@ -43,13 +43,15 @@
 //     (see MarketPhase.mqh's caveat) — enable via RequireDistribution
 //     if you want to test it.
 //
-// The legacy Trend/BOS/Liquidity/FVG/SR sub-scores are KEPT and still
-// computed (TrendScore, FVGScore feed the point table above; BOSChoCHScore,
-// LiquidityScore, SRScore now feed EvaluateReasons() only, as informational
-// "why" flags on the dashboard) — they are deliberately NOT re-added into
-// CalculateConfidence's sum, since the Inducement engine's sweepScore/
-// bosScore already covers that evidence on the entry timeframe and adding
-// both would double-count the same signal under two names.
+// Evidence authority rule:
+//   * Inducement is the sole authoritative entry-timeframe source for
+//     impulse/structure/sweep/BOS evidence.
+//   * FVG/Trend remain separate confluence dimensions.
+//   * Legacy BOS/Liquidity point scorers are intentionally removed from
+//     this class. Their old evidence is neither summed into confidence nor
+//     recomputed for SetupReasons; the Inducement result is the single
+//     representation used by the scoring/reason layer. This prevents the
+//     same sweep/BOS event from acquiring two votes under different names.
 //
 // v2.8 additions (see ConfigureHtfOrderBlock/ConfigureVolatilityRegime/
 // ConfigureSessionFilter below): HTF Order Block confluence and the
@@ -141,8 +143,6 @@ private:
    double            OBScore(bool forBuy);
 
    double            TrendScore(bool forBuy);
-   double            BOSChoCHScore(bool forBuy);
-   double            LiquidityScore(bool forBuy);
    double            FVGScore(bool forBuy);
    double            SRScore(bool forBuy);
    double            VolumeScore(bool forBuy);
@@ -476,45 +476,7 @@ double CScoringEngine::TrendScore(bool forBuy)
       return 0.0;
      }
   }
-//+------------------------------------------------------------------+
-double CScoringEngine::BOSChoCHScore(bool forBuy)
-  {
-   if(m_bosCtx == NULL) return 0.0;
-   const int recencyBars = 20;
-   double score = 0.0;
 
-   if(m_bosCtx.bos.Count() > 0)
-     {
-      BOSEvent recent = m_bosCtx.bos.GetBOS(0);
-      if(recent.is_bullish == forBuy && recent.bar_index <= recencyBars)
-         score += 0.6 * recent.strength;
-     }
-   if(m_bosCtx.choch.Count() > 0)
-     {
-      CHOCHPoint c0 = m_bosCtx.choch.Get(0);
-      if(c0.bullish == forBuy && c0.bar_index <= recencyBars)
-         score += 0.4;
-      else if(m_bosCtx.choch.Count() > 1)
-        {
-         CHOCHPoint c1 = m_bosCtx.choch.Get(1);
-         if(c1.bullish == forBuy && c1.bar_index <= recencyBars)
-            score += 0.4;
-        }
-     }
-   return MathMin(score, 1.0);
-  }
-//+------------------------------------------------------------------+
-double CScoringEngine::LiquidityScore(bool forBuy)
-  {
-   if(m_liqCtx == NULL || m_liqCtx.liquidity.EventCount() == 0) return 0.0;
-   const int recencyBars = 10;
-   LiquidityEvent ev = m_liqCtx.liquidity.GetEvent(0);
-   if(ev.bar_index > recencyBars) return 0.0;
-   bool supportsBuy = (ev.type == LIQ_SELL_SIDE);
-   if(forBuy == supportsBuy) return ev.strength;
-   return 0.0;
-  }
-//+------------------------------------------------------------------+
 double CScoringEngine::FVGScore(bool forBuy)
   {
    if(m_fvgCtx == NULL || m_fvgCtx.candles.Total() == 0) return 0.0;
@@ -756,14 +718,19 @@ double CScoringEngine::PipSize()
 void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
   {
    ZeroMemory(out);
-   out.trend_aligned   = (TrendScore(forBuy) >= 0.6);
-   out.bos_confirmed   = (BOSChoCHScore(forBuy) > 0.0);
-   out.liquidity_swept = (LiquidityScore(forBuy) > 0.0);
-   out.fresh_fvg       = (FVGScore(forBuy) > 0.0);
-   out.sr_confluence   = (SRScore(forBuy) > 0.0);
 
+   // Evidence authority: these fields must describe the same inducement
+   // result that CalculateConfidence() uses. Do not reconstruct sweep/BOS
+   // evidence through the legacy detectors here; doing so creates a second
+   // representation of the same event and makes downstream consumers
+   // vulnerable to accidental double-counting.
    InducementResult ind = m_inducement.Validate(forBuy);
    out.inducement_valid = ind.valid;
+   out.bos_confirmed = ind.bosConfirmed;
+   out.liquidity_swept = ind.sweepFound;
+   out.trend_aligned   = (TrendScore(forBuy) >= 0.6);
+   out.fresh_fvg       = (FVGScore(forBuy) > 0.0);
+   out.sr_confluence   = (SRScore(forBuy) > 0.0);
    out.phase = m_phase.Detect();
 
    double price = CurrentPrice();
