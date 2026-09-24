@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
-//| Execution/MultiTradeEngine.mqh                                  |
-//| High-probability multi-leg execution allocation.                 |
+//| Portfolio/MultiTradeEngine.mqh                                    |
+//| High-probability multi-leg portfolio allocation policy.           |
 //+------------------------------------------------------------------+
 #ifndef MULTITRADEENGINE_MQH
 #define MULTITRADEENGINE_MQH

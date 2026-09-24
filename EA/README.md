@@ -21,7 +21,7 @@ EA/
     ├── Decision/                    # TradeDecision (records), DecisionEngine (policy router), DecisionStore (CSV persistence)
     ├── Execution/                   # BrokerAdapter, OrderManager, PositionManager, TradeStateMachine
     ├── Recovery/                    # RecoveryEngine (reconciles broker state after a restart)
-    ├── Portfolio/                   # PortfolioManager (cross-symbol risk caps)
+    ├── Portfolio/                   # PortfolioManager, MultiTradeEngine (capital allocation / multi-leg policy), cross-symbol risk caps
     ├── Signals/                     # SignalPublisher (HTTP -> telegram-bridge), SubscriberPlatform
     ├── Monitoring/                  # ProductionMonitor (heartbeat, drawdown alerts, reject counters)
     └── UI/                          # Dashboard, Visuals (indicator only)
