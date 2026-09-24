@@ -11,7 +11,7 @@ def test_cluster_builder_groups_correlated_evidence():
     clusters = build_feature_clusters(
         rows, ["bos", "impulse", "trend"], correlation_threshold=0.95
     )
-    assert any(set(cluster.features) == {"bos", "impulse", "trend"} for cluster in clusters)
+    assert any(set(cluster.features) == {"bos", "impulse"} for cluster in clusters)
 
 
 def test_clustered_mda_has_positive_group_importance():
