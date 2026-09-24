@@ -23,6 +23,10 @@ This integration branch consolidates production-hardening changes before they ar
 
 Any failed gate is fail-closed. No best-effort order placement.
 
+### Multi-trade placement
+
+The high-probability multi-trade policy belongs to the **Portfolio** layer, not the Execution layer. It determines whether one validated setup may be decomposed into multiple risk-budgeted legs using calibrated probability, current confidence, calibration sample sufficiency, account hedging semantics, and available capacity. The resulting plan is then subjected to the existing portfolio batch gate before any execution submission occurs. Execution remains responsible for broker-facing order submission, leg identity/state, and recovery—not for deciding whether multi-leg exposure is warranted.
+
 ## Payment-provider rule
 
 Payment notifications never grant entitlement without provider verification and transaction reconciliation. The Ammer Pay adapter is currently **disabled** because its server-to-server endpoint, webhook schema, and signature contract have not been verified from a primary merchant API specification. It must not be enabled for production until those contracts are supplied and tested. A verified provider must be used instead.
