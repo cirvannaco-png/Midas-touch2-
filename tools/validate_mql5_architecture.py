@@ -5,7 +5,7 @@ This is deliberately static. MetaEditor remains the authoritative MQL5
 compiler; this gate catches structural failures that Linux CI can still see:
 missing/case-mismatched includes, include cycles, duplicate class/struct
 definitions, missing key method implementations, interface arity drift, and
-the high-probability multi-trade placement/gating invariants.
+the high-probability portfolio multi-trade placement/gating invariants for the current Midas Touch tree.
 """
 from __future__ import annotations
 
