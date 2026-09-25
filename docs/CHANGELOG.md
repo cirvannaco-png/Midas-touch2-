@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.21 — Multi-asset policy hardening
+
+### Fixed
+- Disabled the London/New York session filter by default. It remains available as an explicit liquidity policy, but it is no longer treated as a universal market calendar for indices, ETFs, futures, equities, or other instruments.
+- Removed the implicit 10.0 native-price-unit psychological-level grid. Round-number levels are now opt-in per instrument; a non-positive step disables them.
+- Added regression coverage for these defaults and for symbol-native risk sizing via broker tick/volume properties.
+
+### Asset-safety boundary
+Midas Touch continues to derive monetary position sizing from each symbol's `SYMBOL_TRADE_TICK_SIZE`, `SYMBOL_TRADE_TICK_VALUE`, and broker volume limits. The remaining authoritative external validation is MetaEditor compilation plus MT5 Strategy Tester/live broker verification across representative FX, indices, ETFs, futures, and other supported symbol types.
+
+---
+
 ## v2.20 — Cross-asset Volume Profile Intelligence
 
 ### Added
