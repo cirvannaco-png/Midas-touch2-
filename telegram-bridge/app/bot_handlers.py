@@ -344,8 +344,11 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     last_signal_age = "never"
     if last_signal and last_signal.received_at:
-        delta = datetime.now(timezone.utc) - last_signal.received_at
-        last_signal_age = f"{int(delta.total_seconds() // 60)} min ago"
+        received_at = last_signal.received_at
+        if received_at.tzinfo is None:
+            received_at = received_at.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - received_at
+        last_signal_age = f"{max(0, int(delta.total_seconds() // 60))} min ago"
 
     lines = [
         f"🩺 Medis Touch bridge status (v{APP_VERSION})",
