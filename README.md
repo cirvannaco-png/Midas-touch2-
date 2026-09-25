@@ -1,6 +1,6 @@
-# Medis Touch
+# Midas Touch
 
-Medis Touch is an MT5 Expert Advisor (EA) suite with a production-ready Telegram signal bridge. The EA generates trade signals on your MT5 terminal; the bridge receives them via HTTP and forwards them to a private Telegram group.
+Midas Touch is an MT5 Expert Advisor (EA) suite with a production-ready Telegram signal bridge. The EA generates trade signals on your MT5 terminal; the bridge receives them via HTTP and forwards them to a private Telegram group.
 
 ## Subprojects
 
