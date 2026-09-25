@@ -56,6 +56,8 @@ struct ExecutionRecord
    double            volume;
    ulong             ticket;
    datetime          submitted_time;
+   int               leg_index;
+   double            target;
   };
 
 #endif
