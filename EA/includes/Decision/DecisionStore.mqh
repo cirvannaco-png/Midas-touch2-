@@ -14,7 +14,7 @@ private:
    string SerializeDecision(const TradeDecisionRecord &rec); bool ParseDecision(const string line,TradeDecisionRecord &rec);
    string SerializeExecution(const ExecutionRecord &rec); bool ParseExecution(const string line,ExecutionRecord &rec); void LoadFromDisk();
 public:
-   CDecisionStore(); void Init(const string symbol); void Deinit(); bool Save(const TradeDecisionRecord &rec); bool SaveExecution(long decisionId,double volume,ulong ticket);
+   CDecisionStore(); void Init(const string symbol); void Deinit(); bool Save(const TradeDecisionRecord &rec); bool SaveExecution(long decisionId,double volume,ulong ticket,int legIndex=0,double target=0.0);
    int LoadAll(TradeDecisionRecord &out[]); int LoadAllExecutions(ExecutionRecord &out[]); bool FindById(long decisionId,TradeDecisionRecord &out); int Count() const{return ArraySize(m_decisions);}
   };
 CDecisionStore::CDecisionStore():m_symbol(""),m_decisionsFile(""),m_executionsFile(""){}
@@ -81,10 +81,18 @@ bool CDecisionStore::ParseDecision(const string line,TradeDecisionRecord &rec)
      }
    rec.setup.active=true;rec.confidence=rec.setup.confidence;rec.decided_time=rec.setup.creation_time;rec.valid=rec.decision_id>0;rec.reason="restored from "+m_decisionsFile;return rec.valid;
   }
-string CDecisionStore::SerializeExecution(const ExecutionRecord &rec){return IntegerToString(rec.decision_id)+DECISION_CSV_SEP+DoubleToString(rec.volume,2)+DECISION_CSV_SEP+IntegerToString((long)rec.ticket)+DECISION_CSV_SEP+IntegerToString((long)rec.submitted_time);}
+string CDecisionStore::SerializeExecution(const ExecutionRecord &rec)
+  {
+   return IntegerToString(rec.decision_id)+DECISION_CSV_SEP+DoubleToString(rec.volume,2)+DECISION_CSV_SEP+
+          IntegerToString((long)rec.ticket)+DECISION_CSV_SEP+IntegerToString((long)rec.submitted_time)+DECISION_CSV_SEP+
+          IntegerToString(rec.leg_index)+DECISION_CSV_SEP+DoubleToString(rec.target,_Digits);
+  }
 bool CDecisionStore::ParseExecution(const string line,ExecutionRecord &rec)
   {
-   string f[];int n=StringSplit(line,StringGetCharacter(DECISION_CSV_SEP,0),f);if(n<3)return false;ZeroMemory(rec);rec.decision_id=(long)StringToInteger(f[0]);rec.volume=StringToDouble(f[1]);rec.ticket=(ulong)StringToInteger(f[2]);rec.submitted_time=(n>3)?(datetime)StringToInteger(f[3]):0;return rec.decision_id>0&&rec.volume>0&&rec.ticket>0;
+   string f[];int n=StringSplit(line,StringGetCharacter(DECISION_CSV_SEP,0),f);if(n<3)return false;ZeroMemory(rec);
+   rec.decision_id=(long)StringToInteger(f[0]);rec.volume=StringToDouble(f[1]);rec.ticket=(ulong)StringToInteger(f[2]);
+   rec.submitted_time=(n>3)?(datetime)StringToInteger(f[3]):0;rec.leg_index=(n>4)?(int)StringToInteger(f[4]):0;rec.target=(n>5)?StringToDouble(f[5]):0.0;
+   return rec.decision_id>0&&rec.volume>0&&rec.ticket>0;
   }
 void CDecisionStore::LoadFromDisk()
   {
@@ -97,11 +105,11 @@ bool CDecisionStore::Save(const TradeDecisionRecord &rec)
    if(!AppendLine(m_decisionsFile,SerializeDecision(rec)))return false;
    int idx=ArraySize(m_decisions);ArrayResize(m_decisions,idx+1);m_decisions[idx]=rec;return true;
   }
-bool CDecisionStore::SaveExecution(long decisionId,double volume,ulong ticket)
+bool CDecisionStore::SaveExecution(long decisionId,double volume,ulong ticket,int legIndex,double target)
   {
-   if(decisionId<=0||volume<=0||ticket==0)return false;
-   for(int i=0;i<ArraySize(m_executions);i++)if(m_executions[i].decision_id==decisionId&&m_executions[i].ticket==ticket)return true;
-   ExecutionRecord rec;ZeroMemory(rec);rec.decision_id=decisionId;rec.volume=volume;rec.ticket=ticket;rec.submitted_time=TimeCurrent();
+   if(decisionId<=0||volume<=0||ticket==0||legIndex<0)return false;
+   for(int i=0;i<ArraySize(m_executions);i++)if(m_executions[i].decision_id==decisionId&&m_executions[i].leg_index==legIndex)return true;
+   ExecutionRecord rec;ZeroMemory(rec);rec.decision_id=decisionId;rec.volume=volume;rec.ticket=ticket;rec.submitted_time=TimeCurrent();rec.leg_index=legIndex;rec.target=target;
    if(!AppendLine(m_executionsFile,SerializeExecution(rec)))return false;
    int idx=ArraySize(m_executions);ArrayResize(m_executions,idx+1);m_executions[idx]=rec;return true;
   }
