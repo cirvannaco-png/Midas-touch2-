@@ -67,7 +67,8 @@ def test_order_manager_supports_same_parent_with_distinct_legs():
 def test_child_closes_do_not_finalize_parent_until_last_live_leg():
     ea = EA.read_text()
     tracker = TRACKER.read_text()
-    assert "g_orders.HasLiveTradeForDecision(decisionId,position)" in ea
+    assert "g_orders.HasLiveTradeForDecision(decisionId)" in ea
+    assert "g_orders.HasLiveTradeForDecision(decisionId,position)" not in ea
     assert "p.lots+=volume" in tracker
     assert "m_calibration.Record(p.confidenceAtSignal,p.realizedPnL)" in tracker
 
