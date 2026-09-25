@@ -112,3 +112,23 @@ def test_signal_enqueue_suppressed_path_has_no_delivery_outbox():
     """Suppressed broadcasts still record the signal but must not enqueue delivery."""
     t=(ROOT/"telegram-bridge"/"app"/"routes.py").read_text()
     assert 'details="Broadcast paused or symbol muted - signal recorded, not sent to Telegram."' in t
+
+ 
+def test_recovery_matches_execution_metadata_by_decision_and_leg():
+    t=RECOVERY.read_text()
+    assert "execs[e].decision_id==decisionId && execs[e].leg_index==legIndex" in t
+    assert "restoredDecision.setup.final_tp=restoredTarget" in t
+    assert "m_orders.RestoreTrade(restoredDecision,currentVolume,ticket,state,actualEntry,legIndex)" in t
+ 
+def test_execution_store_persists_leg_index_and_target():
+    t=DECISION_STORE.read_text()
+    assert "IntegerToString(rec.leg_index)" in t
+    assert "DoubleToString(rec.target,_Digits)" in t
+    assert "rec.leg_index=(n>4)?(int)StringToInteger(f[4]):0" in t
+    assert "rec.target=(n>5)?StringToDouble(f[5]):0.0" in t
+ 
+def test_outcome_tracker_aggregates_risk_across_child_fills():
+    t=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh").read_text()
+    assert "p.weightedRiskDistLots=p.riskDist*volume" in t
+    assert "p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume" in t
+    assert "p.weightedRiskDistLots>0.0?p.weightedRiskDistLots" in t
