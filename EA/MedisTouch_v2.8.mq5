@@ -83,7 +83,7 @@ input int InpVolRegimeLookback=100;
 input double InpVolRegimeLowPct=0.25;
 input double InpVolRegimeHighPct=0.75;
 input group "Session Filter (v2.8)"
-input bool InpUseSessionFilter=true;
+input bool InpUseSessionFilter=false; // OFF by default: London/NY is a liquidity policy, not a universal exchange calendar
 input bool InpAllowTokyoSession=false;
 input bool InpAllowLondonSession=true;
 input bool InpAllowNewYorkSession=true;
@@ -126,7 +126,7 @@ input double InpKeyLevelSearchATRMax=3.0;
 input double InpKeyLevelTouchToleranceATRMult=0.15;
 input int InpKeyLevelAbsorptionMinTouches=3;
 input double InpKeyLevelWickRejectionRatio=0.55;
-input double InpKeyLevelRoundStep=10.0;
+input double InpKeyLevelRoundStep=0.0; // 0 = disabled; set explicitly per instrument when a psychological price grid is appropriate
 input group "Strategy Selection (v2.15) - measured, NOT acted on"
 input double InpMinSelectionScore=60.0;
 input group "Adaptive Environment Memory"
