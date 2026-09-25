@@ -115,9 +115,10 @@ def test_valid_signal_and_outbox_commit_together(client, auth_headers):
 
 
 def test_suppressed_signal_is_recorded_without_delivery_outbox(client, auth_headers):
+    from sqlalchemy import select
+
     from app.database import async_session
     from app.models import Signal, SignalDeliveryOutbox, SignalStatus
-    from sqlalchemy import select
 
     payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-suppressed-1"}
     with patch("app.routes.get_signal_broadcast_controls", new=AsyncMock(return_value=(True, set()))):
