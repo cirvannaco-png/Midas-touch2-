@@ -28,11 +28,16 @@ REQUIRED = {
         "invalidation",
         "ValidateCandidate",
     ],
-    "EA/includes/Trading/TradeZone.mqh": [
-        "BuildAuthoritativeStrategy",
+    "EA/includes/Trading/StrategyTradeZone.mqh": [
+        "PopulateStrategyReads",
+        "SelectPeerStrategy",
+        "BuildNonSMC",
         "GenerateBuySetup",
         "GenerateSellSetup",
         "selected_strategy",
+    ],
+    "EA/includes/Trading/TradeZone.mqh": [
+        '#include "StrategyTradeZone.mqh"',
     ],
     "EA/includes/Decision/DecisionEngine.mqh": [
         "ValidateSetupGeometry",
@@ -92,12 +97,17 @@ def main() -> int:
                 errors.append(f"{rel}: required contract token missing: {token}")
 
     trade_zone = texts.get("EA/includes/Trading/TradeZone.mqh", "")
-    if "if(owned.active)" not in trade_zone:
-        errors.append("TradeZone: authoritative strategy path no longer requires an owned active setup")
-    if re.search(r"if\s*\(owned\.active\).*?return owned;", trade_zone, re.S) is None:
-        errors.append("TradeZone: owned strategy setup is not returned explicitly")
-    if "return TradeSetup();" in trade_zone:
-        errors.append("TradeZone: temporary TradeSetup return reintroduced in a fail-closed path")
+    strategy_router = texts.get("EA/includes/Trading/StrategyTradeZone.mqh", "")
+    if '#include "StrategyTradeZone.mqh"' not in trade_zone:
+        errors.append("TradeZone: compatibility shim must forward to StrategyTradeZone")
+    if "class CTradeDecision" in trade_zone:
+        errors.append("TradeZone: legacy CTradeDecision definition still exists")
+    if "if(!built)return false;" not in strategy_router:
+        errors.append("StrategyTradeZone: non-SMC builders are not fail-closed")
+    if "if(!out.active){ZeroMemory(out);m_lastSetup=out;return out;}" not in strategy_router:
+        errors.append("StrategyTradeZone: inactive strategy setup is not returned fail-closed")
+    if "return TradeSetup();" in strategy_router:
+        errors.append("StrategyTradeZone: temporary TradeSetup return reintroduced in the strategy path")
 
     if errors:
         for error in errors:
