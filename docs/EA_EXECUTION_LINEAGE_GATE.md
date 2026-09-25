@@ -6,7 +6,7 @@ The live `EA/MedisTouch_v2.8.mq5` execution path generates `TradeSetup` objects 
 
 The market-state layer is authoritative for strategy eligibility: `CRegimeDetector` combines trend structure, ATR-percentile volatility and market phase into `TRENDING`, `RANGING`, `TRANSITION`, or `UNDEFINED`. `CStrategySelector` uses that state to select one eligible strategy without summing heterogeneous strategy scores.
 
-The previously blocking builder gap is now closed at source level. Momentum Breakout, Mean Reversion, and Key-Level Reaction each have an owned `TradeSetup` builder. `CTradeDecision::BuildAuthoritativeStrategy()` dispatches to the selected builder, rejects incomplete/invalid candidates, reapplies the broker spread floor, and fail-closes if execution constraints violate the thesis invalidation boundary. A selected challenger is never silently replaced by SMC.
+Strategy authority is implemented inside `CTradeDecision::Generate()`. `SelectPeerStrategy()` selects the eligible strategy, `BuildSMC()` constructs the SMC setup, and `BuildNonSMC()` dispatches Momentum Breakout, Mean Reversion, or Key-Level Reaction to its owned builder. Candidate setups are rejected when incomplete or geometrically invalid; the broker spread floor is reapplied and the thesis invalidation relationship is rechecked. A selected challenger is never silently replaced by SMC.
 
 ## Authoritative lineage
 
