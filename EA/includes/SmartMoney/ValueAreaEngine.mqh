@@ -311,6 +311,7 @@ void CValueAreaEngine::ComputeValueArea(double rangeLow, double binSize, double 
       m_pocMigrationATR = 0.0;
 
    m_havePreviousPOC = true;
+   m_valid = true;
   }
 
 //+------------------------------------------------------------------+

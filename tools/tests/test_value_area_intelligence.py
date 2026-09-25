@@ -88,3 +88,8 @@ def test_value_area_telemetry_is_persisted_and_visible():
 
 def test_low_quality_profiles_cannot_trigger_hard_conflict():
     assert "m_sourceQuality < 0.70" in VALUE_AREA.read_text()
+
+
+def test_successful_value_area_compute_restores_valid_state():
+    t = VALUE_AREA.read_text()
+    assert "m_havePreviousPOC = true;\\n   m_valid = true;" in t
