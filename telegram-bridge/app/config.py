@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # Roll out strict EA/backend fingerprint enforcement only after the
     # fingerprint-capable EA build has been compiled and deployed.
     REQUIRE_DECISION_FINGERPRINT: bool = False
+    # Read-only Render benchmark endpoint. Disabled by default so production
+    # services cannot accidentally expose the benchmark route.
+    BENCHMARK_ENABLED: bool = False
+    BENCHMARK_API_KEY: str = ""
 
     # Recalibration promotion policy is deliberately opt-in. If any required
     # threshold is absent, the lifecycle stays HOLD rather than inventing a
