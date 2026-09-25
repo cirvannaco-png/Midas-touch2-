@@ -1,9 +1,16 @@
 name: Render Read-Only Latency Benchmark
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      baseline_url:
+        description: "Isolated baseline Render service URL"
+        required: false
+        default: "https://midas-touch2-baseline2.onrender.com"
+      optimized_url:
+        description: "Isolated optimized Render service URL"
+        required: false
+        default: "https://midas-touch2-perf.onrender.com"
 
 permissions:
   contents: read
@@ -15,16 +22,12 @@ concurrency:
 jobs:
   benchmark:
     name: Read-only Render benchmark
-    # Do not fail ordinary PR CI when the protected benchmark credential has
-    # not been configured yet. The manual benchmark is enabled by adding
-    # MIDAS_RENDER_BENCHMARK_KEY (or the existing SECRET_KEY) as a repository secret.
-    if: ${{ secrets.MIDAS_RENDER_BENCHMARK_KEY != '' || secrets.SECRET_KEY != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       BENCH_KEY: ${{ secrets.MIDAS_RENDER_BENCHMARK_KEY || secrets.SECRET_KEY }}
-      BASE: https://midas-touch2-baseline2.onrender.com
-      OPT: https://midas-touch2-perf.onrender.com
+      BASE: ${{ inputs.baseline_url }}
+      OPT: ${{ inputs.optimized_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
