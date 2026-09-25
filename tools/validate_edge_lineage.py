@@ -7,7 +7,6 @@ removes explicit contracts that make the strategy and signal path auditable.
 """
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
@@ -29,7 +28,9 @@ REQUIRED = {
         "ValidateCandidate",
     ],
     "EA/includes/Trading/StrategyTradeZone.mqh": [
-        "BuildAuthoritativeStrategy",
+        "SelectPeerStrategy",
+        "BuildNonSMC",
+        "BuildSMC",
         "GenerateBuySetup",
         "GenerateSellSetup",
         "selected_strategy",
@@ -92,10 +93,16 @@ def main() -> int:
                 errors.append(f"{rel}: required contract token missing: {token}")
 
     trade_zone = texts.get("EA/includes/Trading/StrategyTradeZone.mqh", "")
-    if "if(owned.active)" not in trade_zone:
-        errors.append("TradeZone: authoritative strategy path no longer requires an owned active setup")
-    if re.search(r"if\s*\(owned\.active\).*?return owned;", trade_zone, re.S) is None:
-        errors.append("TradeZone: owned strategy setup is not returned explicitly")
+    if "SelectPeerStrategy(forBuy,reasons,selected,selectedScore)" not in trade_zone:
+        errors.append("TradeZone: authoritative strategy selection is not explicitly wired")
+    if "if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons)" not in trade_zone:
+        errors.append("TradeZone: selected SMC strategy is not built through its owned builder")
+    if "else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))" not in trade_zone:
+        errors.append("TradeZone: selected challenger strategy is not built through its owned builder")
+    if "out.reasons.selected_strategy=selected" not in trade_zone:
+        errors.append("TradeZone: selected strategy provenance is not retained on the completed setup")
+    if "m_lastSetup=out;return out;" not in trade_zone:
+        errors.append("TradeZone: completed setup is not returned through the owned last-setup path")
     if "return TradeSetup();" in trade_zone:
         errors.append("TradeZone: temporary TradeSetup return reintroduced in a fail-closed path")
 
