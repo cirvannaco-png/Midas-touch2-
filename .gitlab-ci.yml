@@ -21,6 +21,7 @@ mql5-structure:
   image: python:3.11-slim
   script:
     - python tools/validate_mql5.py EA
+    - python tools/validate_mql5_architecture.py
     - python tools/validate_edge_lineage.py
     - python tools/phase_a_d_manifest.py
   rules:
@@ -34,6 +35,7 @@ governance-tests:
     - python -m pip install --disable-pip-version-check -r medis_touch/requirements-dev.txt
     - python -m pip install --disable-pip-version-check -r telegram-bridge/requirements-dev.txt
   script:
+    - python -m compileall -q "$CI_PROJECT_DIR/tools" "$CI_PROJECT_DIR/telegram-bridge/app" "$CI_PROJECT_DIR/telegram-bridge/migrations" "$CI_PROJECT_DIR/telegram-bridge/scripts" "$CI_PROJECT_DIR/medis_touch/app" "$CI_PROJECT_DIR/medis_touch/tests"
     - ruff check medis_touch/app/ medis_touch/tests/
     - bandit -r medis_touch/app/ -q
     - PYTHONPATH="$CI_PROJECT_DIR" pytest -v medis_touch/tests/test_prediction_governance.py
