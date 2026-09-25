@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.20 — Cross-asset Volume Profile Intelligence
+
+### Added
+- Trade-by-price volume profiling from `COPY_TICKS_TRADE` when the connected feed exposes trade ticks, with explicit provenance for real trade ticks, broker trade ticks, real-volume bars, and tick-volume bars.
+- Real-volume retention in the canonical candle model so exchange-listed futures, stocks, ETFs, and indices can use `MqlRates.real_volume` when tick-level trade data is unavailable.
+- Value Area state detection for acceptance above/below VAH/VAL and rejection back through those boundaries.
+- POC migration telemetry, source-quality telemetry, and a revised Value Area score that distinguishes fair-value location, discount/premium distance, and accepted breakouts.
+- A default contradiction-based hard gate: low-quality profiles fail open, accepted breakouts remain eligible, and only strong profile evidence against the trade thesis blocks the setup.
+
+### Asset coverage
+The Volume Profile layer is symbol-agnostic. Exchange-traded instruments can use exchange-provided trade/real volume where the broker feed exposes it; FX, OTC, and CFD symbols use the strongest broker-provided volume source available and remain explicitly marked as such. This prevents Midas from pretending that fragmented OTC volume is a single consolidated exchange tape.
+
+### Validation boundary
+The change is implemented on `feature/volume-profile-intelligence`. MetaEditor compilation and MT5 Strategy Tester/backtest results are still authoritative external gates and have not been claimed as passed by this repository-only integration.
+
+---
+
 ## Research analytics — feature attribution, counterfactuals, scale-out, and OOS validation
 
 ### Added
