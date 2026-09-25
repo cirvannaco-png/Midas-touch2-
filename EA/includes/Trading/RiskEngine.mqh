@@ -5,7 +5,6 @@
 #define RISKENGINE_MQH
 
 #include "../Core/Config.mqh"
-#include "TradeZone.mqh"
 
 class CRiskEngine
   {
