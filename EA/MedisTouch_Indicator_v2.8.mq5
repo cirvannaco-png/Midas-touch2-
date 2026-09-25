@@ -88,7 +88,7 @@ input double InpVolRegimeLowPct = 0.25;            // Bottom quartile (default) 
 input double InpVolRegimeHighPct = 0.75;           // Top quartile (default) = HIGH regime
 
 input group "Session Filter (v2.8)"
-input bool   InpUseSessionFilter = true;           // ON by default — replaces "trade every session equally"
+input bool   InpUseSessionFilter = false;          // OFF by default: London/NY is a liquidity policy, not a universal exchange calendar
 input bool   InpAllowTokyoSession = false;         // Tokyo-only hours (thin liquidity) — off by default
 input bool   InpAllowLondonSession = true;
 input bool   InpAllowNewYorkSession = true;
