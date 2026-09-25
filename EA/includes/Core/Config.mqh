@@ -16,6 +16,8 @@ enum ENUM_FILL_POLICY { FILL_CONSERVATIVE, FILL_OPTIMISTIC, FILL_NEAREST, FILL_I
 enum ENUM_MARKET_PHASE { PHASE_UNDEFINED, PHASE_ACCUMULATION, PHASE_MANIPULATION, PHASE_DISTRIBUTION };
 enum ENUM_FIB_ZONE { FIB_ZONE_UNDEFINED, FIB_ZONE_DISCOUNT, FIB_ZONE_NEUTRAL, FIB_ZONE_PREMIUM };
 enum ENUM_VALUE_AREA_ZONE { VA_ZONE_UNDEFINED, VA_ZONE_BELOW, VA_ZONE_INSIDE, VA_ZONE_ABOVE };
+enum ENUM_VALUE_PROFILE_SOURCE { VA_SOURCE_UNDEFINED, VA_SOURCE_REAL_TRADE_TICKS, VA_SOURCE_BROKER_TRADE_TICKS, VA_SOURCE_REAL_VOLUME_BARS, VA_SOURCE_TICK_VOLUME_BARS };
+enum ENUM_VALUE_PROFILE_STATE { VA_STATE_UNDEFINED, VA_STATE_BALANCED, VA_STATE_ACCEPTED_ABOVE, VA_STATE_ACCEPTED_BELOW, VA_STATE_REJECTED_ABOVE, VA_STATE_REJECTED_BELOW };
 enum ENUM_OB_STATE { OB_FRESH, OB_TESTED, OB_MITIGATED };
 enum ENUM_VOL_REGIME { VOL_REGIME_UNDEFINED, VOL_REGIME_LOW, VOL_REGIME_NORMAL, VOL_REGIME_HIGH };
 enum ENUM_TRADING_SESSION { SESSION_DEAD, SESSION_TOKYO, SESSION_LONDON, SESSION_NEWYORK, SESSION_LONDON_NY_OVERLAP };
@@ -30,7 +32,7 @@ enum ENUM_SWEEP_GRADE { SWEEP_GRADE_NONE, SWEEP_GRADE_C, SWEEP_GRADE_B, SWEEP_GR
 struct ImpulseLeg { bool valid; datetime start_time; datetime end_time; int start_bar; int end_bar; double start_price; double end_price; bool bullish; double strength; };
 struct InducementResult { bool valid; bool impulseFound; bool internalStructureFound; bool sweepFound; bool bosConfirmed; double impulseScore; double structureScore; double sweepScore; double bosScore; double totalScore; ImpulseLeg leg; string reason; ENUM_SWEEP_GRADE sweepGrade; double sweepGradeScore; double bosStrength; int barsSinceSweep; int barsSinceBOS; double timeDecay; double bosClosePrice; int bosBarIndex; };
 struct OutcomeStats { int wins; int losses; int scratches; int ambiguous; double netPnL; double grossProfit; double grossLoss; double totalCommission; double totalSpreadCost; double totalSlippageCost; double sumRMultiple; int resolvedCount; int ExcludingAmbiguousTotal() const { return wins + losses; } double WinRateExcludingAmbiguous() const { int t=wins+losses; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsLoss() const { int t=wins+losses+ambiguous; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsWin() const { int t=wins+losses+ambiguous; return t>0?100.0*(wins+ambiguous)/t:0.0; } double ProfitFactor() const { if(grossLoss>0)return grossProfit/grossLoss; return grossProfit>0?-1.0:0.0; } double ExpectancyPerTrade() const { return resolvedCount>0?netPnL/resolvedCount:0.0; } double AverageRMultiple() const { return resolvedCount>0?sumRMultiple/resolvedCount:0.0; } };
-struct CandleData { datetime time; double open; double high; double low; double close; long tick_volume; double atr; };
+struct CandleData { datetime time; double open; double high; double low; double close; long tick_volume; long real_volume; double atr; };
 struct SwingPoint { datetime time; double price; bool is_high; int bar_index; double strength; };
 struct BOSEvent { datetime time; double price; bool is_bullish; double strength; int bar_index; string label; };
 struct CHOCHPoint { datetime time; double price; bool bullish; int bar_index; };
@@ -43,7 +45,7 @@ struct SRZone { double top; double bottom; ENUM_SR_TYPE type; int touches; datet
 struct SetupReasons {
    bool trend_aligned; bool bos_confirmed; bool liquidity_swept; bool fresh_fvg; bool sr_confluence; bool inducement_valid; bool premium_discount_ok;
    ENUM_MARKET_PHASE phase; string risk_warning; double rvol; bool volume_confirmed; ENUM_FIB_ZONE fib_zone; bool fib_in_zone; double fib_nearest_level;
-   bool value_area_ok; ENUM_VALUE_AREA_ZONE va_zone; double va_poc; double va_high; double va_low; bool htf_ob_confluence; ENUM_OB_STATE htf_ob_state;
+   bool value_area_ok; ENUM_VALUE_AREA_ZONE va_zone; double va_poc; double va_high; double va_low; ENUM_VALUE_PROFILE_SOURCE value_profile_source; ENUM_VALUE_PROFILE_STATE value_profile_state; double va_poc_migration_atr; double va_source_quality; double va_score; bool value_area_contradiction; bool htf_ob_confluence; ENUM_OB_STATE htf_ob_state;
    ENUM_VOL_REGIME vol_regime; ENUM_TRADING_SESSION session; bool session_ok; ENUM_SWEEP_GRADE sweep_grade; double bos_strength; double time_decay;
    double chase_dist_atr; bool chase_ok; ENUM_NEWS_RISK news_risk; string news_label; int news_minutes_to_event; double contradiction_penalty; double env_score;
    double exec_score; double env_exec_confidence; ENUM_MARKET_REGIME regime; double momentum_score; double breakout_score; ENUM_BREAKOUT_CLASS breakout_class;

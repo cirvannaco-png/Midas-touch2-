@@ -78,6 +78,7 @@ void CCandleData::FetchRates()
       m_data[i].low  = rates[i].low;
       m_data[i].close = rates[i].close;
       m_data[i].tick_volume = rates[i].tick_volume;
+      m_data[i].real_volume = rates[i].real_volume;
       m_data[i].atr = 0.0;
      }
    UpdateATR();
