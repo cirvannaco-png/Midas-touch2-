@@ -2,11 +2,6 @@ name: Midas Touch - GitHub to GitLab Sync
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - Midas Touch CI
-    types:
-      - completed
 
 permissions:
   contents: read

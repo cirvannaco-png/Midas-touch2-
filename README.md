@@ -6,11 +6,11 @@ Midas Touch is an MT5 Expert Advisor (EA) suite with a production-ready Telegram
 
 | Directory | What it is |
 |-----------|------------|
-| [`EA/`](EA/) | MQL5 source for MedisTouch (v2.10 engine) — Expert Advisor, indicator, and the `includes/` engine tree |
+| [`EA/`](EA/) | MQL5 source for Midas Touch (v2.10 engine) — Expert Advisor, indicator, and the `includes/` engine tree |
 | [`tools/`](tools/) | CI include-tree validator, offline confidence-model comparison script, and the trade-tagging recalibration suite (`metrics_engine.py`, `calibration_matrix.py`, `gating.py`, `stats.py`) — copied into the bridge's Docker image and driven in production by `telegram-bridge/app/calibration.py`; also runnable standalone against the production DB for ad-hoc reports |
 | [`mql5/`](mql5/) | Legacy placeholder tree mirroring the MT5 terminal layout (Experts / Include / Scripts) |
 | [`telegram-bridge/`](telegram-bridge/) | Production FastAPI service: receives signals from the EA and posts them to Telegram |
-| [`medis_touch/`](medis_touch/) | Non-production handbook/reference implementation used for architecture, lifecycle, and execution-control research; not the live bridge runtime |
+| [`medis_touch/`](medis_touch/) | Non-production Midas Touch handbook/reference implementation used for architecture, lifecycle, and execution-control research; not the live bridge runtime |
 | [`docs/`](docs/) | Changelog and MALI audit history |
 
 
@@ -52,7 +52,7 @@ See [`telegram-bridge/README.md`](telegram-bridge/README.md) for full environmen
 ## Status
 
 - **telegram-bridge**: production FastAPI service, tested and deployable (see below).
-- **medis_touch**: non-production reference/handbook implementation. It intentionally contains incomplete integrations and must not be treated as the live trading runtime.
+- **medis_touch**: non-production Midas Touch reference/handbook implementation. It intentionally contains incomplete integrations and must not be treated as the live trading runtime.
 - **EA/**: the EA (`MedisTouch_v2.8.mq5`), the visuals-only indicator
   (`MedisTouch_Indicator_v2.8.mq5`) and the full `includes/` engine tree.
   Filenames still say v2.8; the engine inside is **v2.10**. Compiled `.ex5`
