@@ -50,10 +50,11 @@ def test_benchmark_signal_is_disabled_by_default(client):
 
 
 def test_benchmark_signal_is_read_only_when_enabled(client, auth_headers):
+    from sqlalchemy import func, select
+
     from app.config import settings
     from app.database import async_session
     from app.models import Signal, SignalDeliveryOutbox
-    from sqlalchemy import func, select
 
     original_enabled = settings.BENCHMARK_ENABLED
     original_key = settings.BENCHMARK_API_KEY
@@ -87,9 +88,10 @@ def test_benchmark_signal_is_read_only_when_enabled(client, auth_headers):
 
 def test_valid_signal_and_outbox_commit_together(client, auth_headers):
     """A valid signal and its durable delivery reservation must commit together."""
+    from sqlalchemy import select
+
     from app.database import async_session
     from app.models import Signal, SignalDeliveryOutbox, SignalStatus
-    from sqlalchemy import select
 
     payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-atomic-1"}
     resp = client.post("/signal", json=payload, headers=auth_headers)
