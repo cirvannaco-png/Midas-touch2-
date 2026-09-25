@@ -53,6 +53,11 @@ void CDecisionEngine::Init(const string symbol, bool enableExecution, bool enabl
    m_maxSpreadPoints = MathMax(0, maxSpreadPoints);
   }
 //+------------------------------------------------------------------+
+void CDecisionEngine::SeedNextId(long nextId)
+  {
+   m_nextId = MathMax(1, nextId);
+  }
+//+------------------------------------------------------------------+
 double CDecisionEngine::CurrentSpreadPoints() const
   {
    long spread = SymbolInfoInteger(m_symbol, SYMBOL_SPREAD);
