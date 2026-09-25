@@ -83,6 +83,15 @@ bool CMultiTradeEngine::Build(const TradeSetup &setup,int availableSlots,MultiTr
    if(availableSlots<2) { out.reason="fewer than two execution slots available"; return true; }
    if(!setup.calibration_has_enough_data || setup.calibration_sample<m_minCalibrationSample)
      { out.reason="calibration sample is insufficient for multi-trade scaling"; return true; }
+   // NaN comparisons are false in MQL5. Reject malformed values before
+   // threshold checks so corrupted calibration data can never bypass
+   // the high-probability execution gate.
+   if(!MathIsValidNumber(setup.calibrated_probability) ||
+      setup.calibrated_probability<0.0 || setup.calibrated_probability>100.0)
+     { out.reason="calibrated probability is invalid"; return true; }
+   if(!MathIsValidNumber(setup.confidence) ||
+      setup.confidence<0.0 || setup.confidence>100.0)
+     { out.reason="raw confidence is invalid"; return true; }
    if(setup.confidence<m_minRawConfidence)
      { out.reason="raw confidence below multi-trade floor"; return true; }
    if(setup.calibrated_probability<m_dualProbability)
