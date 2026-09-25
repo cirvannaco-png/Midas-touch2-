@@ -5,6 +5,7 @@
 #define ORDERMANAGER_MQH
 
 #include "../Decision/TradeDecision.mqh"
+#include "../Monitoring/ProductionMonitor.mqh"
 #include "TradeStateMachine.mqh"
 #include "BrokerAdapter.mqh"
 

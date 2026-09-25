@@ -81,6 +81,10 @@ bool CMultiTradeEngine::Build(const TradeSetup &setup,int availableSlots,MultiTr
    if(!m_enabled) { out.reason="multi-trade disabled"; return true; }
    if(!setup.active) { out.reason="setup inactive"; return true; }
    if(availableSlots<2) { out.reason="fewer than two execution slots available"; return true; }
+   if(!MathIsValidNumber(setup.confidence) || setup.confidence<0.0 || setup.confidence>100.0)
+     { out.reason="raw confidence is non-finite or outside [0,100]"; return true; }
+   if(!MathIsValidNumber(setup.calibrated_probability) || setup.calibrated_probability<0.0 || setup.calibrated_probability>100.0)
+     { out.reason="calibrated probability is non-finite or outside [0,100]"; return true; }
    if(!setup.calibration_has_enough_data || setup.calibration_sample<m_minCalibrationSample)
      { out.reason="calibration sample is insufficient for multi-trade scaling"; return true; }
    if(setup.confidence<m_minRawConfidence)

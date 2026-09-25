@@ -28,7 +28,7 @@ REQUIRED = {
         "invalidation",
         "ValidateCandidate",
     ],
-    "EA/includes/Trading/TradeZone.mqh": [
+    "EA/includes/Trading/StrategyTradeZone.mqh": [
         "BuildAuthoritativeStrategy",
         "GenerateBuySetup",
         "GenerateSellSetup",
@@ -91,7 +91,7 @@ def main() -> int:
             if token not in text:
                 errors.append(f"{rel}: required contract token missing: {token}")
 
-    trade_zone = texts.get("EA/includes/Trading/TradeZone.mqh", "")
+    trade_zone = texts.get("EA/includes/Trading/StrategyTradeZone.mqh", "")
     if "if(owned.active)" not in trade_zone:
         errors.append("TradeZone: authoritative strategy path no longer requires an owned active setup")
     if re.search(r"if\s*\(owned\.active\).*?return owned;", trade_zone, re.S) is None:

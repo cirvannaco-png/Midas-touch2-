@@ -10,7 +10,7 @@ RECOVERY=ROOT/"EA"/"includes"/"Recovery/RecoveryEngine.mqh"
 ORDERS=ROOT/"EA"/"includes"/"Execution/OrderManager.mqh"
 CONFIG_SYNC=ROOT/"EA"/"includes"/"Signals/ConfigSync.mqh"
 DECISION_STORE=ROOT/"EA"/"includes"/"Decision/DecisionStore.mqh"
-TRADE_ZONE=ROOT/"EA"/"includes"/"Trading/TradeZone.mqh"
+TRADE_ZONE=ROOT/"EA"/"includes"/"Trading/StrategyTradeZone.mqh"
 GATING=ROOT/"tools"/"gating.py"
 CI=ROOT/".gitlab-ci.yml"
 
@@ -50,10 +50,10 @@ def test_decision_store_persists_thesis_invalidation_and_strategy():
 def test_legacy_decisions_do_not_fabricate_invalidation():
     t=DECISION_STORE.read_text();assert "rec.setup.invalidation=0.0" in t;assert "Legacy decisions predate the first-class thesis boundary" in t
 
-def test_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
+def test_strategy_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
     t=TRADE_ZONE.read_text();assert "TradeSetup rejected;ZeroMemory(rejected);return rejected;" in t;assert "return TradeSetup();" not in t
 
-def test_trade_zone_applies_spread_floor_then_rechecks_invalidation():
+def test_strategy_trade_zone_applies_spread_floor_then_rechecks_invalidation():
     t=TRADE_ZONE.read_text();assert "out.stop_loss=EnforceSpreadFloor" in t;assert "out.stop_loss>=out.invalidation" in t;assert "out.stop_loss<=out.invalidation" in t
 
 def test_normal_opportunity_floor_is_below_transition_floor():
