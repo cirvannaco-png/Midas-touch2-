@@ -117,6 +117,12 @@ class SignalRequest(BaseModel):
         return v
 
 
+class BenchmarkSignalResponse(BaseModel):
+    status: str
+    processing_ms: float
+    decision_fingerprint: str
+
+
 class TradeEventRequest(BaseModel):
     event_id: str = Field(..., min_length=1, max_length=150)
     trade_id: str = Field(..., min_length=1, max_length=100)
@@ -211,6 +217,15 @@ async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
     return True
 
 
+async def verify_benchmark_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
+    if not settings.BENCHMARK_ENABLED:
+        raise HTTPException(status_code=404, detail="Benchmark route disabled")
+    expected_key = settings.BENCHMARK_API_KEY or settings.SECRET_KEY
+    if not secrets.compare_digest(x_api_key, expected_key):
+        raise HTTPException(status_code=401, detail="Invalid benchmark API key")
+    return True
+
+
 # ---------- Endpoints ----------
 @router.get("/", response_model=HealthResponse)
 @router.head("/")
@@ -257,6 +272,25 @@ async def telegram_webhook(
         logger.error(f"Failed to process Telegram update ({type(e).__name__}): {e}")
 
     return {"ok": True}
+
+
+@router.post("/benchmark/signal", response_model=BenchmarkSignalResponse)
+async def benchmark_signal(
+    payload: SignalRequest,
+    _auth: bool = Depends(verify_benchmark_api_key),
+):
+    """Read-only benchmark path: validate and fingerprint without DB or Telegram side effects."""
+    start_time = time.perf_counter()
+    valid, errors = validate_signal(payload.model_dump())
+    if not valid:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    decision_payload = canonical_decision_payload(payload)
+    expected_fingerprint = fingerprint(decision_payload)
+    return BenchmarkSignalResponse(
+        status="ok",
+        processing_ms=round((time.perf_counter() - start_time) * 1000.0, 3),
+        decision_fingerprint=expected_fingerprint,
+    )
 
 
 @router.post("/signal", response_model=SignalResponse)

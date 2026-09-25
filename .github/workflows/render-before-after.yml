@@ -1,0 +1,159 @@
+name: Render Read-Only Latency Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_url:
+        description: "Isolated baseline Render service URL"
+        required: false
+        default: "https://midas-touch2-baseline2.onrender.com"
+      optimized_url:
+        description: "Isolated optimized Render service URL"
+        required: false
+        default: "https://midas-touch2-perf.onrender.com"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-read-only-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Read-only Render benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BENCH_KEY: ${{ secrets.MIDAS_RENDER_BENCHMARK_KEY || secrets.SECRET_KEY }}
+      BASE: ${{ inputs.baseline_url }}
+      OPT: ${{ inputs.optimized_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify benchmark credential
+        run: |
+          set -euo pipefail
+          if [ -z "${BENCH_KEY}" ]; then
+            echo "::error::Missing MIDAS_RENDER_BENCHMARK_KEY/SECRET_KEY repository secret."
+            exit 1
+          fi
+
+      - name: Benchmark isolated read-only route
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          import os
+          import statistics
+          import time
+          import urllib.error
+          import urllib.request
+          import uuid
+
+          SERVICES = {
+              "baseline": os.environ["BASE"],
+              "optimized": os.environ["OPT"],
+          }
+
+          def percentile(values, quantile):
+              values = sorted(values)
+              return values[max(0, min(len(values) - 1, math.ceil(quantile * len(values)) - 1))]
+
+          def request(url, method="GET", payload=None):
+              data = None if payload is None else json.dumps(payload).encode()
+              req = urllib.request.Request(
+                  url,
+                  data=data,
+                  method=method,
+                  headers={
+                      "X-API-Key": os.environ["BENCH_KEY"],
+                      "Content-Type": "application/json",
+                  },
+              )
+              started = time.perf_counter()
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  body = response.read()
+                  return response.status, (time.perf_counter() - started) * 1000.0, body
+
+          def benchmark_payload(i):
+              return {
+                  "signal_id": f"readonly-bench-{uuid.uuid4()}-{i}",
+                  "symbol": "XAUUSD",
+                  "direction": "BUY",
+                  "entry": 2000.0,
+                  "sl": 1995.0,
+                  "tp1": 2005.0,
+                  "tp2": 2010.0,
+                  "confidence": 78,
+                  "reasons": ["latency-benchmark"],
+                  "timeframe": "M15",
+              }
+
+          report = {}
+          for label, base in SERVICES.items():
+              code, first_ms, _ = request(base + "/")
+              if code != 200:
+                  raise SystemExit(f"{label} root returned {code}")
+
+              root = [request(base + "/")[1] for _ in range(30)]
+              db = [request(base + "/health/db")[1] for _ in range(30)]
+
+              benchmark_samples = []
+              for i in range(50):
+                  code, elapsed_ms, _ = request(base + "/benchmark/signal", "POST", benchmark_payload(i))
+                  if code != 200:
+                      raise SystemExit(f"{label} /benchmark/signal returned {code}")
+                  benchmark_samples.append(elapsed_ms)
+
+              report[label] = {
+                  "first_request_ms": round(first_ms, 3),
+                  "root_warm_ms": {
+                      key: round(percentile(root, q), 3)
+                      for key, q in (("p50", 0.50), ("p95", 0.95), ("p99", 0.99))
+                  },
+                  "db_health_ms": {
+                      key: round(percentile(db, q), 3)
+                      for key, q in (("p50", 0.50), ("p95", 0.95), ("p99", 0.99))
+                  },
+                  "benchmark_signal_ms": {
+                      key: round(percentile(benchmark_samples, q), 3)
+                      for key, q in (("p50", 0.50), ("p95", 0.95), ("p99", 0.99))
+                  },
+                  "benchmark_signal_mean_ms": round(statistics.mean(benchmark_samples), 3),
+              }
+
+          print(json.dumps(report, indent=2))
+          with open("render-read-only-benchmark.json", "w", encoding="utf-8") as handle:
+              json.dump(report, handle, indent=2)
+
+          baseline = report["baseline"]["benchmark_signal_ms"]
+          optimized = report["optimized"]["benchmark_signal_ms"]
+          print(f"benchmark p50 delta: {optimized['p50'] - baseline['p50']:.3f} ms")
+          print(f"benchmark p95 delta: {optimized['p95'] - baseline['p95']:.3f} ms")
+          print(f"benchmark p99 delta: {optimized['p99'] - baseline['p99']:.3f} ms")
+          print(
+              "benchmark p95 improvement: "
+              f"{((baseline['p95'] - optimized['p95']) / baseline['p95'] * 100):.2f}%"
+          )
+
+          if optimized["p95"] > 350.0:
+              raise SystemExit(
+                  f"optimized /benchmark/signal p95 absolute ceiling exceeded: "
+                  f"{optimized['p95']:.2f} ms"
+              )
+          if optimized["p95"] > baseline["p95"] * 1.10:
+              raise SystemExit(
+                  "optimized /benchmark/signal p95 regressed >10% versus baseline: "
+                  f"{optimized['p95']:.2f} ms vs {baseline['p95']:.2f} ms"
+              )
+          PY
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-read-only-benchmark
+          path: render-read-only-benchmark.json
+          if-no-files-found: warn
