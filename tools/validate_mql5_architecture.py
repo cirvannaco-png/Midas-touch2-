@@ -206,6 +206,12 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"MultiTradeEngine.mqh is coupled directly to {token}; keep portfolio policy independent")
 
     gates = (
+        "MathIsValidNumber(setup.calibrated_probability)",
+        "setup.calibrated_probability<0.0",
+        "setup.calibrated_probability>100.0",
+        "MathIsValidNumber(setup.confidence)",
+        "setup.confidence<0.0",
+        "setup.confidence>100.0",
         "calibration_has_enough_data",
         "calibration_sample<m_minCalibrationSample",
         "setup.confidence<m_minRawConfidence",
