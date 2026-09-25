@@ -39,10 +39,15 @@ def test_outcomes_advance_before_entry_gates():
 def test_ea_uses_broker_deal_fill_and_close_events():
     t=EA.read_text();assert "g_tracker.MarkExecuted(decisionId,price,dealTime,volume)" in t;assert "g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome)" in t
 
+def test_partial_close_keeps_current_position_live_for_tracker():
+    t=EA.read_text()
+    assert "bool stillOpen=g_orders.HasLiveTradeForDecision(decisionId);" in t
+    assert "g_orders.HasLiveTradeForDecision(decisionId,position)" not in t
+
 def test_ea_fails_closed_on_decision_persistence():
     t=EA.read_text()
     assert "if(!g_store.Save(decision))" in t
-    assert "g_store.SaveExecution(decision.decision_id,legLots[leg],ticket)" in t
+    assert "g_store.SaveExecution(decision.decision_id,legLots[leg],ticket,leg,plan.target[leg])" in t
 
 def test_decision_store_persists_thesis_invalidation_and_strategy():
     t=DECISION_STORE.read_text();assert "p[5]=DoubleToString(rec.setup.invalidation,_Digits)" in t;assert "p[14]=IntegerToString((int)rec.setup.reasons.selected_strategy)" in t;assert "rec.setup.invalidation=StringToDouble(f[5])" in t;assert "rec.setup.reasons.selected_strategy=(ENUM_SELECTED_STRATEGY)(int)StringToInteger(f[14])" in t
@@ -51,7 +56,10 @@ def test_legacy_decisions_do_not_fabricate_invalidation():
     t=DECISION_STORE.read_text();assert "rec.setup.invalidation=0.0" in t;assert "Legacy decisions predate the first-class thesis boundary" in t
 
 def test_strategy_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
-    t=TRADE_ZONE.read_text();assert "TradeSetup rejected;ZeroMemory(rejected);return rejected;" in t;assert "return TradeSetup();" not in t
+    t=TRADE_ZONE.read_text()
+    assert "TradeSetup out;ZeroMemory(out);" in t
+    assert "m_lastSetup=out;return out;" in t
+    assert "return TradeSetup();" not in t
 
 def test_strategy_trade_zone_applies_spread_floor_then_rechecks_invalidation():
     t=TRADE_ZONE.read_text();assert "out.stop_loss=EnforceSpreadFloor" in t;assert "out.stop_loss>=out.invalidation" in t;assert "out.stop_loss<=out.invalidation" in t
@@ -90,3 +98,17 @@ def test_ci_runs_core_gates_on_main():
 
 def test_ci_governance_gate_contains_repository_and_bridge_checks():
     t=CI.read_text();assert 'PYTHONPATH="$CI_PROJECT_DIR/telegram-bridge:$CI_PROJECT_DIR/tools" pytest -v tools/tests' in t;assert 'ruff check telegram-bridge/app/ telegram-bridge/migrations/ telegram-bridge/scripts/ telegram-bridge/tests/' in t;assert 'bandit -r telegram-bridge/app/ telegram-bridge/scripts/ -q' in t;assert 'telegram-bridge/tests/test_*.py' in t;assert 'render_sync_secrets.py --dry-run' in t
+
+
+def test_signal_enqueue_persists_signal_and_outbox_atomically():
+    """A valid signal must commit its durable signal row and outbox row together."""
+    t=(ROOT/"telegram-bridge"/"tests"/"test_routes.py").read_text()
+    assert "session.add(outbox)" in (ROOT/"telegram-bridge"/"app"/"routes.py").read_text()
+    assert "await session.commit()" in (ROOT/"telegram-bridge"/"app"/"routes.py").read_text()
+    assert "SignalDeliveryOutbox" in t
+
+
+def test_signal_enqueue_suppressed_path_has_no_delivery_outbox():
+    """Suppressed broadcasts still record the signal but must not enqueue delivery."""
+    t=(ROOT/"telegram-bridge"/"app"/"routes.py").read_text()
+    assert 'details="Broadcast paused or symbol muted - signal recorded, not sent to Telegram."' in t
