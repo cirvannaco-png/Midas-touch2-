@@ -14,7 +14,7 @@
 #include "includes/Core/SignalLogger.mqh"
 #include "includes/Analysis/TFContext.mqh"
 #include "includes/Analysis/Scoring.mqh"
-#include "includes/Trading/TradeZone.mqh"
+#include "includes/Trading/StrategyTradeZone.mqh"
 #include "includes/Trading/RiskEngine.mqh"
 #include "includes/Trading/OutcomeTracker.mqh"
 #include "includes/UI/Dashboard.mqh"
