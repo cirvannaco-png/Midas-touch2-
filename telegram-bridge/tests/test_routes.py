@@ -43,6 +43,59 @@ def test_valid_signal_accepted_and_queued(client, auth_headers):
     assert len(body["decision_fingerprint"]) == 64
 
 
+def test_valid_signal_and_outbox_commit_together(client, auth_headers):
+    """A valid signal and its durable delivery reservation must commit together."""
+    from app.database import async_session
+    from app.models import Signal, SignalDeliveryOutbox, SignalStatus
+    from sqlalchemy import select
+
+    payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-atomic-1"}
+    resp = client.post("/signal", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "queued"
+
+    async def _read_rows():
+        async with async_session() as session:
+            signal = await session.scalar(select(Signal).where(Signal.signal_id == payload["signal_id"]))
+            outbox = await session.scalar(
+                select(SignalDeliveryOutbox).where(SignalDeliveryOutbox.signal_id == payload["signal_id"])
+            )
+            return signal, outbox
+
+    assert client.portal is not None
+    signal, outbox = client.portal.call(_read_rows)
+    assert signal is not None
+    assert signal.status == SignalStatus.PENDING
+    assert outbox is not None
+    assert outbox.status == "pending"
+
+
+def test_suppressed_signal_is_recorded_without_delivery_outbox(client, auth_headers):
+    from app.database import async_session
+    from app.models import Signal, SignalDeliveryOutbox, SignalStatus
+    from sqlalchemy import select
+
+    payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-suppressed-1"}
+    with patch("app.routes.get_signal_broadcast_controls", new=AsyncMock(return_value=(True, set()))):
+        resp = client.post("/signal", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "suppressed"
+
+    async def _read_rows():
+        async with async_session() as session:
+            signal = await session.scalar(select(Signal).where(Signal.signal_id == payload["signal_id"]))
+            outbox = await session.scalar(
+                select(SignalDeliveryOutbox).where(SignalDeliveryOutbox.signal_id == payload["signal_id"])
+            )
+            return signal, outbox
+
+    assert client.portal is not None
+    signal, outbox = client.portal.call(_read_rows)
+    assert signal is not None
+    assert signal.status == SignalStatus.ACTIVE
+    assert outbox is None
+
+
 def test_legacy_signal_is_recorded_but_accepted_when_strict_fingerprint_is_disabled(client, auth_headers):
     from app.config import settings
     original = settings.REQUIRE_DECISION_FINGERPRINT
@@ -215,25 +268,25 @@ def test_retry_failed_reclaims_stale_pending_rows(client, auth_headers):
 
 
 def test_signal_warm_latency_regression_ceiling(client, auth_headers):
-    """Warm-path guard against accidental request-path latency regressions.
-
-    CI uses local SQLite and mocked Telegram transport, so this is not a
-    production benchmark. The ceiling is intentionally looser than the
-    production p95 target to tolerate shared-runner variance while still
-    catching major synchronous/blocking regressions.
-    """
+    """Warm-path guard with enough samples for distinct p95/p99 nearest-rank checks."""
     import math
     import time
 
-    samples_ms = []
-    # Keep the sample within the CI fixture's five-request rate-limit window.
-    for i in range(5):
-        payload = {**VALID_BUY_SIGNAL, "signal_id": f"sig-latency-{i}"}
-        start = time.perf_counter()
-        response = client.post("/signal", json=payload, headers=auth_headers)
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        assert response.status_code == 200
-        samples_ms.append(elapsed_ms)
+    from app.ratelimit import rate_limiter
+
+    original = (rate_limiter.enabled, rate_limiter.max_requests, rate_limiter.window_seconds)
+    rate_limiter.enabled = False
+    try:
+        samples_ms = []
+        for i in range(100):
+            payload = {**VALID_BUY_SIGNAL, "signal_id": f"sig-latency-{i}"}
+            start_time = time.perf_counter()
+            response = client.post("/signal", json=payload, headers=auth_headers)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            assert response.status_code == 200
+            samples_ms.append(elapsed_ms)
+    finally:
+        rate_limiter.enabled, rate_limiter.max_requests, rate_limiter.window_seconds = original
 
     samples_ms.sort()
     p50 = samples_ms[len(samples_ms) // 2]
