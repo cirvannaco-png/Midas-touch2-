@@ -43,6 +43,48 @@ def test_valid_signal_accepted_and_queued(client, auth_headers):
     assert len(body["decision_fingerprint"]) == 64
 
 
+def test_benchmark_signal_is_disabled_by_default(client):
+    payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-benchmark-disabled-1"}
+    resp = client.post("/benchmark/signal", json=payload, headers={"X-API-Key": "bench-secret"})
+    assert resp.status_code == 404
+
+
+def test_benchmark_signal_is_read_only_when_enabled(client, auth_headers):
+    from app.config import settings
+    from app.database import async_session
+    from app.models import Signal, SignalDeliveryOutbox
+    from sqlalchemy import func, select
+
+    original_enabled = settings.BENCHMARK_ENABLED
+    original_key = settings.BENCHMARK_API_KEY
+    settings.BENCHMARK_ENABLED = True
+    settings.BENCHMARK_API_KEY = "bench-secret"
+    try:
+        payload = {**VALID_BUY_SIGNAL, "signal_id": "sig-benchmark-readonly-1"}
+        resp = client.post(
+            "/benchmark/signal",
+            json=payload,
+            headers={"X-API-Key": "bench-secret"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+        assert len(resp.json()["decision_fingerprint"]) == 64
+
+        async def _counts():
+            async with async_session() as session:
+                signal_count = await session.scalar(select(func.count()).select_from(Signal))
+                outbox_count = await session.scalar(select(func.count()).select_from(SignalDeliveryOutbox))
+                return signal_count, outbox_count
+
+        assert client.portal is not None
+        signal_count, outbox_count = client.portal.call(_counts)
+        assert signal_count == 0
+        assert outbox_count == 0
+    finally:
+        settings.BENCHMARK_ENABLED = original_enabled
+        settings.BENCHMARK_API_KEY = original_key
+
+
 def test_valid_signal_and_outbox_commit_together(client, auth_headers):
     """A valid signal and its durable delivery reservation must commit together."""
     from app.database import async_session
