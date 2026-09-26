@@ -74,6 +74,9 @@ jobs:
       - name: Install research test dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r telegram-bridge/requirements.txt pytest==9.1.1
 
+      - name: Compile all repository Python sources
+        run: python -m compileall -q tools telegram-bridge/app telegram-bridge/migrations telegram-bridge/scripts medis_touch/app medis_touch/tests
+
       - name: Run tools tests
         env:
           BOT_TOKEN: "123456:test-token"
