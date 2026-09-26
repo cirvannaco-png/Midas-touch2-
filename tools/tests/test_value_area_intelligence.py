@@ -92,4 +92,4 @@ def test_low_quality_profiles_cannot_trigger_hard_conflict():
 
 def test_successful_value_area_compute_restores_valid_state():
     t = VALUE_AREA.read_text()
-    assert "m_havePreviousPOC = true;\\n   m_valid = true;" in t
+    assert "m_havePreviousPOC = true;\n   m_valid = true;" in t
