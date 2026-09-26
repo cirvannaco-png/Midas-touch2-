@@ -84,6 +84,7 @@ private:
    double            m_fibZoneMinPct;
    double            m_fibZoneMaxPct;
    bool              m_requireValueAreaLocation;
+   bool              m_blockValueAreaContradictions;
 
    // --- v2.8 additions -------------------------------------------------
    CTFContext*       m_htfObCtx;             // separate, genuinely-higher timeframe context (e.g. H4/D1)
@@ -185,12 +186,11 @@ public:
    // you've run the comparison on a Windows VPS/terminal.
    void              ConfigureVolumeFibonacci(bool requireVolumeConfirmation, double rvolThreshold,
                                               bool requireFibonacciZone, double fibZoneMinPct, double fibZoneMaxPct);
-   // v2.6 addition. Same gating discipline as ConfigureVolumeFibonacci():
-   // requires m_srCtx (the chart-TF context, same one SRScore() uses) to
-   // have a valid volume profile. Defaults OFF — this engine is brand new
-   // and hasn't been backtested at all yet, so it gets the same
-   // "unvalidated until proven" treatment.
-   void              ConfigureValueArea(bool requireValueAreaLocation);
+   // v2.20: separate the legacy location gate from the production
+   // contradiction gate. The latter only blocks when a sufficiently good
+   // profile actively conflicts with the trade thesis. Missing/low-quality
+   // profile data fails open, and accepted breakouts remain eligible.
+   void              ConfigureValueArea(bool requireValueAreaLocation, bool blockValueAreaContradictions = true);
    // v2.8 addition. htfObCtx MUST be a genuinely higher timeframe than
    // fvgCtx/bosCtx (e.g. entry on M15/H1, this on H4/D1) — passing the
    // same context defeats the point of "higher timeframe" confluence.
@@ -308,7 +308,7 @@ CScoringEngine::CScoringEngine() : m_trendCtx(NULL), m_bosCtx(NULL), m_liqCtx(NU
                                     m_requirePremiumDiscount(true), m_requireDistribution(false),
                                     m_requireVolumeConfirmation(false), m_rvolThreshold(1.5),
                                     m_requireFibonacciZone(false), m_fibZoneMinPct(50.0), m_fibZoneMaxPct(61.8),
-                                    m_requireValueAreaLocation(false),
+                                    m_requireValueAreaLocation(false), m_blockValueAreaContradictions(true),
                                     m_htfObCtx(NULL), m_requireHtfOB(false), m_obDistATRMax(2.0),
                                     m_blockLowVolRegime(false),
                                     m_fvgMaxDistATR(1.25), m_requireChaseFilter(false), m_maxChaseDistATR(0.75),
@@ -402,9 +402,10 @@ void CScoringEngine::ConfigureVolumeFibonacci(bool requireVolumeConfirmation, do
    m_fibZoneMaxPct = fibZoneMaxPct;
   }
 //+------------------------------------------------------------------+
-void CScoringEngine::ConfigureValueArea(bool requireValueAreaLocation)
+void CScoringEngine::ConfigureValueArea(bool requireValueAreaLocation, bool blockValueAreaContradictions)
   {
    m_requireValueAreaLocation = requireValueAreaLocation;
+   m_blockValueAreaContradictions = blockValueAreaContradictions;
   }
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureHtfOrderBlock(CTFContext* htfObCtx, bool requireHtfOB, double distATRMax)
@@ -660,6 +661,16 @@ double CScoringEngine::CalculateConfidence(bool forBuy)
          !m_bosCtx.fibonacci.InPullbackZone(forBuy, price, m_fibZoneMinPct, m_fibZoneMaxPct))
          return 0.0;
      }
+   // v2.20: hard-block only a validated profile contradiction. Being
+   // outside VAH/VAL is not itself a rejection because accepted breakouts
+   // are legitimate on trend-following setups.
+   if(m_blockValueAreaContradictions && m_srCtx != NULL)
+     {
+      double price = CurrentPrice();
+      if(price > 0 && m_srCtx.valueArea.IsValid() &&
+         m_srCtx.valueArea.HardConflict(forBuy, price))
+         return 0.0;
+     }
    if(m_requireValueAreaLocation)
      {
       double price = CurrentPrice();
@@ -758,6 +769,12 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
       out.va_poc = m_srCtx.valueArea.POC();
       out.va_high = m_srCtx.valueArea.VAH();
       out.va_low = m_srCtx.valueArea.VAL();
+      out.value_profile_source = m_srCtx.valueArea.Source();
+      out.value_profile_state = m_srCtx.valueArea.State();
+      out.va_poc_migration_atr = m_srCtx.valueArea.POCMigrationATR();
+      out.va_source_quality = m_srCtx.valueArea.SourceQuality();
+      out.va_score = m_srCtx.valueArea.Score(forBuy, price);
+      out.value_area_contradiction = m_srCtx.valueArea.HardConflict(forBuy, price);
      }
 
    // v2.8 diagnostics — always populated regardless of gate state, same
@@ -855,6 +872,7 @@ double CScoringEngine::ContradictionPenalty(const SetupReasons &r)
    if(!r.session_ok)                  hits++; // outside the allowed liquidity hours
    if(r.news_risk != NEWS_NONE)       hits++; // inside a news risk tier
    if(r.htf_ob_state == OB_MITIGATED) hits++; // the HTF OB this leans on is already spent
+   if(r.value_area_contradiction)      hits++; // profile actively rejects the thesis
    if(hits == 0) return 0.0;
    double penalty = m_contradictionWeight * (double)hits;
    return MathMin(MathMax(penalty, 0.0), 1.0);

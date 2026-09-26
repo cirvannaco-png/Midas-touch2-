@@ -117,6 +117,7 @@ string CSignalLogger::ReasonString(SetupReasons &r)
    if(r.volume_confirmed) s += "Volume|";
    if(r.fib_in_zone) s += "FibZone|";
    if(r.value_area_ok) s += "ValueArea|";
+   if(r.value_area_contradiction) s += "ValueAreaConflict|";
    if(r.htf_ob_confluence) s += "HtfOB|";
    if(!r.session_ok) s += "OffSession|";
    if(StringLen(s) == 0) return "None";
@@ -277,6 +278,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
                "Confidence", "EntryTop", "EntryBottom", "StopLoss", "TP1", "TP2", "FinalTP",
                "Reasons", "RiskWarning", "RVOL", "VolumeConfirmed", "FibZone", "FibInZone", "FibNearestLevel",
                "VAZone", "ValueAreaOK", "POC", "VAH", "VAL",
+               "VAProfileSource", "VAProfileState", "VAPOCMigrationATR", "VASourceQuality", "VAScore", "VAContradiction",
                "HtfOBConfluence", "HtfOBState", "VolRegime", "SessionOK",
                // v2.10 diagnostics. Appended, never inserted: parsers keyed
                // on column position keep working.
@@ -313,6 +315,9 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
             VAZoneLabel(setup.reasons.va_zone), setup.reasons.value_area_ok ? "Yes" : "No",
             DoubleToString(setup.reasons.va_poc, _Digits), DoubleToString(setup.reasons.va_high, _Digits),
             DoubleToString(setup.reasons.va_low, _Digits),
+            EnumToString(setup.reasons.value_profile_source), EnumToString(setup.reasons.value_profile_state),
+            DoubleToString(setup.reasons.va_poc_migration_atr, 3), DoubleToString(setup.reasons.va_source_quality, 2),
+            DoubleToString(setup.reasons.va_score, 3), setup.reasons.value_area_contradiction ? "Yes" : "No",
             setup.reasons.htf_ob_confluence ? "Yes" : "No", OBStateLabel(setup.reasons.htf_ob_state),
             VolRegimeLabel(setup.reasons.vol_regime), setup.reasons.session_ok ? "Yes" : "No",
             DoubleToString(setup.reasons.contradiction_penalty, 3),
@@ -357,6 +362,8 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
                // outcome so the retraining pipeline can test whether
                // staleness actually predicts a worse result.
                "ConfidenceAtSignal", "ConfidenceDecayed", "DecayBars",
+               // v2.20 — repeated from the signal row for self-contained outcome analysis.
+               "VAProfileSource", "VAProfileState", "VAPOCMigrationATR", "VASourceQuality", "VAScore", "VAContradiction",
                // Repeated from the signal row so an outcomes file is
                // self-sufficient for fitting the multiplicative model.
                "ContradictionPenalty", "EnvScore", "ExecScore", "EnvExecConfidence",
@@ -416,6 +423,9 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
             DoubleToString(p.totalSlippageCost, 2),
             DoubleToString(p.confidenceAtSignal, 1), DoubleToString(p.confidenceDecayed, 1),
             p.decayBars,
+            EnumToString(p.setup.reasons.value_profile_source), EnumToString(p.setup.reasons.value_profile_state),
+            DoubleToString(p.setup.reasons.va_poc_migration_atr, 3), DoubleToString(p.setup.reasons.va_source_quality, 2),
+            DoubleToString(p.setup.reasons.va_score, 3), p.setup.reasons.value_area_contradiction ? "Yes" : "No",
             DoubleToString(p.setup.reasons.contradiction_penalty, 3),
             DoubleToString(p.setup.reasons.env_score, 3),
             DoubleToString(p.setup.reasons.exec_score, 3),

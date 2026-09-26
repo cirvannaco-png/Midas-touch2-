@@ -140,7 +140,13 @@ void CDashboard::Update()
       reasonLines += StringFormat("  Chase distance: %.2f ATR%s\n", r.chase_dist_atr, r.chase_ok ? "" : " \u26a0 late entry");
       reasonLines += StringFormat("  RVOL: %.2f%s\n", r.rvol, r.volume_confirmed ? " \u2713" : "");
       reasonLines += StringFormat("  Fib zone: %s%s\n", FibZoneLabel(r.fib_zone), r.fib_in_zone ? " \u2713 in pullback zone" : "");
-      reasonLines += StringFormat("  Value Area: %s%s\n", VAZoneLabel(r.va_zone), r.value_area_ok ? " \u2713" : "");
+      string vaSource = EnumToString(r.value_profile_source);
+      StringReplace(vaSource, "VA_SOURCE_", "");
+      string vaState = EnumToString(r.value_profile_state);
+      StringReplace(vaState, "VA_STATE_", "");
+      reasonLines += StringFormat("  Value Area: %s | %s | src=%s q=%.2f | POC delta %.2f ATR%s\n",
+                                   VAZoneLabel(r.va_zone), vaState, vaSource, r.va_source_quality,
+                                   r.va_poc_migration_atr, r.value_area_contradiction ? " | HARD CONFLICT" : "");
       if(StringLen(reasonLines) == 0)
          reasonLines = "(no factors met threshold)\n";
 

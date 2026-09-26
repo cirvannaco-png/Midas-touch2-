@@ -68,7 +68,8 @@ input double InpFibZoneMinPct = 50.0;       // Pullback zone start (% retracemen
 input double InpFibZoneMaxPct = 61.8;       // Pullback zone end (% retracement)
 
 input group "Value Area Engine (v2.6)"
-input bool   InpRequireValueAreaLocation = false; // Gate: reject setups outside Value Area location rule — OFF, brand new & unbacktested, see Scoring.mqh
+input bool   InpRequireValueAreaLocation = false; // Legacy strict location gate — OFF by default
+input bool   InpBlockValueAreaContradictions = true; // Hard-block only validated Value Area contradictions
 input int    InpVALookbackBars = 100;       // Bars used to build the volume profile
 input int    InpVANumBins = 24;             // Price bins in the profile
 input double InpVAPercent = 70.0;           // Value Area coverage, % of profiled volume (Market Profile convention = 70)
@@ -87,7 +88,7 @@ input double InpVolRegimeLowPct = 0.25;            // Bottom quartile (default) 
 input double InpVolRegimeHighPct = 0.75;           // Top quartile (default) = HIGH regime
 
 input group "Session Filter (v2.8)"
-input bool   InpUseSessionFilter = true;           // ON by default — replaces "trade every session equally"
+input bool   InpUseSessionFilter = false;          // OFF by default: London/NY is a liquidity policy, not a universal exchange calendar
 input bool   InpAllowTokyoSession = false;         // Tokyo-only hours (thin liquidity) — off by default
 input bool   InpAllowLondonSession = true;
 input bool   InpAllowNewYorkSession = true;
@@ -185,7 +186,7 @@ int OnInit()
                                  InpPhaseRangeLookback, InpPhaseCompressionATRMult);
    g_scoring.ConfigureVolumeFibonacci(InpRequireVolumeConfirmation, InpRVOLThreshold,
                                       InpRequireFibonacciZone, InpFibZoneMinPct, InpFibZoneMaxPct);
-   g_scoring.ConfigureValueArea(InpRequireValueAreaLocation);
+   g_scoring.ConfigureValueArea(InpRequireValueAreaLocation, InpBlockValueAreaContradictions);
    g_scoring.ConfigureHtfOrderBlock(g_htfObCtx, InpRequireHtfOB, InpOBDistATRMax);
    g_scoring.ConfigureVolatilityRegime(InpBlockLowVolRegime, InpVolRegimeLookback, InpVolRegimeLowPct, InpVolRegimeHighPct);
    g_scoring.ConfigureSessionFilter(InpUseSessionFilter, InpAllowTokyoSession, InpAllowLondonSession,

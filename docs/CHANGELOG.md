@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.21 — Multi-asset policy hardening
+
+### Fixed
+- Disabled the London/New York session filter by default. It remains available as an explicit liquidity policy, but it is no longer treated as a universal market calendar for indices, ETFs, futures, equities, or other instruments.
+- Removed the implicit 10.0 native-price-unit psychological-level grid. Round-number levels are now opt-in per instrument; a non-positive step disables them.
+- Added regression coverage for these defaults and for symbol-native risk sizing via broker tick/volume properties.
+
+### Asset-safety boundary
+Midas Touch continues to derive monetary position sizing from each symbol's `SYMBOL_TRADE_TICK_SIZE`, `SYMBOL_TRADE_TICK_VALUE`, and broker volume limits. The remaining authoritative external validation is MetaEditor compilation plus MT5 Strategy Tester/live broker verification across representative FX, indices, ETFs, futures, and other supported symbol types.
+
+---
+
+## v2.20 — Cross-asset Volume Profile Intelligence
+
+### Added
+- Trade-by-price volume profiling from `COPY_TICKS_TRADE` when the connected feed exposes trade ticks, with explicit provenance for real trade ticks, broker trade ticks, real-volume bars, and tick-volume bars.
+- Real-volume retention in the canonical candle model so exchange-listed futures, stocks, ETFs, and indices can use `MqlRates.real_volume` when tick-level trade data is unavailable.
+- Value Area state detection for acceptance above/below VAH/VAL and rejection back through those boundaries.
+- POC migration telemetry, source-quality telemetry, and a revised Value Area score that distinguishes fair-value location, discount/premium distance, and accepted breakouts.
+- A default contradiction-based hard gate: low-quality profiles fail open, accepted breakouts remain eligible, and only strong profile evidence against the trade thesis blocks the setup.
+
+### Asset coverage
+The Volume Profile layer is symbol-agnostic. Exchange-traded instruments can use exchange-provided trade/real volume where the broker feed exposes it; FX, OTC, and CFD symbols use the strongest broker-provided volume source available and remain explicitly marked as such. This prevents Midas from pretending that fragmented OTC volume is a single consolidated exchange tape.
+
+### Validation boundary
+The change is implemented on `feature/volume-profile-intelligence`. MetaEditor compilation and MT5 Strategy Tester/backtest results are still authoritative external gates and have not been claimed as passed by this repository-only integration.
+
+---
+
 ## Research analytics — feature attribution, counterfactuals, scale-out, and OOS validation
 
 ### Added

@@ -26,10 +26,7 @@ class CExtendedKeyLevels
   {
 private:
    string            m_symbol;
-   double            m_roundStep;   // psychological-level spacing. Default 10.0 == whole-$10 XAUUSD levels
-                                     // (2640.00, 2650.00, ...) — this EA is single-symbol XAUUSD, not a
-                                     // generic multi-pair round-pip scheme, so a price-unit step is the
-                                     // honest choice here, not a pip count that wouldn't mean anything for gold.
+   double            m_roundStep;   // psychological-level spacing in native price units; <= 0 disables it.
 
    // Previous WEEK high/low — cached, recomputed only when the week
    // rolls over. iHigh/iLow(PERIOD_W1, 1) is cheap, but there's no
@@ -43,12 +40,12 @@ private:
    void              RefreshPrevWeekIfStale();
 
 public:
-                     CExtendedKeyLevels() : m_roundStep(10.0), m_prevWeekHigh(0.0), m_prevWeekLow(0.0),
+                     CExtendedKeyLevels() : m_roundStep(0.0), m_prevWeekHigh(0.0), m_prevWeekLow(0.0),
                                              m_prevWeekCachedForMonday(0), m_prevWeekValid(false) {}
    void              Init(string symbol) { m_symbol = symbol; }
-   // Defaults are starting points, not tuned constants — same
-   // discipline note as every other Configure() in this codebase.
-   void              Configure(double roundStep = 10.0) { m_roundStep = (roundStep > 0.0) ? roundStep : 10.0; }
+   // A non-positive value deliberately disables psychological levels.
+   // This avoids silently imposing an XAU/FX-specific price grid on other asset classes.
+   void              Configure(double roundStep = 0.0) { m_roundStep = MathMax(0.0, roundStep); }
 
    // Previous WEEK high/low — the most recently CLOSED weekly bar
    // (shift 1; shift 0 is the current, still-forming week). Checks BOTH
@@ -174,6 +171,7 @@ bool CExtendedKeyLevels::NearestSessionLevel(bool forBuy, double price, double m
 bool CExtendedKeyLevels::NearestRoundLevel(bool forBuy, double price, double maxDist, double &levelPrice)
   {
    levelPrice = 0.0;
+   if(m_roundStep <= 0.0) return false;
    if(m_roundStep <= 0.0) return false;
 
    double below = MathFloor(price / m_roundStep) * m_roundStep;
