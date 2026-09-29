@@ -16,8 +16,10 @@ class CSignalLogger
 private:
    string            m_filename;
    string            m_outcomeFilename;
+   string            m_smcFilename;
    bool              m_headerWritten;
    bool              m_outcomeHeaderWritten;
+   bool              m_smcHeaderWritten;
    int               m_gmtOffsetOverrideHours; // 999 = auto-detect
 
    string            SessionForGMTHour(int h);
@@ -35,6 +37,7 @@ private:
    string            KeyLevelSourceLabel(ENUM_KEYLEVEL_SOURCE s);     // v2.14
    string            KeyLevelReactionLabel(ENUM_KEYLEVEL_REACTION r); // v2.14
    string            SelectedStrategyLabel(ENUM_SELECTED_STRATEGY s); // v2.15
+   string            SMCStateLabel(ENUM_SMC_STRUCTURE_STATE s);
 
 public:
                      CSignalLogger();
@@ -44,14 +47,16 @@ public:
                                 double exitPrice, ENUM_FILL_POLICY fillPolicy = FILL_CONSERVATIVE);
   };
 //+------------------------------------------------------------------+
-CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(false), m_gmtOffsetOverrideHours(999) {}
+CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(false), m_smcHeaderWritten(false), m_gmtOffsetOverrideHours(999) {}
 //+------------------------------------------------------------------+
 void CSignalLogger::Init(string symbol, int gmtOffsetOverrideHours)
   {
    m_filename = "MedisTouch_Signals_" + symbol + ".csv";
    m_outcomeFilename = "MedisTouch_Outcomes_" + symbol + ".csv";
+   m_smcFilename = "MedisTouch_SMC_Structures_" + symbol + ".csv";
    m_headerWritten = FileIsExist(m_filename);
    m_outcomeHeaderWritten = FileIsExist(m_outcomeFilename);
+   m_smcHeaderWritten = FileIsExist(m_smcFilename);
    m_gmtOffsetOverrideHours = gmtOffsetOverrideHours;
   }
 //+------------------------------------------------------------------+
@@ -231,6 +236,18 @@ string CSignalLogger::SelectedStrategyLabel(ENUM_SELECTED_STRATEGY s)
      }
   }
 //+------------------------------------------------------------------+
+string CSignalLogger::SMCStateLabel(ENUM_SMC_STRUCTURE_STATE s)
+  {
+   switch(s)
+     {
+      case SMC_VALID:       return "Valid";
+      case SMC_INVALID:     return "Invalid";
+      case SMC_STALE:       return "Stale";
+      case SMC_INVALIDATED: return "Invalidated";
+      default:              return "Wait";
+     }
+  }
+//+------------------------------------------------------------------+
 string CSignalLogger::VAZoneLabel(ENUM_VALUE_AREA_ZONE z)
   {
    switch(z)
@@ -335,6 +352,66 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
             DoubleToString(setup.reasons.keylevel_score, 1),
             SelectedStrategyLabel(setup.reasons.selected_strategy),
             DoubleToString(setup.reasons.selected_strategy_score, 1));
+
+   FileClose(handle);
+   LogSMCStructure(setup, symbol, entryTF);
+   return true;
+  }
+//+------------------------------------------------------------------+
+// Separate append-only file for structural evidence. Keeping this outside
+// the legacy signal CSV avoids changing its column schema while still
+// producing a research-ready dataset that joins by SignalID.
+bool CSignalLogger::LogSMCStructure(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF)
+  {
+   if(!setup.active || setup.reasons.selected_strategy != STRATEGY_SMC) return false;
+
+   int flags = FILE_CSV | FILE_READ | FILE_WRITE | FILE_SHARE_READ | FILE_ANSI;
+   int handle = FileOpen(m_smcFilename, flags, ',');
+   if(handle == INVALID_HANDLE)
+     {
+      Print("MedisTouch SignalLogger: failed to open ", m_smcFilename, " err=", GetLastError());
+      return false;
+     }
+
+   if(!m_smcHeaderWritten)
+     {
+      FileWrite(handle, "SignalID", "Symbol", "EntryTF", "DateTime", "Direction",
+               "State", "StructuralValid", "HTFStructureValid", "RegimeApplicable",
+               "LiquidityTargetValid", "SweepValid", "DisplacementValid", "BOSValid",
+               "FVGCausal", "OrderBlockCausal", "HTFOBPresent", "PremiumDiscountValid",
+               "FreshnessValid", "InvalidationClear", "ProtectedLevel", "InvalidationLevel",
+               "SweepBarIndex", "BOSBarIndex", "EntryFVGBarIndex", "CausalOBBarIndex",
+               "FailureReason");
+      m_smcHeaderWritten = true;
+     }
+
+   FileSeek(handle, 0, SEEK_END);
+   string dir = (setup.type == ORDER_TYPE_BUY) ? "BUY" : "SELL";
+   string signalId = StringFormat("%s_%s_%d", symbol, dir, (long)setup.creation_time);
+
+   FileWrite(handle, signalId, symbol, EnumToString(entryTF),
+             TimeToString(setup.creation_time, TIME_DATE | TIME_MINUTES), dir,
+             SMCStateLabel(setup.reasons.smc_state),
+             setup.reasons.smc_structural_valid ? "Yes" : "No",
+             setup.reasons.smc_htf_structure_valid ? "Yes" : "No",
+             setup.reasons.smc_regime_applicable ? "Yes" : "No",
+             setup.reasons.smc_liquidity_target_valid ? "Yes" : "No",
+             setup.reasons.smc_sweep_valid ? "Yes" : "No",
+             setup.reasons.smc_displacement_valid ? "Yes" : "No",
+             setup.reasons.smc_bos_valid ? "Yes" : "No",
+             setup.reasons.smc_fvg_causal ? "Yes" : "No",
+             setup.reasons.smc_order_block_causal ? "Yes" : "No",
+             setup.reasons.smc_htf_ob_present ? "Yes" : "No",
+             setup.reasons.smc_premium_discount_valid ? "Yes" : "No",
+             setup.reasons.smc_freshness_valid ? "Yes" : "No",
+             setup.reasons.smc_invalidation_clear ? "Yes" : "No",
+             DoubleToString(setup.reasons.smc_protected_level, _Digits),
+             DoubleToString(setup.reasons.smc_invalidation_level, _Digits),
+             setup.reasons.smc_sweep_bar_index,
+             setup.reasons.smc_bos_bar_index,
+             setup.reasons.smc_entry_fvg_bar_index,
+             setup.reasons.smc_causal_ob_bar_index,
+             setup.reasons.smc_failure_reason);
 
    FileClose(handle);
    return true;
