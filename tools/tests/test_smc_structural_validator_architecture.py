@@ -20,10 +20,14 @@ def test_smc_validator_is_wired_into_production_diagnostics_only():
     assert "PopulateStructuralValidation" in scoring
     assert "m_scoring.PopulateStructuralValidation(forBuy,reasons)" in trade_zone
 
-    # This stage is intentionally observational. Until ablation/OOS evidence
-    # exists, structural validity must not become a hidden execution gate.
-    assert "if(!reasons.smc_structural_valid" not in trade_zone
-    assert "if(!out.smc_structural_valid" not in trade_zone
+    # Structural validation remains non-binding unless the explicit research
+    # switch is enabled. The only execution rejection is guarded by that switch.
+    generate_start = trade_zone.index("TradeSetup CTradeDecision::Generate(bool forBuy)")
+    generate_end = trade_zone.index("TradeSetup CTradeDecision::GenerateBuySetup", generate_start)
+    generate_body = trade_zone[generate_start:generate_end]
+    assert "if(m_requireSmcStructuralValidity&&!reasons.smc_structural_valid)" in generate_body
+    assert "if(!reasons.smc_structural_valid){m_lastSetup=out;return out;}" not in generate_body
+    assert "input bool InpRequireSMCStructuralValidity=false;" in read("EA/MedisTouch_v2.8.mq5")
     assert "ENUM_SMC_STRUCTURE_STATE" in config
     assert "smc_failure_reason" in config
     # Structural validation must reuse the exact inducement evidence that
