@@ -32,8 +32,8 @@ private:
    double       m_fvgMaxDistATR;
    double       m_obDistATRMax;
 
-   bool FindCausalFVG(bool forBuy, int bosBarIndex, double price, int &barIndex);
-   bool FindCausalOrderBlock(bool forBuy, int bosBarIndex, double price, int &barIndex);
+   bool FindCausalFVG(bool forBuy, int sweepBarIndex, int bosBarIndex, double price, int &barIndex);
+   bool FindCausalOrderBlock(bool forBuy, int sweepBarIndex, int bosBarIndex, double price, int &barIndex);
 
 public:
    CSMCStructuralValidator();
@@ -73,11 +73,11 @@ void CSMCStructuralValidator::Configure(double fvgMaxDistATR, double obDistATRMa
 // a qualifying FVG must be at the BOS bar or newer (smaller series
 // index), never older than the confirming BOS. Shift 0 is excluded because
 // the current candle is still forming when the EA evaluates a new bar.
-bool CSMCStructuralValidator::FindCausalFVG(bool forBuy, int bosBarIndex,
+bool CSMCStructuralValidator::FindCausalFVG(bool forBuy, int sweepBarIndex, int bosBarIndex,
                                              double price, int &barIndex)
   {
    barIndex = -1;
-   if(m_fvgCtx == NULL || bosBarIndex < 0 || price <= 0.0) return false;
+   if(m_fvgCtx == NULL || sweepBarIndex <= 0 || bosBarIndex <= 0 || sweepBarIndex < bosBarIndex || price <= 0.0) return false;
    double atr = m_fvgCtx.candles.GetATR(0);
    if(atr <= 0.0) return false;
 
@@ -89,7 +89,7 @@ bool CSMCStructuralValidator::FindCausalFVG(bool forBuy, int bosBarIndex,
       FVGZone z = m_fvgCtx.fvg.GetZone(i);
       if(z.dir != wantDir) continue;
       if(z.state != FVG_FRESH && z.state != FVG_TESTED) continue;
-      if(z.bar_index <= 0 || z.bar_index > bosBarIndex) continue;
+      if(z.bar_index <= 0 || z.bar_index > sweepBarIndex || z.bar_index < bosBarIndex) continue;
 
       double mid = (z.top + z.bottom) / 2.0;
       double distATR = MathAbs(price - mid) / atr;
@@ -112,11 +112,11 @@ bool CSMCStructuralValidator::FindCausalFVG(bool forBuy, int bosBarIndex,
 // A local/entry-timeframe OB is causal only when its originating candle
 // is no older than the confirming BOS. This is provenance telemetry;
 // HTF OB is handled separately below and is not called "causal".
-bool CSMCStructuralValidator::FindCausalOrderBlock(bool forBuy, int bosBarIndex,
+bool CSMCStructuralValidator::FindCausalOrderBlock(bool forBuy, int sweepBarIndex, int bosBarIndex,
                                                     double price, int &barIndex)
   {
    barIndex = -1;
-   if(m_srCtx == NULL || bosBarIndex < 0 || price <= 0.0) return false;
+   if(m_srCtx == NULL || sweepBarIndex <= 0 || bosBarIndex <= 0 || sweepBarIndex < bosBarIndex || price <= 0.0) return false;
 
    double atr = m_srCtx.candles.GetATR(0);
    if(atr <= 0.0) return false;
@@ -128,7 +128,7 @@ bool CSMCStructuralValidator::FindCausalOrderBlock(bool forBuy, int bosBarIndex,
      {
       OrderBlockZone z = m_srCtx.orderBlock.GetZone(i);
       if(z.dir != wantDir || z.state == OB_MITIGATED) continue;
-      if(z.bar_index <= 0 || z.bar_index > bosBarIndex) continue;
+      if(z.bar_index <= 0 || z.bar_index > sweepBarIndex || z.bar_index < bosBarIndex) continue;
 
       double mid = (z.top + z.bottom) / 2.0;
       double distATR = MathAbs(price - mid) / atr;
@@ -173,8 +173,8 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
 
    v.liquidity_target_valid = ind.internalStructureFound && ind.sweepFound;
    v.sweep_valid = ind.sweepFound;
-   v.displacement_valid = ind.impulseFound;
-   v.bos_valid = ind.bosConfirmed;
+   v.displacement_valid = ind.impulseFound && ind.leg.valid && ind.sweepBarIndex > ind.bosBarIndex && ind.bosBarIndex > 0;
+   v.bos_valid = ind.bosConfirmed && ind.sweepBarIndex > ind.bosBarIndex && ind.bosBarIndex > 0;
    v.freshness_valid = (ind.timeDecay > 0.0);
 
    // Structural invalidation uses the protected extreme of the impulse leg.
@@ -187,10 +187,10 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
       v.invalidation_clear = forBuy ? (price > v.invalidation_level)
                                     : (price < v.invalidation_level);
 
-   if(ind.bosConfirmed && ind.bosBarIndex >= 0 && price > 0.0)
+   if(ind.bosConfirmed && ind.sweepBarIndex > ind.bosBarIndex && ind.bosBarIndex > 0 && price > 0.0)
      {
-      v.fvg_causal = FindCausalFVG(forBuy, ind.bosBarIndex, price, v.entry_fvg_bar_index);
-      v.order_block_causal = FindCausalOrderBlock(forBuy, ind.bosBarIndex, price, v.causal_ob_bar_index);
+      v.fvg_causal = FindCausalFVG(forBuy, ind.sweepBarIndex, ind.bosBarIndex, price, v.entry_fvg_bar_index);
+      v.order_block_causal = FindCausalOrderBlock(forBuy, ind.sweepBarIndex, ind.bosBarIndex, price, v.causal_ob_bar_index);
      }
 
    if(m_htfObCtx != NULL && price > 0.0)
