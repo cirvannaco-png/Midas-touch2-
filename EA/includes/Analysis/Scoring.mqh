@@ -741,6 +741,7 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    // representation of the same event and makes downstream consumers
    // vulnerable to accidental double-counting.
    InducementResult ind = m_inducement.Validate(forBuy);
+   out.smc_inducement = ind;
    out.inducement_valid = ind.valid;
    out.bos_confirmed = ind.bosConfirmed;
    out.liquidity_swept = ind.sweepFound;
@@ -981,7 +982,7 @@ void CScoringEngine::ConfigureStrategySelection(double minSelectionScore)
 void CScoringEngine::PopulateStructuralValidation(bool forBuy, SetupReasons &out)
   {
    m_smcValidator.Configure(m_fvgMaxDistATR, m_obDistATRMax);
-   InducementResult ind = m_inducement.Validate(forBuy);
+   InducementResult ind = out.smc_inducement;
    SMCStructuralValidation v = m_smcValidator.Validate(forBuy, ind, CurrentPrice(),
                                                         out.regime, out.premium_discount_ok);
 
