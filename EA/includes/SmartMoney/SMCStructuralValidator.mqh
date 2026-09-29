@@ -173,7 +173,7 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
 
    v.liquidity_target_valid = ind.internalStructureFound && ind.sweepFound;
    v.sweep_valid = ind.sweepFound;
-   v.displacement_valid = ind.impulseFound && ind.leg.valid && ind.sweepBarIndex > ind.bosBarIndex && ind.bosBarIndex > 0;
+   v.displacement_valid = ind.impulseFound && ind.leg.valid && ind.displacementBarIndex > ind.sweepBarIndex && ind.sweepBarIndex > ind.bosBarIndex && ind.bosBarIndex > 0;
    v.bos_valid = ind.bosConfirmed && ind.sweepBarIndex > ind.bosBarIndex && ind.bosBarIndex > 0;
    v.freshness_valid = (ind.timeDecay > 0.0);
 
@@ -187,7 +187,7 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
       v.invalidation_clear = forBuy ? (price > v.invalidation_level)
                                     : (price < v.invalidation_level);
 
-   if(ind.bosConfirmed && ind.sweepBarIndex > ind.bosBarIndex && ind.bosBarIndex > 0 && price > 0.0)
+   if(ind.bosConfirmed && v.displacement_valid && price > 0.0)
      {
       v.fvg_causal = FindCausalFVG(forBuy, ind.sweepBarIndex, ind.bosBarIndex, price, v.entry_fvg_bar_index);
       v.order_block_causal = FindCausalOrderBlock(forBuy, ind.sweepBarIndex, ind.bosBarIndex, price, v.causal_ob_bar_index);
