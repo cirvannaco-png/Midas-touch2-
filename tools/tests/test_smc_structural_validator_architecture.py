@@ -26,7 +26,7 @@ def test_smc_validator_is_wired_into_production_diagnostics_only():
     generate_end = trade_zone.index("TradeSetup CTradeDecision::GenerateBuySetup", generate_start)
     generate_body = trade_zone[generate_start:generate_end]
     assert "if(m_requireSmcStructuralValidity&&!reasons.smc_structural_valid)" in generate_body
-    assert "if(!reasons.smc_structural_valid){m_lastSetup=out;return out;}" not in generate_body
+    assert "!reasons.smc_structural_valid){m_lastSetup=out;return out;" not in generate_body
     assert "input bool InpRequireSMCStructuralValidity=false;" in read("EA/MedisTouch_v2.8.mq5")
     assert "ENUM_SMC_STRUCTURE_STATE" in config
     assert "smc_failure_reason" in config
