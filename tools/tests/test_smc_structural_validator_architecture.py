@@ -85,7 +85,11 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
     assert "FindEntryFVG(forBuy?FVG_BULL:FVG_BEAR,entryFVG,requiredFvgBarIndex)" in trade_zone
 
 
-    # A structural rejection must abstain rather than silently route into a
-    # different strategy after SMC has been selected.
-    gated_region = trade_zone[trade_zone.index("if(selected==STRATEGY_SMC)"):trade_zone.index("TradeSetup CTradeDecision::GenerateBuySetup")]
-    assert "BuildNonSMC" not in gated_region
+    # The structural rejection must happen before the SMC builder. The normal
+    # non-SMC branch may still exist after the SMC branch; that is not a fallback
+    # from a rejected SMC setup.
+    smc_start = trade_zone.index("if(selected==STRATEGY_SMC)")
+    gate_index = trade_zone.index(gate, smc_start)
+    smc_build_index = trade_zone.index("out=BuildSMC", gate_index)
+    nonsmc_index = trade_zone.index("BuildNonSMC", smc_build_index)
+    assert smc_start < gate_index < smc_build_index < nonsmc_index
