@@ -154,6 +154,7 @@ bool CInducement::FindImpulse(bool bullish, ImpulseLeg &leg)
       leg.valid = true;
       leg.start_bar = olderBar;
       leg.end_bar = newerBar;
+      leg.displacement_bar = i;
       leg.start_time = m_candles.GetCandle(olderBar).time;
       leg.end_time = m_candles.GetCandle(newerBar).time;
       leg.start_price = oldExtreme;
@@ -310,6 +311,7 @@ InducementResult CInducement::Validate(bool forBuy)
    InducementResult r;
    ZeroMemory(r);
    r.sweepBarIndex = -1;
+   r.displacementBarIndex = -1;
    r.bosBarIndex = -1;
    if(m_candles == NULL || m_candles.Total() < 20)
      {
@@ -324,6 +326,7 @@ InducementResult CInducement::Validate(bool forBuy)
       return r;
      }
    r.impulseFound = true;
+   r.displacementBarIndex = leg.displacement_bar;
    r.impulseScore = 15.0;
 
    // Pullback/continuation region: everything more recent than the
