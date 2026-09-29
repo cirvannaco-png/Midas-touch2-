@@ -1003,6 +1003,7 @@ void CScoringEngine::PopulateStructuralValidation(bool forBuy, SetupReasons &out
    out.smc_invalidation_level = v.invalidation_level;
    out.smc_sweep_bar_index = v.sweep_bar_index;
    out.smc_bos_bar_index = v.bos_bar_index;
+   out.smc_displacement_bar_index = v.displacement_bar_index;
    out.smc_entry_fvg_bar_index = v.entry_fvg_bar_index;
    out.smc_causal_ob_bar_index = v.causal_ob_bar_index;
    out.smc_failure_reason = v.failure_reason;
