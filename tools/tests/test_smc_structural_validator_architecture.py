@@ -31,7 +31,7 @@ def test_smc_validator_is_wired_into_production_diagnostics_only():
 def test_smc_validator_preserves_causal_direction_and_no_current_bar_fvg():
     validator = read("EA/includes/SmartMoney/SMCStructuralValidator.mqh")
 
-    assert "z.bar_index <= 0 || z.bar_index > bosBarIndex" in validator
+    assert "z.bar_index <= 0 || z.bar_index > sweepBarIndex || z.bar_index < bosBarIndex" in validator
     assert "No causal entry FVG or order block linked to the confirming BOS" in validator
     assert "Structural invalidation level breached" in validator
     assert "SMCStructuralValidation v;" in validator
