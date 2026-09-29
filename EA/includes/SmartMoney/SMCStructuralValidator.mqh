@@ -27,7 +27,6 @@ class CSMCStructuralValidator
 private:
    CTFContext* m_trendCtx;
    CTFContext* m_fvgCtx;
-   CTFContext* m_srCtx;
    CTFContext* m_htfObCtx;
    double       m_fvgMaxDistATR;
    double       m_obDistATRMax;
@@ -37,7 +36,7 @@ private:
 
 public:
    CSMCStructuralValidator();
-   void Init(CTFContext* trendCtx, CTFContext* fvgCtx, CTFContext* srCtx, CTFContext* htfObCtx);
+   void Init(CTFContext* trendCtx, CTFContext* fvgCtx, CTFContext* htfObCtx);
    void Configure(double fvgMaxDistATR = 1.25, double obDistATRMax = 2.0);
    SMCStructuralValidation Validate(bool forBuy, const InducementResult &ind,
                                      double price, ENUM_MARKET_REGIME regime,
@@ -46,18 +45,17 @@ public:
 
 //+------------------------------------------------------------------+
 CSMCStructuralValidator::CSMCStructuralValidator()
-  : m_trendCtx(NULL), m_fvgCtx(NULL), m_srCtx(NULL), m_htfObCtx(NULL),
+  : m_trendCtx(NULL), m_fvgCtx(NULL), m_htfObCtx(NULL),
     m_fvgMaxDistATR(1.25), m_obDistATRMax(2.0)
   {
   }
 
 //+------------------------------------------------------------------+
 void CSMCStructuralValidator::Init(CTFContext* trendCtx, CTFContext* fvgCtx,
-                                    CTFContext* srCtx, CTFContext* htfObCtx)
+                                    CTFContext* htfObCtx)
   {
    m_trendCtx = trendCtx;
    m_fvgCtx = fvgCtx;
-   m_srCtx = srCtx;
    m_htfObCtx = htfObCtx;
   }
 
@@ -118,7 +116,7 @@ bool CSMCStructuralValidator::FindCausalOrderBlock(bool forBuy, int sweepBarInde
   {
    barIndex = -1;
    // Causal/local OB provenance must come from the same timeframe as the
-   // entry FVG. m_srCtx is the chart-TF context and may differ from m_fvgCtx;
+   // entry FVG. the chart-TF SR context may differ from m_fvgCtx;
    // using it here would mislabel a cross-timeframe zone as entry-causal.
    if(m_fvgCtx == NULL || sweepBarIndex <= 0 || bosBarIndex <= 0 || sweepBarIndex < bosBarIndex || price <= 0.0) return false;
 
