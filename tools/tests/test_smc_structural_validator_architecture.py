@@ -33,7 +33,10 @@ def test_smc_validator_is_wired_into_production_diagnostics_only():
     assert "out.smc_inducement = ind;" in scoring
     assert "InducementResult ind = out.smc_inducement;" in scoring
     assert "InducementResult ind = m_inducement.Validate(forBuy);" in scoring
-    assert scoring.count("m_inducement.Validate(forBuy)") == 1
+    validation_start = scoring.index("void CScoringEngine::PopulateStructuralValidation")
+    validation_end = scoring.index("void CScoringEngine::PopulateStrategyDiagnostics", validation_start)
+    validation_body = scoring[validation_start:validation_end]
+    assert "m_inducement.Validate(forBuy)" not in validation_body
 
 
 def test_smc_validator_preserves_causal_direction_and_no_current_bar_fvg():
