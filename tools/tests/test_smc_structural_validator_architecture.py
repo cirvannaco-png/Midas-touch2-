@@ -79,6 +79,11 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
     assert gate in trade_zone
     assert trade_zone.index(gate) > trade_zone.index("m_scoring.PopulateStructuralValidation(forBuy,reasons)")
     assert "m_requireSmcStructuralValidity&&!reasons.smc_structural_valid){m_lastSetup=out;return out;}out=BuildSMC" in trade_zone
+    assert "bool FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out,int requiredBarIndex=-1);" in trade_zone
+    assert "requiredBarIndex>0&&z.bar_index!=requiredBarIndex" in trade_zone
+    assert "if(!reasons.smc_structural_valid||!reasons.smc_fvg_causal||reasons.smc_entry_fvg_bar_index<=0)return setup;" in trade_zone
+    assert "FindEntryFVG(forBuy?FVG_BULL:FVG_BEAR,entryFVG,requiredFvgBarIndex)" in trade_zone
+
 
     # A structural rejection must abstain rather than silently route into a
     # different strategy after SMC has been selected.
