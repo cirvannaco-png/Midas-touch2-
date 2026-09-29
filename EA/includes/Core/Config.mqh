@@ -54,6 +54,8 @@ struct SetupReasons {
    double reversion_score; ENUM_REVERSION_CLASS reversion_class; ENUM_KEYLEVEL_SOURCE keylevel_source; ENUM_KEYLEVEL_REACTION keylevel_reaction; double keylevel_score;
    ENUM_SELECTED_STRATEGY selected_strategy; double selected_strategy_score;
    // SMC structural-validation telemetry. Diagnostic only until explicitly promoted by a validated policy.
+   // Authoritative inducement evidence reused by structural diagnostics; prevents a second reconstruction of sweep/BOS provenance.
+   InducementResult smc_inducement;
    ENUM_SMC_STRUCTURE_STATE smc_state; bool smc_structural_valid; bool smc_htf_structure_valid; bool smc_regime_applicable;
    bool smc_liquidity_target_valid; bool smc_sweep_valid; bool smc_displacement_valid; bool smc_bos_valid;
    bool smc_fvg_causal; bool smc_order_block_causal; bool smc_htf_ob_present; bool smc_premium_discount_valid;
