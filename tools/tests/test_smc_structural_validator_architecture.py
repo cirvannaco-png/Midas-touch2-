@@ -61,3 +61,26 @@ def test_smc_structure_audit_is_separate_from_legacy_signal_csv():
     assert "bool CSignalLogger::LogSMCStructure" in logger
     assert "SignalID" in logger
     assert "FailureReason" in logger
+
+
+def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    trade_zone = read("EA/includes/Trading/StrategyTradeZone.mqh")
+
+    assert "input bool InpRequireSMCStructuralValidity=false;" in ea
+    assert "ConfigureSMCStructuralGate(InpRequireSMCStructuralValidity)" in ea
+    assert "bool                            m_requireSmcStructuralValidity;" in trade_zone
+    assert "m_requireSmcStructuralValidity=false" in trade_zone
+    assert "void ConfigureSMCStructuralGate(bool requireStructuralValidity);" in trade_zone
+
+    smc_branch = 'if(selected==STRATEGY_SMC){m_scoring.PopulateStructuralValidation(forBuy,reasons);'
+    assert smc_branch in trade_zone
+    gate = 'if(m_requireSmcStructuralValidity&&!reasons.smc_structural_valid){m_lastSetup=out;return out;}'
+    assert gate in trade_zone
+    assert trade_zone.index(gate) > trade_zone.index("m_scoring.PopulateStructuralValidation(forBuy,reasons)")
+    assert "m_requireSmcStructuralValidity&&!reasons.smc_structural_valid){m_lastSetup=out;return out;}out=BuildSMC" in trade_zone
+
+    # A structural rejection must abstain rather than silently route into a
+    # different strategy after SMC has been selected.
+    gated_region = trade_zone[trade_zone.index("if(selected==STRATEGY_SMC)"):trade_zone.index("TradeSetup CTradeDecision::GenerateBuySetup")]
+    assert "BuildNonSMC" not in gated_region
