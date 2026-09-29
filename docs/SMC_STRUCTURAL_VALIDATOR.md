@@ -35,6 +35,14 @@ The current forming bar (shift 0) is excluded from causal-FVG and causal-OB clas
 
 A local order block is treated similarly for provenance telemetry. A higher-timeframe order block is recorded separately and is never mislabeled as causal to the entry-timeframe BOS.
 
+## Displacement provenance
+
+The authoritative inducement engine now exposes the exact displacement bar that triggered the impulse qualification. Structural validity requires the explicit chronological relation:
+
+`displacement bar (older) -> liquidity sweep -> confirming BOS (newer)`
+
+Using the actual bar indices prevents a generic `impulseFound=true` flag from being mistaken for proof that the displacement caused the later sweep/BOS chain.
+
 ## Audit output
 
 SMC-selected setups are written to:
