@@ -349,7 +349,7 @@ void CScoringEngine::Init(CTFContext* trendCtx, CTFContext* bosCtx, CTFContext* 
    // HasNearbyLiquidityEvent's bar_index gap meaningless).
    if(m_trendCtx != NULL && m_bosCtx != NULL)
       m_regimeDetector.Init(&m_trendCtx.trend, &m_volRegime, &m_phase);
-   m_smcValidator.Init(m_trendCtx, m_fvgCtx, m_srCtx, m_htfObCtx);
+   m_smcValidator.Init(m_trendCtx, m_fvgCtx, m_htfObCtx);
    if(m_bosCtx != NULL && m_liqCtx != NULL)
       m_momentumEngine.Init(&m_bosCtx.candles, &m_bosCtx.bos, &m_liqCtx.liquidity, &m_volRegime);
    // v2.13: chart-TF vol regime, deliberately separate instance from
@@ -415,7 +415,7 @@ void CScoringEngine::ConfigureValueArea(bool requireValueAreaLocation, bool bloc
 void CScoringEngine::ConfigureHtfOrderBlock(CTFContext* htfObCtx, bool requireHtfOB, double distATRMax)
   {
    m_htfObCtx = htfObCtx;
-   m_smcValidator.Init(m_trendCtx, m_fvgCtx, m_srCtx, m_htfObCtx);
+   m_smcValidator.Init(m_trendCtx, m_fvgCtx, m_htfObCtx);
    m_requireHtfOB = requireHtfOB;
    m_obDistATRMax = (distATRMax > 0) ? distATRMax : 2.0;
   }
