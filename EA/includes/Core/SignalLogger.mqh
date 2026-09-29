@@ -381,7 +381,7 @@ bool CSignalLogger::LogSMCStructure(TradeSetup &setup, string symbol, ENUM_TIMEF
                "LiquidityTargetValid", "SweepValid", "DisplacementValid", "BOSValid",
                "FVGCausal", "OrderBlockCausal", "HTFOBPresent", "PremiumDiscountValid",
                "FreshnessValid", "InvalidationClear", "ProtectedLevel", "InvalidationLevel",
-               "SweepBarIndex", "BOSBarIndex", "EntryFVGBarIndex", "CausalOBBarIndex",
+               "SweepBarIndex", "BOSBarIndex", "DisplacementBarIndex", "EntryFVGBarIndex", "CausalOBBarIndex",
                "FailureReason");
       m_smcHeaderWritten = true;
      }
@@ -410,6 +410,7 @@ bool CSignalLogger::LogSMCStructure(TradeSetup &setup, string symbol, ENUM_TIMEF
              DoubleToString(setup.reasons.smc_invalidation_level, _Digits),
              setup.reasons.smc_sweep_bar_index,
              setup.reasons.smc_bos_bar_index,
+             setup.reasons.smc_displacement_bar_index,
              setup.reasons.smc_entry_fvg_bar_index,
              setup.reasons.smc_causal_ob_bar_index,
              setup.reasons.smc_failure_reason);
