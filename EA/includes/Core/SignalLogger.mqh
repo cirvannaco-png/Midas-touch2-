@@ -45,6 +45,7 @@ public:
    bool              LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF, string trendLabel);
    bool              LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES entryTF, string outcome,
                                 double exitPrice, ENUM_FILL_POLICY fillPolicy = FILL_CONSERVATIVE);
+   bool              LogSMCStructure(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF);
   };
 //+------------------------------------------------------------------+
 CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(false), m_smcHeaderWritten(false), m_gmtOffsetOverrideHours(999) {}
