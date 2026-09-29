@@ -35,7 +35,7 @@ The current forming bar (shift 0) is excluded from causal-FVG and causal-OB clas
 
 Distance normalization uses the last closed entry-timeframe bar (ATR shift 1), so the audit classification does not move merely because the current candle is still forming. Causal OB provenance is sourced from the same entry/FVG timeframe; the chart-TF SR context is not treated as causal evidence.
 
-A local order block is treated similarly for provenance telemetry. A higher-timeframe order block is recorded separately and is never mislabeled as causal to the entry-timeframe BOS.
+A local order block is treated similarly for provenance telemetry. A higher-timeframe order block is recorded separately and is never mislabeled as causal to the entry-timeframe BOS. The current SMC setup builder remains FVG-entry based, so the opt-in hard gate requires a causal FVG and binds the constructed entry to that exact validated FVG bar. A causal OB alone is not enough to pass the gated builder until an OB-entry constructor exists.
 
 ## Displacement provenance
 
