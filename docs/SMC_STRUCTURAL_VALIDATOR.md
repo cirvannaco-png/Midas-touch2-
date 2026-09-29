@@ -29,9 +29,9 @@ The entry FVG is considered causal only when:
 1. it matches the trade direction,
 2. it is still fresh/tested,
 3. it is close enough to current price under the existing FVG distance policy, and
-4. its series index is at or newer than the confirming BOS.
+4. its series index falls between the liquidity sweep and confirming BOS, so the zone can plausibly belong to the sweep→displacement→BOS move.
 
-The current forming bar (shift 0) is excluded from causal-FVG classification to avoid turning incomplete intrabar state into structural evidence.
+The current forming bar (shift 0) is excluded from causal-FVG and causal-OB classification to avoid turning incomplete intrabar state into structural evidence.
 
 A local order block is treated similarly for provenance telemetry. A higher-timeframe order block is recorded separately and is never mislabeled as causal to the entry-timeframe BOS.
 
