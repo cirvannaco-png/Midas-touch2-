@@ -161,15 +161,21 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
    // Market state is applicability context, not a confidence bonus.
    v.regime_applicable = (regime != REGIME_UNDEFINED);
 
-   // In this EA InpTrendTF defaults to D1 and is distinct from the entry
-   // timeframe. The validator therefore treats the trend context as the
-   // higher-timeframe structure read, but still reports it explicitly.
-   if(m_trendCtx != NULL)
+   // Treat the trend context as HTF only when it is actually slower
+   // than the entry/FVG context. A parameter called "TrendTF" is not enough
+   // proof by itself; the validator verifies the timeframe relationship.
+   bool genuineHtf = (m_trendCtx != NULL && m_fvgCtx != NULL &&
+                      PeriodSeconds(m_trendCtx.tf) > PeriodSeconds(m_fvgCtx.tf));
+   if(genuineHtf)
      {
       ENUM_TREND_STATE trend = m_trendCtx.trend.GetCurrentTrend();
       v.htf_structure_valid = forBuy
                               ? (trend == TREND_BULL || trend == TREND_BULL_STRONG)
                               : (trend == TREND_BEAR || trend == TREND_BEAR_STRONG);
+     }
+   else
+     {
+      v.htf_structure_valid = false;
      }
 
    v.liquidity_target_valid = ind.internalStructureFound && ind.sweepFound;
@@ -237,7 +243,7 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
    if(!v.htf_structure_valid)
      {
       v.state = SMC_INVALID;
-      v.failure_reason = forBuy ? "HTF structure is not bullish" : "HTF structure is not bearish";
+      v.failure_reason = genuineHtf ? (forBuy ? "HTF structure is not bullish" : "HTF structure is not bearish") : "Trend context is not a genuine higher timeframe";
       return v;
      }
 
