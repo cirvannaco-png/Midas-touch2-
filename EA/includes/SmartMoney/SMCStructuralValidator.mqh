@@ -110,29 +110,35 @@ bool CSMCStructuralValidator::FindCausalFVG(bool forBuy, int sweepBarIndex, int 
 
 //+------------------------------------------------------------------+
 // A local/entry-timeframe OB is causal only when its originating candle
-// is no older than the confirming BOS. This is provenance telemetry;
-// HTF OB is handled separately below and is not called "causal".
+// is no older than the confirming BOS and the zone comes from the same
+// timeframe as the entry FVG. The chart-TF SR context is deliberately not
+// used for causal provenance; HTF OB is handled separately below.
 bool CSMCStructuralValidator::FindCausalOrderBlock(bool forBuy, int sweepBarIndex, int bosBarIndex,
                                                     double price, int &barIndex)
   {
    barIndex = -1;
-   if(m_srCtx == NULL || sweepBarIndex <= 0 || bosBarIndex <= 0 || sweepBarIndex < bosBarIndex || price <= 0.0) return false;
+   // Causal/local OB provenance must come from the same timeframe as the
+   // entry FVG. m_srCtx is the chart-TF context and may differ from m_fvgCtx;
+   // using it here would mislabel a cross-timeframe zone as entry-causal.
+   if(m_fvgCtx == NULL || sweepBarIndex <= 0 || bosBarIndex <= 0 || sweepBarIndex < bosBarIndex || price <= 0.0) return false;
 
-   double atr = m_srCtx.candles.GetATR(0);
+   // Use a closed entry-TF bar for the distance normalization so the
+   // diagnostic dataset does not depend on the still-forming bar's ATR.
+   double atr = m_fvgCtx.candles.GetATR(1);
    if(atr <= 0.0) return false;
 
    ENUM_FVG_DIR wantDir = forBuy ? FVG_BULL : FVG_BEAR;
    double bestDist = DBL_MAX;
 
-   for(int i = 0; i < m_srCtx.orderBlock.Count(); i++)
+   for(int i = 0; i < m_fvgCtx.orderBlock.Count(); i++)
      {
-      OrderBlockZone z = m_srCtx.orderBlock.GetZone(i);
+      OrderBlockZone z = m_fvgCtx.orderBlock.GetZone(i);
       if(z.dir != wantDir || z.state == OB_MITIGATED) continue;
       if(z.bar_index <= 0 || z.bar_index > sweepBarIndex || z.bar_index < bosBarIndex) continue;
 
       double mid = (z.top + z.bottom) / 2.0;
       double distATR = MathAbs(price - mid) / atr;
-      if(distATR > 1.5) continue;
+      if(distATR > m_obDistATRMax) continue;
       if(distATR < bestDist)
         {
          bestDist = distATR;
