@@ -53,6 +53,12 @@ struct SetupReasons {
    double exec_score; double env_exec_confidence; ENUM_MARKET_REGIME regime; double momentum_score; double breakout_score; ENUM_BREAKOUT_CLASS breakout_class;
    double reversion_score; ENUM_REVERSION_CLASS reversion_class; ENUM_KEYLEVEL_SOURCE keylevel_source; ENUM_KEYLEVEL_REACTION keylevel_reaction; double keylevel_score;
    ENUM_SELECTED_STRATEGY selected_strategy; double selected_strategy_score;
+   // SMC structural-validation telemetry. Diagnostic only until explicitly promoted by a validated policy.
+   ENUM_SMC_STRUCTURE_STATE smc_state; bool smc_structural_valid; bool smc_htf_structure_valid; bool smc_regime_applicable;
+   bool smc_liquidity_target_valid; bool smc_sweep_valid; bool smc_displacement_valid; bool smc_bos_valid;
+   bool smc_fvg_causal; bool smc_order_block_causal; bool smc_htf_ob_present; bool smc_premium_discount_valid;
+   bool smc_freshness_valid; bool smc_invalidation_clear; double smc_protected_level; double smc_invalidation_level;
+   int smc_sweep_bar_index; int smc_bos_bar_index; int smc_entry_fvg_bar_index; int smc_causal_ob_bar_index; string smc_failure_reason;
    // Environment telemetry. These are observations only and never act as
    // standalone trading gates.
    double trend_strength; double liquidity_score; int liquidity_bucket;
