@@ -153,6 +153,7 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
    v.state = SMC_WAIT;
    v.sweep_bar_index = ind.sweepBarIndex;
    v.bos_bar_index = ind.bosBarIndex;
+   v.displacement_bar_index = ind.displacementBarIndex;
    v.entry_fvg_bar_index = -1;
    v.causal_ob_bar_index = -1;
    v.premium_discount_valid = premiumDiscountValid;
