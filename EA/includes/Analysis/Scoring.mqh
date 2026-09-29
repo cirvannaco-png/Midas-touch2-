@@ -415,6 +415,7 @@ void CScoringEngine::ConfigureValueArea(bool requireValueAreaLocation, bool bloc
 void CScoringEngine::ConfigureHtfOrderBlock(CTFContext* htfObCtx, bool requireHtfOB, double distATRMax)
   {
    m_htfObCtx = htfObCtx;
+   m_smcValidator.Init(m_trendCtx, m_fvgCtx, m_srCtx, m_htfObCtx);
    m_requireHtfOB = requireHtfOB;
    m_obDistATRMax = (distATRMax > 0) ? distATRMax : 2.0;
   }
