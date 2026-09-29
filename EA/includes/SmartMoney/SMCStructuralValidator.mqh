@@ -205,7 +205,7 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
         }
      }
 
-   if(!ind.impulseFound || !ind.internalStructureFound || !ind.sweepFound || !ind.bosConfirmed)
+   if(!v.displacement_valid || !ind.internalStructureFound || !v.sweep_valid || !v.bos_valid)
      {
       v.state = SMC_WAIT;
       v.failure_reason = ind.reason;
