@@ -10,7 +10,7 @@ The validator also records whether a nearby HTF Order Block exists, but HTF OB p
 
 ## Important boundary
 
-The validator is **diagnostic-only in this revision**. It does not change:
+The validator is **diagnostic-only by default**. The optional hard gate is a separate research switch and is disabled by default. It does not change when that switch is off:
 
 - confidence arithmetic
 - strategy selection
