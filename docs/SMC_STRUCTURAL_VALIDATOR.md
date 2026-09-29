@@ -33,6 +33,8 @@ The entry FVG is considered causal only when:
 
 The current forming bar (shift 0) is excluded from causal-FVG and causal-OB classification to avoid turning incomplete intrabar state into structural evidence.
 
+Distance normalization uses the last closed entry-timeframe bar (ATR shift 1), so the audit classification does not move merely because the current candle is still forming. Causal OB provenance is sourced from the same entry/FVG timeframe; the chart-TF SR context is not treated as causal evidence.
+
 A local order block is treated similarly for provenance telemetry. A higher-timeframe order block is recorded separately and is never mislabeled as causal to the entry-timeframe BOS.
 
 ## Displacement provenance
