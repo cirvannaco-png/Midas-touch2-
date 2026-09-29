@@ -36,6 +36,7 @@ def test_smc_validator_preserves_causal_direction_and_no_current_bar_fvg():
     assert "Structural invalidation level breached" in validator
     assert "displacementBarIndex" in validator or "displacementBarIndex" in read("EA/includes/SmartMoney/Inducement.mqh")
     assert "SMCStructuralValidation v;" in validator
+    assert "PeriodSeconds(m_trendCtx.tf) > PeriodSeconds(m_fvgCtx.tf)" in validator
 
 
 def test_smc_structure_audit_is_separate_from_legacy_signal_csv():
