@@ -26,6 +26,14 @@ def test_smc_validator_is_wired_into_production_diagnostics_only():
     assert "if(!out.smc_structural_valid" not in trade_zone
     assert "ENUM_SMC_STRUCTURE_STATE" in config
     assert "smc_failure_reason" in config
+    # Structural validation must reuse the exact inducement evidence that
+    # EvaluateReasons() already collected; a second Validate() call could create
+    # a second representation of the same sweep/BOS event.
+    scoring = read("EA/includes/Analysis/Scoring.mqh")
+    assert "out.smc_inducement = ind;" in scoring
+    assert "InducementResult ind = out.smc_inducement;" in scoring
+    assert "InducementResult ind = m_inducement.Validate(forBuy);" in scoring
+    assert scoring.count("m_inducement.Validate(forBuy)") == 1
 
 
 def test_smc_validator_preserves_causal_direction_and_no_current_bar_fvg():
