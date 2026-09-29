@@ -34,6 +34,7 @@ def test_smc_validator_preserves_causal_direction_and_no_current_bar_fvg():
     assert "z.bar_index <= 0 || z.bar_index > sweepBarIndex || z.bar_index < bosBarIndex" in validator
     assert "No causal entry FVG or order block linked to the confirming BOS" in validator
     assert "Structural invalidation level breached" in validator
+    assert "displacementBarIndex" in validator or "displacementBarIndex" in read("EA/includes/SmartMoney/Inducement.mqh")
     assert "SMCStructuralValidation v;" in validator
 
 
