@@ -37,6 +37,10 @@ def test_smc_validator_preserves_causal_direction_and_no_current_bar_fvg():
     assert "displacementBarIndex" in validator or "displacementBarIndex" in read("EA/includes/SmartMoney/Inducement.mqh")
     assert "SMCStructuralValidation v;" in validator
     assert "PeriodSeconds(m_trendCtx.tf) > PeriodSeconds(m_fvgCtx.tf)" in validator
+    # Local/causal order blocks must be sourced from the entry-FVG timeframe;
+    # the chart-TF SR context may legitimately be different.
+    assert "for(int i = 0; i < m_fvgCtx.orderBlock.Count(); i++)" in validator
+    assert "for(int i = 0; i < m_srCtx.orderBlock.Count(); i++)" not in validator
 
 
 def test_smc_structure_audit_is_separate_from_legacy_signal_csv():
