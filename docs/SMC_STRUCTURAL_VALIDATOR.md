@@ -57,11 +57,20 @@ The audit file is separate from the legacy signal CSV so existing signal schemas
 
 ## Promotion gate
 
-Before the validator is allowed to hard-reject SMCs, compare:
+The EA now exposes:
+
+`InpRequireSMCStructuralValidity=false`
+
+When this switch is **off**, the validator remains diagnostic-only exactly as above.
+
+When this switch is **on**, a setup that has already been selected as `STRATEGY_SMC` is rejected unless `smc_structural_valid` is true. The rejection happens before SMC setup construction, so invalid SMC structure cannot proceed to the risk or execution layers. There is no silent fallback to a different strategy after an SMC structural rejection.
+
+This is an experiment switch, not a claim that the gate has been validated. Before enabling it for production, compare:
 
 - baseline selected SMCs
 - structurally-valid SMCs
 - structurally-invalid SMCs
+- baseline versus the opt-in structural gate
 
 using the same data split, execution model, spread/slippage assumptions, stop policy, and Dynamic Stop version.
 
