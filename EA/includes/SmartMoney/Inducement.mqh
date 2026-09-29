@@ -309,6 +309,8 @@ InducementResult CInducement::Validate(bool forBuy)
   {
    InducementResult r;
    ZeroMemory(r);
+   r.sweepBarIndex = -1;
+   r.bosBarIndex = -1;
    if(m_candles == NULL || m_candles.Total() < 20)
      {
       r.reason = "Not enough bars";
@@ -385,6 +387,8 @@ InducementResult CInducement::Validate(bool forBuy)
         }
      }
    r.sweepFound = sweepFound;
+   r.sweepBarIndex = sweepBarIdx;
+   r.sweepPoolPrice = poolPrice;
    r.sweepScore = sweepFound ? 25.0 : 0.0;
    if(!sweepFound)
      {
