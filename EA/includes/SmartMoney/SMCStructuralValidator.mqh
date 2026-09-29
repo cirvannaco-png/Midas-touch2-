@@ -78,7 +78,7 @@ bool CSMCStructuralValidator::FindCausalFVG(bool forBuy, int sweepBarIndex, int 
   {
    barIndex = -1;
    if(m_fvgCtx == NULL || sweepBarIndex <= 0 || bosBarIndex <= 0 || sweepBarIndex < bosBarIndex || price <= 0.0) return false;
-   double atr = m_fvgCtx.candles.GetATR(0);
+   double atr = m_fvgCtx.candles.GetATR(1);
    if(atr <= 0.0) return false;
 
    ENUM_FVG_DIR wantDir = forBuy ? FVG_BULL : FVG_BEAR;
@@ -208,7 +208,7 @@ SMCStructuralValidation CSMCStructuralValidator::Validate(
 
    if(m_htfObCtx != NULL && price > 0.0)
      {
-      double atr = m_htfObCtx.candles.GetATR(0);
+      double atr = m_htfObCtx.candles.GetATR(1);
       if(atr > 0.0)
         {
          OrderBlockZone z;
