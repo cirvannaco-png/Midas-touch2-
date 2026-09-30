@@ -45,6 +45,8 @@ input double InpMinRiskReward = 1.5;
 input double InpMaxSLDistanceATR = 1.5;
 input double InpSLBufferATR = 0.25;        // invalidation margin beyond FVG far edge, in ATR (audit #23 fix)
 input double InpMinStopSpreadMult = 3.0;   // floor: SL distance from entry never below (current spread * this) -- check against real Pepperstone/Exness spread in Tester
+input bool   InpRequireCausalFVG = true;   // only accept entry FVGs causally linked to the validated BOS sequence
+input int    InpCausalFVGMaxBarsAfterBOS = 12; // maximum FVG-timeframe bars after BOS for the causal entry zone
 
 input group "Inducement Engine (v2.1)"
 input int    InpImpulseLookbackBars = 40;   // How far back to search for a qualifying impulse
@@ -191,7 +193,7 @@ int OnInit()
    g_scoring.ConfigureVolatilityRegime(InpBlockLowVolRegime, InpVolRegimeLookback, InpVolRegimeLowPct, InpVolRegimeHighPct);
    g_scoring.ConfigureSessionFilter(InpUseSessionFilter, InpAllowTokyoSession, InpAllowLondonSession,
                                     InpAllowNewYorkSession, InpAllowLondonNYOverlap);
-   g_decision.Init(&g_chartCtx.candles, g_fvgCtx, g_liqCtx, &g_scoring, InpSLBufferATR, InpMinStopSpreadMult);
+   g_decision.Init(&g_chartCtx.candles, g_fvgCtx, g_liqCtx, &g_scoring, InpSLBufferATR, InpMinStopSpreadMult, 1.25, 60.0, g_chartCtx, g_bosCtx, NULL, InpRequireCausalFVG, InpCausalFVGMaxBarsAfterBOS);
    g_visuals.Init(&g_objMan);
    g_logger.Init(_Symbol, InpSessionGMTOffsetOverride);
    g_tracker.Init(&g_logger, _Symbol, InpFVGTF, InpMaxTrackingBars, InpFillPolicy, InpReplayTF);
