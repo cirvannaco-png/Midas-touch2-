@@ -355,7 +355,6 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
             DoubleToString(setup.reasons.selected_strategy_score, 1));
 
    FileClose(handle);
-   LogSMCStructure(setup, symbol, entryTF);
    return true;
   }
 //+------------------------------------------------------------------+
@@ -364,7 +363,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
 // producing a research-ready dataset that joins by SignalID.
 bool CSignalLogger::LogSMCStructure(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF)
   {
-   if(!setup.active || setup.reasons.selected_strategy != STRATEGY_SMC) return false;
+   if(setup.reasons.selected_strategy != STRATEGY_SMC || setup.creation_time <= 0) return false;
 
    int flags = FILE_CSV | FILE_READ | FILE_WRITE | FILE_SHARE_READ | FILE_ANSI;
    int handle = FileOpen(m_smcFilename, flags, ',');
