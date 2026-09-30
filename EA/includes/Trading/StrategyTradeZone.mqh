@@ -32,6 +32,8 @@ private:
    double                          m_minStopSpreadMult;
    double                          m_fvgMaxDistATR;
    double                          m_minSelectionScore;
+   bool                            m_requireCausalFVG;
+   int                             m_causalFVGMaxBarsAfterBOS;
 
    bool FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out);
    double EnforceSpreadFloor(string symbol,double entry,double stopLoss,bool isBuy);
@@ -44,12 +46,13 @@ private:
 public:
    CTradeDecision();
    void Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR=0.25,double minStopSpreadMult=3.0,double fvgMaxDistATR=1.25,double minSelectionScore=60.0,CTFContext* srCtx=NULL,CTFContext* bosCtx=NULL,CEnvironmentStrategyMemory* environmentMemory=NULL);
+   void ConfigureCausalFVG(bool enabled,int maxBarsAfterBOS=8);
    TradeSetup GenerateBuySetup();
    TradeSetup GenerateSellSetup();
    TradeSetup GetLastSetup()const{return m_lastSetup;}
   };
 
-CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;}
+CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;m_requireCausalFVG=false;m_causalFVGMaxBarsAfterBOS=8;}
 
 void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR,double minStopSpreadMult,double fvgMaxDistATR,double minSelectionScore,CTFContext* srCtx,CTFContext* bosCtx, CEnvironmentStrategyMemory* environmentMemory)
   {
@@ -57,11 +60,72 @@ void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* l
    m_slBufferATR=(slBufferATR>0?slBufferATR:0.25);m_minStopSpreadMult=(minStopSpreadMult>=0?minStopSpreadMult:3.0);m_fvgMaxDistATR=(fvgMaxDistATR>0?fvgMaxDistATR:1.25);m_minSelectionScore=(minSelectionScore>=0.0&&minSelectionScore<=100.0)?minSelectionScore:60.0;
   }
 
+void CTradeDecision::ConfigureCausalFVG(bool enabled,int maxBarsAfterBOS)
+  {
+   m_requireCausalFVG=enabled;
+   m_causalFVGMaxBarsAfterBOS=MathMax(1,maxBarsAfterBOS);
+  }
+
 double CTradeDecision::EnforceSpreadFloor(string symbol,double entry,double stopLoss,bool isBuy)
   {if(m_minStopSpreadMult<=0)return stopLoss;long sp=SymbolInfoInteger(symbol,SYMBOL_SPREAD);double pt=SymbolInfoDouble(symbol,SYMBOL_POINT);if(sp<=0||pt<=0)return stopLoss;double minDist=(double)sp*pt*m_minStopSpreadMult;double cur=MathAbs(entry-stopLoss);if(cur>=minDist)return stopLoss;return isBuy?(entry-minDist):(entry+minDist);}
 
 bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
-  {if(m_fvgCtx==NULL||m_priceRef==NULL||m_priceRef.Total()==0)return false;double price=m_priceRef.GetCandle(0).close;double atr=m_fvgCtx.candles.GetATR(0);if(price<=0||atr<=0)return false;bool found=false;double bestScore=-1.0;for(int i=0;i<m_fvgCtx.fvg.Count();i++){FVGZone z=m_fvgCtx.fvg.GetZone(i);if(z.dir!=dir)continue;if(z.state!=FVG_FRESH&&z.state!=FVG_TESTED)continue;double mid=(z.top+z.bottom)/2.0;double distATR=MathAbs(price-mid)/atr;if(distATR>m_fvgMaxDistATR)continue;double base=(z.state==FVG_FRESH)?1.0:0.6;double proximity=MathMax(0.0,1.0-distATR/m_fvgMaxDistATR);double score=base*(0.5+0.5*proximity);if(!found||score>bestScore){found=true;bestScore=score;out=z;}}return found;}
+  {
+   if(m_fvgCtx==NULL||m_priceRef==NULL||m_priceRef.Total()==0)return false;
+   double price=m_priceRef.GetCandle(0).close;
+   double atr=m_fvgCtx.candles.GetATR(0);
+   if(price<=0||atr<=0)return false;
+
+   // SMC entry integrity: when enabled, the entry FVG must belong to the
+   // same causal event as the validated inducement/BOS sequence. A merely
+   // nearby bullish/bearish FVG is not enough; that was allowing unrelated
+   // zones to satisfy the final SMC entry condition.
+   datetime causalStart=0;
+   datetime causalEnd=0;
+   int fvgSeconds=PeriodSeconds(m_fvgCtx.candles.Timeframe());
+   if(m_requireCausalFVG)
+     {
+      if(m_scoring==NULL||fvgSeconds<=0)return false;
+      bool forBuy=(dir==FVG_BULL);
+      InducementResult ind=m_scoring->GetInducement(forBuy);
+      if(!ind.valid||!ind.bosConfirmed||ind.bosBarIndex<0)return false;
+
+      // IMPORTANT: GetInducement() is configured against m_fvgCtx.candles,
+      // so bosBarIndex is an FVG-timeframe series index. Never reinterpret
+      // that index against m_bosCtx (which is H4 in the production defaults).
+      CandleData bosBar=m_fvgCtx.candles.GetCandle(ind.bosBarIndex);
+      if(bosBar.time<=0)return false;
+
+      // FVGZone.time is the middle candle's open time. The zone becomes
+      // observable when the newest candle in the 3-candle pattern closes;
+      // the BOS candle is likewise observable at its close. On the same
+      // timeframe those +1-bar formation offsets cancel, so comparing the
+      // middle/BOS bar timestamps preserves causal ordering without
+      // introducing a look-ahead.
+      causalStart=bosBar.time;
+      causalEnd=causalStart+(datetime)(m_causalFVGMaxBarsAfterBOS*fvgSeconds);
+     }
+
+   bool found=false;
+   double bestScore=-1.0;
+   for(int i=0;i<m_fvgCtx.fvg.Count();i++)
+     {
+      FVGZone z=m_fvgCtx.fvg.GetZone(i);
+      if(z.dir!=dir)continue;
+      if(z.state!=FVG_FRESH&&z.state!=FVG_TESTED)continue;
+      if(m_requireCausalFVG && (z.time<causalStart || z.time>causalEnd))continue;
+      double mid=(z.top+z.bottom)/2.0;
+      double distATR=MathAbs(price-mid)/atr;
+      if(distATR>m_fvgMaxDistATR)continue;
+      double base=(z.state==FVG_FRESH)?1.0:0.6;
+      double proximity=MathMax(0.0,1.0-distATR/m_fvgMaxDistATR);
+      double score=base*(0.5+0.5*proximity);
+      // Prefer the most recent causal zone when quality/proximity are tied.
+      if(m_requireCausalFVG)score+=0.05*MathMax(0.0,1.0-(double)(z.time-causalStart)/(double)MathMax(1,(causalEnd-causalStart)));
+      if(!found||score>bestScore){found=true;bestScore=score;out=z;}
+     }
+   return found;
+  }
 
 void CTradeDecision::PopulateStrategyReads(bool forBuy,SetupReasons &out)
   {
