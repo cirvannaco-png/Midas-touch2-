@@ -97,3 +97,23 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
     smc_build_index = trade_zone.index("out=BuildSMC", gate_index)
     nonsmc_index = trade_zone.index("BuildNonSMC", smc_build_index)
     assert smc_start < gate_index < smc_build_index < nonsmc_index
+
+
+def test_smc_rejections_are_auditable_and_do_not_disappear():
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    trade_zone = read("EA/includes/Trading/StrategyTradeZone.mqh")
+    logger = read("EA/includes/Core/SignalLogger.mqh")
+
+    # Selected SMC decisions are logged before directional selection so both
+    # valid and invalid/blocked structural outcomes enter the audit dataset.
+    assert "if(buySetup.reasons.selected_strategy==STRATEGY_SMC)g_logger.LogSMCStructure(buySetup,_Symbol,InpFVGTF);" in ea
+    assert "if(sellSetup.reasons.selected_strategy==STRATEGY_SMC)g_logger.LogSMCStructure(sellSetup,_Symbol,InpFVGTF);" in ea
+
+    # The structural CSV must accept inactive SMC records; an inactive record
+    # is precisely what a hard gate or setup-construction failure produces.
+    assert "if(setup.reasons.selected_strategy != STRATEGY_SMC || setup.creation_time <= 0) return false;" in logger
+
+    # Hard-gate rejection preserves the complete SetupReasons payload and
+    # annotates the reason instead of returning an informationless zero setup.
+    assert 'out.reasons=reasons;out.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in trade_zone
+    assert "out.creation_time=TimeCurrent();" in trade_zone
