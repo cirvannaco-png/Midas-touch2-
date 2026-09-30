@@ -193,7 +193,8 @@ int OnInit()
    g_scoring.ConfigureVolatilityRegime(InpBlockLowVolRegime, InpVolRegimeLookback, InpVolRegimeLowPct, InpVolRegimeHighPct);
    g_scoring.ConfigureSessionFilter(InpUseSessionFilter, InpAllowTokyoSession, InpAllowLondonSession,
                                     InpAllowNewYorkSession, InpAllowLondonNYOverlap);
-   g_decision.Init(&g_chartCtx.candles, g_fvgCtx, g_liqCtx, &g_scoring, InpSLBufferATR, InpMinStopSpreadMult, 1.25, 60.0, g_chartCtx, g_bosCtx, NULL, InpRequireCausalFVG, InpCausalFVGMaxBarsAfterBOS);
+   g_decision.Init(&g_chartCtx.candles, g_fvgCtx, g_liqCtx, &g_scoring, InpSLBufferATR, InpMinStopSpreadMult);
+   g_decision.ConfigureCausalFVG(InpRequireCausalFVG, InpCausalFVGMaxBarsAfterBOS);
    g_visuals.Init(&g_objMan);
    g_logger.Init(_Symbol, InpSessionGMTOffsetOverride);
    g_tracker.Init(&g_logger, _Symbol, InpFVGTF, InpMaxTrackingBars, InpFillPolicy, InpReplayTF);
