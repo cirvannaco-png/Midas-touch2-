@@ -79,10 +79,17 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
 
     smc_branch = 'if(selected==STRATEGY_SMC){m_scoring.PopulateStructuralValidation(forBuy,reasons);'
     assert smc_branch in trade_zone
-    gate = 'if(m_requireSmcStructuralValidity&&!reasons.smc_structural_valid){m_lastSetup=out;return out;}'
+    gate = "if(m_requireSmcStructuralValidity&&!reasons.smc_structural_valid){"
     assert gate in trade_zone
-    assert trade_zone.index(gate) > trade_zone.index("m_scoring.PopulateStructuralValidation(forBuy,reasons)")
-    assert "m_requireSmcStructuralValidity&&!reasons.smc_structural_valid){m_lastSetup=out;return out;}out=BuildSMC" in trade_zone
+    gate_index = trade_zone.index(gate)
+    assert gate_index > trade_zone.index("m_scoring.PopulateStructuralValidation(forBuy,reasons)")
+    # The rejection preserves audit context instead of returning an empty setup.
+    gate_body = trade_zone[gate_index:gate_index+700]
+    assert "out.type=forBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL;" in gate_body
+    assert "out.creation_time=TimeCurrent();" in gate_body
+    assert "out.reasons=reasons;" in gate_body
+    assert 'out.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in gate_body
+    assert "out=BuildSMC" in trade_zone[gate_index:gate_index+900]
     assert "bool FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out,int requiredBarIndex=-1);" in trade_zone
     assert "requiredBarIndex>0&&z.bar_index!=requiredBarIndex" in trade_zone
     assert "if(!reasons.smc_structural_valid||!reasons.smc_fvg_causal||reasons.smc_entry_fvg_bar_index<=0)return setup;" in trade_zone
