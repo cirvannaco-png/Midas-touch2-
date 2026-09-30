@@ -45,7 +45,8 @@ private:
 
 public:
    CTradeDecision();
-   void Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR=0.25,double minStopSpreadMult=3.0,double fvgMaxDistATR=1.25,double minSelectionScore=60.0,CTFContext* srCtx=NULL,CTFContext* bosCtx=NULL,CEnvironmentStrategyMemory* environmentMemory=NULL,bool requireCausalFVG=false,int causalFVGMaxBarsAfterBOS=8);
+   void Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR=0.25,double minStopSpreadMult=3.0,double fvgMaxDistATR=1.25,double minSelectionScore=60.0,CTFContext* srCtx=NULL,CTFContext* bosCtx=NULL,CEnvironmentStrategyMemory* environmentMemory=NULL);
+   void ConfigureCausalFVG(bool enabled,int maxBarsAfterBOS=8);
    TradeSetup GenerateBuySetup();
    TradeSetup GenerateSellSetup();
    TradeSetup GetLastSetup()const{return m_lastSetup;}
@@ -53,12 +54,16 @@ public:
 
 CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;m_requireCausalFVG=false;m_causalFVGMaxBarsAfterBOS=8;}
 
-void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR,double minStopSpreadMult,double fvgMaxDistATR,double minSelectionScore,CTFContext* srCtx,CTFContext* bosCtx, CEnvironmentStrategyMemory* environmentMemory,bool requireCausalFVG,int causalFVGMaxBarsAfterBOS)
+void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR,double minStopSpreadMult,double fvgMaxDistATR,double minSelectionScore,CTFContext* srCtx,CTFContext* bosCtx, CEnvironmentStrategyMemory* environmentMemory)
   {
    m_priceRef=priceRef;m_fvgCtx=fvgCtx;m_liqCtx=liqCtx;m_srCtx=(srCtx!=NULL?srCtx:g_chartCtx);m_bosCtx=(bosCtx!=NULL?bosCtx:g_bosCtx);m_scoring=scoring;m_environmentMemory=environmentMemory;
    m_slBufferATR=(slBufferATR>0?slBufferATR:0.25);m_minStopSpreadMult=(minStopSpreadMult>=0?minStopSpreadMult:3.0);m_fvgMaxDistATR=(fvgMaxDistATR>0?fvgMaxDistATR:1.25);m_minSelectionScore=(minSelectionScore>=0.0&&minSelectionScore<=100.0)?minSelectionScore:60.0;
-   m_requireCausalFVG=requireCausalFVG;
-   m_causalFVGMaxBarsAfterBOS=MathMax(1,causalFVGMaxBarsAfterBOS);
+  }
+
+void CTradeDecision::ConfigureCausalFVG(bool enabled,int maxBarsAfterBOS)
+  {
+   m_requireCausalFVG=enabled;
+   m_causalFVGMaxBarsAfterBOS=MathMax(1,maxBarsAfterBOS);
   }
 
 double CTradeDecision::EnforceSpreadFloor(string symbol,double entry,double stopLoss,bool isBuy)
