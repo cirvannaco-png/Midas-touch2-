@@ -147,7 +147,8 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
                                    setup.reasons.bos_strength >= 0.70 &&
                                    setup.reasons.time_decay >= 0.75 &&
                                    setup.reasons.fresh_fvg &&
-                                   !setup.reasons.value_area_contradiction;
+                                   !setup.reasons.value_area_contradiction &&
+                                   m_environment.Classify(setup) == ENV_NORMAL;
    const bool smcQualityPass = smcQualityEligible &&
                                setup.confidence >= m_smcQualityMinConfidence;
    bool canExecute = m_enableExecution &&
