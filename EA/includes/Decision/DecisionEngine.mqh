@@ -20,6 +20,8 @@ private:
    double            m_minConfidenceSignal;
    double            m_fullRiskConfidence;
    int               m_maxSpreadPoints;
+   bool              m_enableSMCQualityExecution;
+   double            m_smcQualityMinConfidence;
    long              m_nextId;
    CEnvironmentPolicy m_environment;
 
@@ -30,7 +32,8 @@ public:
                      CDecisionEngine();
    void              Init(const string symbol, bool enableExecution, bool enableSignals,
                           double minConfidenceExecute, double minConfidenceSignal,
-                          double fullRiskConfidence, int maxSpreadPoints);
+                          double fullRiskConfidence, int maxSpreadPoints,
+                          bool enableSMCQualityExecution = false, double smcQualityMinConfidence = 50.0);
    void              SeedNextId(long nextId);
    long              PeekNextId() const { return m_nextId; }
    TradeDecisionRecord Decide(const TradeSetup &setup);
@@ -38,11 +41,13 @@ public:
 //+------------------------------------------------------------------+
 CDecisionEngine::CDecisionEngine() : m_symbol(""), m_enableExecution(false), m_enableSignals(false),
                                      m_minConfidenceExecute(0.0), m_minConfidenceSignal(0.0),
-                                     m_fullRiskConfidence(0.0), m_maxSpreadPoints(0), m_nextId(1) {}
+                                     m_fullRiskConfidence(0.0), m_maxSpreadPoints(0),
+                                     m_enableSMCQualityExecution(false), m_smcQualityMinConfidence(50.0), m_nextId(1) {}
 //+------------------------------------------------------------------+
 void CDecisionEngine::Init(const string symbol, bool enableExecution, bool enableSignals,
                            double minConfidenceExecute, double minConfidenceSignal,
-                           double fullRiskConfidence, int maxSpreadPoints)
+                           double fullRiskConfidence, int maxSpreadPoints,
+                           bool enableSMCQualityExecution, double smcQualityMinConfidence)
   {
    m_symbol = (symbol == "") ? _Symbol : symbol;
    m_enableExecution = enableExecution;
@@ -51,6 +56,8 @@ void CDecisionEngine::Init(const string symbol, bool enableExecution, bool enabl
    m_minConfidenceSignal = minConfidenceSignal;
    m_fullRiskConfidence = fullRiskConfidence;
    m_maxSpreadPoints = MathMax(0, maxSpreadPoints);
+   m_enableSMCQualityExecution = enableSMCQualityExecution;
+   m_smcQualityMinConfidence = MathMax(0.0, MathMin(100.0, smcQualityMinConfidence));
   }
 //+------------------------------------------------------------------+
 void CDecisionEngine::SeedNextId(long nextId)
@@ -134,7 +141,17 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
 
    const double executeThreshold = m_environment.ExecuteThreshold(setup, m_minConfidenceExecute);
    const double signalThreshold  = m_environment.SignalThreshold(setup, m_minConfidenceSignal);
-   bool canExecute = m_enableExecution && setup.confidence >= executeThreshold;
+   const bool smcQualityEligible = m_enableSMCQualityExecution &&
+                                   setup.reasons.selected_strategy == STRATEGY_SMC &&
+                                   setup.reasons.sweep_grade >= SWEEP_GRADE_A &&
+                                   setup.reasons.bos_strength >= 0.70 &&
+                                   setup.reasons.time_decay >= 0.75 &&
+                                   setup.reasons.fresh_fvg &&
+                                   !setup.reasons.value_area_contradiction;
+   const bool smcQualityPass = smcQualityEligible &&
+                               setup.confidence >= m_smcQualityMinConfidence;
+   bool canExecute = m_enableExecution &&
+                     (setup.confidence >= executeThreshold || smcQualityPass);
    bool canSignal  = m_enableSignals  && setup.confidence >= signalThreshold;
 
    string environmentReason;
@@ -165,6 +182,11 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
                                  m_environment.StateName(setup));
       return rec;
      }
+
+   if(smcQualityPass && setup.confidence < executeThreshold)
+      rec.reason += StringFormat(" SMC quality override: A-grade sweep, BOS %.2f, decay %.2f, confidence %.1f >= %.1f.",
+                                 setup.reasons.bos_strength, setup.reasons.time_decay,
+                                 setup.confidence, m_smcQualityMinConfidence);
 
    // EnvironmentPolicy::ReduceRisk intentionally reuses the existing
    // CalculateLotSize(halveForReducedRisk) contract. That gives transition
