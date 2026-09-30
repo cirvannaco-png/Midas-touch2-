@@ -124,3 +124,28 @@ def test_smc_rejections_are_auditable_and_do_not_disappear():
     # annotates the reason instead of returning an informationless zero setup.
     assert 'out.reasons=reasons;out.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in trade_zone
     assert "out.creation_time=TimeCurrent();" in trade_zone
+
+
+def test_smc_quality_execution_policy_is_explicit_and_non_smc_thresholds_are_unchanged():
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    decision = read("EA/includes/Decision/DecisionEngine.mqh")
+
+    assert "input bool InpEnableSMCQualityExecution=true;" in ea
+    assert "input double InpSMCQualityMinConfidence=50.0;" in ea
+    assert "InpRequirePremiumDiscount=false;" in ea
+    assert "InpRequireVolumeConfirmation=false;" in ea
+    assert "InpRequireFibonacciZone=false;" in ea
+    assert "InpRequireMinSweepGrade=true;" in ea
+    assert "InpMinSweepGrade=3;" in ea
+    assert "InpMinConfidenceExecute=68.0;" in ea
+    assert "InpMinConfidenceSignal=58.0;" in ea
+
+    assert "bool              m_enableSMCQualityExecution;" in decision
+    assert "double            m_smcQualityMinConfidence;" in decision
+    assert "setup.reasons.selected_strategy == STRATEGY_SMC" in decision
+    assert "setup.reasons.sweep_grade >= SWEEP_GRADE_A" in decision
+    assert "setup.reasons.bos_strength >= 0.70" in decision
+    assert "setup.reasons.time_decay >= 0.75" in decision
+    assert "setup.reasons.fresh_fvg" in decision
+    assert "!setup.reasons.value_area_contradiction" in decision
+    assert "setup.confidence >= executeThreshold || smcQualityPass" in decision
