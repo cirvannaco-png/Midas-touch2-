@@ -142,6 +142,7 @@ def test_smc_quality_execution_policy_is_explicit_and_non_smc_thresholds_are_unc
 
     assert "bool              m_enableSMCQualityExecution;" in decision
     assert "double            m_smcQualityMinConfidence;" in decision
+    assert "void ConfigureSMCQualityExecution(bool enabled, double minConfidence);" in decision
     assert "setup.reasons.selected_strategy == STRATEGY_SMC" in decision
     assert "setup.reasons.sweep_grade >= SWEEP_GRADE_A" in decision
     assert "setup.reasons.bos_strength >= 0.70" in decision
