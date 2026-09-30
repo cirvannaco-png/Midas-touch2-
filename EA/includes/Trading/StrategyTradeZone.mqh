@@ -114,7 +114,7 @@ bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
       double proximity=MathMax(0.0,1.0-distATR/m_fvgMaxDistATR);
       double score=base*(0.5+0.5*proximity);
       // Prefer the most recent causal zone when quality/proximity are tied.
-      if(m_requireCausalFVG)score+=0.05*MathMax(0.0,1.0-(double)(TimeCurrent()-z.time)/(double)MathMax(1,(causalEnd-causalStart)));
+      if(m_requireCausalFVG)score+=0.05*MathMax(0.0,1.0-(double)(z.time-causalStart)/(double)MathMax(1,(causalEnd-causalStart)));
       if(!found||score>bestScore){found=true;bestScore=score;out=z;}
      }
    return found;
