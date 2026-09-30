@@ -85,16 +85,23 @@ bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
    int fvgSeconds=PeriodSeconds(m_fvgCtx.candles.Timeframe());
    if(m_requireCausalFVG)
      {
-      if(m_scoring==NULL||m_bosCtx==NULL||fvgSeconds<=0)return false;
+      if(m_scoring==NULL||fvgSeconds<=0)return false;
       bool forBuy=(dir==FVG_BULL);
       InducementResult ind=m_scoring->GetInducement(forBuy);
       if(!ind.valid||!ind.bosConfirmed||ind.bosBarIndex<0)return false;
-      CandleData bosBar=m_bosCtx.candles.GetCandle(ind.bosBarIndex);
-      int bosSeconds=PeriodSeconds(m_bosCtx.candles.Timeframe());
-      if(bosSeconds<=0||bosBar.time<=0)return false;
-      // The FVG may be produced during the BOS leg, but it cannot predate
-      // the BOS candle. This preserves causal ordering without demanding
-      // that price wait for a completely new higher-timeframe bar.
+
+      // IMPORTANT: GetInducement() is configured against m_fvgCtx.candles,
+      // so bosBarIndex is an FVG-timeframe series index. Never reinterpret
+      // that index against m_bosCtx (which is H4 in the production defaults).
+      CandleData bosBar=m_fvgCtx.candles.GetCandle(ind.bosBarIndex);
+      if(bosBar.time<=0)return false;
+
+      // FVGZone.time is the middle candle's open time. The zone becomes
+      // observable when the newest candle in the 3-candle pattern closes;
+      // the BOS candle is likewise observable at its close. On the same
+      // timeframe those +1-bar formation offsets cancel, so comparing the
+      // middle/BOS bar timestamps preserves causal ordering without
+      // introducing a look-ahead.
       causalStart=bosBar.time;
       causalEnd=causalStart+(datetime)(m_causalFVGMaxBarsAfterBOS*fvgSeconds);
      }
