@@ -148,4 +148,5 @@ def test_smc_quality_execution_policy_is_explicit_and_non_smc_thresholds_are_unc
     assert "setup.reasons.time_decay >= 0.75" in decision
     assert "setup.reasons.fresh_fvg" in decision
     assert "!setup.reasons.value_area_contradiction" in decision
+    assert "m_environment.Classify(setup) == ENV_NORMAL" in decision
     assert "setup.confidence >= executeThreshold || smcQualityPass" in decision
