@@ -53,7 +53,7 @@ SMC-selected setups are written to:
 
 The rows include structural state, each chain component, HTF structure context, causal FVG/OB bar indices, protected/invalidation levels, and a reason code.
 
-The audit file is separate from the legacy signal CSV so existing signal schemas are not silently changed.
+The audit file is separate from the legacy signal CSV so existing signal schemas are not silently changed. Selected SMC evaluations are recorded even when the resulting setup is inactive, including explicit hard-gate rejection reasons. This prevents the research dataset from containing only survivors and lets baseline-vs-gated comparisons count both accepted and rejected structural candidates.
 
 ## Promotion gate
 
