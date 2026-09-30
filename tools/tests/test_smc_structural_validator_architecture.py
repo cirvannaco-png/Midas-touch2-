@@ -136,7 +136,7 @@ def test_smc_quality_execution_policy_is_explicit_and_non_smc_thresholds_are_unc
     assert "InpRequireVolumeConfirmation=false;" in ea
     assert "InpRequireFibonacciZone=false;" in ea
     assert "InpRequireMinSweepGrade=true;" in ea
-    assert "InpMinSweepGrade=3;" in ea
+    assert "InpMinSweepGrade=2;" in ea
     assert "InpMinConfidenceExecute=68.0;" in ea
     assert "InpMinConfidenceSignal=58.0;" in ea
 
