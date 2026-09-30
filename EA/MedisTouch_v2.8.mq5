@@ -90,7 +90,7 @@ input bool InpAllowNewYorkSession=true;
 input bool InpAllowLondonNYOverlap=true;
 input group "Sweep Quality / Chase Filter / FVG Proximity (v2.9)"
 input bool InpRequireMinSweepGrade=true; // Promote only the quality tier supported by current ablation
-input int InpMinSweepGrade=3; // A-grade sweep only for the execution path; B/C remain auditable
+input int InpMinSweepGrade=2; // B-grade minimum: removes C-grade sweeps while preserving trade count; A-grade gets the dedicated quality override
 input bool InpRequireFreshSetup=false;
 input int InpMaxBarsSinceBOS=5;
 input bool InpRequireChaseFilter=false;
