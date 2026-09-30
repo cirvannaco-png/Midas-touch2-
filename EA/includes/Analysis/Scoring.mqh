@@ -15,6 +15,7 @@
 #include "../Core/SessionFilter.mqh"
 #include "../Core/PipCalculator.mqh"
 #include "../Regime/RegimeDetector.mqh"
+#include "../SmartMoney/SMCStructuralValidator.mqh"
 #include "../Strategies/MomentumBreakout.mqh"
 #include "../Strategies/MeanReversion.mqh"
 #include "../Strategies/KeyLevelReaction.mqh"
@@ -122,6 +123,7 @@ private:
    // PopulateStrategyDiagnostics() only; never consulted by
    // CalculateConfidence() or anything that gates a trade.
    CRegimeDetector          m_regimeDetector;
+   CSMCStructuralValidator  m_smcValidator;
    CMomentumBreakoutEngine  m_momentumEngine;
    // v2.13: Mean Reversion needs its own volatility-regime read scoped
    // to the CHART timeframe (m_srCtx), not the BOS-timeframe instance
@@ -299,6 +301,7 @@ public:
    // PopulateConfidenceDiagnostics() — v2.15 needs it to compare against
    // the three strategy scores computed in this same call.
    void              PopulateStrategyDiagnostics(bool forBuy, double confidence, SetupReasons &out);
+   void              PopulateStructuralValidation(bool forBuy, SetupReasons &out);
    InducementResult  GetInducement(bool forBuy) { return m_inducement.Validate(forBuy); }
    ENUM_MARKET_PHASE GetPhase() { return m_phase.Detect(); }
   };
@@ -346,6 +349,7 @@ void CScoringEngine::Init(CTFContext* trendCtx, CTFContext* bosCtx, CTFContext* 
    // HasNearbyLiquidityEvent's bar_index gap meaningless).
    if(m_trendCtx != NULL && m_bosCtx != NULL)
       m_regimeDetector.Init(&m_trendCtx.trend, &m_volRegime, &m_phase);
+   m_smcValidator.Init(m_trendCtx, m_fvgCtx, m_htfObCtx);
    if(m_bosCtx != NULL && m_liqCtx != NULL)
       m_momentumEngine.Init(&m_bosCtx.candles, &m_bosCtx.bos, &m_liqCtx.liquidity, &m_volRegime);
    // v2.13: chart-TF vol regime, deliberately separate instance from
@@ -411,6 +415,7 @@ void CScoringEngine::ConfigureValueArea(bool requireValueAreaLocation, bool bloc
 void CScoringEngine::ConfigureHtfOrderBlock(CTFContext* htfObCtx, bool requireHtfOB, double distATRMax)
   {
    m_htfObCtx = htfObCtx;
+   m_smcValidator.Init(m_trendCtx, m_fvgCtx, m_htfObCtx);
    m_requireHtfOB = requireHtfOB;
    m_obDistATRMax = (distATRMax > 0) ? distATRMax : 2.0;
   }
@@ -736,6 +741,7 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    // representation of the same event and makes downstream consumers
    // vulnerable to accidental double-counting.
    InducementResult ind = m_inducement.Validate(forBuy);
+   out.smc_inducement = ind;
    out.inducement_valid = ind.valid;
    out.bos_confirmed = ind.bosConfirmed;
    out.liquidity_swept = ind.sweepFound;
@@ -969,6 +975,41 @@ void CScoringEngine::ConfigureStrategySelection(double minSelectionScore)
 // means a future change to one can't silently change what the other
 // logs, and matches this class's existing pattern of one method per
 // diagnostic generation added (v2.10 got its own method; this does too).
+//+------------------------------------------------------------------+
+// Diagnostic-only SMC structural validation. This method never changes
+// confidence or strategy selection; it populates a separate evidence
+// record so outcomes can be conditioned on structural truth.
+void CScoringEngine::PopulateStructuralValidation(bool forBuy, SetupReasons &out)
+  {
+   m_smcValidator.Configure(m_fvgMaxDistATR, m_obDistATRMax);
+   InducementResult ind = out.smc_inducement;
+   SMCStructuralValidation v = m_smcValidator.Validate(forBuy, ind, CurrentPrice(),
+                                                        out.regime, out.premium_discount_ok);
+
+   out.smc_state = v.state;
+   out.smc_structural_valid = v.structural_valid;
+   out.smc_htf_structure_valid = v.htf_structure_valid;
+   out.smc_regime_applicable = v.regime_applicable;
+   out.smc_liquidity_target_valid = v.liquidity_target_valid;
+   out.smc_sweep_valid = v.sweep_valid;
+   out.smc_displacement_valid = v.displacement_valid;
+   out.smc_bos_valid = v.bos_valid;
+   out.smc_fvg_causal = v.fvg_causal;
+   out.smc_order_block_causal = v.order_block_causal;
+   out.smc_htf_ob_present = v.htf_ob_present;
+   out.smc_premium_discount_valid = v.premium_discount_valid;
+   out.smc_freshness_valid = v.freshness_valid;
+   out.smc_invalidation_clear = v.invalidation_clear;
+   out.smc_protected_level = v.protected_level;
+   out.smc_invalidation_level = v.invalidation_level;
+   out.smc_sweep_bar_index = v.sweep_bar_index;
+   out.smc_bos_bar_index = v.bos_bar_index;
+   out.smc_displacement_bar_index = v.displacement_bar_index;
+   out.smc_entry_fvg_bar_index = v.entry_fvg_bar_index;
+   out.smc_causal_ob_bar_index = v.causal_ob_bar_index;
+   out.smc_failure_reason = v.failure_reason;
+  }
+//+------------------------------------------------------------------+
 void CScoringEngine::PopulateStrategyDiagnostics(bool forBuy, double confidence, SetupReasons &out)
   {
    out.regime = m_regimeDetector.Classify();

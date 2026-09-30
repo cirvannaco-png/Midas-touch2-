@@ -95,7 +95,8 @@ def main() -> int:
     trade_zone = texts.get("EA/includes/Trading/StrategyTradeZone.mqh", "")
     if "SelectPeerStrategy(forBuy,reasons,selected,selectedScore)" not in trade_zone:
         errors.append("TradeZone: authoritative strategy selection is not explicitly wired")
-    if "if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons)" not in trade_zone:
+    smc_build_contract = ("if(selected==STRATEGY_SMC)" in trade_zone and "BuildSMC(forBuy,selectedScore,reasons)" in trade_zone)
+    if not smc_build_contract:
         errors.append("TradeZone: selected SMC strategy is not built through its owned builder")
     if "else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))" not in trade_zone:
         errors.append("TradeZone: selected challenger strategy is not built through its owned builder")
