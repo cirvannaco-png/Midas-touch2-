@@ -32,8 +32,8 @@ public:
                      CDecisionEngine();
    void              Init(const string symbol, bool enableExecution, bool enableSignals,
                           double minConfidenceExecute, double minConfidenceSignal,
-                          double fullRiskConfidence, int maxSpreadPoints,
-                          bool enableSMCQualityExecution = false, double smcQualityMinConfidence = 50.0);
+                          double fullRiskConfidence, int maxSpreadPoints);
+   void ConfigureSMCQualityExecution(bool enabled, double minConfidence);
    void              SeedNextId(long nextId);
    long              PeekNextId() const { return m_nextId; }
    TradeDecisionRecord Decide(const TradeSetup &setup);
@@ -46,8 +46,7 @@ CDecisionEngine::CDecisionEngine() : m_symbol(""), m_enableExecution(false), m_e
 //+------------------------------------------------------------------+
 void CDecisionEngine::Init(const string symbol, bool enableExecution, bool enableSignals,
                            double minConfidenceExecute, double minConfidenceSignal,
-                           double fullRiskConfidence, int maxSpreadPoints,
-                           bool enableSMCQualityExecution, double smcQualityMinConfidence)
+                           double fullRiskConfidence, int maxSpreadPoints)
   {
    m_symbol = (symbol == "") ? _Symbol : symbol;
    m_enableExecution = enableExecution;
@@ -56,8 +55,12 @@ void CDecisionEngine::Init(const string symbol, bool enableExecution, bool enabl
    m_minConfidenceSignal = minConfidenceSignal;
    m_fullRiskConfidence = fullRiskConfidence;
    m_maxSpreadPoints = MathMax(0, maxSpreadPoints);
-   m_enableSMCQualityExecution = enableSMCQualityExecution;
-   m_smcQualityMinConfidence = MathMax(0.0, MathMin(100.0, smcQualityMinConfidence));
+  }
+
+void CDecisionEngine::ConfigureSMCQualityExecution(bool enabled, double minConfidence)
+  {
+   m_enableSMCQualityExecution = enabled;
+   m_smcQualityMinConfidence = MathMax(0.0, MathMin(100.0, minConfidence));
   }
 //+------------------------------------------------------------------+
 void CDecisionEngine::SeedNextId(long nextId)
