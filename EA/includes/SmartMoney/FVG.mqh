@@ -119,9 +119,15 @@ void CFVG::UpdateState(FVGZone &zone)
             //   close < bottom  -> price closed through the far edge; invalidate
             //   otherwise       -> the zone was only tested
             if(cd.close < zone.bottom)
+              {
                zone.state = FVG_INVALIDATED;
+               return; // newest decisive event wins; do not replay older candles
+              }
             else if(cd.close >= zone.top)
+              {
                zone.state = FVG_MITIGATED;
+               return; // newest decisive event wins; do not replay older candles
+              }
             else if(zone.state == FVG_FRESH)
                zone.state = FVG_TESTED;
            }
@@ -135,9 +141,15 @@ void CFVG::UpdateState(FVGZone &zone)
             //   close > top      -> price closed through the far edge; invalidate
             //   otherwise        -> the zone was only tested
             if(cd.close > zone.top)
+              {
                zone.state = FVG_INVALIDATED;
+               return; // newest decisive event wins; do not replay older candles
+              }
             else if(cd.close <= zone.bottom)
+              {
                zone.state = FVG_MITIGATED;
+               return; // newest decisive event wins; do not replay older candles
+              }
             else if(zone.state == FVG_FRESH)
                zone.state = FVG_TESTED;
            }
