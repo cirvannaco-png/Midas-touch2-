@@ -22,6 +22,7 @@ def test_hierarchical_decision_contracts_exist():
         "ENUM_FIREWALL_LAYER",
         "ENUM_LIQUIDITY_SCOPE",
         "ENUM_LIQUIDITY_ARCHETYPE",
+        "STRUCTURE_STAGE_FVG_NONCAUSAL",
         "SETUP_FILLED",
         "SETUP_MANAGED",
         "SETUP_CLOSED",
@@ -68,6 +69,7 @@ def test_structural_provenance_and_fvg_lifecycle_are_present():
         "sweep_rejection_ratio",
         "displacement_atr",
         "bos_distance_atr",
+        "bos_age_bars",
         "liquidity_scope",
         "liquidity_archetype",
     ):
@@ -80,6 +82,7 @@ def test_structural_provenance_and_fvg_lifecycle_are_present():
     assert "Never compare raw bar indices across those series" in strategy
     assert "PeriodSeconds(m_fvgCtx.candles.Timeframe())" in strategy
     assert "zone.time<=ind.bosTime" in strategy
+    assert "STRUCTURE_STAGE_FVG_NONCAUSAL" in read("EA/includes/Decision/DecisionQuality.mqh")
 
 
 def test_mae_mfe_timing_and_versioned_calibration_are_present():
