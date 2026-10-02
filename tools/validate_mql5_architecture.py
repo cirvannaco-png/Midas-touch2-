@@ -221,6 +221,19 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"Config.mqh missing risk-class sizing contract: {token}")
     if "IsTighter(isBuy,candidate,currentSL)" not in dynamic_stop:
         errors.append("DynamicStopEngine.mqh missing immutable-tightening-only stop invariant")
+    partial_zone = by_rel.get("includes/Trading/OutcomeTracker.mqh", "")
+    if "void COutcomeTracker::ApplyPartial" in partial_zone:
+        partial_section = partial_zone[partial_zone.index("void COutcomeTracker::ApplyPartial"):partial_zone.index("bool COutcomeTracker::IntrabarReplayGeneric")]
+        if "SETUP_CLOSED" in partial_section:
+            errors.append("OutcomeTracker ApplyPartial incorrectly closes the setup lifecycle")
+        if "SETUP_MANAGED" not in partial_section:
+            errors.append("OutcomeTracker ApplyPartial missing managed lifecycle transition")
+    if "void COutcomeTracker::FinalizeExit" in partial_zone:
+        final_section = partial_zone[partial_zone.index("void COutcomeTracker::FinalizeExit"):partial_zone.index("bool COutcomeTracker::ResolveOrder")]
+        if "SETUP_CLOSED" not in final_section:
+            errors.append("OutcomeTracker FinalizeExit missing closed lifecycle transition")
+    if "p.setup.setup_lifecycle=SETUP_CLOSED" not in outcome_live:
+        errors.append("OutcomeTrackerLive Finalize missing closed lifecycle transition")
     for token in ("g_logger.LogSetup(buySetup", "g_logger.LogSetup(sellSetup", "REJECT/WAIT is first-class telemetry"):
         if token not in ea:
             errors.append(f"EA missing first-class reject/wait telemetry: {token}")
