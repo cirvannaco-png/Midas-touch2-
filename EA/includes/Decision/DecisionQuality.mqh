@@ -76,38 +76,43 @@ public:
 
       const SetupReasons r=setup.reasons;
 
-      if(r.inducement_structure_type!=INDUCEMENT_STRUCTURE_NONE)
-         out.stage=STRUCTURE_STAGE_LIQUIDITY_IDENTIFIED;
-      else
+      if(!r.inducement_valid || r.inducement_structure_type==INDUCEMENT_STRUCTURE_NONE)
         {
-         out.reason="no authoritative liquidity structure";
+         out.reason="no validated authoritative liquidity structure";
          return out;
         }
-
-      if(!r.liquidity_swept)
+      if(r.liquidity_scope==LIQUIDITY_SCOPE_UNKNOWN || r.liquidity_archetype==LIQUIDITY_ARCHETYPE_NONE)
         {
-         out.reason="liquidity identified but not swept";
+         out.reason="liquidity provenance is incomplete";
+         return out;
+        }
+      out.stage=STRUCTURE_STAGE_LIQUIDITY_IDENTIFIED;
+
+      if(!r.liquidity_swept || r.liquidity_pool_price<=0.0 ||
+         r.sweep_penetration_atr<=0.0 || r.sweep_rejection_ratio<=0.0)
+        {
+         out.reason="liquidity identified but sweep provenance is incomplete or not confirmed";
          return out;
         }
       out.stage=STRUCTURE_STAGE_LIQUIDITY_SWEPT;
 
-      if(r.displacement_atr<=0.0)
+      if(!r.sweep_follow_through || r.displacement_atr<=0.0 || r.displacement_body_ratio<=0.0)
         {
-         out.reason="no production displacement measurement";
+         out.reason="sweep did not produce confirmed displacement follow-through";
          return out;
         }
       out.stage=STRUCTURE_STAGE_VALID_DISPLACEMENT;
 
-      if(!r.bos_confirmed)
+      if(!r.bos_confirmed || r.bos_time<=0 || r.bos_distance_atr<=0.0 || r.bos_strength<=0.0)
         {
-         out.reason="liquidity swept but no confirming BOS";
+         out.reason="displacement has no confirming production BOS provenance";
          return out;
         }
       out.stage=STRUCTURE_STAGE_CONFIRMING_BOS;
 
-      if(!fvgAvailable)
+      if(!fvgAvailable || r.fvg_state==FVG_INVALIDATED)
         {
-         out.reason="no live FVG available for entry";
+         out.reason="no live tradeable FVG available for entry";
          return out;
         }
 
@@ -122,6 +127,12 @@ public:
         }
       else
          out.stage=STRUCTURE_STAGE_CAUSAL_FVG;
+
+      if(r.fvg_age_bars<0 || r.fvg_distance_atr<0.0 || r.fvg_distance_atr>2.0)
+        {
+         out.reason="FVG provenance is stale, non-finite, or too distant from decision price";
+         return out;
+        }
 
       if(!r.premium_discount_ok || r.value_area_contradiction)
         {
