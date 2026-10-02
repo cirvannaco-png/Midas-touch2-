@@ -86,3 +86,5 @@ def test_mae_mfe_timing_and_versioned_calibration_are_present():
     assert "InpEnableEnvironmentHardBlock=false" in ea
     assert "InpRequireCausalFVG=false" in ea
     assert "InpEnableStructuralValidator=true" in ea
+    assert "InpEnableCorrelationGuard=false" in ea
+    assert "ConfigureCorrelationGuard" in read("EA/includes/Portfolio/PortfolioManager.mqh")
