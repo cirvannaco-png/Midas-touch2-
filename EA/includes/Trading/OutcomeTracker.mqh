@@ -305,7 +305,9 @@ void COutcomeTracker::AddSetup(TradeSetup &setup, long decisionId)
    p.setup = setup;
    p.decisionId = decisionId;
    bool isBuy = (setup.type == ORDER_TYPE_BUY);
-   p.entryRef = isBuy ? setup.entry_bottom : setup.entry_top;
+   // Research execution must use the same price convention as live OrderManager:
+   // BUY -> entry_top, SELL -> entry_bottom.
+   p.entryRef = ResolveExecutionEntry(setup);
    p.riskDist = MathAbs(p.entryRef - setup.stop_loss);
    p.mfePrice = p.entryRef;
    p.maePrice = p.entryRef;
@@ -323,7 +325,7 @@ void COutcomeTracker::AddSetup(TradeSetup &setup, long decisionId)
    p.confidenceAtSignal = setup.confidence;
    p.confidenceDecayed = setup.confidence;
    p.decayBars = 0;
-   p.sizingEntryPrice = isBuy ? setup.entry_top : setup.entry_bottom;
+   p.sizingEntryPrice = ResolveExecutionEntry(setup);
    p.mgmtRiskDist = MathAbs(p.sizingEntryPrice - setup.stop_loss);
    bool exceededBudget = false;
    p.lots = (p.mgmtRiskDist > 0)
