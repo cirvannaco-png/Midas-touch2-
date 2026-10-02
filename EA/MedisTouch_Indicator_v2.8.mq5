@@ -221,21 +221,22 @@ int OnCalculate(const int rates_total,
    if(g_chartCtx == NULL || !g_chartCtx.candles.IsReady())
       return rates_total;
 
-   double currentATR = g_fvgCtx.candles.GetATR(0); // same ATR basis used for SL sizing in TradeZone
+   double currentATR = g_fvgCtx.candles.GetATR(1); // decision/risk geometry uses the last completed FVG bar
 
    TradeSetup buySetup = g_decision.GenerateBuySetup();
    TradeSetup sellSetup = g_decision.GenerateSellSetup();
 
    g_lastSetup.active = false;
-   if(buySetup.active && (!sellSetup.active || buySetup.confidence >= sellSetup.confidence))
+   bool buyTrade = buySetup.active && buySetup.decision_state == DECISION_TRADE;
+   bool sellTrade = sellSetup.active && sellSetup.decision_state == DECISION_TRADE;
+
+   if(buyTrade || sellTrade)
      {
-      if(g_risk.ValidateSetup(buySetup, InpMinRiskReward, InpMaxSLDistanceATR, currentATR))
-         g_lastSetup = buySetup;
-     }
-   else if(sellSetup.active)
-     {
-      if(g_risk.ValidateSetup(sellSetup, InpMinRiskReward, InpMaxSLDistanceATR, currentATR))
-         g_lastSetup = sellSetup;
+      TradeSetup candidate = buyTrade && !sellTrade ? buySetup :
+                             (!buyTrade && sellTrade ? sellSetup :
+                              (buySetup.reasons.quality_score >= sellSetup.reasons.quality_score ? buySetup : sellSetup));
+      if(g_risk.ValidateSetup(candidate, InpMinRiskReward, InpMaxSLDistanceATR, currentATR))
+         g_lastSetup = candidate;
      }
 
    if(g_lastSetup.active && g_lastSetup.creation_time != g_lastAlertTime)
