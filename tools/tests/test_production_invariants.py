@@ -222,3 +222,10 @@ def test_signal_logger_persists_decision_provenance():
     t=(ROOT/"EA"/"includes"/"Core"/"SignalLogger.mqh").read_text()
     for token in ("DecisionState", "BlockingLayer", "DecisionReason", "QualityScore", "Lifecycle", "ExpectedReturnR", "RegimeID"):
         assert token in t
+
+
+def test_elevated_risk_requires_qualified_environment_memory():
+    t=(ROOT/"EA"/"includes"/"Decision"/"DecisionQuality.mqh").read_text()
+    assert "environmentQualified" in t
+    assert 'setup.reasons.environment_memory_status=="QUALIFIED"' in t
+    assert "environmentNotDegraded" in t
