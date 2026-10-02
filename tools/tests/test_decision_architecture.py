@@ -241,3 +241,8 @@ def test_tracker_is_admitted_only_after_durable_executable_decision():
     assert save_pos >= 0 and tracker_pos > save_pos
     assert tracker_pos < execute_gate
     assert "(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)&&InpTrackOutcomes" in ea
+
+
+def test_reject_preserves_expired_lifecycle():
+    strategy = read("EA/includes/Trading/StrategyTradeZone.mqh")
+    assert "(q.decision==DECISION_TRADE?SETUP_ENTRY_ELIGIBLE:SETUP_EXPIRED)" in strategy
