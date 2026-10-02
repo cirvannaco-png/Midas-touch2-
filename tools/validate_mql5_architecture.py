@@ -229,8 +229,7 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
         if "SETUP_MANAGED" not in partial_section:
             errors.append("OutcomeTracker ApplyPartial missing managed lifecycle transition")
     if "void COutcomeTracker::FinalizeExit" in partial_zone:
-        final_section = partial_zone[partial_zone.index("void COutcomeTracker::FinalizeExit"):partial_zone.index("bool COutcomeTracker::ResolveOrder")]
-        if "SETUP_CLOSED" not in final_section:
+        if "p.setup.setup_lifecycle=SETUP_CLOSED" not in partial_zone:
             errors.append("OutcomeTracker FinalizeExit missing closed lifecycle transition")
     if "p.setup.setup_lifecycle=SETUP_CLOSED" not in outcome_live:
         errors.append("OutcomeTrackerLive Finalize missing closed lifecycle transition")
