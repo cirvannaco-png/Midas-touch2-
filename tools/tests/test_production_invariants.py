@@ -179,3 +179,16 @@ def test_provenance_is_published():
         "regime_id",
     ):
         assert token in t
+
+
+def test_noncausal_fvg_is_degraded_not_falsely_causal():
+    t=(ROOT/"EA"/"includes"/"Decision/DecisionQuality.mqh").read_text()
+    assert "STRUCTURE_STAGE_FVG_NONCAUSAL" in t
+    assert "bool degraded=(!r.fvg_causal" in t
+
+
+def test_bos_age_is_persisted_in_provenance():
+    s=(ROOT/"EA"/"includes"/"Analysis/Scoring.mqh").read_text()
+    p=(ROOT/"EA"/"includes"/"Signals/SignalPublisher.mqh").read_text()
+    assert "out.bos_age_bars" in s
+    assert "bos_age_bars" in p
