@@ -31,6 +31,7 @@ public:
    int               PoolCount() const { return m_poolCount; }
    LiquidityPool     GetPool(int i) const;
    int               EventCount() const { return m_eventCount; }
+   ENUM_TIMEFRAMES  Timeframe() const { return m_candles!=NULL ? m_candles.Timeframe() : PERIOD_CURRENT; }
    LiquidityEvent    GetEvent(int i) const; // 0 = most recent
    // Convenience wrappers for the Inducement/Scoring engines — "was the
    // most recent sweep of this kind within N bars?" without every caller
