@@ -356,3 +356,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# risk-class promotion must remain conservative even when calibration has enough samples
+# and requires qualified environment memory for elevated classes.
