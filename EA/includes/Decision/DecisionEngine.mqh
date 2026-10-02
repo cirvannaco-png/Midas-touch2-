@@ -191,8 +191,10 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
    // CalculateLotSize(halveForReducedRisk) contract. That gives transition
    // and recovery decisions a deterministic 50% sizing reduction without
    // introducing a second, potentially divergent sizing path.
-   rec.reduce_risk = (setup.confidence < m_fullRiskConfidence) ||
-                     (setup.risk_class == RISK_CLASS_MINIMAL) ||
+   // Raw confidence is not a risk-allocation authority. Risk class is derived
+   // from structural quality and, when available, calibrated probability plus
+   // expected return; environment policy may still impose a defensive reduction.
+   rec.reduce_risk = (setup.risk_class == RISK_CLASS_MINIMAL) ||
                      m_environment.ReduceRisk(setup);
    rec.valid = true;
    rec.decision_id = m_nextId++;
