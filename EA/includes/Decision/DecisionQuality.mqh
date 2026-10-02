@@ -111,13 +111,15 @@ public:
          return out;
         }
 
-      if(requireCausalFVG && !r.fvg_causal)
+      if(!r.fvg_causal)
         {
-         out.reason="entry FVG is not causally downstream of the production BOS";
-         return out;
+         out.stage=STRUCTURE_STAGE_FVG_NONCAUSAL;
+         if(requireCausalFVG)
+           {
+            out.reason="entry FVG is not causally downstream of the production BOS";
+            return out;
+           }
         }
-      if(r.fvg_causal)
-         out.stage=STRUCTURE_STAGE_CAUSAL_FVG;
       else
          out.stage=STRUCTURE_STAGE_CAUSAL_FVG;
 
@@ -155,7 +157,7 @@ public:
       double invalidation=(r.invalidation_distance_atr>0.0)?MathMin(1.0,r.invalidation_distance_atr/2.0):1.0;
 
       out.score=100.0*(0.20*sweep+0.25*bos+0.15*displacement+0.15*fvgQuality+0.15*location+0.10*invalidation);
-      bool degraded=(r.sweep_grade==SWEEP_GRADE_C || r.bos_strength<0.50 ||
+      bool degraded=(!r.fvg_causal || r.sweep_grade==SWEEP_GRADE_C || r.bos_strength<0.50 ||
                       r.fvg_state==FVG_TESTED || r.time_decay<0.55);
       if(degraded)
         {
