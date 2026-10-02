@@ -59,6 +59,8 @@ struct InducementResult
    int sweepFollowThroughBarIndex;
    double displacementATR;
    double displacementBodyRatio;
+   double bosDistanceATR;
+   datetime bosTime;
   };
 struct OutcomeStats { int wins; int losses; int scratches; int ambiguous; double netPnL; double grossProfit; double grossLoss; double totalCommission; double totalSpreadCost; double totalSlippageCost; double sumRMultiple; int resolvedCount; int ExcludingAmbiguousTotal() const { return wins + losses; } double WinRateExcludingAmbiguous() const { int t=wins+losses; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsLoss() const { int t=wins+losses+ambiguous; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsWin() const { int t=wins+losses+ambiguous; return t>0?100.0*(wins+ambiguous)/t:0.0; } double ProfitFactor() const { if(grossLoss>0)return grossProfit/grossLoss; return grossProfit>0?-1.0:0.0; } double ExpectancyPerTrade() const { return resolvedCount>0?netPnL/resolvedCount:0.0; } double AverageRMultiple() const { return resolvedCount>0?sumRMultiple/resolvedCount:0.0; } };
 struct CandleData { datetime time; double open; double high; double low; double close; long tick_volume; long real_volume; double atr; };
@@ -80,11 +82,13 @@ struct SetupReasons {
    double exec_score; double env_exec_confidence; ENUM_MARKET_REGIME regime; double momentum_score; double breakout_score; ENUM_BREAKOUT_CLASS breakout_class;
    double reversion_score; ENUM_REVERSION_CLASS reversion_class; ENUM_KEYLEVEL_SOURCE keylevel_source; ENUM_KEYLEVEL_REACTION keylevel_reaction; double keylevel_score;
    ENUM_SELECTED_STRATEGY selected_strategy; double selected_strategy_score;
+   ENUM_LIQUIDITY_SCOPE liquidity_scope; ENUM_LIQUIDITY_ARCHETYPE liquidity_archetype;
+   double liquidity_event_price; double liquidity_event_strength; bool liquidity_event_external;
 
    // Structural provenance and hierarchical decision telemetry.
    ENUM_INDUCEMENT_STRUCTURE inducement_structure_type; double liquidity_pool_price; int liquidity_pool_near_bar_index; int liquidity_pool_far_bar_index;
    int liquidity_pool_bar_span; double liquidity_pool_spacing_atr; int liquidity_age_bars; double sweep_penetration_atr; double sweep_rejection_ratio;
-   double sweep_shape_score; bool sweep_follow_through; int sweep_follow_through_bar_index; double displacement_atr; double displacement_body_ratio;
+   double sweep_shape_score; bool sweep_follow_through; int sweep_follow_through_bar_index; double displacement_atr; double displacement_body_ratio; double bos_distance_atr; datetime bos_time;
    ENUM_FVG_STATE fvg_state; int fvg_age_bars; double fvg_distance_atr; bool fvg_causal; int fvg_bos_age_gap;
    double invalidation_distance_atr;
    ENUM_STRUCTURAL_STATE structural_state; ENUM_STRUCTURE_STAGE structural_stage; double structural_score; string structural_reason;
