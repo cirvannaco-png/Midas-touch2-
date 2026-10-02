@@ -750,6 +750,8 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.liquidity_age_bars = ind.liquidityAgeBars;
    out.sweep_penetration_atr = ind.sweepPenetrationATR;
    out.sweep_rejection_ratio = ind.sweepRejectionRatio;
+   out.sweep_price = ind.sweepPrice;
+   out.sweep_time = ind.sweepTime;
    out.sweep_shape_score = ind.sweepShapeScore;
    out.sweep_follow_through = ind.sweepFollowThrough;
    out.sweep_follow_through_bar_index = ind.sweepFollowThroughBarIndex;
