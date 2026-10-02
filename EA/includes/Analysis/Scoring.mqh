@@ -141,6 +141,11 @@ private:
    // class only reads values the three engines above already computed.
    CStrategySelector        m_strategySelector;
 
+   // Last winning FVG candidate selected by FVGScore(). Diagnostic state only.
+   ENUM_FVG_STATE     m_lastFvgState;
+   int                 m_lastFvgAgeBars;
+   double              m_lastFvgDistanceATR;
+
    double            OBScore(bool forBuy);
 
    double            TrendScore(bool forBuy);
@@ -311,6 +316,7 @@ CScoringEngine::CScoringEngine() : m_trendCtx(NULL), m_bosCtx(NULL), m_liqCtx(NU
                                     m_requireValueAreaLocation(false), m_blockValueAreaContradictions(true),
                                     m_htfObCtx(NULL), m_requireHtfOB(false), m_obDistATRMax(2.0),
                                     m_blockLowVolRegime(false),
+                                    m_lastFvgState(FVG_FRESH), m_lastFvgAgeBars(-1), m_lastFvgDistanceATR(0.0),
                                     m_fvgMaxDistATR(1.25), m_requireChaseFilter(false), m_maxChaseDistATR(0.75),
                                     m_newsFilter(NULL), m_newsWarningMultiplier(0.85),
                                     m_contradictionWeight(0.25), m_envWeight(1.0), m_execWeight(1.0)
@@ -480,6 +486,9 @@ double CScoringEngine::TrendScore(bool forBuy)
 
 double CScoringEngine::FVGScore(bool forBuy)
   {
+   m_lastFvgState = FVG_FRESH;
+   m_lastFvgAgeBars = -1;
+   m_lastFvgDistanceATR = 0.0;
    if(m_fvgCtx == NULL || m_fvgCtx.candles.Total() == 0) return 0.0;
    double price = CurrentPrice();
    double atr = m_fvgCtx.candles.GetATR(0);
@@ -502,7 +511,13 @@ double CScoringEngine::FVGScore(bool forBuy)
       double base = (z.state == FVG_FRESH) ? 1.0 : 0.6;
       double proximity = MathMax(0.0, 1.0 - distATR / m_fvgMaxDistATR);
       double score = base * (0.5 + 0.5 * proximity);
-      if(score > best) best = score;
+      if(score > best)
+        {
+         best = score;
+         m_lastFvgState = z.state;
+         m_lastFvgAgeBars = MathMax(0, z.bar_index);
+         m_lastFvgDistanceATR = distATR;
+        }
      }
    return best;
   }
@@ -807,6 +822,9 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.sweep_shape_score = ind.sweepShapeScore;
    out.sweep_follow_through = ind.sweepFollowThrough;
    out.sweep_follow_through_bar_index = ind.sweepFollowThroughBarIndex;
+   out.best_fvg_state = m_lastFvgState;
+   out.best_fvg_age_bars = m_lastFvgAgeBars;
+   out.best_fvg_distance_atr = m_lastFvgDistanceATR;
    out.chase_dist_atr = 0.0;
    out.chase_ok = true;
    if(ind.bosBarIndex >= 0 && m_bosCtx != NULL && price > 0)
