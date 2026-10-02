@@ -225,7 +225,10 @@ void CTradeDecision::PopulateFVGDiagnostics(bool forBuy,SetupReasons &out)
       out.fvg_distance_atr=(atr>0.0?MathAbs(price-mid)/atr:0.0);
      }
 
-   InducementResult ind=m_scoring!=NULL?m_scoring.GetInducement(forBuy):InducementResult();
+   InducementResult ind;
+   ZeroMemory(ind);
+   if(m_scoring!=NULL)
+      ind=m_scoring.GetInducement(forBuy);
    out.fvg_causal=IsCausalFVG(m_lastEntryFVG,ind);
    out.fvg_bos_age_gap=(ind.bosBarIndex>=0 ? ind.bosBarIndex-m_lastEntryFVG.bar_index : 0);
   }
@@ -474,7 +477,8 @@ bool CTradeDecision::ApplyQualityFirewall(TradeSetup &setup,bool isSMC)
    CTradeQualityFirewall firewall;
    int degradedMinSample=(m_environmentMemory!=NULL?m_environmentMemory.DegradedMinimumSample():0);
    TradeQualityResult q=firewall.Evaluate(setup,isSMC,m_enableStructuralValidator,m_enableEnvironmentHardBlock,
-                                          degradedMinSample,m_minQualityScore,m_maxExecutionSpreadPoints);
+                                          degradedMinSample,m_minQualityScore,m_maxExecutionSpreadPoints,
+                                          m_requireCausalFVG);
    setup.decision_state=q.decision;
    setup.risk_class=q.riskClass;
    setup.setup_lifecycle=(q.decision==DECISION_WAIT?SETUP_WAITING_RETEST:SETUP_ENTRY_ELIGIBLE);
