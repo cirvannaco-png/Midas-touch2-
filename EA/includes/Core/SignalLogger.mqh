@@ -290,7 +290,9 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
                // v2.14 diagnostics — same append-only discipline.
                "KeyLevelSource", "KeyLevelReaction", "KeyLevelScore",
                // v2.15 diagnostics — same append-only discipline.
-               "SelectedStrategy", "SelectedStrategyScore");
+               "SelectedStrategy", "SelectedStrategyScore",
+               "DecisionState", "BlockingLayer", "DecisionReason", "QualityScore",
+               "StructuralState", "StructuralStage", "Lifecycle", "ExpectedReturnR", "RegimeID");
       m_headerWritten = true;
      }
 
@@ -334,7 +336,16 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
             KeyLevelReactionLabel(setup.reasons.keylevel_reaction),
             DoubleToString(setup.reasons.keylevel_score, 1),
             SelectedStrategyLabel(setup.reasons.selected_strategy),
-            DoubleToString(setup.reasons.selected_strategy_score, 1));
+            DoubleToString(setup.reasons.selected_strategy_score, 1),
+            EnumToString(setup.reasons.decision_state),
+            EnumToString(setup.reasons.decision_blocking_layer),
+            setup.reasons.decision_reason,
+            DoubleToString(setup.reasons.quality_score, 2),
+            EnumToString(setup.reasons.structural_state),
+            EnumToString(setup.reasons.structural_stage),
+            EnumToString(setup.setup_lifecycle),
+            DoubleToString(setup.expected_return_r, 3),
+            setup.reasons.regime_id);
 
    FileClose(handle);
    return true;
