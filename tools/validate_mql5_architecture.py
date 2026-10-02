@@ -180,6 +180,14 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     trade_zone = by_rel.get("includes/Trading/TradeZone.mqh", "")
     risk = by_rel.get("includes/Trading/RiskEngine.mqh", "")
     strategy = by_rel.get("includes/Trading/StrategyTradeZone.mqh", "")
+    quality = by_rel.get("includes/Decision/DecisionQuality.mqh", "")
+    config = by_rel.get("includes/Core/Config.mqh", "")
+    fvg = by_rel.get("includes/SmartMoney/FVG.mqh", "")
+    inducement = by_rel.get("includes/SmartMoney/Inducement.mqh", "")
+    environment_memory = by_rel.get("includes/Trading/EnvironmentStrategyMemory.mqh", "")
+    outcome_live = by_rel.get("includes/Trading/OutcomeTrackerLive.mqh", "")
+    outcome_backtest = by_rel.get("includes/Trading/OutcomeTracker.mqh", "")
+    decision_engine = by_rel.get("includes/Decision/DecisionEngine.mqh", "")
     multi = by_rel.get("includes/Portfolio/MultiTradeEngine.mqh", "")
     ea = by_rel.get("MedisTouch_v2.8.mq5", "")
 
@@ -191,6 +199,32 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
         errors.append("RiskEngine.mqh still depends on legacy TradeZone.mqh")
     if "class CTradeDecision" not in strategy:
         errors.append("StrategyTradeZone.mqh no longer defines the authoritative CTradeDecision")
+    if '#include "../Decision/DecisionQuality.mqh"' not in strategy:
+        errors.append("StrategyTradeZone.mqh is missing hierarchical DecisionQuality integration")
+    for token in ("class CStructuralValidator", "class CTradeQualityFirewall", "DECISION_TRADE", "DECISION_WAIT", "DECISION_REJECT"):
+        if token not in quality:
+            errors.append(f"DecisionQuality.mqh missing required architecture contract: {token}")
+    for token in ("ENUM_STRUCTURAL_STATE", "ENUM_DECISION_STATE", "ENUM_RISK_CLASS", "ENUM_SETUP_LIFECYCLE", "ENUM_FIREWALL_LAYER"):
+        if token not in config:
+            errors.append(f"Config.mqh missing decision architecture enum: {token}")
+    if "FVG_INVALIDATED" not in fvg or "cd.close < zone.bottom" not in fvg or "cd.close > zone.top" not in fvg:
+        errors.append("FVG lifecycle is missing symmetric adverse-close invalidation")
+    for token in ("structureType", "liquidityPoolPrice", "sweepPenetrationATR", "sweepRejectionRatio", "sweepFollowThrough", "displacementATR"):
+        if token not in inducement:
+            errors.append(f"Inducement.mqh missing structural provenance telemetry: {token}")
+    if "IsDegraded(const EnvironmentMemoryEvidence" not in environment_memory:
+        errors.append("EnvironmentStrategyMemory.mqh missing explicit degraded-evidence predicate")
+    for token in ("maeR", "mfeR", "timeToMAE", "timeToMFE"):
+        if token not in outcome_live or token not in outcome_backtest:
+            errors.append(f"Outcome trackers missing MAE/MFE timing telemetry: {token}")
+    for token in ("setup.decision_state == DECISION_REJECT", "setup.decision_state == DECISION_WAIT", "setup.decision_state != DECISION_TRADE"):
+        if token not in decision_engine:
+            errors.append(f"DecisionEngine.mqh missing authoritative decision-state guard: {token}")
+    for token in ("InpEnableDecisionArchitecture", "InpEnableStructuralValidator", "InpEnableEnvironmentHardBlock", "InpRequireCausalFVG", "InpMinQualityScore", "InpDecisionRequireCalibration"):
+        if token not in ea:
+            errors.append(f"MedisTouch_v2.8.mq5 missing decision architecture input: {token}")
+    if "g_decision.ConfigureDecisionArchitecture" not in ea:
+        errors.append("MedisTouch_v2.8.mq5 missing DecisionArchitecture configuration wiring")
 
     # The multi-trade planner is a portfolio policy component. It may evaluate
     # eligibility/allocation, but it must not reach into order submission or
