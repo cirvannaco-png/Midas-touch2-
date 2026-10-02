@@ -266,6 +266,15 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"Scoring.mqh missing sweep provenance propagation: {token}")
     if "setup.invalidation=forBuy?(setup.reasons.sweep_price-0.05*atr):(setup.reasons.sweep_price+0.05*atr);" not in strategy:
         errors.append("StrategyTradeZone.mqh does not anchor structural invalidation to the authoritative sweep")
+    if "double entry=ResolveExecutionEntry(setup);" not in strategy:
+        errors.append("StrategyTradeZone.mqh does not use the canonical execution entry price for SMC target construction")
+    if "p.entryRef = ResolveExecutionEntry(setup);" not in outcome_backtest or "p.sizingEntryPrice = ResolveExecutionEntry(setup);" not in outcome_backtest:
+        errors.append("OutcomeTracker.mqh does not use the canonical execution entry price")
+    durable_save_pos = ea.find("if(!g_store.Save(decision))")
+    tracker_pos = ea.find("g_tracker.AddSetup(chosen,decision.decision_id,decision.decision_fingerprint)")
+    execute_gate_pos = ea.find("if(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)")
+    if durable_save_pos < 0 or tracker_pos < durable_save_pos or execute_gate_pos < 0 or tracker_pos > execute_gate_pos:
+        errors.append("Outcome tracking is admitted before durable executable decision acceptance")
     for token in ("setup.decision_state!=DECISION_TRADE", "setup.risk_class<RISK_CLASS_STANDARD", "setup.expected_return_r<=0.0"):
         if token not in multi:
             errors.append(f"MultiTradeEngine.mqh missing downstream risk-quality gate: {token}")
