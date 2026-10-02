@@ -459,7 +459,7 @@ void CScoringEngine::ConfigureNewsAwareness(CNewsFilter* newsFilter, int warnMin
 double CScoringEngine::CurrentPrice()
   {
    if(m_priceRef == NULL || m_priceRef.Total() == 0) return 0.0;
-   return m_priceRef.GetCandle(0).close;
+   return m_priceRef.Total()>1 ? m_priceRef.GetCandle(1).close : 0.0;
   }
 //+------------------------------------------------------------------+
 double CScoringEngine::TrendScore(bool forBuy)
@@ -484,7 +484,7 @@ double CScoringEngine::FVGScore(bool forBuy)
   {
    if(m_fvgCtx == NULL || m_fvgCtx.candles.Total() == 0) return 0.0;
    double price = CurrentPrice();
-   double atr = m_fvgCtx.candles.GetATR(0);
+   double atr = m_fvgCtx.candles.GetATR(1);
    if(price <= 0 || atr <= 0) return 0.0;
    ENUM_FVG_DIR wantDir = forBuy ? FVG_BULL : FVG_BEAR;
 
@@ -513,7 +513,7 @@ double CScoringEngine::SRScore(bool forBuy)
   {
    if(m_srCtx == NULL || m_srCtx.candles.Total() == 0) return 0.0;
    double price = CurrentPrice();
-   double atr = m_srCtx.candles.GetATR(0);
+   double atr = m_srCtx.candles.GetATR(1);
    if(price <= 0 || atr <= 0) return 0.0;
 
    for(int i = 0; i < m_srCtx.sr.Count(); i++)
@@ -575,7 +575,7 @@ double CScoringEngine::OBScore(bool forBuy)
    if(m_htfObCtx == NULL) return 0.0;
    double price = CurrentPrice();
    if(price <= 0) return 0.0;
-   double atr = m_htfObCtx.candles.GetATR(0);
+   double atr = m_htfObCtx.candles.GetATR(1);
    if(atr <= 0) return 0.0;
 
    OrderBlockZone z;
@@ -592,7 +592,7 @@ double CScoringEngine::OBScore(bool forBuy)
 double CScoringEngine::CalculateConfidence(bool forBuy)
   {
    // v2.8: session gate runs first and cheapest — no point evaluating the
-   // rest of the pipeline for a bar that's going to be rejected anyway.
+   // rest of the pipeline for a closed bar that is going to be rejected anyway.
    if(!m_sessionFilter.IsAllowed())
       return 0.0;
 
@@ -690,7 +690,7 @@ double CScoringEngine::CalculateConfidence(bool forBuy)
      }
    if(m_blockLowVolRegime)
      {
-      ENUM_VOL_REGIME regime = m_volRegime.Classify(0);
+      ENUM_VOL_REGIME regime = m_volRegime.Classify(1);
       if(regime == VOL_REGIME_LOW)
          return 0.0;
       // VOL_REGIME_UNDEFINED (not enough ATR history) fails OPEN here,
@@ -813,7 +813,7 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
       if(atr > 0 && m_htfObCtx.orderBlock.NearestZone(forBuy ? FVG_BULL : FVG_BEAR, price, atr, m_obDistATRMax, z))
          out.htf_ob_state = z.state;
      }
-   out.vol_regime = m_volRegime.Classify(0);
+   out.vol_regime = m_volRegime.Classify(1);
    out.session = m_sessionFilter.CurrentSession();
    out.session_ok = m_sessionFilter.IsAllowed();
 
@@ -826,7 +826,7 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.chase_ok = true;
    if(ind.bosBarIndex >= 0 && m_bosCtx != NULL && price > 0)
      {
-      double atrB = m_bosCtx.candles.GetATR(0);
+      double atrB = m_bosCtx.candles.GetATR(1);
       if(atrB > 0)
         {
          out.chase_dist_atr = (forBuy ? (price - ind.bosClosePrice) : (ind.bosClosePrice - price)) / atrB;
