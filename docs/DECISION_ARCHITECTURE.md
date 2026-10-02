@@ -174,3 +174,38 @@ Therefore a green CI result means **structurally validated**, not “MetaEditor 
 No architecture change is considered a proven trading improvement merely because it raises a backtest metric on one period.
 
 Promotion requires stable evidence across unseen periods and live-engine parity.
+
+
+## Closed-bar structural integrity
+
+Production inducement detection ignores the forming bar for sweep, BOS, displacement follow-through, and impulse extension decisions. Cross-timeframe FVG causality is evaluated from event timestamps and the actual FVG timeframe rather than comparing raw bar indices from different series.
+
+## First-class abstention
+
+A missing strategy, invalid structural chain, failed execution condition, degraded environment, or failed risk geometry produces an explicit DECISION_REJECT or DECISION_WAIT setup with a blocking layer and reason. These states are persisted to the signal CSV instead of disappearing as inactive candidates.
+
+## Evidence-family caps
+
+Family scores are hard-capped at:
+
+- Structure: 30
+- Liquidity: 25
+- Location: 20
+- Execution: 15
+- Environment: 10
+
+Structure no longer imports environment evidence. This prevents cross-family leakage and reduces correlated double-counting.
+
+## Risk promotion
+
+All admitted setups begin at minimal risk class. Standard/high-conviction sizing requires calibrated outcome evidence and positive expected R; elevated classes also require environment-memory evidence, with high conviction requiring a QUALIFIED environment state. Raw confidence cannot promote risk class.
+
+## Lifecycle
+
+The lifecycle now includes DETECTED -> ARMED -> WAITING_RETEST -> RETEST_CONFIRMED -> ENTRY_ELIGIBLE -> FILLED -> MANAGED -> CLOSED.
+
+EXPIRED is used for rejected, stale, invalidated, or otherwise abandoned setups. Partial exits move a filled setup to MANAGED; only finalization moves it to CLOSED.
+
+## Attribution
+
+Signal and outcome logs retain decision state, blocking layer, decision reason, quality score, structural state/stage, lifecycle, expected return, and regime identity. Provenance also includes liquidity archetype, sweep measurements, displacement, BOS age/distance, FVG causality, and invalidation distance.
