@@ -34,7 +34,11 @@ def test_inducement_result_has_structural_provenance_fields():
 
 def test_inducement_populates_provenance_without_changing_gate_contract():
     text = INDUCEMENT.read_text(encoding="utf-8")
-    assert "ENUM_SWEEP_GRADE GradeSweep(int sweepBarIdx, bool forBuy, double poolPrice, double &gradeScore, double &rejectionRatio, double &shapeScore, double &penetrationATR, bool &followThrough);" in text
+    # Keep the class declaration interface stable; validate the expanded telemetry
+    # implementation separately so a research-only provenance change cannot drift
+    # the public CInducement contract accidentally.
+    assert "ENUM_SWEEP_GRADE  GradeSweep(int sweepBarIdx, bool forBuy, double poolPrice, double &gradeScore);" in text
+    assert "ENUM_SWEEP_GRADE CInducement::GradeSweep(int sweepBarIdx, bool forBuy, double poolPrice, double &gradeScore, double &rejectionRatio, double &shapeScore, double &penetrationATR, bool &followThrough)" in text
     assert "r.structureType = structureFound ? INDUCEMENT_STRUCTURE_EQUAL_POOL : INDUCEMENT_STRUCTURE_NONE;" in text
     assert "r.sweepFollowThrough = followThrough;" in text
     assert "r.sweepPenetrationATR = penetrationATR;" in text
