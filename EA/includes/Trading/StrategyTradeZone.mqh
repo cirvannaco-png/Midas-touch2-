@@ -32,6 +32,10 @@ private:
    double                          m_minStopSpreadMult;
    double                          m_fvgMaxDistATR;
    double                          m_minSelectionScore;
+   bool                            m_enableEnvironmentHardBlock;
+
+   bool EnvironmentHardBlocked(const EnvironmentMemoryEvidence &evidence) const
+     {return m_enableEnvironmentHardBlock&&evidence.status=="DEGRADED";}
 
    bool FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out);
    double EnforceSpreadFloor(string symbol,double entry,double stopLoss,bool isBuy);
@@ -46,10 +50,11 @@ public:
    void Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR=0.25,double minStopSpreadMult=3.0,double fvgMaxDistATR=1.25,double minSelectionScore=60.0,CTFContext* srCtx=NULL,CTFContext* bosCtx=NULL,CEnvironmentStrategyMemory* environmentMemory=NULL);
    TradeSetup GenerateBuySetup();
    TradeSetup GenerateSellSetup();
+   void ConfigureEnvironmentHardBlock(bool enabled){m_enableEnvironmentHardBlock=enabled;}
    TradeSetup GetLastSetup()const{return m_lastSetup;}
   };
 
-CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;}
+CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;m_enableEnvironmentHardBlock=false;}
 
 void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR,double minStopSpreadMult,double fvgMaxDistATR,double minSelectionScore,CTFContext* srCtx,CTFContext* bosCtx, CEnvironmentStrategyMemory* environmentMemory)
   {
