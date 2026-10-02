@@ -301,3 +301,11 @@ def test_sweep_quality_interface_matches_implementation():
     assert "m_inducement.ConfigureQualityGates(requireMinSweepGrade, minSweepGrade, requireFreshSetup, maxBarsSinceBOS," in scoring
     assert "allowSingleSwingStructure" in scoring
     assert "void ConfigureQualityGates(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade," in inducement
+
+
+def test_indicator_uses_hierarchical_closed_bar_admission():
+    indicator = read("EA/MedisTouch_Indicator_v2.8.mq5")
+    assert "g_fvgCtx.candles.GetATR(0)" not in indicator
+    assert "buySetup.decision_state == DECISION_TRADE" in indicator
+    assert "sellSetup.decision_state == DECISION_TRADE" in indicator
+    assert "reasons.quality_score" in indicator
