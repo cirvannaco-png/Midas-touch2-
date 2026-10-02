@@ -114,3 +114,14 @@ def test_mae_mfe_timing_and_versioned_calibration_are_present():
     assert "SETUP_CLOSED" not in partial
     assert "SETUP_MANAGED" in partial
     assert "SETUP_CLOSED" in backtest[backtest.index("void COutcomeTracker::FinalizeExit"):backtest.index("bool COutcomeTracker::ResolveOrder")]
+
+
+def test_evidence_families_are_independent_and_capped():
+    t=read("EA/includes/Decision/DecisionQuality.mqh")
+    assert "structure=0.45*Clamp01(r.bos_strength)" in t
+    assert "0.20*EnvironmentFactor(r)" not in t
+    assert "r.structure_family_score=30.0*Clamp01(structure)" in t
+    assert "r.liquidity_family_score=25.0*Clamp01(liquidity)" in t
+    assert "r.location_family_score=20.0*Clamp01(location)" in t
+    assert "r.execution_family_score=15.0*Clamp01(execution)" in t
+    assert "r.environment_family_score=10.0*EnvironmentFactor(r)" in t
