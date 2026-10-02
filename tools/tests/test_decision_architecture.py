@@ -246,3 +246,11 @@ def test_tracker_is_admitted_only_after_durable_executable_decision():
 def test_reject_preserves_expired_lifecycle():
     strategy = read("EA/includes/Trading/StrategyTradeZone.mqh")
     assert "(q.decision==DECISION_TRADE?SETUP_ENTRY_ELIGIBLE:SETUP_EXPIRED)" in strategy
+
+
+def test_backtest_risk_sizing_matches_live_policy():
+    backtest = read("EA/includes/Trading/OutcomeTracker.mqh")
+    assert "CEnvironmentPolicy m_environmentPolicy;" in backtest
+    assert "bool reduceRisk = (setup.risk_class == RISK_CLASS_MINIMAL)" in backtest
+    assert "m_environmentPolicy.ReduceRisk(setup)" in backtest
+    assert "                                      reduceRisk, m_allowMinLotOverride" in backtest
