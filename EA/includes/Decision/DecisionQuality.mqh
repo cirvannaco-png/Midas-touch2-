@@ -197,10 +197,9 @@ private:
          default: sweep=0.0; break;
         }
 
-      double structure=0.35*Clamp01(r.bos_strength)+
-                       0.25*Clamp01(r.displacement_atr/2.0)+
-                       0.20*(r.bos_confirmed?1.0:0.0)+
-                       0.20*EnvironmentFactor(r);
+      double structure=0.45*Clamp01(r.bos_strength)+
+                       0.30*Clamp01(r.displacement_atr/2.0)+
+                       0.25*(r.bos_confirmed?1.0:0.0);
       double liquidity=0.35*sweep+
                        0.25*Clamp01(r.liquidity_score)+
                        0.20*(r.liquidity_age_bars>=0 ? 1.0/(1.0+0.10*r.liquidity_age_bars) : 0.0)+
