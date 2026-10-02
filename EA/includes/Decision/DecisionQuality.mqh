@@ -372,9 +372,10 @@ public:
         }
 
       lifecycle.Advance(setup,SETUP_ENTRY_ELIGIBLE);
-      if(r.quality_score>=90.0) out.riskClass=RISK_CLASS_HIGH_CONVICTION;
-      else if(r.quality_score>=72.0) out.riskClass=RISK_CLASS_STANDARD;
-      else out.riskClass=RISK_CLASS_MINIMAL;
+      // Until empirical probability evidence exists, admission may still be
+      // allowed but risk remains minimal. Calibration later upgrades the
+      // class using expected-return and probability evidence.
+      out.riskClass=RISK_CLASS_MINIMAL;
 
       out.decision=DECISION_TRADE;
       out.reason="trade passed hierarchical structural/environment/execution/risk firewalls";
@@ -419,12 +420,23 @@ public:
       // the TRADE state; it only changes sizing class.
       if(setup.calibration_has_enough_data)
         {
-         if(setup.reasons.quality_score>=90.0 && setup.calibrated_probability>=minCalibratedProbability+8.0)
+         double entry=ResolveExecutionEntry(setup);
+         double risk=MathAbs(entry-setup.stop_loss);
+         double reward=MathAbs(setup.tp1-entry);
+         double p=MathMax(0.0,MathMin(1.0,setup.calibrated_probability/100.0));
+         setup.expected_return_r=(risk>0.0 ? (p*(reward/risk)-(1.0-p)) : 0.0);
+         setup.reasons.expected_return_r=setup.expected_return_r;
+
+         if(setup.expected_return_r>0.25 &&
+            setup.reasons.quality_score>=90.0 &&
+            setup.calibrated_probability>=minCalibratedProbability+8.0)
            {
             setup.risk_class=RISK_CLASS_HIGH_CONVICTION;
             setup.reasons.risk_class=RISK_CLASS_HIGH_CONVICTION;
            }
-         else if(setup.reasons.quality_score>=72.0 && setup.calibrated_probability>=minCalibratedProbability)
+         else if(setup.expected_return_r>0.0 &&
+                 setup.reasons.quality_score>=72.0 &&
+                 setup.calibrated_probability>=minCalibratedProbability)
            {
             setup.risk_class=RISK_CLASS_STANDARD;
             setup.reasons.risk_class=RISK_CLASS_STANDARD;
