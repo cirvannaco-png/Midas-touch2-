@@ -503,7 +503,7 @@ bool CTradeDecision::ApplyQualityFirewall(TradeSetup &setup,bool isSMC)
                                           m_requireCausalFVG);
    setup.decision_state=q.decision;
    setup.risk_class=q.riskClass;
-   setup.setup_lifecycle=(q.decision==DECISION_WAIT?SETUP_WAITING_RETEST:SETUP_ENTRY_ELIGIBLE);
+   setup.setup_lifecycle=(q.decision==DECISION_WAIT?SETUP_WAITING_RETEST:(q.decision==DECISION_TRADE?SETUP_ENTRY_ELIGIBLE:SETUP_EXPIRED));
    setup.reasons.decision_state=q.decision;
    setup.reasons.decision_reason=q.reason;
    setup.reasons.decision_blocking_layer=q.layer;
