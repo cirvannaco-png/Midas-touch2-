@@ -316,10 +316,10 @@ CScoringEngine::CScoringEngine() : m_trendCtx(NULL), m_bosCtx(NULL), m_liqCtx(NU
                                     m_requireValueAreaLocation(false), m_blockValueAreaContradictions(true),
                                     m_htfObCtx(NULL), m_requireHtfOB(false), m_obDistATRMax(2.0),
                                     m_blockLowVolRegime(false),
-                                    m_lastFvgState(FVG_FRESH), m_lastFvgAgeBars(-1), m_lastFvgDistanceATR(0.0),
                                     m_fvgMaxDistATR(1.25), m_requireChaseFilter(false), m_maxChaseDistATR(0.75),
                                     m_newsFilter(NULL), m_newsWarningMultiplier(0.85),
-                                    m_contradictionWeight(0.25), m_envWeight(1.0), m_execWeight(1.0)
+                                    m_contradictionWeight(0.25), m_envWeight(1.0), m_execWeight(1.0),
+                                    m_lastFvgState(FVG_FRESH), m_lastFvgAgeBars(-1), m_lastFvgDistanceATR(0.0)
   {
    // Session filter defaults to ON — see ConfigureSessionFilter()'s
    // comment. Unlike the other v2.8 gates this isn't a new, unbacktested
