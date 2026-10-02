@@ -231,7 +231,8 @@ public:
    // v2.9 addition — passthrough to CInducement::ConfigureQualityGates().
    // See that method's comment for the OFF-by-default rationale.
    void              ConfigureSweepQuality(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
-                                           bool requireFreshSetup, int maxBarsSinceBOS = 5);
+                                           bool requireFreshSetup, int maxBarsSinceBOS = 5,
+                                           bool allowSingleSwingStructure = false);
    // v2.9. warnMinutesBefore/After must be >= the EA's hard-block window
    // (InpNewsMinutesBefore/After) or they're clamped up to it inside
    // CNewsFilter::ConfigureWarningWindow() — WARNING is defined as a
