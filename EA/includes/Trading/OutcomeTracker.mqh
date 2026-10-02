@@ -449,10 +449,10 @@ void COutcomeTracker::ApplyDecay(PendingSetup &p) const
 void COutcomeTracker::Update(CTFContext* executionCtx)
   {
    if(executionCtx == NULL || executionCtx.candles.Total() == 0) return;
-   // Outcome tracking is an execution/backtest concern. Never feed the FVG,
-   // BOS, liquidity, or other analysis timeframe here. The caller passes the
-   // EA chart/execution context explicitly and Init() stores the same TF.
-   CandleData bar0 = executionCtx.candles.GetCandle(0);
+   // Outcome tracking is an execution/backtest concern. Consume only
+   // completed execution bars so historical OHLC cannot leak future intrabar
+   // extremes into fills, MAE/MFE, or management decisions.
+   CandleData bar0 = executionCtx.candles.GetCandle(1);
    if(PeriodSeconds(executionCtx.candles.Timeframe()) <= 0 || executionCtx.candles.Timeframe() != m_entryTF) return;
 
    for(int i = m_count - 1; i >= 0; i--)
