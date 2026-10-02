@@ -110,6 +110,9 @@ struct TradeSetup {
    double confidence;
    datetime creation_time;
    bool active;
+   ENUM_DECISION_STATE decision_state;
+   ENUM_RISK_CLASS risk_class;
+   ENUM_SETUP_LIFECYCLE setup_lifecycle;
    SetupReasons reasons;
    double calibrated_probability;
    int calibration_sample;
