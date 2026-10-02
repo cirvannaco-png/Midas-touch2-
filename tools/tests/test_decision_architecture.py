@@ -254,3 +254,17 @@ def test_backtest_risk_sizing_matches_live_policy():
     assert "bool reduceRisk = (setup.risk_class == RISK_CLASS_MINIMAL)" in backtest
     assert "m_environmentPolicy.ReduceRisk(setup)" in backtest
     assert "                                      reduceRisk, m_allowMinLotOverride" in backtest
+
+
+def test_decision_store_persists_full_state_lineage_append_only():
+    store = read("EA/includes/Decision/DecisionStore.mqh")
+    assert "string p[39]" in store
+    assert "p[25]=IntegerToString((int)rec.setup.decision_state)" in store
+    assert "p[26]=IntegerToString((int)rec.setup.reasons.structural_state)" in store
+    assert "p[27]=IntegerToString((int)rec.setup.reasons.structural_stage)" in store
+    assert "p[28]=IntegerToString((int)rec.setup.reasons.decision_blocking_layer)" in store
+    assert "p[29]=IntegerToString((int)rec.setup.risk_class)" in store
+    assert "p[31]=DoubleToString(rec.setup.calibrated_probability,4)" in store
+    assert "p[34]=DoubleToString(rec.setup.reasons.quality_score,4)" in store
+    assert "p[35]=DoubleToString(rec.setup.expected_return_r,6)" in store
+    assert "if(n>=39)" in store
