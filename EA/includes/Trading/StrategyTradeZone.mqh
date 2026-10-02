@@ -55,6 +55,7 @@ private:
    TradeSetup BuildSMC(bool forBuy,double confidence,const SetupReasons &reasons);
    bool BuildNonSMC(bool forBuy,ENUM_SELECTED_STRATEGY selected,double confidence,const SetupReasons &reasons,TradeSetup &out);
    bool ApplyQualityFirewall(TradeSetup &setup,bool isSMC);
+   TradeSetup BuildRejected(bool forBuy,const SetupReasons &reasons,const string reason,ENUM_FIREWALL_LAYER layer);
    TradeSetup Generate(bool forBuy);
 
 public:
@@ -514,6 +515,23 @@ void CTradeDecision::FinalizeWithCalibration(TradeSetup &setup,bool requireCalib
    setup.reasons.decision_state=setup.decision_state;
   }
 
+TradeSetup CTradeDecision::BuildRejected(bool forBuy,const SetupReasons &reasons,const string reason,ENUM_FIREWALL_LAYER layer)
+  {
+   TradeSetup out;
+   ZeroMemory(out);
+   out.type=forBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+   out.creation_time=TimeCurrent();
+   out.active=true;
+   out.decision_state=DECISION_REJECT;
+   out.risk_class=RISK_CLASS_NONE;
+   out.setup_lifecycle=SETUP_EXPIRED;
+   out.reasons=reasons;
+   out.reasons.decision_state=DECISION_REJECT;
+   out.reasons.decision_blocking_layer=layer;
+   out.reasons.decision_reason=reason;
+   return out;
+  }
+
 TradeSetup CTradeDecision::Generate(bool forBuy)
   {
    TradeSetup out;
@@ -530,6 +548,7 @@ TradeSetup CTradeDecision::Generate(bool forBuy)
 
    if(selected==STRATEGY_NONE)
      {
+      out=BuildRejected(forBuy,reasons,"no strategy satisfied the current market/regime admission conditions",FIREWALL_STRUCTURE);
       m_lastSetup=out;
       return out;
      }
@@ -541,13 +560,14 @@ TradeSetup CTradeDecision::Generate(bool forBuy)
       out=BuildSMC(forBuy,selectedScore,reasons);
    else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))
      {
-      ZeroMemory(out);
+      out=BuildRejected(forBuy,reasons,"selected strategy could not construct a valid executable setup",FIREWALL_RISK);
       m_lastSetup=out;
       return out;
      }
 
    if(!out.active)
      {
+      out=BuildRejected(forBuy,reasons,"selected strategy produced an incomplete setup",FIREWALL_RISK);
       m_lastSetup=out;
       return out;
      }
