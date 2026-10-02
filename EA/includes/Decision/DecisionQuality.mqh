@@ -181,7 +181,7 @@ private:
       return Clamp01(s);
      }
 
-   void ComputeFamilyScores(SetupReasons &r)
+   void ComputeFamilyScores(SetupReasons &r,bool isSMC)
      {
       double sweep=0.0;
       switch(r.sweep_grade)
@@ -204,7 +204,7 @@ private:
                       0.25*(r.fib_in_zone?1.0:0.0)+
                       0.20*(r.value_area_contradiction?0.0:r.va_score>0.0?r.va_score:0.5)+
                       0.20*(r.htf_ob_confluence?1.0:0.5);
-      double fvgState=(r.fvg_state==FVG_FRESH)?1.0:(r.fvg_state==FVG_TESTED?0.70:0.0);
+      double fvgState=!isSMC ? 1.0 : (r.fvg_state==FVG_FRESH ? 1.0 : (r.fvg_state==FVG_TESTED ? 0.70 : 0.0));
       double chase=r.chase_ok?1.0:0.0;
       double session=r.session_ok?1.0:0.0;
       double spreadFactor=1.0;
@@ -246,7 +246,7 @@ public:
       out.reason="";
 
       SetupReasons &r=setup.reasons;
-      ComputeFamilyScores(r);
+      ComputeFamilyScores(r,isSMC);
       out.qualityScore=r.quality_score;
       r.decision_blocking_layer=FIREWALL_NONE;
       r.decision_reason="";
