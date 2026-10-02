@@ -353,7 +353,9 @@ InducementResult CInducement::Validate(bool forBuy)
    r.liquidityPoolNearBarIndex = nearIdx;
    r.liquidityPoolFarBarIndex = farIdx;
    r.liquidityPoolBarSpan = (nearIdx >= 0 && farIdx >= 0) ? MathAbs(nearIdx - farIdx) : -1;
-   r.liquidityPoolSpacingATR = (structureFound && atr > 0 && nearIdx >= 0 && farIdx >= 0) ? MathAbs(m_candles.GetCandle(nearIdx).close - m_candles.GetCandle(farIdx).close) / atr : 0.0;
+   double nearPoolPrice = (nearIdx >= 0) ? (forBuy ? m_candles.GetCandle(nearIdx).low : m_candles.GetCandle(nearIdx).high) : 0.0;
+   double farPoolPrice  = (farIdx >= 0) ? (forBuy ? m_candles.GetCandle(farIdx).low : m_candles.GetCandle(farIdx).high) : 0.0;
+   r.liquidityPoolSpacingATR = (structureFound && atr > 0 && nearIdx >= 0 && farIdx >= 0) ? MathAbs(nearPoolPrice - farPoolPrice) / atr : 0.0;
    r.internalStructureFound = structureFound;
    r.structureScore = structureFound ? 10.0 : 0.0;
    if(!structureFound)
