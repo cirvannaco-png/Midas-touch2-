@@ -440,9 +440,11 @@ void CScoringEngine::ConfigureChaseFilter(bool requireChaseFilter, double maxCha
   }
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureSweepQuality(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
-                                           bool requireFreshSetup, int maxBarsSinceBOS)
+                                           bool requireFreshSetup, int maxBarsSinceBOS,
+                                           bool allowSingleSwingStructure)
   {
-   m_inducement.ConfigureQualityGates(requireMinSweepGrade, minSweepGrade, requireFreshSetup, maxBarsSinceBOS);
+   m_inducement.ConfigureQualityGates(requireMinSweepGrade, minSweepGrade, requireFreshSetup, maxBarsSinceBOS,
+                                      allowSingleSwingStructure);
   }
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureNewsAwareness(CNewsFilter* newsFilter, int warnMinutesBefore,
@@ -739,6 +741,21 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.inducement_valid = ind.valid;
    out.bos_confirmed = ind.bosConfirmed;
    out.liquidity_swept = ind.sweepFound;
+   out.inducement_structure_type = ind.structureType;
+   out.liquidity_pool_price = ind.liquidityPoolPrice;
+   out.liquidity_pool_near_bar_index = ind.liquidityPoolNearBarIndex;
+   out.liquidity_pool_far_bar_index = ind.liquidityPoolFarBarIndex;
+   out.liquidity_pool_bar_span = ind.liquidityPoolBarSpan;
+   out.liquidity_pool_spacing_atr = ind.liquidityPoolSpacingATR;
+   out.liquidity_age_bars = ind.liquidityAgeBars;
+   out.sweep_penetration_atr = ind.sweepPenetrationATR;
+   out.sweep_rejection_ratio = ind.sweepRejectionRatio;
+   out.sweep_shape_score = ind.sweepShapeScore;
+   out.sweep_follow_through = ind.sweepFollowThrough;
+   out.sweep_follow_through_bar_index = ind.sweepFollowThroughBarIndex;
+   out.displacement_atr = ind.displacementATR;
+   out.displacement_body_ratio = ind.displacementBodyRatio;
+   out.invalidation_distance_atr = 0.0;
    out.trend_aligned   = (TrendScore(forBuy) >= 0.6);
    out.fresh_fvg       = (FVGScore(forBuy) > 0.0);
    out.sr_confluence   = (SRScore(forBuy) > 0.0);
