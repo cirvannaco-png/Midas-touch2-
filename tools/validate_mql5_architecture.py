@@ -237,6 +237,12 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     for token in ("g_logger.LogSetup(buySetup", "g_logger.LogSetup(sellSetup", "REJECT/WAIT is first-class telemetry"):
         if token not in ea:
             errors.append(f"EA missing first-class reject/wait telemetry: {token}")
+    if "TradeSetup CTradeDecision::BuildRejected" not in strategy:
+        errors.append("StrategyTradeZone.mqh missing first-class rejected setup constructor")
+    logger = by_rel.get("includes/Core/SignalLogger.mqh", "")
+    for token in ("DecisionState", "BlockingLayer", "DecisionReason", "QualityScore", "Lifecycle", "ExpectedReturnR", "RegimeID"):
+        if token not in logger:
+            errors.append(f"SignalLogger.mqh missing decision provenance column: {token}")
     for token in ("liquidity_scope", "liquidity_archetype", "bos_distance_atr", "bos_age_bars", "fvg_causal", "invalidation_distance_atr", "expected_return_r", "regime_id"):
         if token not in publisher:
             errors.append(f"SignalPublisher.mqh missing structural decision provenance field: {token}")
