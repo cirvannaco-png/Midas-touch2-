@@ -56,7 +56,7 @@ double CPortfolioManager::RollingCorrelation(string symbolA,string symbolB)
       b[n]=(b0/b1)-1.0;
       n++;
      }
-   if(n<MathMax(20,nTarget/2)) return 0.0;
+   if(n<MathMax(20,nTarget/2)) return 2.0; // sentinel: correlation unavailable; enabled guard must fail closed
 
    double meanA=0.0,meanB=0.0;
    for(int i=0;i<n;i++){meanA+=a[i];meanB+=b[i];}
@@ -70,7 +70,7 @@ double CPortfolioManager::RollingCorrelation(string symbolA,string symbolB)
       cov+=da*db; varA+=da*da; varB+=db*db;
      }
    double denom=MathSqrt(varA*varB);
-   return denom>0.0?cov/denom:0.0;
+   return denom>0.0?cov/denom:2.0;
   }
 
 //+------------------------------------------------------------------+
@@ -136,6 +136,11 @@ bool CPortfolioManager::AllowNewTradeBatch(string symbol,double proposedRiskAmou
          string posSymbol=PositionGetString(POSITION_SYMBOL);
          if(posSymbol==symbol) continue;
          double corr=RollingCorrelation(symbol,posSymbol);
+         if(MathAbs(corr)>1.0)
+           {
+            reasonOut=StringFormat("rolling H1 correlation unavailable for %s vs %s; correlation guard is enabled and therefore refusing new exposure",symbol,posSymbol);
+            return false;
+           }
          if(MathAbs(corr)>=m_correlationThreshold)
            {
             reasonOut=StringFormat("rolling H1 correlation %.2f between %s and existing %s exceeds %.2f; refusing additional correlated exposure",
