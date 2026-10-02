@@ -222,3 +222,22 @@ def test_sweep_provenance_and_structural_invalidation_are_anchored():
     assert "\"sweep_price\":" in publisher
     assert "\"sweep_time\":" in publisher
     assert '"SweepPrice", "SweepTime"' in logger
+
+
+def test_research_execution_price_matches_live_order_convention():
+    strategy = read("EA/includes/Trading/StrategyTradeZone.mqh")
+    backtest = read("EA/includes/Trading/OutcomeTracker.mqh")
+    assert "double entry=ResolveExecutionEntry(setup);" in strategy
+    assert "p.entryRef = ResolveExecutionEntry(setup);" in backtest
+    assert "p.sizingEntryPrice = ResolveExecutionEntry(setup);" in backtest
+    assert "BUY -> entry_top, SELL -> entry_bottom." in backtest
+
+
+def test_tracker_is_admitted_only_after_durable_executable_decision():
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    save_pos = ea.index("if(!g_store.Save(decision))")
+    tracker_pos = ea.index("g_tracker.AddSetup(chosen,decision.decision_id,decision.decision_fingerprint)")
+    execute_gate = ea.index("if(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)")
+    assert save_pos >= 0 and tracker_pos > save_pos
+    assert tracker_pos < execute_gate
+    assert "(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)&&InpTrackOutcomes" in ea
