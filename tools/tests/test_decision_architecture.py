@@ -135,3 +135,11 @@ def test_strategy_absence_is_first_class_reject():
     assert "DecisionState" in logger
     assert "BlockingLayer" in logger
     assert "ExpectedReturnR" in logger
+
+
+def test_inducement_ignores_forming_bar():
+    t=read("EA/includes/SmartMoney/Inducement.mqh")
+    assert "for(int i = nearIdx - 1; i >= 1; i--)" in t
+    assert "for(int i = sweepBarIdx - 1; i >= 1; i--)" in t
+    assert "sweepBarIdx-1>=1" in t
+    assert "sweepBarIdx>1" in t
