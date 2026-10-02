@@ -133,3 +133,49 @@ def test_outcome_tracker_aggregates_risk_across_child_fills():
     assert "p.weightedRiskDistLots=p.riskDist*volume" in t
     assert "p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume" in t
     assert "p.weightedRiskDistLots>0.0?p.weightedRiskDistLots" in t
+
+
+def test_dynamic_stop_cannot_widen_structural_risk():
+    t=(ROOT/"EA"/"includes"/"Execution"/"DynamicStopEngine.mqh").read_text()
+    assert "bool IsTighter" in t
+    assert "candidate would widen or equal current stop" in t
+    assert "IsTighter(isBuy,candidate,currentSL)" in t
+
+
+def test_reject_and_wait_are_logged_instead_of_disappearing():
+    t=EA.read_text()
+    assert "REJECT/WAIT is first-class telemetry" in t
+    assert "g_logger.LogSetup(buySetup" in t
+    assert "g_logger.LogSetup(sellSetup" in t
+    assert "setup.decision_state!=DECISION_TRADE" in t
+
+
+def test_risk_class_controls_sizing_without_replacing_structural_invalidation():
+    t=EA.read_text()
+    assert "RiskClassSizingMultiplier(chosen.risk_class)" in t
+    cfg=(ROOT/"EA"/"includes"/"Core"/"Config.mqh").read_text()
+    assert "RISK_CLASS_HIGH_CONVICTION: return 1.00" in cfg
+    assert "RISK_CLASS_STANDARD:        return 0.75" in cfg
+    assert "RISK_CLASS_MINIMAL:         return 1.00" in cfg
+
+
+def test_pending_signal_checks_structural_invalidation():
+    t=EA.read_text()
+    assert "g_lifecycleSetup.invalidation" in t
+    assert "Structural thesis invalidation was crossed before entry" in t
+
+
+def test_provenance_is_published():
+    t=(ROOT/"EA"/"includes"/"Signals"/"SignalPublisher.mqh").read_text()
+    for token in (
+        "liquidity_scope",
+        "liquidity_archetype",
+        "sweep_penetration_atr",
+        "sweep_rejection_ratio",
+        "displacement_atr",
+        "bos_distance_atr",
+        "fvg_causal",
+        "invalidation_distance_atr",
+        "regime_id",
+    ):
+        assert token in t
