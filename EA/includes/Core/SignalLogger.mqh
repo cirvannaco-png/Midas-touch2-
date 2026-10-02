@@ -385,7 +385,9 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
                // v2.14 — same rationale.
                "KeyLevelSource", "KeyLevelReaction", "KeyLevelScore",
                // v2.15 — same rationale.
-               "SelectedStrategy", "SelectedStrategyScore");
+               "SelectedStrategy", "SelectedStrategyScore",
+               "DecisionState", "BlockingLayer", "DecisionReason", "QualityScore",
+               "StructuralState", "StructuralStage", "Lifecycle", "ExpectedReturnR", "RegimeID");
       m_outcomeHeaderWritten = true;
      }
 
@@ -451,7 +453,16 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
             KeyLevelReactionLabel(p.setup.reasons.keylevel_reaction),
             DoubleToString(p.setup.reasons.keylevel_score, 1),
             SelectedStrategyLabel(p.setup.reasons.selected_strategy),
-            DoubleToString(p.setup.reasons.selected_strategy_score, 1));
+            DoubleToString(p.setup.reasons.selected_strategy_score, 1),
+            EnumToString(p.setup.reasons.decision_state),
+            EnumToString(p.setup.reasons.decision_blocking_layer),
+            p.setup.reasons.decision_reason,
+            DoubleToString(p.setup.reasons.quality_score, 2),
+            EnumToString(p.setup.reasons.structural_state),
+            EnumToString(p.setup.reasons.structural_stage),
+            EnumToString(p.setup.setup_lifecycle),
+            DoubleToString(p.setup.expected_return_r, 3),
+            p.setup.reasons.regime_id);
 
    FileClose(handle);
    return true;
