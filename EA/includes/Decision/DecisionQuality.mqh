@@ -30,7 +30,7 @@ public:
    bool CanTransition(ENUM_SETUP_LIFECYCLE current,ENUM_SETUP_LIFECYCLE next) const
      {
       if(current==next) return true;
-      if(current==SETUP_DETECTED && next==SETUP_ARMED) return true;
+      if(current==SETUP_DETECTED && (next==SETUP_ARMED || next==SETUP_WAITING_RETEST || next==SETUP_EXPIRED)) return true;
       if(current==SETUP_ARMED && (next==SETUP_WAITING_RETEST || next==SETUP_RETEST_CONFIRMED || next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
       if(current==SETUP_WAITING_RETEST && (next==SETUP_RETEST_CONFIRMED || next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
       if(current==SETUP_RETEST_CONFIRMED && (next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
@@ -319,6 +319,13 @@ public:
          return out;
         }
 
+      if(isSMC && r.structural_state!=STRUCTURE_INVALID)
+        {
+         lifecycle.Advance(setup,SETUP_ARMED);
+         if(r.fvg_state==FVG_TESTED)
+            lifecycle.Advance(setup,SETUP_RETEST_CONFIRMED);
+        }
+
       if(isSMC && r.structural_state==STRUCTURE_DEGRADED)
         {
          // Degraded is not universally invalid. Require a stronger composite
@@ -379,7 +386,7 @@ public:
       if(!setup.calibration_has_enough_data)
         {
          setup.decision_state=DECISION_WAIT;
-         lifecycle.Advance(setup,SETUP_WAITING_RETEST);
+         setup.setup_lifecycle=SETUP_WAITING_RETEST;
          setup.reasons.decision_state=DECISION_WAIT;
          setup.reasons.decision_blocking_layer=FIREWALL_CALIBRATION;
          setup.reasons.decision_reason="calibration sample is insufficient for an evidence-gated trade";
