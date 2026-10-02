@@ -20,6 +20,11 @@ def test_hierarchical_decision_contracts_exist():
         "ENUM_RISK_CLASS",
         "ENUM_SETUP_LIFECYCLE",
         "ENUM_FIREWALL_LAYER",
+        "ENUM_LIQUIDITY_SCOPE",
+        "ENUM_LIQUIDITY_ARCHETYPE",
+        "SETUP_FILLED",
+        "SETUP_MANAGED",
+        "SETUP_CLOSED",
     ):
         assert token in config
 
@@ -62,12 +67,19 @@ def test_structural_provenance_and_fvg_lifecycle_are_present():
         "sweep_penetration_atr",
         "sweep_rejection_ratio",
         "displacement_atr",
+        "bos_distance_atr",
+        "liquidity_scope",
+        "liquidity_archetype",
     ):
         assert token in scoring
 
     assert "FVG_INVALIDATED" in fvg
     assert "cd.close < zone.bottom" in fvg
     assert "cd.close > zone.top" in fvg
+    strategy = read("EA/includes/Trading/StrategyTradeZone.mqh")
+    assert "Never compare raw bar indices across those series" in strategy
+    assert "PeriodSeconds(m_fvgCtx.candles.Timeframe())" in strategy
+    assert "zone.time<=ind.bosTime" in strategy
 
 
 def test_mae_mfe_timing_and_versioned_calibration_are_present():
@@ -88,3 +100,8 @@ def test_mae_mfe_timing_and_versioned_calibration_are_present():
     assert "InpEnableStructuralValidator=true" in ea
     assert "InpEnableCorrelationGuard=false" in ea
     assert "ConfigureCorrelationGuard" in read("EA/includes/Portfolio/PortfolioManager.mqh")
+    assert "RiskClassSizingMultiplier" in read("EA/includes/Core/Config.mqh")
+    assert "setup.setup_lifecycle=SETUP_FILLED" in live
+    assert "setup.setup_lifecycle=SETUP_CLOSED" in live
+    assert "decision_state" in read("EA/includes/Signals/SignalPublisher.mqh")
+    assert "quality_score" in read("EA/includes/Signals/SignalPublisher.mqh")
