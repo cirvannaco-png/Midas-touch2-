@@ -386,9 +386,8 @@ public:
    void FinalizeWithCalibration(TradeSetup &setup,bool requireCalibratedProbability,double minCalibratedProbability) const
      {
       if(setup.decision_state==DECISION_REJECT) return;
-      if(!requireCalibratedProbability) return;
 
-      if(!setup.calibration_has_enough_data)
+      if(requireCalibratedProbability && !setup.calibration_has_enough_data)
         {
          setup.decision_state=DECISION_WAIT;
          setup.setup_lifecycle=SETUP_WAITING_RETEST;
