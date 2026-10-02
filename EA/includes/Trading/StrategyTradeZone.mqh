@@ -32,6 +32,10 @@ private:
    double                          m_minStopSpreadMult;
    double                          m_fvgMaxDistATR;
    double                          m_minSelectionScore;
+   bool                            m_enableEnvironmentHardBlock;
+
+   bool EnvironmentHardBlocked(const EnvironmentMemoryEvidence &evidence) const
+     {return m_enableEnvironmentHardBlock&&evidence.status=="DEGRADED";}
 
    bool FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out);
    double EnforceSpreadFloor(string symbol,double entry,double stopLoss,bool isBuy);
@@ -46,10 +50,11 @@ public:
    void Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR=0.25,double minStopSpreadMult=3.0,double fvgMaxDistATR=1.25,double minSelectionScore=60.0,CTFContext* srCtx=NULL,CTFContext* bosCtx=NULL,CEnvironmentStrategyMemory* environmentMemory=NULL);
    TradeSetup GenerateBuySetup();
    TradeSetup GenerateSellSetup();
+   void ConfigureEnvironmentHardBlock(bool enabled){m_enableEnvironmentHardBlock=enabled;}
    TradeSetup GetLastSetup()const{return m_lastSetup;}
   };
 
-CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;}
+CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;m_enableEnvironmentHardBlock=false;}
 
 void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* liqCtx,CScoringEngine* scoring,double slBufferATR,double minStopSpreadMult,double fvgMaxDistATR,double minSelectionScore,CTFContext* srCtx,CTFContext* bosCtx, CEnvironmentStrategyMemory* environmentMemory)
   {
@@ -79,8 +84,8 @@ void CTradeDecision::SelectPeerStrategy(bool forBuy,SetupReasons &reasons,ENUM_S
    if(reasons.regime==REGIME_TRENDING){if(reasons.breakout_class!=BREAKOUT_FAILED&&reasons.breakout_class!=BREAKOUT_EXHAUSTION&&(reasons.breakout_class==BREAKOUT_EXPANSION||reasons.breakout_class==BREAKOUT_LIQUIDITY||reasons.momentum_score>=m_minSelectionScore)){challengerScore=MathMax(reasons.momentum_score,reasons.breakout_score);challenger=STRATEGY_MOMENTUM_BREAKOUT;}}
    else if(reasons.regime==REGIME_RANGING){if(reasons.reversion_class==REVERSION_VALUE_FADE||reasons.reversion_class==REVERSION_LEVEL_REJECTION){challengerScore=reasons.reversion_score;challenger=STRATEGY_MEAN_REVERSION;}}
    else if(reasons.regime==REGIME_TRANSITION){if(reasons.keylevel_reaction==REACTION_REJECTION||reasons.keylevel_reaction==REACTION_RETEST||reasons.keylevel_reaction==REACTION_FAILED_BREAK||reasons.keylevel_reaction==REACTION_ABSORPTION){challengerScore=reasons.keylevel_score;challenger=STRATEGY_KEY_LEVEL;}}
-   bool challengerEligible=(challenger!=STRATEGY_NONE&&challengerScore>=m_minSelectionScore);double challengerAdjusted=challengerScore;EnvironmentMemoryEvidence challengerEvidence;ZeroMemory(challengerEvidence);bool challengerMemory=false;if(challengerEligible&&m_environmentMemory!=NULL)challengerMemory=m_environmentMemory.GetEvidence(reasons,challenger,challengerEvidence);if(challengerEligible&&challengerMemory)challengerAdjusted=challengerScore+challengerEvidence.adjustment;
-   double smcScore=m_scoring.CalculateConfidence(forBuy);bool smcEligible=(smcScore>=m_minSelectionScore);double smcAdjusted=smcScore;EnvironmentMemoryEvidence smcEvidence;ZeroMemory(smcEvidence);bool smcMemory=false;if(smcEligible&&m_environmentMemory!=NULL)smcMemory=m_environmentMemory.GetEvidence(reasons,STRATEGY_SMC,smcEvidence);if(smcEligible&&smcMemory)smcAdjusted=smcScore+smcEvidence.adjustment;
+   bool challengerEligible=(challenger!=STRATEGY_NONE&&challengerScore>=m_minSelectionScore);double challengerAdjusted=challengerScore;EnvironmentMemoryEvidence challengerEvidence;ZeroMemory(challengerEvidence);bool challengerMemory=false;if(challengerEligible&&m_environmentMemory!=NULL)challengerMemory=m_environmentMemory.GetEvidence(reasons,challenger,challengerEvidence);if(challengerEligible&&challengerMemory){challengerAdjusted=challengerScore+challengerEvidence.adjustment;if(EnvironmentHardBlocked(challengerEvidence))challengerEligible=false;}
+   double smcScore=m_scoring.CalculateConfidence(forBuy);bool smcEligible=(smcScore>=m_minSelectionScore);double smcAdjusted=smcScore;EnvironmentMemoryEvidence smcEvidence;ZeroMemory(smcEvidence);bool smcMemory=false;if(smcEligible&&m_environmentMemory!=NULL)smcMemory=m_environmentMemory.GetEvidence(reasons,STRATEGY_SMC,smcEvidence);if(smcEligible&&smcMemory){smcAdjusted=smcScore+smcEvidence.adjustment;if(EnvironmentHardBlocked(smcEvidence))smcEligible=false;}
    if(challengerEligible&&(!smcEligible||challengerAdjusted>smcAdjusted)){selected=challenger;selectedScore=challengerScore;if(challengerMemory){reasons.environment_memory_status=challengerEvidence.status;reasons.environment_memory_sample=challengerEvidence.sample_size;reasons.environment_memory_win_rate=challengerEvidence.win_rate*100.0;reasons.environment_memory_avg_r=challengerEvidence.avg_r;reasons.environment_memory_profit_factor=challengerEvidence.profit_factor;reasons.environment_memory_adjustment=challengerEvidence.adjustment;}else reasons.environment_memory_status="UNKNOWN";}
    else if(smcEligible){selected=STRATEGY_SMC;selectedScore=smcScore;if(smcMemory){reasons.environment_memory_status=smcEvidence.status;reasons.environment_memory_sample=smcEvidence.sample_size;reasons.environment_memory_win_rate=smcEvidence.win_rate*100.0;reasons.environment_memory_avg_r=smcEvidence.avg_r;reasons.environment_memory_profit_factor=smcEvidence.profit_factor;reasons.environment_memory_adjustment=smcEvidence.adjustment;}else reasons.environment_memory_status="UNKNOWN";}
    reasons.selected_strategy=selected;reasons.selected_strategy_score=selectedScore;
