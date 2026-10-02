@@ -139,8 +139,9 @@ bool CValueAreaEngine::BuildTickProfile(double rangeLow, double binSize, double 
    if(m_candles == NULL || m_candles.Total() < 2 || binSize <= 0.0)
       return false;
 
-   int bars = MathMin(m_lookbackBars, m_candles.Total());
-   datetime oldest = m_candles.GetCandle(bars - 1).time;
+   int bars = MathMin(m_lookbackBars, m_candles.Total() - 1);
+   if(bars < 1) return false;
+   datetime oldest = m_candles.GetCandle(bars).time;
    datetime newest = m_candles.GetCandle(1).time;
    if(oldest <= 0 || newest <= 0)
       return false;
@@ -150,7 +151,9 @@ bool CValueAreaEngine::BuildTickProfile(double rangeLow, double binSize, double 
       return false;
 
    ulong fromMsc = (ulong)oldest * 1000;
-   ulong toMsc = ((ulong)TimeCurrent() * 1000) + 999;
+   int tfSeconds = PeriodSeconds(m_candles.Timeframe());
+   if(tfSeconds <= 0) return false;
+   ulong toMsc = ((ulong)(newest + tfSeconds - 1) * 1000) + 999;
 
    MqlTick ticks[];
    int copied = CopyTicksRange(m_candles.Symbol(), ticks, COPY_TICKS_TRADE, fromMsc, toMsc);
@@ -203,10 +206,10 @@ bool CValueAreaEngine::BuildBarProfile(double rangeLow, double binSize, double &
    if(m_candles == NULL || binSize <= 0.0)
       return false;
 
-   int bars = MathMin(m_lookbackBars, m_candles.Total());
+   int bars = MathMin(m_lookbackBars, m_candles.Total() - 1);
    bool hasRealVolume = false;
 
-   for(int i = 0; i < bars; i++)
+   for(int i = 1; i <= bars; i++)
      {
       if(m_candles.GetCandle(i).real_volume > 0)
         {
@@ -217,7 +220,7 @@ bool CValueAreaEngine::BuildBarProfile(double rangeLow, double binSize, double &
 
    source = hasRealVolume ? VA_SOURCE_REAL_VOLUME_BARS : VA_SOURCE_TICK_VOLUME_BARS;
 
-   for(int i = 0; i < bars; i++)
+   for(int i = 1; i <= bars; i++)
      {
       CandleData cd = m_candles.GetCandle(i);
       double vol = hasRealVolume ? (double)cd.real_volume : (double)cd.tick_volume;
@@ -391,14 +394,14 @@ void CValueAreaEngine::Compute(bool forceRecompute)
       return;
      }
 
-   int bars = MathMin(m_lookbackBars, m_candles.Total());
+   int bars = MathMin(m_lookbackBars, m_candles.Total() - 1);
    if(bars < 10)
       return;
 
    double rangeHigh = -DBL_MAX;
    double rangeLow = DBL_MAX;
 
-   for(int i = 0; i < bars; i++)
+   for(int i = 1; i <= bars; i++)
      {
       CandleData cd = m_candles.GetCandle(i);
       if(cd.high > rangeHigh) rangeHigh = cd.high;
