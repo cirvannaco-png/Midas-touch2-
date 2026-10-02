@@ -33,8 +33,11 @@ public:
       if(current==SETUP_DETECTED && (next==SETUP_ARMED || next==SETUP_WAITING_RETEST || next==SETUP_EXPIRED)) return true;
       if(current==SETUP_ARMED && (next==SETUP_WAITING_RETEST || next==SETUP_RETEST_CONFIRMED || next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
       if(current==SETUP_WAITING_RETEST && (next==SETUP_RETEST_CONFIRMED || next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
-      if(current==SETUP_RETEST_CONFIRMED && (next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
-      if(current==SETUP_ENTRY_ELIGIBLE && next==SETUP_EXPIRED) return true;
+      if(current==SETUP_RETEST_CONFIRMED && (next==SETUP_ENTRY_ELIGIBLE || next==SETUP_WAITING_RETEST || next==SETUP_EXPIRED)) return true;
+      if(current==SETUP_ENTRY_ELIGIBLE && (next==SETUP_FILLED || next==SETUP_EXPIRED)) return true;
+      if(current==SETUP_FILLED && (next==SETUP_MANAGED || next==SETUP_CLOSED || next==SETUP_EXPIRED)) return true;
+      if(current==SETUP_MANAGED && (next==SETUP_CLOSED || next==SETUP_EXPIRED)) return true;
+      if(current==SETUP_CLOSED && next==SETUP_EXPIRED) return true;
       return false;
      }
 
@@ -215,17 +218,19 @@ private:
         }
       double execution=0.35*fvgState+0.25*chase+0.20*session+0.20*spreadFactor;
 
-      r.structure_family_score=100.0*Clamp01(structure);
-      r.liquidity_family_score=100.0*Clamp01(liquidity);
-      r.location_family_score=100.0*Clamp01(location);
-      r.execution_family_score=100.0*Clamp01(execution);
-      r.environment_family_score=100.0*EnvironmentFactor(r);
+      // Explicit family caps prevent correlated SMC evidence from behaving
+      // like independent additive confirmations.
+      r.structure_family_score=30.0*Clamp01(structure);
+      r.liquidity_family_score=25.0*Clamp01(liquidity);
+      r.location_family_score=20.0*Clamp01(location);
+      r.execution_family_score=15.0*Clamp01(execution);
+      r.environment_family_score=10.0*EnvironmentFactor(r);
 
-      r.quality_score=0.30*r.structure_family_score+
-                      0.25*r.liquidity_family_score+
-                      0.20*r.location_family_score+
-                      0.15*r.execution_family_score+
-                      0.10*r.environment_family_score;
+      r.quality_score=r.structure_family_score+
+                      r.liquidity_family_score+
+                      r.location_family_score+
+                      r.execution_family_score+
+                      r.environment_family_score;
      }
 
 public:
@@ -365,7 +370,7 @@ public:
         }
 
       lifecycle.Advance(setup,SETUP_ENTRY_ELIGIBLE);
-      if(r.quality_score>=85.0) out.riskClass=RISK_CLASS_HIGH_CONVICTION;
+      if(r.quality_score>=90.0) out.riskClass=RISK_CLASS_HIGH_CONVICTION;
       else if(r.quality_score>=72.0) out.riskClass=RISK_CLASS_STANDARD;
       else out.riskClass=RISK_CLASS_MINIMAL;
 
