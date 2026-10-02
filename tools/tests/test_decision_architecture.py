@@ -300,7 +300,9 @@ def test_sweep_quality_interface_matches_implementation():
     assert "bool allowSingleSwingStructure = false" in scoring
     assert "m_inducement.ConfigureQualityGates(requireMinSweepGrade, minSweepGrade, requireFreshSetup, maxBarsSinceBOS," in scoring
     assert "allowSingleSwingStructure" in scoring
-    assert "void ConfigureQualityGates(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade," in inducement
+    assert "ConfigureQualityGates(" in inducement
+    assert "ENUM_SWEEP_GRADE minSweepGrade" in inducement
+    assert "bool allowSingleSwingStructure" in inducement
 
 
 def test_indicator_uses_hierarchical_closed_bar_admission():
