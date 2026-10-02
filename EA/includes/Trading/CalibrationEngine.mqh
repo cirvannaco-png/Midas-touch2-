@@ -47,6 +47,7 @@ private:
    int               m_losses[NUM_BUCKETS];
    int               m_scratches[NUM_BUCKETS];
    string            m_filename;
+   string            m_schemaVersion;
    int               m_minSample;
 
    int               BucketIndex(double confidence) const
@@ -56,16 +57,17 @@ private:
      }
 
 public:
-                     CCalibrationEngine() : m_filename(""), m_minSample(30)
+                     CCalibrationEngine() : m_filename(""), m_schemaVersion("v1"), m_minSample(30)
      {
       ArrayInitialize(m_wins, 0);
       ArrayInitialize(m_losses, 0);
       ArrayInitialize(m_scratches, 0);
      }
 
-   void              Init(string symbol, int minSample = 30, bool useCommonFolder = false)
+   void              Init(string symbol, int minSample = 30, bool useCommonFolder = false, string schemaVersion = "v1")
      {
-      m_filename = "MedisTouch_Calibration_" + symbol + ".csv";
+      m_schemaVersion = (StringLen(schemaVersion)>0 ? schemaVersion : "v1");
+      m_filename = "MedisTouch_Calibration_" + symbol + "_" + m_schemaVersion + ".csv";
       m_minSample = MathMax(1, minSample);
       Load(useCommonFolder);
      }
