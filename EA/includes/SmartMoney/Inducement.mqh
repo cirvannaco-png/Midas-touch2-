@@ -451,6 +451,8 @@ InducementResult CInducement::Validate(bool forBuy)
    r.barsSinceSweep = sweepBarIdx;
 
    CandleData sweepCandle=m_candles.GetCandle(sweepBarIdx);
+   r.sweepPrice=forBuy?sweepCandle.low:sweepCandle.high;
+   r.sweepTime=sweepCandle.time;
    double sweepATR=m_candles.GetATR(sweepBarIdx);
    if(sweepATR>0.0)
      {
