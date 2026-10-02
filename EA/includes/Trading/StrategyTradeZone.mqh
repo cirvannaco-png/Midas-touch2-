@@ -225,8 +225,8 @@ void CTradeDecision::PopulateFVGDiagnostics(bool forBuy,SetupReasons &out)
    out.fvg_age_bars=MathMax(0,iBarShift(m_priceRef.Symbol(),m_fvgCtx.candles.Timeframe(),m_lastEntryFVG.time,false));
    if(m_fvgCtx!=NULL&&m_fvgCtx.candles.Total()>0)
      {
-      double price=m_priceRef.GetCandle(0).close;
-      double atr=m_fvgCtx.candles.GetATR(0);
+      double price=m_priceRef.Total()>1 ? m_priceRef.GetCandle(1).close : 0.0;
+      double atr=m_fvgCtx.candles.GetATR(1);
       double mid=(m_lastEntryFVG.top+m_lastEntryFVG.bottom)/2.0;
       out.fvg_distance_atr=(atr>0.0?MathAbs(price-mid)/atr:0.0);
      }
@@ -262,7 +262,7 @@ void CTradeDecision::PopulateStrategyReads(bool forBuy,SetupReasons &out)
      {
       out.spread_points=(double)SymbolInfoInteger(m_priceRef.Symbol(),SYMBOL_SPREAD);
       out.point_size=SymbolInfoDouble(m_priceRef.Symbol(),SYMBOL_POINT);
-      out.atr_value=m_priceRef.GetATR(0);
+      out.atr_value=m_priceRef.GetATR(1);
      }
 
    if(g_trendCtx!=NULL)
