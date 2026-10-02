@@ -516,7 +516,7 @@ InducementResult CInducement::Validate(bool forBuy)
    r.barsSinceBOS = bosBarIdx;
    r.bosBarIndex = bosBarIdx;
    r.bosClosePrice = m_candles.GetCandle(bosBarIdx).close;
-   if(r.sweepFollowThrough && sweepBarIdx>0)
+   if(r.sweepFollowThrough && sweepBarIdx>1)
      {
       CandleData displacement=m_candles.GetCandle(sweepBarIdx-1);
       double dATR=m_candles.GetATR(sweepBarIdx-1);
