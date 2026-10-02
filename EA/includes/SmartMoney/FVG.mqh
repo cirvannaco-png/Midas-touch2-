@@ -61,7 +61,7 @@ void CFVG::Detect()
          if(gap >= m_minSizeATR * atr)
            {
             FVGZone zone;
-            zone.time = cd1.time;
+            zone.time = cd0.time;
             zone.top = cd0.low;
             zone.bottom = cd2.high;
             zone.dir = FVG_BULL;
@@ -79,7 +79,7 @@ void CFVG::Detect()
          if(gap >= m_minSizeATR * atr)
            {
             FVGZone zone;
-            zone.time = cd1.time;
+            zone.time = cd0.time;
             zone.top = cd2.low;
             zone.bottom = cd0.high;
             zone.dir = FVG_BEAR;
