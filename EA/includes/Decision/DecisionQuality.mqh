@@ -365,7 +365,7 @@ public:
         }
 
       lifecycle.Advance(setup,SETUP_ENTRY_ELIGIBLE);
-      if(r.quality_score>=85.0) out.risk_class=RISK_CLASS_HIGH_CONVICTION;
+      if(r.quality_score>=85.0) out.riskClass=RISK_CLASS_HIGH_CONVICTION;
       else if(r.quality_score>=72.0) out.riskClass=RISK_CLASS_STANDARD;
       else out.riskClass=RISK_CLASS_MINIMAL;
 
