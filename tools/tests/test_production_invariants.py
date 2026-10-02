@@ -199,3 +199,13 @@ def test_risk_class_requires_expected_return_when_calibrated():
     assert "setup.expected_return_r" in t
     assert "expected_return_r>0.25" in t
     assert "expected_return_r>0.0" in t
+
+def test_partial_exit_does_not_close_setup_lifecycle():
+    t=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTracker.mqh").read_text()
+    partial=t[t.index("void COutcomeTracker::ApplyPartial"):t.index("bool COutcomeTracker::IntrabarReplayGeneric")]
+    final=t[t.index("void COutcomeTracker::FinalizeExit"):t.index("bool COutcomeTracker::ResolveOrder")]
+    assert "SETUP_CLOSED" not in partial
+    assert "SETUP_MANAGED" in partial
+    assert "SETUP_CLOSED" in final
+    live=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh").read_text()
+    assert "p.setup.setup_lifecycle=SETUP_CLOSED" in live
