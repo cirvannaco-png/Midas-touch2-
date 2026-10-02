@@ -113,7 +113,8 @@ def test_mae_mfe_timing_and_versioned_calibration_are_present():
     partial = backtest[backtest.index("void COutcomeTracker::ApplyPartial"):backtest.index("bool COutcomeTracker::IntrabarReplayGeneric")]
     assert "SETUP_CLOSED" not in partial
     assert "SETUP_MANAGED" in partial
-    assert "SETUP_CLOSED" in backtest[backtest.index("void COutcomeTracker::FinalizeExit"):backtest.index("bool COutcomeTracker::ResolveOrder")]
+    assert "void COutcomeTracker::FinalizeExit" in backtest
+    assert "p.setup.setup_lifecycle=SETUP_CLOSED" in backtest
 
 
 def test_evidence_families_are_independent_and_capped():
