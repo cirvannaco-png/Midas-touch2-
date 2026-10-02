@@ -413,7 +413,7 @@ TradeSetup CTradeDecision::BuildSMC(bool forBuy,double confidence,const SetupRea
    setup.entry_top=entryFVG.top;
    setup.entry_bottom=entryFVG.bottom;
    setup.invalidation=forBuy?(entryFVG.bottom-0.05*atr):(entryFVG.top+0.05*atr);
-   double entry=ResolveExecutionEntry(setup);
+   double entry=forBuy?setup.entry_bottom:setup.entry_top;
    setup.stop_loss=forBuy?(entryFVG.bottom-m_slBufferATR*atr):(entryFVG.top+m_slBufferATR*atr);
    setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),entry,setup.stop_loss,forBuy);
 
@@ -440,11 +440,11 @@ bool CTradeDecision::BuildNonSMC(bool forBuy,ENUM_SELECTED_STRATEGY selected,dou
    bool built=false;
 
    if(selected==STRATEGY_MOMENTUM_BREAKOUT)
-      built=CStrategySetupBuilders::BuildMomentum(forBuy,confidence,reasons,m_priceRef,m_bosCtx,m_liqCtx);
+      built=CStrategySetupBuilders::BuildMomentum(forBuy,confidence,reasons,m_priceRef,m_bosCtx,m_liqCtx,out);
    else if(selected==STRATEGY_MEAN_REVERSION)
-      built=CStrategySetupBuilders::BuildMeanReversion(forBuy,confidence,reasons,m_priceRef,m_srCtx,m_liqCtx);
+      built=CStrategySetupBuilders::BuildMeanReversion(forBuy,confidence,reasons,m_priceRef,m_srCtx,m_liqCtx,out);
    else if(selected==STRATEGY_KEY_LEVEL)
-      built=CStrategySetupBuilders::BuildKeyLevel(forBuy,confidence,reasons,m_priceRef,m_srCtx,m_liqCtx);
+      built=CStrategySetupBuilders::BuildKeyLevel(forBuy,confidence,reasons,m_priceRef,m_srCtx,m_liqCtx,out);
 
    if(!built) return false;
 
