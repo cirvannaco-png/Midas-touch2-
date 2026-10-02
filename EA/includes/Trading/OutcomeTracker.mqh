@@ -299,6 +299,9 @@ void COutcomeTracker::AddSetup(TradeSetup &setup, long decisionId)
   {
    PendingSetup p;
    ZeroMemory(p);
+   if(!setup.active || setup.decision_state!=DECISION_TRADE ||
+      setup.setup_lifecycle!=SETUP_ENTRY_ELIGIBLE || decisionId<=0)
+      return;
    p.setup = setup;
    p.decisionId = decisionId;
    bool isBuy = (setup.type == ORDER_TYPE_BUY);
