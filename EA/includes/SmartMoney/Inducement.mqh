@@ -523,7 +523,7 @@ InducementResult CInducement::Validate(bool forBuy)
      }
    else
      {
-      r.displacementATR=r.leg.strength*3.0;
+      r.displacementATR=leg.strength*3.0;
       r.displacementBodyRatio=0.0;
      }
    double timeDecay = TimeDecay(bosBarIdx);
