@@ -192,6 +192,14 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     publisher = by_rel.get("includes/Signals/SignalPublisher.mqh", "")
     multi = by_rel.get("includes/Portfolio/MultiTradeEngine.mqh", "")
     ea = by_rel.get("MedisTouch_v2.8.mq5", "")
+    strategy_builders = by_rel.get("includes/Trading/StrategySetupBuilders.mqh", "")
+    momentum = by_rel.get("includes/Strategies/MomentumBreakout.mqh", "")
+    mean_reversion = by_rel.get("includes/Strategies/MeanReversion.mqh", "")
+    key_level = by_rel.get("includes/Strategies/KeyLevelReaction.mqh", "")
+    regime = by_rel.get("includes/Regime/RegimeDetector.mqh", "")
+    market_phase = by_rel.get("includes/SmartMoney/MarketPhase.mqh", "")
+    liquidity = by_rel.get("includes/SmartMoney/Liquidity.mqh", "")
+    fvg_engine = by_rel.get("includes/SmartMoney/FVG.mqh", "")
 
     if "class CTradeDecision" in trade_zone:
         errors.append("TradeZone.mqh still defines CTradeDecision; StrategyTradeZone must be the single authority")
@@ -297,6 +305,23 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"MedisTouch_v2.8.mq5 missing decision architecture input: {token}")
     if "g_decision.ConfigureDecisionArchitecture" not in ea:
         errors.append("MedisTouch_v2.8.mq5 missing DecisionArchitecture configuration wiring")
+    # Actionable strategy routing must consume only completed bars.
+    for file_name, source in (
+        ("StrategySetupBuilders.mqh", strategy_builders),
+        ("MomentumBreakout.mqh", momentum),
+        ("MeanReversion.mqh", mean_reversion),
+        ("KeyLevelReaction.mqh", key_level),
+        ("RegimeDetector.mqh", regime),
+        ("MarketPhase.mqh", market_phase),
+    ):
+        if "GetCandle(0)" in source or "GetATR(0)" in source or "Classify(0)" in source:
+            errors.append(f"{file_name} contains open-bar decision evidence")
+    if "HasNearbyLiquidityEvent(const BOSEvent &bos)" not in momentum or "m_liquidity.Timeframe()" not in momentum:
+        errors.append("MomentumBreakout.mqh still correlates BOS and liquidity using incompatible raw bar indices")
+    if "Timeframe() const" not in liquidity:
+        errors.append("Liquidity.mqh does not expose its timeframe for cross-timeframe event correlation")
+    if "zone.time = cd0.time;" not in fvg_engine or "zone.time = cd1.time;" in fvg_engine:
+        errors.append("FVG.mqh is not anchoring FVG provenance to the completed formation bar")
     portfolio = by_rel.get("includes/Portfolio/PortfolioManager.mqh", "")
     for token in ("RollingCorrelation", "ConfigureCorrelationGuard", "m_enableCorrelationGuard"):
         if token not in portfolio:
