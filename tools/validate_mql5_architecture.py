@@ -253,6 +253,26 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     for token in ("maeR", "mfeR", "timeToMAE", "timeToMFE"):
         if token not in outcome_live or token not in outcome_backtest:
             errors.append(f"Outcome trackers missing MAE/MFE timing telemetry: {token}")
+    # Structural integrity must be observable and must remain anchored to
+    # the production sweep event, not a reconstructed proxy.
+    for token in ("double sweepPrice;", "datetime sweepTime;"):
+        if token not in config:
+            errors.append(f"Config.mqh missing authoritative sweep provenance field: {token}")
+    for token in ("r.sweepPrice=forBuy?sweepCandle.low:sweepCandle.high;", "r.sweepTime=sweepCandle.time;"):
+        if token not in inducement:
+            errors.append(f"Inducement.mqh missing authoritative sweep event provenance: {token}")
+    for token in ("out.sweep_price = ind.sweepPrice;", "out.sweep_time = ind.sweepTime;"):
+        if token not in by_rel.get("includes/Analysis/Scoring.mqh", ""):
+            errors.append(f"Scoring.mqh missing sweep provenance propagation: {token}")
+    if "setup.invalidation=forBuy?(setup.reasons.sweep_price-0.05*atr):(setup.reasons.sweep_price+0.05*atr);" not in strategy:
+        errors.append("StrategyTradeZone.mqh does not anchor structural invalidation to the authoritative sweep")
+    for token in ("setup.decision_state!=DECISION_TRADE", "setup.risk_class<RISK_CLASS_STANDARD", "setup.expected_return_r<=0.0"):
+        if token not in multi:
+            errors.append(f"MultiTradeEngine.mqh missing downstream risk-quality gate: {token}")
+    if "setup.decision_state!=DECISION_TRADE" not in outcome_live or "setup.setup_lifecycle!=SETUP_ENTRY_ELIGIBLE" not in outcome_live:
+        errors.append("OutcomeTrackerLive.mqh can admit non-TRADE or pre-entry-eligible setups")
+    if "setup.decision_state!=DECISION_TRADE" not in outcome_backtest or "setup.setup_lifecycle!=SETUP_ENTRY_ELIGIBLE" not in outcome_backtest:
+        errors.append("OutcomeTracker.mqh can admit non-TRADE or pre-entry-eligible setups")
     for token in ("setup.decision_state == DECISION_REJECT", "setup.decision_state == DECISION_WAIT", "setup.decision_state != DECISION_TRADE"):
         if token not in decision_engine:
             errors.append(f"DecisionEngine.mqh missing authoritative decision-state guard: {token}")
