@@ -216,7 +216,7 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"Config.mqh missing lifecycle/provenance contract: {token}")
     if "Never compare raw bar indices across those series" not in strategy or "PeriodSeconds(m_fvgCtx.candles.Timeframe())" not in strategy or "zone.time<=ind.bosTime" not in strategy:
         errors.append("StrategyTradeZone.mqh still permits cross-timeframe causal FVG comparison by raw bar index")
-    for token in ("RiskClassSizingMultiplier", "RISK_CLASS_HIGH_CONVICTION", "RISK_CLASS_STANDARD", "RISK_CLASS_MINIMAL"):
+    for token in ("RiskClassSizingMultiplier", "RISK_CLASS_HIGH_CONVICTION", "RISK_CLASS_STANDARD", "RISK_CLASS_MINIMAL", "expected_return_r"):
         if token not in config:
             errors.append(f"Config.mqh missing risk-class sizing contract: {token}")
     if "IsTighter(isBuy,candidate,currentSL)" not in dynamic_stop:
@@ -224,7 +224,7 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     for token in ("g_logger.LogSetup(buySetup", "g_logger.LogSetup(sellSetup", "REJECT/WAIT is first-class telemetry"):
         if token not in ea:
             errors.append(f"EA missing first-class reject/wait telemetry: {token}")
-    for token in ("liquidity_scope", "liquidity_archetype", "bos_distance_atr", "bos_age_bars", "fvg_causal", "invalidation_distance_atr", "regime_id"):
+    for token in ("liquidity_scope", "liquidity_archetype", "bos_distance_atr", "bos_age_bars", "fvg_causal", "invalidation_distance_atr", "expected_return_r", "regime_id"):
         if token not in publisher:
             errors.append(f"SignalPublisher.mqh missing structural decision provenance field: {token}")
     for token in ("structureType", "liquidityPoolPrice", "sweepPenetrationATR", "sweepRejectionRatio", "sweepFollowThrough", "displacementATR"):
