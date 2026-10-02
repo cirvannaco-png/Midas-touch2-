@@ -151,3 +151,74 @@ def test_elevated_risk_requires_qualified_environment_memory():
     assert "environmentQualified" in t
     assert 'setup.reasons.environment_memory_status=="QUALIFIED"' in t
     assert "environmentNotDegraded" in t
+
+
+def test_decision_inputs_are_closed_bar_only():
+    scoring = read("EA/includes/Analysis/Scoring.mqh")
+    strategy = read("EA/includes/Trading/StrategyTradeZone.mqh")
+    assert "return m_priceRef.Total()>1 ? m_priceRef.GetCandle(1).close : 0.0;" in scoring
+    assert "m_fvgCtx.candles.GetATR(1)" in scoring
+    assert "m_bosCtx.candles.GetATR(1)" in scoring
+    assert "m_htfObCtx.candles.GetATR(1)" in scoring
+    assert "Classify(1)" in scoring
+    assert "m_priceRef.GetCandle(0).close" not in strategy
+    assert "m_fvgCtx.candles.GetATR(0)" not in strategy
+    assert "m_priceRef.GetATR(0)" not in strategy
+    assert "m_priceRef.GetCandle(1).close" in strategy
+    assert "m_fvgCtx.candles.GetATR(1)" in strategy
+
+
+def test_structural_validator_requires_complete_provenance():
+    quality = read("EA/includes/Decision/DecisionQuality.mqh")
+    assert "!r.inducement_valid" in quality
+    assert "r.liquidity_scope==LIQUIDITY_SCOPE_UNKNOWN" in quality
+    assert "r.liquidity_archetype==LIQUIDITY_ARCHETYPE_NONE" in quality
+    assert "r.sweep_follow_through" in quality
+    assert "r.displacement_body_ratio<=0.0" in quality
+    assert "r.bos_time<=0" in quality
+    assert "r.bos_distance_atr<=0.0" in quality
+    assert "r.fvg_distance_atr>2.0" in quality
+
+
+def test_multi_trade_is_downstream_from_decision_risk():
+    multi = read("EA/includes/Portfolio/MultiTradeEngine.mqh")
+    assert "setup.decision_state!=DECISION_TRADE" in multi
+    assert "setup.risk_class<RISK_CLASS_STANDARD" in multi
+    assert "setup.expected_return_r<=0.0" in multi
+    assert 'setup.reasons.environment_memory_status=="DEGRADED"' in multi
+    assert "setup.reasons.structural_state==STRUCTURE_DEGRADED" in multi
+
+
+def test_correlation_guard_fails_closed_on_unknown_data():
+    portfolio = read("EA/includes/Portfolio/PortfolioManager.mqh")
+    assert "return 2.0; // sentinel: correlation unavailable; enabled guard must fail closed" in portfolio
+    assert "MathAbs(corr)>1.0" in portfolio
+    assert "correlation guard is enabled and therefore refusing new exposure" in portfolio
+
+
+def test_outcome_trackers_accept_only_trade_admissions():
+    live = read("EA/includes/Trading/OutcomeTrackerLive.mqh")
+    backtest = read("EA/includes/Trading/OutcomeTracker.mqh")
+    guard = "!setup.active||setup.decision_state!=DECISION_TRADE||setup.setup_lifecycle!=SETUP_ENTRY_ELIGIBLE"
+    assert guard in live
+    assert "setup.decision_state!=DECISION_TRADE" in backtest
+    assert "setup.setup_lifecycle!=SETUP_ENTRY_ELIGIBLE" in backtest
+
+
+def test_sweep_provenance_and_structural_invalidation_are_anchored():
+    config = read("EA/includes/Core/Config.mqh")
+    inducement = read("EA/includes/SmartMoney/Inducement.mqh")
+    scoring = read("EA/includes/Analysis/Scoring.mqh")
+    strategy = read("EA/includes/Trading/StrategyTradeZone.mqh")
+    publisher = read("EA/includes/Signals/SignalPublisher.mqh")
+    logger = read("EA/includes/Core/SignalLogger.mqh")
+    for token in ("double sweepPrice;", "datetime sweepTime;"):
+        assert token in config
+    assert "r.sweepPrice=forBuy?sweepCandle.low:sweepCandle.high;" in inducement
+    assert "r.sweepTime=sweepCandle.time;" in inducement
+    assert "out.sweep_price = ind.sweepPrice;" in scoring
+    assert "out.sweep_time = ind.sweepTime;" in scoring
+    assert "setup.invalidation=forBuy?(setup.reasons.sweep_price-0.05*atr):(setup.reasons.sweep_price+0.05*atr);" in strategy
+    assert "\"sweep_price\":" in publisher
+    assert "\"sweep_time\":" in publisher
+    assert '"SweepPrice", "SweepTime"' in logger
