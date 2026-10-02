@@ -125,3 +125,13 @@ def test_evidence_families_are_independent_and_capped():
     assert "r.location_family_score=20.0*Clamp01(location)" in t
     assert "r.execution_family_score=15.0*Clamp01(execution)" in t
     assert "r.environment_family_score=10.0*EnvironmentFactor(r)" in t
+
+
+def test_strategy_absence_is_first_class_reject():
+    strategy=read("EA/includes/Trading/StrategyTradeZone.mqh")
+    logger=read("EA/includes/Core/SignalLogger.mqh")
+    assert "TradeSetup CTradeDecision::BuildRejected" in strategy
+    assert '"no strategy satisfied the current market/regime admission conditions"' in strategy
+    assert "DecisionState" in logger
+    assert "BlockingLayer" in logger
+    assert "ExpectedReturnR" in logger
