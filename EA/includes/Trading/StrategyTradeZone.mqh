@@ -436,7 +436,7 @@ TradeSetup CTradeDecision::BuildSMC(bool forBuy,double confidence,const SetupRea
    // not merely the entry FVG boundary. This makes the thesis boundary
    // immutable to later execution management.
    setup.invalidation=forBuy?(setup.reasons.sweep_price-0.05*atr):(setup.reasons.sweep_price+0.05*atr);
-   double entry=forBuy?setup.entry_bottom:setup.entry_top;
+   double entry=ResolveExecutionEntry(setup);
    setup.stop_loss=forBuy?(setup.invalidation-m_slBufferATR*atr):(setup.invalidation+m_slBufferATR*atr);
    setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),entry,setup.stop_loss,forBuy);
 
