@@ -796,6 +796,17 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.sweep_grade = ind.sweepGrade;
    out.bos_strength = ind.bosStrength;
    out.time_decay = ind.timeDecay;
+   out.inducement_structure_type = ind.structureType;
+   out.liquidity_pool_price = ind.liquidityPoolPrice;
+   out.liquidity_pool_near_bar_index = ind.liquidityPoolNearBarIndex;
+   out.liquidity_pool_far_bar_index = ind.liquidityPoolFarBarIndex;
+   out.liquidity_pool_bar_span = ind.liquidityPoolBarSpan;
+   out.liquidity_pool_spacing_atr = ind.liquidityPoolSpacingATR;
+   out.sweep_penetration_atr = ind.sweepPenetrationATR;
+   out.sweep_rejection_ratio = ind.sweepRejectionRatio;
+   out.sweep_shape_score = ind.sweepShapeScore;
+   out.sweep_follow_through = ind.sweepFollowThrough;
+   out.sweep_follow_through_bar_index = ind.sweepFollowThroughBarIndex;
    out.chase_dist_atr = 0.0;
    out.chase_ok = true;
    if(ind.bosBarIndex >= 0 && m_bosCtx != NULL && price > 0)
