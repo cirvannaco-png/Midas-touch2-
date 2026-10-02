@@ -143,3 +143,10 @@ def test_inducement_ignores_forming_bar():
     assert "for(int i = sweepBarIdx - 1; i >= 1; i--)" in t
     assert "sweepBarIdx-1>=1" in t
     assert "sweepBarIdx>1" in t
+
+
+def test_elevated_risk_requires_qualified_environment_memory():
+    t=read("EA/includes/Decision/DecisionQuality.mqh")
+    assert "environmentQualified" in t
+    assert 'setup.reasons.environment_memory_status=="QUALIFIED"' in t
+    assert "environmentNotDegraded" in t
