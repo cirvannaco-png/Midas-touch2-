@@ -213,7 +213,8 @@ public:
                                bool enableEnvironmentHardBlock,
                                int degradedMinSample,
                                double minQualityScore,
-                               double maxExecutionSpreadPoints) const
+                               double maxExecutionSpreadPoints,
+                               bool requireCausalFVG) const
      {
       TradeQualityResult out;
       out.decision=DECISION_REJECT;
@@ -234,7 +235,7 @@ public:
       if(isSMC && requireStructuralValidator)
         {
          CStructuralValidator validator;
-         StructuralValidationResult sv=validator.Validate(setup,true,r.fvg_state==FVG_FRESH||r.fvg_state==FVG_TESTED);
+         StructuralValidationResult sv=validator.Validate(setup,requireCausalFVG,r.fvg_state==FVG_FRESH||r.fvg_state==FVG_TESTED);
          r.structural_state=sv.state;
          r.structural_stage=sv.stage;
          r.structural_score=sv.score;
