@@ -167,7 +167,7 @@ void COutcomeTracker::CloseSlice(PendingSetup &p, double closeLots, double rawEx
 
 void COutcomeTracker::ApplyPartial(PendingSetup &p, double triggerPrice, bool isBuy)
   {
-   p.setup.setup_lifecycle=SETUP_CLOSED;
+   if(p.setup.setup_lifecycle==SETUP_FILLED) p.setup.setup_lifecycle=SETUP_MANAGED;
    if(p.lots > 0)
      {
       double closeLots = p.lots * m_partialFraction;
@@ -235,6 +235,7 @@ string COutcomeTracker::ResolveCollision(bool isBuy, CandleData &bar0, double ad
 void COutcomeTracker::FinalizeExit(int idx, PendingSetup &p, string outcome, double rawExitPrice,
                                    bool sameBarCollision, bool ambiguous)
   {
+   p.setup.setup_lifecycle=SETUP_CLOSED;
    bool isBuy = (p.setup.type == ORDER_TYPE_BUY);
    if(p.remainingLots > 0) CloseSlice(p, p.remainingLots, rawExitPrice, isBuy);
    p.sameBarCollision = sameBarCollision;
