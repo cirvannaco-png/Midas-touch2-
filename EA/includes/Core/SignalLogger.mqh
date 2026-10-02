@@ -282,7 +282,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
                "HtfOBConfluence", "HtfOBState", "VolRegime", "SessionOK",
                // v2.10 diagnostics. Appended, never inserted: parsers keyed
                // on column position keep working.
-               "ContradictionPenalty", "EnvScore", "ExecScore", "EnvExecConfidence",
+               "ContradictionPenalty", "EnvScore", "ExecScore", "EnvExecConfidence", "SweepPrice", "SweepTime",
                // v2.12 diagnostics — same append-only discipline.
                "Regime", "MomentumScore", "BreakoutScore", "BreakoutClass",
                // v2.13 diagnostics — same append-only discipline.
@@ -326,6 +326,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
             DoubleToString(setup.reasons.env_score, 3),
             DoubleToString(setup.reasons.exec_score, 3),
             DoubleToString(setup.reasons.env_exec_confidence, 1),
+            DoubleToString(setup.reasons.sweep_price, _Digits), (long)setup.reasons.sweep_time,
             RegimeLabel(setup.reasons.regime),
             DoubleToString(setup.reasons.momentum_score, 1),
             DoubleToString(setup.reasons.breakout_score, 1),
