@@ -322,7 +322,8 @@ void COutcomeTracker::AddSetup(TradeSetup &setup, long decisionId)
    p.mgmtRiskDist = MathAbs(p.sizingEntryPrice - setup.stop_loss);
    bool exceededBudget = false;
    p.lots = (p.mgmtRiskDist > 0)
-            ? m_risk.CalculateLotSize(m_symbol, m_riskPercent, p.sizingEntryPrice, setup.stop_loss,
+            ? m_risk.CalculateLotSize(m_symbol, m_riskPercent*RiskClassSizingMultiplier(setup.risk_class),
+                                      p.sizingEntryPrice, setup.stop_loss,
                                       false, m_allowMinLotOverride, exceededBudget)
             : 0.0;
    p.currentSL = setup.stop_loss;
