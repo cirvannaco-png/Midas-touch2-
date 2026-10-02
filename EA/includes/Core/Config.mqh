@@ -126,6 +126,16 @@ struct TradeSetup {
 };
 
 double ResolveExecutionEntry(const TradeSetup &setup) { return setup.type==ORDER_TYPE_BUY?setup.entry_top:setup.entry_bottom; }
+double RiskClassSizingMultiplier(ENUM_RISK_CLASS riskClass)
+  {
+   switch(riskClass)
+     {
+      case RISK_CLASS_HIGH_CONVICTION: return 1.00;
+      case RISK_CLASS_STANDARD:        return 0.75;
+      case RISK_CLASS_MINIMAL:         return 1.00; // CDecisionEngine's reduced-risk policy halves this class.
+      default:                         return 0.00;
+     }
+  }
 
 struct PendingSetup {
    TradeSetup setup; double entryRef; double riskDist; double mfePrice; double maePrice; bool tp1Hit; bool tp2Hit; int barsElapsed; datetime lastBarTime; bool filled; datetime fillTime; int barsToFill; bool sameBarCollision;
