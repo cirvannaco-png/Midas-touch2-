@@ -200,6 +200,7 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     market_phase = by_rel.get("includes/SmartMoney/MarketPhase.mqh", "")
     liquidity = by_rel.get("includes/SmartMoney/Liquidity.mqh", "")
     fvg_engine = by_rel.get("includes/SmartMoney/FVG.mqh", "")
+    value_area = by_rel.get("includes/SmartMoney/ValueAreaEngine.mqh", "")
 
     if "class CTradeDecision" in trade_zone:
         errors.append("TradeZone.mqh still defines CTradeDecision; StrategyTradeZone must be the single authority")
@@ -318,6 +319,8 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"{file_name} contains open-bar decision evidence")
     if "HasNearbyLiquidityEvent(const BOSEvent &bos)" not in momentum or "m_liquidity.Timeframe()" not in momentum:
         errors.append("MomentumBreakout.mqh still correlates BOS and liquidity using incompatible raw bar indices")
+    if "GetCandle(0)" in value_area or "GetATR(0)" in value_area or "TimeCurrent()" in value_area:
+        errors.append("ValueAreaEngine.mqh contains forming-bar/time-now profile inputs")
     if "Timeframe() const" not in liquidity:
         errors.append("Liquidity.mqh does not expose its timeframe for cross-timeframe event correlation")
     if "zone.time = cd0.time;" not in fvg_engine or "zone.time = cd1.time;" in fvg_engine:
