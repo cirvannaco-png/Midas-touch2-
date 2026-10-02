@@ -28,9 +28,10 @@ enum ENUM_KEYLEVEL_SOURCE { LEVEL_NONE, LEVEL_SR, LEVEL_ORDER_BLOCK, LEVEL_VALUE
 enum ENUM_KEYLEVEL_REACTION { REACTION_NONE, REACTION_REJECTION, REACTION_BREAK, REACTION_RETEST, REACTION_FAILED_BREAK, REACTION_ACCEPTANCE, REACTION_ABSORPTION };
 enum ENUM_SELECTED_STRATEGY { STRATEGY_NONE, STRATEGY_SMC, STRATEGY_MOMENTUM_BREAKOUT, STRATEGY_MEAN_REVERSION, STRATEGY_KEY_LEVEL };
 enum ENUM_SWEEP_GRADE { SWEEP_GRADE_NONE, SWEEP_GRADE_C, SWEEP_GRADE_B, SWEEP_GRADE_A };
+enum ENUM_INDUCEMENT_STRUCTURE { INDUCEMENT_STRUCTURE_NONE, INDUCEMENT_STRUCTURE_SINGLE_SWING, INDUCEMENT_STRUCTURE_EQUAL_POOL };
 
 struct ImpulseLeg { bool valid; datetime start_time; datetime end_time; int start_bar; int end_bar; double start_price; double end_price; bool bullish; double strength; };
-struct InducementResult { bool valid; bool impulseFound; bool internalStructureFound; bool sweepFound; bool bosConfirmed; double impulseScore; double structureScore; double sweepScore; double bosScore; double totalScore; ImpulseLeg leg; string reason; ENUM_SWEEP_GRADE sweepGrade; double sweepGradeScore; double bosStrength; int barsSinceSweep; int barsSinceBOS; double timeDecay; double bosClosePrice; int bosBarIndex; };
+struct InducementResult { bool valid; bool impulseFound; bool internalStructureFound; bool sweepFound; bool bosConfirmed; double impulseScore; double structureScore; double sweepScore; double bosScore; double totalScore; ImpulseLeg leg; string reason; ENUM_SWEEP_GRADE sweepGrade; double sweepGradeScore; double bosStrength; int barsSinceSweep; int barsSinceBOS; double timeDecay; double bosClosePrice; int bosBarIndex; ENUM_INDUCEMENT_STRUCTURE structureType; double liquidityPoolPrice; int liquidityPoolNearBarIndex; int liquidityPoolFarBarIndex; int liquidityPoolBarSpan; double liquidityPoolSpacingATR; double sweepPenetrationATR; double sweepRejectionRatio; double sweepShapeScore; bool sweepFollowThrough; int sweepFollowThroughBarIndex; };
 struct OutcomeStats { int wins; int losses; int scratches; int ambiguous; double netPnL; double grossProfit; double grossLoss; double totalCommission; double totalSpreadCost; double totalSlippageCost; double sumRMultiple; int resolvedCount; int ExcludingAmbiguousTotal() const { return wins + losses; } double WinRateExcludingAmbiguous() const { int t=wins+losses; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsLoss() const { int t=wins+losses+ambiguous; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsWin() const { int t=wins+losses+ambiguous; return t>0?100.0*(wins+ambiguous)/t:0.0; } double ProfitFactor() const { if(grossLoss>0)return grossProfit/grossLoss; return grossProfit>0?-1.0:0.0; } double ExpectancyPerTrade() const { return resolvedCount>0?netPnL/resolvedCount:0.0; } double AverageRMultiple() const { return resolvedCount>0?sumRMultiple/resolvedCount:0.0; } };
 struct CandleData { datetime time; double open; double high; double low; double close; long tick_volume; long real_volume; double atr; };
 struct SwingPoint { datetime time; double price; bool is_high; int bar_index; double strength; };
@@ -47,6 +48,13 @@ struct SetupReasons {
    ENUM_MARKET_PHASE phase; string risk_warning; double rvol; bool volume_confirmed; ENUM_FIB_ZONE fib_zone; bool fib_in_zone; double fib_nearest_level;
    bool value_area_ok; ENUM_VALUE_AREA_ZONE va_zone; double va_poc; double va_high; double va_low; ENUM_VALUE_PROFILE_SOURCE value_profile_source; ENUM_VALUE_PROFILE_STATE value_profile_state; double va_poc_migration_atr; double va_source_quality; double va_score; bool value_area_contradiction; bool htf_ob_confluence; ENUM_OB_STATE htf_ob_state;
    ENUM_VOL_REGIME vol_regime; ENUM_TRADING_SESSION session; bool session_ok; ENUM_SWEEP_GRADE sweep_grade; double bos_strength; double time_decay;
+   // Entry-timeframe inducement provenance. Observations only: these fields
+   // are surfaced so research can attribute outcomes to the exact structural
+   // chain without reconstructing events through a second detector.
+   ENUM_INDUCEMENT_STRUCTURE inducement_structure_type; double liquidity_pool_price; int liquidity_pool_near_bar_index; int liquidity_pool_far_bar_index; int liquidity_pool_bar_span; double liquidity_pool_spacing_atr;
+   double sweep_penetration_atr; double sweep_rejection_ratio; double sweep_shape_score; bool sweep_follow_through; int sweep_follow_through_bar_index;
+   // Best production FVG candidate observed by the scoring engine; diagnostic only.
+   ENUM_FVG_STATE best_fvg_state; int best_fvg_age_bars; double best_fvg_distance_atr;
    double chase_dist_atr; bool chase_ok; ENUM_NEWS_RISK news_risk; string news_label; int news_minutes_to_event; double contradiction_penalty; double env_score;
    double exec_score; double env_exec_confidence; ENUM_MARKET_REGIME regime; double momentum_score; double breakout_score; ENUM_BREAKOUT_CLASS breakout_class;
    double reversion_score; ENUM_REVERSION_CLASS reversion_class; ENUM_KEYLEVEL_SOURCE keylevel_source; ENUM_KEYLEVEL_REACTION keylevel_reaction; double keylevel_score;
