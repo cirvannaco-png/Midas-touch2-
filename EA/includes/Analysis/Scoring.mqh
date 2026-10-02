@@ -755,6 +755,14 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.sweep_follow_through_bar_index = ind.sweepFollowThroughBarIndex;
    out.displacement_atr = ind.displacementATR;
    out.displacement_body_ratio = ind.displacementBodyRatio;
+   out.bos_distance_atr = ind.bosDistanceATR;
+   out.bos_time = ind.bosTime;
+   out.liquidity_scope = ind.structureType==INDUCEMENT_STRUCTURE_NONE ? LIQUIDITY_SCOPE_UNKNOWN : LIQUIDITY_SCOPE_INTERNAL;
+   out.liquidity_archetype = ind.structureType==INDUCEMENT_STRUCTURE_EQUAL_POOL ? LIQUIDITY_ARCHETYPE_EQUAL_POOL :
+                             (ind.structureType==INDUCEMENT_STRUCTURE_SINGLE_SWING ? LIQUIDITY_ARCHETYPE_SINGLE_SWING : LIQUIDITY_ARCHETYPE_NONE);
+   out.liquidity_event_price = ind.liquidityPoolPrice;
+   out.liquidity_event_strength = ind.sweepGradeScore;
+   out.liquidity_event_external = false;
    out.invalidation_distance_atr = 0.0;
    out.trend_aligned   = (TrendScore(forBuy) >= 0.6);
    out.fresh_fvg       = (FVGScore(forBuy) > 0.0);
