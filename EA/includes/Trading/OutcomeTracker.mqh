@@ -8,6 +8,7 @@
 #include "../Core/SignalLogger.mqh"
 #include "../Analysis/TFContext.mqh"
 #include "RiskEngine.mqh"
+#include "../Portfolio/EnvironmentPolicy.mqh"
 #include "CalibrationEngine.mqh"
 #include "../Signals/SignalPublisher.mqh"
 
@@ -34,6 +35,7 @@ private:
    double            m_spreadPoints;
    double            m_slippagePoints;
    CCalibrationEngine m_calibration;
+   CEnvironmentPolicy m_environmentPolicy;
    bool              m_calibrationEnabled;
    double            m_decayHalfLifeBars;
    CSignalPublisher* m_publisher;
@@ -328,10 +330,12 @@ void COutcomeTracker::AddSetup(TradeSetup &setup, long decisionId)
    p.sizingEntryPrice = ResolveExecutionEntry(setup);
    p.mgmtRiskDist = MathAbs(p.sizingEntryPrice - setup.stop_loss);
    bool exceededBudget = false;
+   bool reduceRisk = (setup.risk_class == RISK_CLASS_MINIMAL) ||
+                     m_environmentPolicy.ReduceRisk(setup);
    p.lots = (p.mgmtRiskDist > 0)
             ? m_risk.CalculateLotSize(m_symbol, m_riskPercent*RiskClassSizingMultiplier(setup.risk_class),
                                       p.sizingEntryPrice, setup.stop_loss,
-                                      false, m_allowMinLotOverride, exceededBudget)
+                                      reduceRisk, m_allowMinLotOverride, exceededBudget)
             : 0.0;
    p.currentSL = setup.stop_loss;
    p.beDone = false;
