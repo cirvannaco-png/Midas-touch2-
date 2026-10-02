@@ -298,7 +298,7 @@ void CTradeDecision::SelectPeerStrategy(bool forBuy,SetupReasons &reasons,
          reasons.breakout_class!=BREAKOUT_EXHAUSTION&&
          (reasons.breakout_class==BREAKOUT_EXPANSION||
           reasons.breakout_class==BREAKOUT_LIQUIDITY||
-          reasons.momentum_score>=m_minSelectionScore))
+          reasons.momentum_score>0.0))
         {
          challengerScore=MathMax(reasons.momentum_score,reasons.breakout_score);
          challenger=STRATEGY_MOMENTUM_BREAKOUT;
@@ -325,7 +325,7 @@ void CTradeDecision::SelectPeerStrategy(bool forBuy,SetupReasons &reasons,
         }
      }
 
-   bool challengerEligible=(challenger!=STRATEGY_NONE&&challengerScore>=m_minSelectionScore);
+   bool challengerEligible=(challenger!=STRATEGY_NONE);
    double challengerAdjusted=challengerScore;
    EnvironmentMemoryEvidence challengerEvidence;
    ZeroMemory(challengerEvidence);
@@ -342,8 +342,9 @@ void CTradeDecision::SelectPeerStrategy(bool forBuy,SetupReasons &reasons,
       challengerAdjusted=challengerScore+challengerEvidence.adjustment;
 
    double smcScore=m_scoring.CalculateConfidence(forBuy);
-   bool smcEligible=(smcScore>=m_minSelectionScore);
-   if(m_enableStructuralValidator) smcEligible=smcEligible&&smcPrecheck;
+   // Raw confidence is descriptive/ranking data. Structural admission is
+   // decided by smcPrecheck, not by a confidence cutoff.
+   bool smcEligible=m_enableStructuralValidator ? smcPrecheck : true;
 
    double smcAdjusted=smcScore;
    EnvironmentMemoryEvidence smcEvidence;
@@ -513,7 +514,7 @@ TradeSetup CTradeDecision::Generate(bool forBuy)
    double selectedScore=0.0;
    SelectPeerStrategy(forBuy,reasons,selected,selectedScore);
 
-   if(selected==STRATEGY_NONE||selectedScore<m_minSelectionScore)
+   if(selected==STRATEGY_NONE)
      {
       m_lastSetup=out;
       return out;
