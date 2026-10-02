@@ -108,3 +108,4 @@ def test_mae_mfe_timing_and_versioned_calibration_are_present():
     assert "setup.setup_lifecycle=SETUP_CLOSED" in live
     assert "decision_state" in read("EA/includes/Signals/SignalPublisher.mqh")
     assert "quality_score" in read("EA/includes/Signals/SignalPublisher.mqh")
+    assert "expected_return_r" in read("EA/includes/Signals/SignalPublisher.mqh")
