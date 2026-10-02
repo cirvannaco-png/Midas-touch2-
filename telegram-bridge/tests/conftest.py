@@ -106,6 +106,11 @@ def client():
 
         main_module.init_bot = _offline_init_bot
         main_module.shutdown_bot = _offline_shutdown_bot
+
+        async def _offline_outbox_worker(stop_event):
+            await stop_event.wait()
+
+        main_module.run_outbox_worker = _offline_outbox_worker
         from app.models import BotSetting, Payment, Signal, SignalDeliveryOutbox, Subscriber, TradeEvent
 
         with TestClient(app) as c:
