@@ -82,3 +82,26 @@ def test_signal_payload_exports_provenance_for_research_attribution():
     ]
     for key in required_json_keys:
         assert key in text
+
+
+def test_scoring_exposes_the_winning_fvg_only_as_diagnostic_telemetry():
+    text = SCORING.read_text(encoding="utf-8")
+    assert "m_lastFvgState" in text
+    assert "m_lastFvgAgeBars" in text
+    assert "m_lastFvgDistanceATR" in text
+    assert "m_lastFvgState = z.state;" in text
+    assert "m_lastFvgAgeBars = MathMax(0, z.bar_index);" in text
+    assert "m_lastFvgDistanceATR = distATR;" in text
+    assert "out.best_fvg_state = m_lastFvgState;" in text
+    assert "out.best_fvg_age_bars = m_lastFvgAgeBars;" in text
+    assert "out.best_fvg_distance_atr = m_lastFvgDistanceATR;" in text
+
+
+def test_signal_payload_exports_fvg_provenance():
+    text = PUBLISHER.read_text(encoding="utf-8")
+    for key in [
+        '\\"best_fvg_state\\":',
+        '\\"best_fvg_age_bars\\":',
+        '\\"best_fvg_distance_atr\\":',
+    ]:
+        assert key in text
