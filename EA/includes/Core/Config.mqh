@@ -53,6 +53,8 @@ struct SetupReasons {
    // chain without reconstructing events through a second detector.
    ENUM_INDUCEMENT_STRUCTURE inducement_structure_type; double liquidity_pool_price; int liquidity_pool_near_bar_index; int liquidity_pool_far_bar_index; int liquidity_pool_bar_span; double liquidity_pool_spacing_atr;
    double sweep_penetration_atr; double sweep_rejection_ratio; double sweep_shape_score; bool sweep_follow_through; int sweep_follow_through_bar_index;
+   // Best production FVG candidate observed by the scoring engine; diagnostic only.
+   ENUM_FVG_STATE best_fvg_state; int best_fvg_age_bars; double best_fvg_distance_atr;
    double chase_dist_atr; bool chase_ok; ENUM_NEWS_RISK news_risk; string news_label; int news_minutes_to_event; double contradiction_penalty; double env_score;
    double exec_score; double env_exec_confidence; ENUM_MARKET_REGIME regime; double momentum_score; double breakout_score; ENUM_BREAKOUT_CLASS breakout_class;
    double reversion_score; ENUM_REVERSION_CLASS reversion_class; ENUM_KEYLEVEL_SOURCE keylevel_source; ENUM_KEYLEVEL_REACTION keylevel_reaction; double keylevel_score;
