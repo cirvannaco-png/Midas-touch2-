@@ -268,3 +268,36 @@ def test_decision_store_persists_full_state_lineage_append_only():
     assert "p[34]=DoubleToString(rec.setup.reasons.quality_score,4)" in store
     assert "p[35]=DoubleToString(rec.setup.expected_return_r,6)" in store
     assert "if(n>=39)" in store
+
+
+def test_all_actionable_strategy_routing_is_closed_bar_and_cross_tf_safe():
+    builders = read("EA/includes/Trading/StrategySetupBuilders.mqh")
+    momentum = read("EA/includes/Strategies/MomentumBreakout.mqh")
+    mean_rev = read("EA/includes/Strategies/MeanReversion.mqh")
+    keylevel = read("EA/includes/Strategies/KeyLevelReaction.mqh")
+    regime = read("EA/includes/Regime/RegimeDetector.mqh")
+    phase = read("EA/includes/SmartMoney/MarketPhase.mqh")
+    liquidity = read("EA/includes/SmartMoney/Liquidity.mqh")
+    for source in (builders, momentum, mean_rev, keylevel, regime, phase):
+        assert "GetCandle(0)" not in source
+        assert "GetATR(0)" not in source
+        assert "Classify(0)" not in source
+    assert "HasNearbyLiquidityEvent(const BOSEvent &bos)" in momentum
+    assert "m_liquidity.Timeframe()" in momentum
+    assert "Timeframe() const" in liquidity
+    assert "MathAbs((double)(ev.time - bos.time))" in momentum
+
+
+def test_fvg_time_is_completion_time():
+    fvg = read("EA/includes/SmartMoney/FVG.mqh")
+    assert "zone.time = cd0.time;" in fvg
+    assert "zone.time = cd1.time;" not in fvg
+
+
+def test_sweep_quality_interface_matches_implementation():
+    scoring = read("EA/includes/Analysis/Scoring.mqh")
+    inducement = read("EA/includes/SmartMoney/Inducement.mqh")
+    assert "bool allowSingleSwingStructure = false" in scoring
+    assert "m_inducement.ConfigureQualityGates(requireMinSweepGrade, minSweepGrade, requireFreshSetup, maxBarsSinceBOS," in scoring
+    assert "allowSingleSwingStructure" in scoring
+    assert "void ConfigureQualityGates(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade," in inducement
