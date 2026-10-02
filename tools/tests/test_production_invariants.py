@@ -209,3 +209,16 @@ def test_partial_exit_does_not_close_setup_lifecycle():
     assert "SETUP_CLOSED" in final
     live=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh").read_text()
     assert "p.setup.setup_lifecycle=SETUP_CLOSED" in live
+
+
+def test_strategy_absence_becomes_reject_not_inactive_setup():
+    t=(ROOT/"EA"/"includes"/"Trading"/"StrategyTradeZone.mqh").read_text()
+    assert "TradeSetup CTradeDecision::BuildRejected" in t
+    assert "decision_state=DECISION_REJECT" in t
+    assert "setup_lifecycle=SETUP_EXPIRED" in t
+
+
+def test_signal_logger_persists_decision_provenance():
+    t=(ROOT/"EA"/"includes"/"Core"/"SignalLogger.mqh").read_text()
+    for token in ("DecisionState", "BlockingLayer", "DecisionReason", "QualityScore", "Lifecycle", "ExpectedReturnR", "RegimeID"):
+        assert token in t
