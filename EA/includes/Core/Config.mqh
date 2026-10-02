@@ -102,6 +102,7 @@ struct SetupReasons {
    string environment_memory_status; int environment_memory_sample;
    double environment_memory_win_rate; double environment_memory_avg_r;
    double environment_memory_profit_factor; double environment_memory_adjustment;
+   double expected_return_r;
 };
 
 struct TradeSetup {
@@ -116,6 +117,7 @@ struct TradeSetup {
    double confidence;
    datetime creation_time;
    bool active;
+   double expected_return_r;
    ENUM_DECISION_STATE decision_state;
    ENUM_RISK_CLASS risk_class;
    ENUM_SETUP_LIFECYCLE setup_lifecycle;
