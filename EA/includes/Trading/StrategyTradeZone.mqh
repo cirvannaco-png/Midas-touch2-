@@ -181,10 +181,14 @@ bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
 bool CTradeDecision::IsCausalFVG(const FVGZone &zone,const InducementResult &ind) const
   {
    if(!ind.bosConfirmed||ind.bosBarIndex<0||zone.bar_index<0) return false;
-   // Both indices belong to m_fvgCtx's candle series. A smaller series
-   // index is more recent, so the FVG must form after the BOS and within
-   // the configured causal window.
-   int gap=ind.bosBarIndex-zone.bar_index;
+   // BOS and FVG may be detected on different production timeframes.
+   // Never compare raw bar indices across those series. Use event time and
+   // convert the elapsed time into bars on the actual FVG timeframe.
+   if(ind.bosTime<=0 || zone.time<=ind.bosTime || m_fvgCtx==NULL) return false;
+   int tfSeconds=PeriodSeconds(m_fvgCtx.candles.Timeframe());
+   if(tfSeconds<=0) return false;
+   double elapsed=(double)(zone.time-ind.bosTime);
+   int gap=(int)MathCeil(elapsed/(double)tfSeconds);
    return (gap>=1 && gap<=m_causalFVGMaxBars);
   }
 
@@ -198,8 +202,9 @@ void CTradeDecision::BuildRegimeVector(bool forBuy,SetupReasons &out)
    string structure=EnumToString(out.inducement_structure_type);
    out.regime_id=trend+"|"+EnumToString(out.regime)+"|"+EnumToString(out.vol_regime)+
                  "|"+EnumToString(out.session)+"|"+EnumToString(out.phase)+
-                 "|VA:"+va+"|"+structure+"|SW:"+EnumToString(out.sweep_grade)+
-                 "|PD:"+(out.premium_discount_ok?"1":"0");
+                 "|VA:"+va+"|LIQ:"+EnumToString(out.liquidity_scope)+
+                 "|ARCH:"+EnumToString(out.liquidity_archetype)+"|"+structure+
+                 "|SW:"+EnumToString(out.sweep_grade)+"|PD:"+(out.premium_discount_ok?"1":"0");
   }
 
 void CTradeDecision::PopulateFVGDiagnostics(bool forBuy,SetupReasons &out)
@@ -230,7 +235,13 @@ void CTradeDecision::PopulateFVGDiagnostics(bool forBuy,SetupReasons &out)
    if(m_scoring!=NULL)
       ind=m_scoring.GetInducement(forBuy);
    out.fvg_causal=IsCausalFVG(m_lastEntryFVG,ind);
-   out.fvg_bos_age_gap=(ind.bosBarIndex>=0 ? ind.bosBarIndex-m_lastEntryFVG.bar_index : 0);
+   out.fvg_bos_age_gap=0;
+   if(ind.bosTime>0 && m_lastEntryFVG.time>ind.bosTime && m_fvgCtx!=NULL)
+     {
+      int tfSeconds=PeriodSeconds(m_fvgCtx.candles.Timeframe());
+      if(tfSeconds>0)
+         out.fvg_bos_age_gap=(int)MathCeil((double)(m_lastEntryFVG.time-ind.bosTime)/(double)tfSeconds);
+     }
   }
 
 void CTradeDecision::PopulateStrategyReads(bool forBuy,SetupReasons &out)
@@ -269,6 +280,9 @@ void CTradeDecision::PopulateStrategyReads(bool forBuy,SetupReasons &out)
         {
          out.liquidity_score=MathMin(MathMax(ev.strength,0.0),1.0);
          out.liquidity_bucket=out.liquidity_score>=0.75?3:(out.liquidity_score>=0.50?2:(out.liquidity_score>0.0?1:0));
+         out.liquidity_event_price=ev.price;
+         out.liquidity_event_strength=MathMax(0.0,MathMin(ev.strength,1.0));
+         out.liquidity_event_external=ev.external;
         }
      }
 
