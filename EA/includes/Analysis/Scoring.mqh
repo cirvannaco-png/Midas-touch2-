@@ -757,6 +757,7 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.displacement_body_ratio = ind.displacementBodyRatio;
    out.bos_distance_atr = ind.bosDistanceATR;
    out.bos_time = ind.bosTime;
+   out.bos_age_bars = MathMax(0,ind.barsSinceBOS);
    out.liquidity_scope = ind.structureType==INDUCEMENT_STRUCTURE_NONE ? LIQUIDITY_SCOPE_UNKNOWN : LIQUIDITY_SCOPE_INTERNAL;
    out.liquidity_archetype = ind.structureType==INDUCEMENT_STRUCTURE_EQUAL_POOL ? LIQUIDITY_ARCHETYPE_EQUAL_POOL :
                              (ind.structureType==INDUCEMENT_STRUCTURE_SINGLE_SWING ? LIQUIDITY_ARCHETYPE_SINGLE_SWING : LIQUIDITY_ARCHETYPE_NONE);
