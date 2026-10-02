@@ -192,3 +192,10 @@ def test_bos_age_is_persisted_in_provenance():
     p=(ROOT/"EA"/"includes"/"Signals/SignalPublisher.mqh").read_text()
     assert "out.bos_age_bars" in s
     assert "bos_age_bars" in p
+
+
+def test_risk_class_requires_expected_return_when_calibrated():
+    t=(ROOT/"EA"/"includes"/"Decision/DecisionQuality.mqh").read_text()
+    assert "setup.expected_return_r" in t
+    assert "expected_return_r>0.25" in t
+    assert "expected_return_r>0.0" in t
