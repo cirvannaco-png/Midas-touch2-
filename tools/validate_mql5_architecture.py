@@ -225,6 +225,13 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"MedisTouch_v2.8.mq5 missing decision architecture input: {token}")
     if "g_decision.ConfigureDecisionArchitecture" not in ea:
         errors.append("MedisTouch_v2.8.mq5 missing DecisionArchitecture configuration wiring")
+    portfolio = by_rel.get("includes/Portfolio/PortfolioManager.mqh", "")
+    for token in ("RollingCorrelation", "ConfigureCorrelationGuard", "m_enableCorrelationGuard"):
+        if token not in portfolio:
+            errors.append(f"PortfolioManager.mqh missing optional correlation exposure contract: {token}")
+    for token in ("InpEnableCorrelationGuard=false", "InpCorrelationLookback", "InpCorrelationThreshold", "g_portfolio.ConfigureCorrelationGuard"):
+        if token not in ea:
+            errors.append(f"MedisTouch_v2.8.mq5 missing portfolio correlation guard wiring: {token}")
 
     # The multi-trade planner is a portfolio policy component. It may evaluate
     # eligibility/allocation, but it must not reach into order submission or
