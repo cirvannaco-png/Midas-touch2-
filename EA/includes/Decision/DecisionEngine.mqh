@@ -151,10 +151,13 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
       return rec;
      }
 
-   const double executeThreshold = m_environment.ExecuteThreshold(setup, m_minConfidenceExecute);
-   const double signalThreshold  = m_environment.SignalThreshold(setup, m_minConfidenceSignal);
-   bool canExecute = m_enableExecution && setup.confidence >= executeThreshold;
-   bool canSignal  = m_enableSignals  && setup.confidence >= signalThreshold;
+   // Confidence is intentionally not an admission gate. Structural,
+   // environment, execution, risk, and optional calibration firewalls have
+   // already decided whether this setup may exist as a TRADE. Raw confidence
+   // remains available for diagnostics/risk reduction and backwards-compatible
+   // decision metadata.
+   bool canExecute = m_enableExecution;
+   bool canSignal  = m_enableSignals;
 
    string environmentReason;
    if(m_environment.BlockExecution(setup, environmentReason))
@@ -179,8 +182,7 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
 
    if(rec.action == POLICY_IGNORE)
      {
-      rec.reason += StringFormat("confidence %.1f below thresholds (execute %.1f / signal %.1f; environment %s)",
-                                 setup.confidence, executeThreshold, signalThreshold,
+      rec.reason += StringFormat("policy did not authorize execution or signalling (environment %s)",
                                  m_environment.StateName(setup));
       return rec;
      }
