@@ -499,13 +499,37 @@ void COutcomeTracker::Update(CTFContext* executionCtx)
 
       if(isBuy)
         {
-         if(bar0.high > p.mfePrice) p.mfePrice = bar0.high;
-         if(bar0.low < p.maePrice) p.maePrice = bar0.low;
+         if(bar0.high > p.mfePrice)
+           {
+            p.mfePrice = bar0.high;
+            p.mfeR = (p.mgmtRiskDist>0.0 ? (p.mfePrice-p.entryRef)/p.mgmtRiskDist : 0.0);
+            p.timeToMFE = p.barsElapsed;
+            p.mfeTime = bar0.time;
+           }
+         if(bar0.low < p.maePrice)
+           {
+            p.maePrice = bar0.low;
+            p.maeR = (p.mgmtRiskDist>0.0 ? (p.entryRef-p.maePrice)/p.mgmtRiskDist : 0.0);
+            p.timeToMAE = p.barsElapsed;
+            p.maeTime = bar0.time;
+           }
         }
       else
         {
-         if(bar0.low < p.mfePrice) p.mfePrice = bar0.low;
-         if(bar0.high > p.maePrice) p.maePrice = bar0.high;
+         if(bar0.low < p.mfePrice)
+           {
+            p.mfePrice = bar0.low;
+            p.mfeR = (p.mgmtRiskDist>0.0 ? (p.entryRef-p.mfePrice)/p.mgmtRiskDist : 0.0);
+            p.timeToMFE = p.barsElapsed;
+            p.mfeTime = bar0.time;
+           }
+         if(bar0.high > p.maePrice)
+           {
+            p.maePrice = bar0.high;
+            p.maeR = (p.mgmtRiskDist>0.0 ? (p.maePrice-p.entryRef)/p.mgmtRiskDist : 0.0);
+            p.timeToMAE = p.barsElapsed;
+            p.maeTime = bar0.time;
+           }
         }
       m_pending[i] = p;
 
