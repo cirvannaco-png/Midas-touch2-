@@ -167,6 +167,7 @@ void COutcomeTracker::CloseSlice(PendingSetup &p, double closeLots, double rawEx
 
 void COutcomeTracker::ApplyPartial(PendingSetup &p, double triggerPrice, bool isBuy)
   {
+   p.setup.setup_lifecycle=SETUP_CLOSED;
    if(p.lots > 0)
      {
       double closeLots = p.lots * m_partialFraction;
