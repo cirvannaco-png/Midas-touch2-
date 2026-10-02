@@ -608,7 +608,7 @@ double CScoringEngine::CalculateConfidence(bool forBuy)
    if(m_requireChaseFilter && ind.bosBarIndex >= 0 && m_bosCtx != NULL)
      {
       double price = CurrentPrice();
-      double atr = m_bosCtx.candles.GetATR(0);
+      double atr = m_bosCtx.candles.GetATR(1);
       if(price > 0 && atr > 0)
         {
          double chaseDist = forBuy ? (price - ind.bosClosePrice) : (ind.bosClosePrice - price);
@@ -808,7 +808,7 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.htf_ob_confluence = (OBScore(forBuy) > 0.0);
    if(m_htfObCtx != NULL && price > 0)
      {
-      double atr = m_htfObCtx.candles.GetATR(0);
+      double atr = m_htfObCtx.candles.GetATR(1);
       OrderBlockZone z;
       if(atr > 0 && m_htfObCtx.orderBlock.NearestZone(forBuy ? FVG_BULL : FVG_BEAR, price, atr, m_obDistATRMax, z))
          out.htf_ob_state = z.state;
