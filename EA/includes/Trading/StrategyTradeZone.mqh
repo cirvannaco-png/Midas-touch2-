@@ -422,21 +422,27 @@ TradeSetup CTradeDecision::BuildSMC(bool forBuy,double confidence,const SetupRea
    if(m_hasEntryFVG) entryFVG=m_lastEntryFVG;
    else if(!FindEntryFVG(forBuy?FVG_BULL:FVG_BEAR,entryFVG)) return setup;
 
-   double atr=m_fvgCtx.candles.GetATR(0);
+   double atr=m_fvgCtx.candles.GetATR(1);
    if(atr<=0.0) return setup;
+
+   setup.reasons=reasons;
+   if(setup.reasons.sweep_price<=0.0 || setup.reasons.sweep_time<=0)
+      return setup;
 
    setup.type=forBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
    setup.entry_top=entryFVG.top;
    setup.entry_bottom=entryFVG.bottom;
-   setup.invalidation=forBuy?(entryFVG.bottom-0.05*atr):(entryFVG.top+0.05*atr);
+   // Structural invalidation is tied to the authoritative liquidity sweep,
+   // not merely the entry FVG boundary. This makes the thesis boundary
+   // immutable to later execution management.
+   setup.invalidation=forBuy?(setup.reasons.sweep_price-0.05*atr):(setup.reasons.sweep_price+0.05*atr);
    double entry=forBuy?setup.entry_bottom:setup.entry_top;
-   setup.stop_loss=forBuy?(entryFVG.bottom-m_slBufferATR*atr):(entryFVG.top+m_slBufferATR*atr);
+   setup.stop_loss=forBuy?(setup.invalidation-m_slBufferATR*atr):(setup.invalidation+m_slBufferATR*atr);
    setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),entry,setup.stop_loss,forBuy);
 
    if((forBuy&&setup.stop_loss>=setup.invalidation)||(!forBuy&&setup.stop_loss<=setup.invalidation))
       return setup;
 
-   setup.reasons=reasons;
    setup.reasons.invalidation_distance_atr=MathAbs(entry-setup.invalidation)/atr;
 
    CTargetSelector::AssignTargets(setup,m_liqCtx,m_priceRef.Symbol(),atr,entry);
