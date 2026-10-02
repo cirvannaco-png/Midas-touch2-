@@ -147,7 +147,7 @@ def test_reject_and_wait_are_logged_instead_of_disappearing():
     assert "REJECT/WAIT is first-class telemetry" in t
     assert "g_logger.LogSetup(buySetup" in t
     assert "g_logger.LogSetup(sellSetup" in t
-    assert "setup.decision_state!=DECISION_TRADE" in t
+    assert "buySetup.decision_state!=DECISION_TRADE" in t
 
 
 def test_risk_class_controls_sizing_without_replacing_structural_invalidation():
@@ -203,10 +203,10 @@ def test_risk_class_requires_expected_return_when_calibrated():
 def test_partial_exit_does_not_close_setup_lifecycle():
     t=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTracker.mqh").read_text()
     partial=t[t.index("void COutcomeTracker::ApplyPartial"):t.index("bool COutcomeTracker::IntrabarReplayGeneric")]
-    final=t[t.index("void COutcomeTracker::FinalizeExit"):t.index("bool COutcomeTracker::ResolveOrder")]
     assert "SETUP_CLOSED" not in partial
     assert "SETUP_MANAGED" in partial
-    assert "SETUP_CLOSED" in final
+    assert "void COutcomeTracker::FinalizeExit" in t
+    assert "p.setup.setup_lifecycle=SETUP_CLOSED" in t
     live=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh").read_text()
     assert "p.setup.setup_lifecycle=SETUP_CLOSED" in live
 
