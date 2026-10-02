@@ -54,6 +54,8 @@ struct InducementResult
    int liquidityAgeBars;
    double sweepPenetrationATR;
    double sweepRejectionRatio;
+   double sweepPrice;
+   datetime sweepTime;
    double sweepShapeScore;
    bool sweepFollowThrough;
    int sweepFollowThroughBarIndex;
@@ -88,7 +90,7 @@ struct SetupReasons {
    // Structural provenance and hierarchical decision telemetry.
    ENUM_INDUCEMENT_STRUCTURE inducement_structure_type; double liquidity_pool_price; int liquidity_pool_near_bar_index; int liquidity_pool_far_bar_index;
    int liquidity_pool_bar_span; double liquidity_pool_spacing_atr; int liquidity_age_bars; double sweep_penetration_atr; double sweep_rejection_ratio;
-   double sweep_shape_score; bool sweep_follow_through; int sweep_follow_through_bar_index; double displacement_atr; double displacement_body_ratio; double bos_distance_atr; datetime bos_time;
+   double sweep_shape_score; double sweep_price; datetime sweep_time; bool sweep_follow_through; int sweep_follow_through_bar_index; double displacement_atr; double displacement_body_ratio; double bos_distance_atr; datetime bos_time;
    ENUM_FVG_STATE fvg_state; int fvg_age_bars; double fvg_distance_atr; bool fvg_causal; int fvg_bos_age_gap; int bos_age_bars;
    double invalidation_distance_atr;
    ENUM_STRUCTURAL_STATE structural_state; ENUM_STRUCTURE_STAGE structural_stage; double structural_score; string structural_reason;
