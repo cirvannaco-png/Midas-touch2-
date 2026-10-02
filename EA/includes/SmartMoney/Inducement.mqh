@@ -509,6 +509,9 @@ InducementResult CInducement::Validate(bool forBuy)
    // time decay on how stale the confirmed setup already is.
    double bosStrength = BOSStrength(bosBarIdx, minorOpp, forBuy);
    r.bosStrength = bosStrength;
+   double bosATR=m_candles.GetATR(bosBarIdx);
+   r.bosDistanceATR=(bosATR>0.0 ? MathAbs(m_candles.GetCandle(bosBarIdx).close-minorOpp)/bosATR : 0.0);
+   r.bosTime=m_candles.GetCandle(bosBarIdx).time;
    r.bosScore = 20.0 * MathMax(bosStrength, 0.15);
    r.barsSinceBOS = bosBarIdx;
    r.bosBarIndex = bosBarIdx;
