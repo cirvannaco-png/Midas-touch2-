@@ -211,10 +211,10 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"Config.mqh missing decision architecture enum: {token}")
     if "FVG_INVALIDATED" not in fvg or "cd.close < zone.bottom" not in fvg or "cd.close > zone.top" not in fvg:
         errors.append("FVG lifecycle is missing symmetric adverse-close invalidation")
-    for token in ("ENUM_LIQUIDITY_SCOPE", "ENUM_LIQUIDITY_ARCHETYPE", "SETUP_FILLED", "SETUP_MANAGED", "SETUP_CLOSED"):
+    for token in ("ENUM_LIQUIDITY_SCOPE", "ENUM_LIQUIDITY_ARCHETYPE", "STRUCTURE_STAGE_FVG_NONCAUSAL", "SETUP_FILLED", "SETUP_MANAGED", "SETUP_CLOSED"):
         if token not in config:
             errors.append(f"Config.mqh missing lifecycle/provenance contract: {token}")
-    if "Never compare raw bar indices across those series" not in strategy or "PeriodSeconds(m_fvgCtx.candles.Timeframe())" not in strategy:
+    if "Never compare raw bar indices across those series" not in strategy or "PeriodSeconds(m_fvgCtx.candles.Timeframe())" not in strategy or "zone.time<=ind.bosTime" not in strategy:
         errors.append("StrategyTradeZone.mqh still permits cross-timeframe causal FVG comparison by raw bar index")
     for token in ("RiskClassSizingMultiplier", "RISK_CLASS_HIGH_CONVICTION", "RISK_CLASS_STANDARD", "RISK_CLASS_MINIMAL"):
         if token not in config:
@@ -224,7 +224,7 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     for token in ("g_logger.LogSetup(buySetup", "g_logger.LogSetup(sellSetup", "REJECT/WAIT is first-class telemetry"):
         if token not in ea:
             errors.append(f"EA missing first-class reject/wait telemetry: {token}")
-    for token in ("liquidity_scope", "liquidity_archetype", "bos_distance_atr", "fvg_causal", "invalidation_distance_atr", "regime_id"):
+    for token in ("liquidity_scope", "liquidity_archetype", "bos_distance_atr", "bos_age_bars", "fvg_causal", "invalidation_distance_atr", "regime_id"):
         if token not in publisher:
             errors.append(f"SignalPublisher.mqh missing structural decision provenance field: {token}")
     for token in ("structureType", "liquidityPoolPrice", "sweepPenetrationATR", "sweepRejectionRatio", "sweepFollowThrough", "displacementATR"):
