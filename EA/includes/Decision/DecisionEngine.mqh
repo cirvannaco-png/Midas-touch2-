@@ -120,6 +120,25 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
       return rec;
      }
 
+   // Hierarchical admission is authoritative: a raw confidence score can
+   // never rescue a setup rejected or held by the structural/environment/
+   // execution/risk firewall.
+   if(setup.decision_state == DECISION_REJECT)
+     {
+      rec.reason = StringFormat("setup rejected by decision firewall: %s",setup.reasons.decision_reason);
+      return rec;
+     }
+   if(setup.decision_state == DECISION_WAIT)
+     {
+      rec.reason = StringFormat("setup held by decision firewall: %s",setup.reasons.decision_reason);
+      return rec;
+     }
+   if(setup.decision_state != DECISION_TRADE)
+     {
+      rec.reason = "setup has no explicit TRADE admission state";
+      return rec;
+     }
+
    if(!ValidateSetupGeometry(setup))
      {
       rec.reason = "setup rejected: invalid entry/invalidation/stop/target geometry";
@@ -170,7 +189,9 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
    // CalculateLotSize(halveForReducedRisk) contract. That gives transition
    // and recovery decisions a deterministic 50% sizing reduction without
    // introducing a second, potentially divergent sizing path.
-   rec.reduce_risk = (setup.confidence < m_fullRiskConfidence) || m_environment.ReduceRisk(setup);
+   rec.reduce_risk = (setup.confidence < m_fullRiskConfidence) ||
+                     (setup.risk_class == RISK_CLASS_MINIMAL) ||
+                     m_environment.ReduceRisk(setup);
    rec.valid = true;
    rec.decision_id = m_nextId++;
    rec.reason += StringFormat("%s at confidence %.1f (environment %s)%s", TradePolicyToString(rec.action),
