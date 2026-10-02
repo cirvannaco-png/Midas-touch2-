@@ -141,7 +141,7 @@ bool CValueAreaEngine::BuildTickProfile(double rangeLow, double binSize, double 
 
    int bars = MathMin(m_lookbackBars, m_candles.Total());
    datetime oldest = m_candles.GetCandle(bars - 1).time;
-   datetime newest = m_candles.GetCandle(0).time;
+   datetime newest = m_candles.GetCandle(1).time;
    if(oldest <= 0 || newest <= 0)
       return false;
 
@@ -304,7 +304,7 @@ void CValueAreaEngine::ComputeValueArea(double rangeLow, double binSize, double 
    m_val = rangeLow + lowIdx * binSize;
    m_vah = rangeLow + (highIdx + 1) * binSize;
 
-   double atr = m_candles.GetATR(0);
+   double atr = m_candles.GetATR(1);
    if(hadPrevious && atr > 0.0)
       m_pocMigrationATR = (m_poc - previousPOC) / atr;
    else
@@ -384,7 +384,7 @@ void CValueAreaEngine::Compute(bool forceRecompute)
    if(m_candles == NULL || m_candles.Total() < 10)
       return;
 
-   datetime barTime = m_candles.GetCandle(0).time;
+   datetime barTime = m_candles.GetCandle(1).time;
    if(!forceRecompute && barTime == m_lastBarTime && m_poc != 0.0)
      {
       m_valid = true;
@@ -484,7 +484,7 @@ double CValueAreaEngine::Score(bool forBuy, double price) const
       return MathMax(0.5, MathMin(1.0, 1.0 - 0.5 * distFromPOC / half));
      }
 
-   double atr = m_candles.GetATR(0);
+   double atr = m_candles.GetATR(1);
    if(atr <= 0.0)
       return 0.0;
 
