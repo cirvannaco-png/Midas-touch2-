@@ -245,24 +245,31 @@ void OnTick(){g_monitor.OnTickCheck();g_dailyTradeTarget.OnTick();g_pool.DetectA
    bool sellTrade=sellSetup.active&&sellSetup.decision_state==DECISION_TRADE;
    if(buyTrade||sellTrade)
      {
+      bool haveCandidate=true;
       bool preferBuy=false;
-      if(buyTrade&&!sellTrade) preferBuy=true;
-      else if(sellTrade&&!buyTrade) preferBuy=false;
+      if(buyTrade&&!sellTrade)
+         preferBuy=true;
+      else if(sellTrade&&!buyTrade)
+         preferBuy=false;
       else
         {
          double qualityDelta=buySetup.reasons.quality_score-sellSetup.reasons.quality_score;
-         if(MathAbs(qualityDelta)<InpMinDirectionalAdvantage)
-           {
-            if(buySetup.confidence>sellSetup.confidence) qualityDelta=InpMinDirectionalAdvantage;
-            else if(sellSetup.confidence>buySetup.confidence) qualityDelta=-InpMinDirectionalAdvantage;
-           }
-         preferBuy=(qualityDelta>=InpMinDirectionalAdvantage);
-         if(!preferBuy && qualityDelta>-InpMinDirectionalAdvantage) preferBuy=false;
+         if(InpMinDirectionalAdvantage>0.0 && MathAbs(qualityDelta)<InpMinDirectionalAdvantage)
+            haveCandidate=false;
+         else if(qualityDelta>0.0)
+            preferBuy=true;
+         else if(qualityDelta<0.0)
+            preferBuy=false;
+         else
+            preferBuy=(buySetup.confidence>=sellSetup.confidence); // tie-break only; confidence cannot create a TRADE state.
         }
 
-      TradeSetup candidate=preferBuy?buySetup:sellSetup;
-      if(g_risk.ValidateSetup(candidate,InpMinRiskReward,InpMaxSLDistanceATR,atr))
-         chosen=candidate;
+      if(haveCandidate)
+        {
+         TradeSetup candidate=preferBuy?buySetup:sellSetup;
+         if(g_risk.ValidateSetup(candidate,InpMinRiskReward,InpMaxSLDistanceATR,atr))
+            chosen=candidate;
+        }
      }
 
    if(!chosen.active||chosen.decision_state!=DECISION_TRADE)return;
