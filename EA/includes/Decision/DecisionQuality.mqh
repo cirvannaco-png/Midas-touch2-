@@ -24,6 +24,28 @@ struct TradeQualityResult
    string reason;
   };
 
+class CSetupLifecyclePolicy
+  {
+public:
+   bool CanTransition(ENUM_SETUP_LIFECYCLE current,ENUM_SETUP_LIFECYCLE next) const
+     {
+      if(current==next) return true;
+      if(current==SETUP_DETECTED && next==SETUP_ARMED) return true;
+      if(current==SETUP_ARMED && (next==SETUP_WAITING_RETEST || next==SETUP_RETEST_CONFIRMED || next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
+      if(current==SETUP_WAITING_RETEST && (next==SETUP_RETEST_CONFIRMED || next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
+      if(current==SETUP_RETEST_CONFIRMED && (next==SETUP_ENTRY_ELIGIBLE || next==SETUP_EXPIRED)) return true;
+      if(current==SETUP_ENTRY_ELIGIBLE && next==SETUP_EXPIRED) return true;
+      return false;
+     }
+
+   bool Advance(TradeSetup &setup,ENUM_SETUP_LIFECYCLE next) const
+     {
+      if(!CanTransition(setup.setup_lifecycle,next)) return false;
+      setup.setup_lifecycle=next;
+      return true;
+     }
+  };
+
 class CStructuralValidator
   {
 private:
@@ -230,7 +252,8 @@ public:
       r.decision_reason="";
       r.decision_state=DECISION_REJECT;
       r.risk_class=RISK_CLASS_NONE;
-      r.setup_lifecycle=SETUP_ENTRY_ELIGIBLE;
+      r.setup_lifecycle=SETUP_DETECTED;
+      CSetupLifecyclePolicy lifecycle;
 
       if(isSMC && requireStructuralValidator)
         {
@@ -244,6 +267,7 @@ public:
            {
             r.decision_blocking_layer=FIREWALL_STRUCTURE;
             r.decision_reason=sv.reason;
+            lifecycle.Advance(setup,SETUP_EXPIRED);
             out.layer=FIREWALL_STRUCTURE;
             out.reason=sv.reason;
             return out;
@@ -255,6 +279,7 @@ public:
         {
          r.decision_blocking_layer=FIREWALL_ENVIRONMENT;
          r.decision_reason="historically degraded strategy/environment combination";
+         lifecycle.Advance(setup,SETUP_EXPIRED);
          out.layer=FIREWALL_ENVIRONMENT;
          out.reason=r.decision_reason;
          return out;
@@ -264,6 +289,7 @@ public:
         {
          r.decision_blocking_layer=FIREWALL_EXECUTION;
          r.decision_reason="execution session is not allowed";
+         lifecycle.Advance(setup,SETUP_EXPIRED);
          out.layer=FIREWALL_EXECUTION;
          out.reason=r.decision_reason;
          return out;
@@ -273,6 +299,7 @@ public:
         {
          r.decision_blocking_layer=FIREWALL_EXECUTION;
          r.decision_reason="blocked news window";
+         lifecycle.Advance(setup,SETUP_EXPIRED);
          out.layer=FIREWALL_EXECUTION;
          out.reason=r.decision_reason;
          return out;
@@ -301,6 +328,7 @@ public:
            {
             r.decision_blocking_layer=FIREWALL_STRUCTURE;
             r.decision_reason="structurally degraded setup below the quality threshold";
+            lifecycle.Advance(setup,SETUP_EXPIRED);
             out.layer=FIREWALL_STRUCTURE;
             out.reason=r.decision_reason;
             return out;
@@ -311,6 +339,7 @@ public:
         {
          r.decision_blocking_layer=FIREWALL_RISK;
          r.decision_reason=StringFormat("composite trade quality %.1f below minimum %.1f",r.quality_score,minQualityScore);
+         lifecycle.Advance(setup,SETUP_EXPIRED);
          out.layer=FIREWALL_RISK;
          out.reason=r.decision_reason;
          return out;
@@ -322,11 +351,13 @@ public:
         {
          r.decision_blocking_layer=FIREWALL_RISK;
          r.decision_reason="risk geometry violates immutable structural invalidation";
+         lifecycle.Advance(setup,SETUP_EXPIRED);
          out.layer=FIREWALL_RISK;
          out.reason=r.decision_reason;
          return out;
         }
 
+      lifecycle.Advance(setup,SETUP_ENTRY_ELIGIBLE);
       if(r.quality_score>=85.0) out.risk_class=RISK_CLASS_HIGH_CONVICTION;
       else if(r.quality_score>=72.0) out.riskClass=RISK_CLASS_STANDARD;
       else out.riskClass=RISK_CLASS_MINIMAL;
@@ -348,7 +379,7 @@ public:
       if(!setup.calibration_has_enough_data)
         {
          setup.decision_state=DECISION_WAIT;
-         setup.setup_lifecycle=SETUP_WAITING_RETEST;
+         lifecycle.Advance(setup,SETUP_WAITING_RETEST);
          setup.reasons.decision_state=DECISION_WAIT;
          setup.reasons.decision_blocking_layer=FIREWALL_CALIBRATION;
          setup.reasons.decision_reason="calibration sample is insufficient for an evidence-gated trade";
