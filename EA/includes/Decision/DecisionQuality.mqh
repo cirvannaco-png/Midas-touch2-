@@ -426,16 +426,22 @@ public:
          setup.expected_return_r=(risk>0.0 ? (p*(reward/risk)-(1.0-p)) : 0.0);
          setup.reasons.expected_return_r=setup.expected_return_r;
 
+         bool environmentQualified=(setup.reasons.environment_memory_status=="QUALIFIED" &&
+                                     setup.reasons.environment_memory_sample>0);
+         bool environmentNotDegraded=(setup.reasons.environment_memory_status!="DEGRADED");
+
          if(setup.expected_return_r>0.25 &&
             setup.reasons.quality_score>=90.0 &&
-            setup.calibrated_probability>=minCalibratedProbability+8.0)
+            setup.calibrated_probability>=minCalibratedProbability+8.0 &&
+            environmentQualified)
            {
             setup.risk_class=RISK_CLASS_HIGH_CONVICTION;
             setup.reasons.risk_class=RISK_CLASS_HIGH_CONVICTION;
            }
          else if(setup.expected_return_r>0.0 &&
                  setup.reasons.quality_score>=72.0 &&
-                 setup.calibrated_probability>=minCalibratedProbability)
+                 setup.calibrated_probability>=minCalibratedProbability &&
+                 environmentNotDegraded)
            {
             setup.risk_class=RISK_CLASS_STANDARD;
             setup.reasons.risk_class=RISK_CLASS_STANDARD;
