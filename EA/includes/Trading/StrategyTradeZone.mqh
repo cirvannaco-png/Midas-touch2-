@@ -150,8 +150,8 @@ bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
   {
    ZeroMemory(out);
    if(m_fvgCtx==NULL||m_priceRef==NULL||m_priceRef.Total()==0) return false;
-   double price=m_priceRef.GetCandle(0).close;
-   double atr=m_fvgCtx.candles.GetATR(0);
+   double price=m_priceRef.Total()>1 ? m_priceRef.GetCandle(1).close : 0.0;
+   double atr=m_fvgCtx.candles.GetATR(1);
    if(price<=0||atr<=0) return false;
 
    bool found=false;
@@ -222,7 +222,7 @@ void CTradeDecision::PopulateFVGDiagnostics(bool forBuy,SetupReasons &out)
      }
 
    out.fvg_state=m_lastEntryFVG.state;
-   out.fvg_age_bars=MathMax(0,m_lastEntryFVG.bar_index);
+   out.fvg_age_bars=MathMax(0,iBarShift(m_priceRef.Symbol(),m_fvgCtx.candles.Timeframe(),m_lastEntryFVG.time,false));
    if(m_fvgCtx!=NULL&&m_fvgCtx.candles.Total()>0)
      {
       double price=m_priceRef.GetCandle(0).close;
