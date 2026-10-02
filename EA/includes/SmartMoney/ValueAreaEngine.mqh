@@ -383,6 +383,10 @@ double CValueAreaEngine::ComputeSourceQuality() const
 void CValueAreaEngine::Compute(bool forceRecompute)
   {
    m_valid = false;
+   m_source = VA_SOURCE_UNDEFINED;
+   m_sourceQuality = 0.0;
+   m_state = VA_STATE_UNDEFINED;
+   m_pocMigrationATR = 0.0;
 
    if(m_candles == NULL || m_candles.Total() < 10)
       return;
