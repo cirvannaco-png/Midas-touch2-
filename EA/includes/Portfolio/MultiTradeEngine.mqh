@@ -87,6 +87,16 @@ bool CMultiTradeEngine::Build(const TradeSetup &setup,int availableSlots,MultiTr
      { out.reason="calibrated probability is non-finite or outside [0,100]"; return true; }
    if(!setup.calibration_has_enough_data || setup.calibration_sample<m_minCalibrationSample)
      { out.reason="calibration sample is insufficient for multi-trade scaling"; return true; }
+   if(setup.decision_state!=DECISION_TRADE)
+     { out.reason="multi-trade requires explicit TRADE admission"; return true; }
+   if(setup.risk_class<RISK_CLASS_STANDARD)
+     { out.reason="multi-trade requires at least STANDARD risk class"; return true; }
+   if(setup.expected_return_r<=0.0)
+     { out.reason="multi-trade requires positive calibrated expected return"; return true; }
+   if(setup.reasons.environment_memory_status=="DEGRADED")
+     { out.reason="multi-trade blocked in degraded environment memory state"; return true; }
+   if(setup.reasons.structural_state==STRUCTURE_DEGRADED)
+     { out.reason="multi-trade blocked for structurally degraded setups"; return true; }
    if(setup.confidence<m_minRawConfidence)
      { out.reason="raw confidence below multi-trade floor"; return true; }
    if(setup.calibrated_probability<m_dualProbability)
