@@ -270,7 +270,7 @@ void OnTick(){g_monitor.OnTickCheck();g_dailyTradeTarget.OnTick();g_pool.DetectA
       if(haveCandidate)
         {
          TradeSetup candidate=preferBuy?buySetup:sellSetup;
-         if(g_risk.ValidateSetup(candidate,InpMinRiskReward,InpMaxSLDistanceATR,atr))
+         double decisionATR=(g_chartCtx.candles.Total()>1?g_chartCtx.candles.GetATR(1):atr); if(decisionATR>0.0&&g_risk.ValidateSetup(candidate,InpMinRiskReward,InpMaxSLDistanceATR,decisionATR))
             chosen=candidate;
         }
      }
