@@ -219,8 +219,8 @@ def test_sweep_provenance_and_structural_invalidation_are_anchored():
     assert "out.sweep_price = ind.sweepPrice;" in scoring
     assert "out.sweep_time = ind.sweepTime;" in scoring
     assert "setup.invalidation=forBuy?(setup.reasons.sweep_price-0.05*atr):(setup.reasons.sweep_price+0.05*atr);" in strategy
-    assert "\"sweep_price\":" in publisher
-    assert "\"sweep_time\":" in publisher
+    assert "\\\"sweep_price\\\":" in publisher
+    assert "\\\"sweep_time\\\":" in publisher
     assert '"SweepPrice", "SweepTime"' in logger
 
 
