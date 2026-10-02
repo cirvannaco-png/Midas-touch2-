@@ -398,7 +398,9 @@ public:
          return;
         }
 
-      if(setup.calibrated_probability<minCalibratedProbability)
+      if(requireCalibratedProbability &&
+         setup.calibration_has_enough_data &&
+         setup.calibrated_probability<minCalibratedProbability)
         {
          setup.decision_state=DECISION_REJECT;
          setup.setup_lifecycle=SETUP_EXPIRED;
@@ -410,11 +412,27 @@ public:
          return;
         }
 
-      if(setup.reasons.quality_score>=90.0 && setup.calibrated_probability>=minCalibratedProbability+8.0)
-         {
-          setup.risk_class=RISK_CLASS_HIGH_CONVICTION;
-          setup.reasons.risk_class=RISK_CLASS_HIGH_CONVICTION;
-         }
+      // Calibration shapes risk class whenever sufficient evidence exists.
+      // With the hard admission gate disabled, it cannot create or destroy
+      // the TRADE state; it only changes sizing class.
+      if(setup.calibration_has_enough_data)
+        {
+         if(setup.reasons.quality_score>=90.0 && setup.calibrated_probability>=minCalibratedProbability+8.0)
+           {
+            setup.risk_class=RISK_CLASS_HIGH_CONVICTION;
+            setup.reasons.risk_class=RISK_CLASS_HIGH_CONVICTION;
+           }
+         else if(setup.reasons.quality_score>=72.0 && setup.calibrated_probability>=minCalibratedProbability)
+           {
+            setup.risk_class=RISK_CLASS_STANDARD;
+            setup.reasons.risk_class=RISK_CLASS_STANDARD;
+           }
+         else
+           {
+            setup.risk_class=RISK_CLASS_MINIMAL;
+            setup.reasons.risk_class=RISK_CLASS_MINIMAL;
+           }
+        }
      }
   };
 
