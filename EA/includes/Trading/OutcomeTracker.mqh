@@ -73,7 +73,7 @@ public:
    bool              GetFillState(datetime creation_time, long decisionId, bool &filled, double &fillPrice,
                                   datetime &fillTime, int &barsToFill);
    void              ConfigureConfidenceDecay(double halfLifeBars = 12.0) { m_decayHalfLifeBars = halfLifeBars; }
-   void              ConfigureCalibration(bool enabled, int minSample = 30) { m_calibrationEnabled = enabled; m_calibration.Init(m_symbol, minSample); }
+   void              ConfigureCalibration(bool enabled, int minSample = 30, string schemaVersion = "v1") { m_calibrationEnabled = enabled; m_calibration.Init(m_symbol, minSample, false, schemaVersion); }
    void              ConfigurePublishing(CSignalPublisher* publisher, string weightVersion)
      { m_publisher = publisher; m_weightVersion = weightVersion; }
    double            GetCalibratedProbability(double confidence, int &sampleSizeOut, bool &hasEnoughDataOut) const
