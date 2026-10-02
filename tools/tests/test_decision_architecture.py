@@ -309,3 +309,12 @@ def test_indicator_uses_hierarchical_closed_bar_admission():
     assert "buySetup.decision_state == DECISION_TRADE" in indicator
     assert "sellSetup.decision_state == DECISION_TRADE" in indicator
     assert "reasons.quality_score" in indicator
+
+
+def test_value_area_profile_is_closed_bar_only():
+    value_area = read("EA/includes/SmartMoney/ValueAreaEngine.mqh")
+    assert "GetCandle(0)" not in value_area
+    assert "GetATR(0)" not in value_area
+    assert "GetCandle(1)" in value_area
+    assert "GetATR(1)" in value_area
+    assert "TimeCurrent()" not in value_area
