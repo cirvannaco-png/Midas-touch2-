@@ -180,6 +180,14 @@ def test_structural_validator_requires_complete_provenance():
     assert "r.fvg_distance_atr>2.0" in quality
 
 
+def test_structural_degraded_smc_is_blocked_before_later_firewalls():
+    quality = read("EA/includes/Decision/DecisionQuality.mqh")
+    assert "if(sv.state==STRUCTURE_INVALID || sv.state==STRUCTURE_DEGRADED)" in quality
+    assert "full structural validity is required" in quality
+    # The old quality-score escape hatch must not remain after the validator.
+    assert 'r.decision_reason="structurally degraded setup below the quality threshold";' not in quality
+
+
 def test_multi_trade_is_downstream_from_decision_risk():
     multi = read("EA/includes/Portfolio/MultiTradeEngine.mqh")
     assert "setup.decision_state!=DECISION_TRADE" in multi
