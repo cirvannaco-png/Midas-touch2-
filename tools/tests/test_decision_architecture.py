@@ -85,6 +85,33 @@ def test_structural_provenance_and_fvg_lifecycle_are_present():
     assert "STRUCTURE_STAGE_FVG_NONCAUSAL" in read("EA/includes/Decision/DecisionQuality.mqh")
 
 
+def test_sweep_followthrough_thresholds_are_separate_and_default_preserving():
+    inducement = read("EA/includes/SmartMoney/Inducement.mqh")
+    scoring = read("EA/includes/Analysis/Scoring.mqh")
+    ea = read("EA/MedisTouch_v2.8.mq5")
+
+    assert "m_followThroughATRMult" in inducement
+    assert "m_followThroughBodyRatio" in inducement
+    assert "IsDisplacementBarWithThresholds" in inducement
+    assert "m_followThroughATRMult(1.2)" in inducement
+    assert "m_followThroughBodyRatio(0.6)" in inducement
+    assert "m_followThroughATRMult, m_followThroughBodyRatio" in inducement
+
+    assert "followThroughATRMult = 0.0" in inducement
+    assert "followThroughBodyRatio = -1.0" in inducement
+    assert "followThroughATRMult = 0.0" in scoring
+    assert "followThroughBodyRatio = -1.0" in scoring
+
+    assert "InpSweepFollowThroughATRMult=1.2" in ea
+    assert "InpSweepFollowThroughBodyRatio=0.6" in ea
+    assert "InpSweepFollowThroughATRMult,InpSweepFollowThroughBodyRatio" in ea
+
+    # The new controls are a behavior-preserving separation of thresholds,
+    # not an unconditional relaxation of the production gate.
+    assert "followThroughATRMult > 0.0 ? followThroughATRMult : m_impulseATRMult" in inducement
+    assert "followThroughBodyRatio >= 0.0" in inducement
+
+
 def test_mae_mfe_timing_and_versioned_calibration_are_present():
     live = read("EA/includes/Trading/OutcomeTrackerLive.mqh")
     backtest = read("EA/includes/Trading/OutcomeTracker.mqh")
