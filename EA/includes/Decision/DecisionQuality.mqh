@@ -345,22 +345,6 @@ public:
             lifecycle.Advance(setup,SETUP_RETEST_CONFIRMED);
         }
 
-      if(isSMC && r.structural_state==STRUCTURE_DEGRADED)
-        {
-         // Degraded is not universally invalid. Require a stronger composite
-         // quality score so the system abstains without imposing a universal
-         // weak-BOS or weak-sweep ban.
-         if(r.quality_score<MathMax(minQualityScore,72.0))
-           {
-            r.decision_blocking_layer=FIREWALL_STRUCTURE;
-            r.decision_reason="structurally degraded setup below the quality threshold";
-            lifecycle.Advance(setup,SETUP_EXPIRED);
-            out.layer=FIREWALL_STRUCTURE;
-            out.reason=r.decision_reason;
-            return out;
-           }
-        }
-
       if(r.quality_score<minQualityScore)
         {
          r.decision_blocking_layer=FIREWALL_RISK;
