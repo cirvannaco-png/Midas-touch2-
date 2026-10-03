@@ -253,7 +253,8 @@ public:
                                int degradedMinSample,
                                double minQualityScore,
                                double maxExecutionSpreadPoints,
-                               bool requireCausalFVG) const
+                               bool requireCausalFVG,
+                               bool requireFullyValidSMC) const
      {
       TradeQualityResult out;
       out.decision=DECISION_REJECT;
@@ -280,7 +281,8 @@ public:
          r.structural_stage=sv.stage;
          r.structural_score=sv.score;
          r.structural_reason=sv.reason;
-         if(sv.state==STRUCTURE_INVALID || sv.state==STRUCTURE_DEGRADED)
+         if(sv.state==STRUCTURE_INVALID ||
+            (sv.state==STRUCTURE_DEGRADED && requireFullyValidSMC))
            {
             r.decision_blocking_layer=FIREWALL_STRUCTURE;
             r.decision_reason=(sv.state==STRUCTURE_DEGRADED
@@ -343,6 +345,23 @@ public:
          lifecycle.Advance(setup,SETUP_ARMED);
          if(r.fvg_state==FVG_TESTED)
             lifecycle.Advance(setup,SETUP_RETEST_CONFIRMED);
+        }
+
+      if(isSMC && r.structural_state==STRUCTURE_DEGRADED && !requireFullyValidSMC)
+        {
+         // Legacy research mode: degraded structure may still trade only when
+         // the composite quality threshold is strong enough. The strict mode
+         // above is the promotion candidate that makes full structure a hard
+         // prerequisite.
+         if(r.quality_score<MathMax(minQualityScore,72.0))
+           {
+            r.decision_blocking_layer=FIREWALL_STRUCTURE;
+            r.decision_reason="structurally degraded setup below the quality threshold";
+            lifecycle.Advance(setup,SETUP_EXPIRED);
+            out.layer=FIREWALL_STRUCTURE;
+            out.reason=r.decision_reason;
+            return out;
+           }
         }
 
       if(r.quality_score<minQualityScore)
