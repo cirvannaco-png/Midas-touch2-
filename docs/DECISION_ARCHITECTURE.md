@@ -136,6 +136,19 @@ Calibration data is persisted under a versioned schema filename so a strategy/mo
 
 The evidence-gated calibration decision is intentionally optional until sufficient locked-OOS and MT5 evidence exists.
 
+## Sweep follow-through displacement hardening
+
+The SMC chain distinguishes the initial impulse from the displacement that should follow an internal liquidity sweep.
+
+The production detector now exposes separate thresholds for these two events:
+
+- `InpImpulseATRMult` / `InpImpulseBodyRatio` govern the initial impulse;
+- `InpSweepFollowThroughATRMult` / `InpSweepFollowThroughBodyRatio` govern the post-sweep follow-through bar.
+
+The v2.16 controls default to the existing `1.2 ATR` and `0.60 body-ratio` values, so adding the separation does not change production behavior by itself.
+
+This separation exists for controlled ablation. A post-sweep micro-displacement can be materially smaller than the initial impulse; however, relaxing the thresholds is a behavior change and must not be promoted from a single backtest. Promotion requires multi-period locked OOS evidence, adequate trade-count retention, outcome attribution, and MetaEditor/MT5 Strategy Tester parity.
+
 ## Strict structural-validity research gate
 
 The production validator can distinguish a complete SMC chain from a chain that is structurally complete but degraded in quality. The optional InpRequireSMCStructuralValidity gate treats STRUCTURE_DEGRADED as a hard structural rejection, so later score, environment, or calibration evidence cannot rescue it.
