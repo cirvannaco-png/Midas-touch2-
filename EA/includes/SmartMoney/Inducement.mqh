@@ -31,13 +31,20 @@ class CInducement
 private:
    CCandleData*      m_candles;
    int               m_lookbackBars;
-   double            m_impulseATRMult;   // min (bar range / ATR) to qualify as a displacement bar
-   double            m_impulseBodyRatio; // min body/range ratio for a displacement bar
+   double            m_impulseATRMult;   // min (bar range / ATR) for the initial impulse displacement
+   double            m_impulseBodyRatio; // min body/range ratio for the initial impulse displacement
+   // v2.16: sweep follow-through is a separate displacement event. It may
+   // legitimately be smaller than the initial impulse, so its thresholds are
+   // configurable independently. Defaults match the impulse thresholds to
+   // preserve existing behavior until the ablation is validated.
+   double            m_followThroughATRMult;
+   double            m_followThroughBodyRatio;
    double            m_equalTolATR;      // tolerance band for "equal" highs/lows, as a fraction of ATR
    int               m_maxLegExtend;     // how many bars a leg can be extended outward while still qualifying
    bool              m_allowSingleSwingStructure;
 
    bool              IsDisplacementBar(int idx, bool bullish);
+   bool              IsDisplacementBarWithThresholds(int idx, bool bullish, double atrMult, double bodyRatio);
    bool              FindImpulse(bool bullish, ImpulseLeg &leg);
    bool              FindMinorSwing(int idx, bool wantHigh); // local 1-bar fractal
    bool              FindEqualPair(bool wantLows, int scanFrom, int scanTo, double atr,
@@ -67,12 +74,15 @@ public:
    // a sub-B-grade or fully-decayed setup gets hard-rejected is gated.
    void              ConfigureQualityGates(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
                                             bool requireFreshSetup, int maxBarsSinceBOS = 5,
-                                            bool allowSingleSwingStructure = false);
+                                            bool allowSingleSwingStructure = false,
+                                            double followThroughATRMult = 0.0,
+                                            double followThroughBodyRatio = -1.0);
    InducementResult  Validate(bool forBuy);
   };
 //+------------------------------------------------------------------+
 CInducement::CInducement() : m_candles(NULL), m_lookbackBars(40), m_impulseATRMult(1.2),
-                              m_impulseBodyRatio(0.6), m_equalTolATR(0.2), m_maxLegExtend(10),
+                              m_impulseBodyRatio(0.6), m_followThroughATRMult(1.2),
+                              m_followThroughBodyRatio(0.6), m_equalTolATR(0.2), m_maxLegExtend(10),
                               m_requireMinSweepGrade(false), m_minSweepGrade(SWEEP_GRADE_B),
                               m_requireFreshSetup(false), m_maxBarsSinceBOS(5), m_allowSingleSwingStructure(false) {}
 //+------------------------------------------------------------------+
@@ -89,16 +99,31 @@ void CInducement::Init(CCandleData* candles, int lookbackBars, double impulseATR
 //+------------------------------------------------------------------+
 void CInducement::ConfigureQualityGates(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
                                         bool requireFreshSetup, int maxBarsSinceBOS,
-                                        bool allowSingleSwingStructure)
+                                        bool allowSingleSwingStructure,
+                                        double followThroughATRMult,
+                                        double followThroughBodyRatio)
   {
    m_requireMinSweepGrade = requireMinSweepGrade;
    m_minSweepGrade = minSweepGrade;
    m_requireFreshSetup = requireFreshSetup;
    m_maxBarsSinceBOS = MathMax(1, maxBarsSinceBOS);
    m_allowSingleSwingStructure = allowSingleSwingStructure;
+   // Keep the research control behavior-preserving when omitted. A zero ATR
+   // threshold or negative body-ratio sentinel means "use the impulse value".
+   m_followThroughATRMult = (followThroughATRMult > 0.0 ? followThroughATRMult : m_impulseATRMult);
+   m_followThroughBodyRatio = (followThroughBodyRatio >= 0.0 ? MathMin(followThroughBodyRatio,1.0) : m_impulseBodyRatio);
   }
 //+------------------------------------------------------------------+
 bool CInducement::IsDisplacementBar(int idx, bool bullish)
+  {
+   return IsDisplacementBarWithThresholds(idx, bullish, m_impulseATRMult, m_impulseBodyRatio);
+  }
+//+------------------------------------------------------------------+
+// v2.16: shared displacement test with caller-specific thresholds.
+// Initial-impulse detection keeps the historical thresholds; sweep
+// follow-through can use its own thresholds because it validates a
+// different event in the SMC chain.
+bool CInducement::IsDisplacementBarWithThresholds(int idx, bool bullish, double atrMult, double bodyRatio)
   {
    if(m_candles == NULL) return false;
    CandleData cd = m_candles.GetCandle(idx);
@@ -107,13 +132,13 @@ bool CInducement::IsDisplacementBar(int idx, bool bullish)
    double range = cd.high - cd.low;
    if(range <= 0) return false;
    double body = MathAbs(cd.close - cd.open);
-   double bodyRatio = body / range;
+   double actualBodyRatio = body / range;
    bool directional = bullish ? (cd.close > cd.open) : (cd.close < cd.open);
    if(!directional) return false;
-   if(range / atr < m_impulseATRMult) return false;
-   if(bodyRatio < m_impulseBodyRatio) return false;
+   if(range / atr < atrMult) return false;
+   if(actualBodyRatio < bodyRatio) return false;
    // Opposite wick should be small — a big rejection wick against the
-   // move undercuts the "displacement" read even if the body qualifies.
+   // move undercuts the displacement read even if the body qualifies.
    double oppWick = bullish ? (cd.open - cd.low) : (cd.high - cd.open);
    if(oppWick > 0.3 * range) return false;
    return true;
@@ -290,7 +315,7 @@ ENUM_SWEEP_GRADE CInducement::GradeSweep(int sweepBarIdx, bool forBuy, double po
    else
       shapeScore = MathMax(0.0, 1.0 - MathAbs(penetrationATR - 0.30) / 0.60);
 
-   bool followThrough = (sweepBarIdx - 1 >= 1) ? IsDisplacementBar(sweepBarIdx - 1, forBuy) : false;
+   bool followThrough = (sweepBarIdx - 1 >= 1) ? IsDisplacementBarWithThresholds(sweepBarIdx - 1, forBuy, m_followThroughATRMult, m_followThroughBodyRatio) : false;
 
    gradeScore = MathMax(0.0, MathMin(0.4 * rejectionRatio + 0.3 * shapeScore + 0.3 * (followThrough ? 1.0 : 0.0), 1.0));
 
