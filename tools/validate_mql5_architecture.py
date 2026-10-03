@@ -301,7 +301,7 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     for token in ("setup.decision_state == DECISION_REJECT", "setup.decision_state == DECISION_WAIT", "setup.decision_state != DECISION_TRADE"):
         if token not in decision_engine:
             errors.append(f"DecisionEngine.mqh missing authoritative decision-state guard: {token}")
-    for token in ("InpEnableDecisionArchitecture", "InpEnableStructuralValidator", "InpEnableEnvironmentHardBlock", "InpRequireCausalFVG", "InpMinQualityScore", "InpDecisionRequireCalibration"):
+    for token in ("InpEnableDecisionArchitecture", "InpEnableStructuralValidator", "InpRequireSMCStructuralValidity", "InpEnableEnvironmentHardBlock", "InpRequireCausalFVG", "InpMinQualityScore", "InpDecisionRequireCalibration"):
         if token not in ea:
             errors.append(f"MedisTouch_v2.8.mq5 missing decision architecture input: {token}")
     if "g_decision.ConfigureDecisionArchitecture" not in ea:
