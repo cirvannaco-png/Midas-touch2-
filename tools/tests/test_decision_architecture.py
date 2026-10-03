@@ -96,6 +96,7 @@ def test_sweep_followthrough_thresholds_are_separate_and_default_preserving():
     assert "m_followThroughATRMult(1.2)" in inducement
     assert "m_followThroughBodyRatio(0.6)" in inducement
     assert "m_followThroughATRMult, m_followThroughBodyRatio" in inducement
+    assert "r.sweepFollowThrough=(sweepBarIdx-1>=1 ? IsDisplacementBarWithThresholds" in inducement
 
     assert "followThroughATRMult = 0.0" in inducement
     assert "followThroughBodyRatio = -1.0" in inducement
