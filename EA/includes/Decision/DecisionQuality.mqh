@@ -168,8 +168,10 @@ public:
       double invalidation=(r.invalidation_distance_atr>0.0)?MathMin(1.0,r.invalidation_distance_atr/2.0):1.0;
 
       out.score=100.0*(0.20*sweep+0.25*bos+0.15*displacement+0.15*fvgQuality+0.15*location+0.10*invalidation);
-      bool degraded=(!r.fvg_causal || r.sweep_grade==SWEEP_GRADE_C || r.bos_strength<0.50 ||
-                      r.fvg_state==FVG_TESTED || r.time_decay<0.55);
+      // A tested FVG is a legitimate retest lifecycle state. Its quality
+      // is already discounted in the score; it is not structurally invalid.
+      bool degraded=(!r.fvg_causal || r.sweep_grade==SWEEP_GRADE_C ||
+                      r.bos_strength<0.50 || r.time_decay<0.55);
       if(degraded)
         {
          out.state=STRUCTURE_DEGRADED;
