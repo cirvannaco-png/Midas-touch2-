@@ -136,6 +136,12 @@ Calibration data is persisted under a versioned schema filename so a strategy/mo
 
 The evidence-gated calibration decision is intentionally optional until sufficient locked-OOS and MT5 evidence exists.
 
+## Strict structural-validity research gate
+
+The production validator can distinguish a complete SMC chain from a chain that is structurally complete but degraded in quality. The optional InpRequireSMCStructuralValidity gate treats STRUCTURE_DEGRADED as a hard structural rejection, so later score, environment, or calibration evidence cannot rescue it.
+
+This gate defaults **OFF** on the research branch. Promotion requires a baseline-versus-candidate comparison showing acceptable trade-count retention and improvement in loss containment and/or expectancy across locked unseen periods, followed by MetaEditor and MT5 Strategy Tester parity validation.
+
 ## Empirical gates intentionally OFF by default
 
 The following remain feature-gated because architecture correctness is not proof of trading edge:
