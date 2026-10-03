@@ -180,6 +180,17 @@ def test_structural_validator_requires_complete_provenance():
     assert "r.fvg_distance_atr>2.0" in quality
 
 
+def test_tested_fvg_remains_a_valid_retest_state():
+    quality = read("EA/includes/Decision/DecisionQuality.mqh")
+    # FVG_TESTED is accepted by the freshness stage and mapped to
+    # RETEST_CONFIRMED; strict structural admission must not relabel that
+    # legitimate lifecycle state as degraded.
+    assert "bool freshOrTested=(r.fvg_state==FVG_FRESH || r.fvg_state==FVG_TESTED);" in quality
+    degraded_start = quality.index("bool degraded=")
+    degraded_end = quality.index("if(degraded)", degraded_start)
+    assert "FVG_TESTED" not in quality[degraded_start:degraded_end]
+
+
 def test_strict_smc_structural_validity_gate_is_feature_flagged():
     quality = read("EA/includes/Decision/DecisionQuality.mqh")
     strategy = read("EA/includes/Trading/StrategyTradeZone.mqh")
