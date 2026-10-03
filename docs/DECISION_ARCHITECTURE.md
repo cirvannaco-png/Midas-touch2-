@@ -146,6 +146,7 @@ This gate defaults **OFF** on the research branch. Promotion requires a baseline
 
 The following remain feature-gated because architecture correctness is not proof of trading edge:
 
+- strict SMC structural-validity hard gate (InpRequireSMCStructuralValidity);
 - environment hard block;
 - causal-FVG hard requirement;
 - single-swing inducement fallback;
