@@ -41,6 +41,7 @@ private:
    bool   m_enableStructuralValidator;
    bool   m_enableEnvironmentHardBlock;
    bool   m_requireCausalFVG;
+   bool   m_requireFullyValidSMC;
    int    m_causalFVGMaxBars;
    double m_minQualityScore;
    double m_maxExecutionSpreadPoints;
@@ -68,7 +69,8 @@ public:
    void ConfigureDecisionArchitecture(bool enabled=true,bool enableStructuralValidator=true,
                                       bool enableEnvironmentHardBlock=false,bool requireCausalFVG=false,
                                       int causalFVGMaxBars=12,double minQualityScore=60.0,
-                                      double maxExecutionSpreadPoints=0.0);
+                                      double maxExecutionSpreadPoints=0.0,
+                                      bool requireFullyValidSMC=false);
 
    void FinalizeWithCalibration(TradeSetup &setup,bool requireCalibratedProbability,
                                 double minCalibratedProbability);
@@ -98,6 +100,7 @@ CTradeDecision::CTradeDecision()
    m_enableStructuralValidator=true;
    m_enableEnvironmentHardBlock=false;
    m_requireCausalFVG=false;
+   m_requireFullyValidSMC=false;
    m_causalFVGMaxBars=12;
    m_minQualityScore=60.0;
    m_maxExecutionSpreadPoints=0.0;
@@ -123,12 +126,14 @@ void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* l
 void CTradeDecision::ConfigureDecisionArchitecture(bool enabled,bool enableStructuralValidator,
                                                     bool enableEnvironmentHardBlock,bool requireCausalFVG,
                                                     int causalFVGMaxBars,double minQualityScore,
-                                                    double maxExecutionSpreadPoints)
+                                                    double maxExecutionSpreadPoints,
+                                                    bool requireFullyValidSMC)
   {
    m_enableDecisionArchitecture=enabled;
    m_enableStructuralValidator=enableStructuralValidator;
    m_enableEnvironmentHardBlock=enableEnvironmentHardBlock;
    m_requireCausalFVG=requireCausalFVG;
+   m_requireFullyValidSMC=requireFullyValidSMC;
    m_causalFVGMaxBars=MathMax(1,causalFVGMaxBars);
    m_minQualityScore=MathMax(0.0,MathMin(100.0,minQualityScore));
    m_maxExecutionSpreadPoints=MathMax(0.0,maxExecutionSpreadPoints);
