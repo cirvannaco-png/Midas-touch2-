@@ -489,7 +489,10 @@ InducementResult CInducement::Validate(bool forBuy)
                          ? 1.0
                          : MathMax(0.0,1.0-MathAbs(r.sweepPenetrationATR-0.30)/0.60);
      }
-   r.sweepFollowThrough=(sweepBarIdx-1>=1 ? IsDisplacementBar(sweepBarIdx-1,forBuy) : false);
+   // Keep the structural provenance field identical to GradeSweep():
+   // the follow-through thresholds are a single configurable event definition.
+   r.sweepFollowThrough=(sweepBarIdx-1>=1 ? IsDisplacementBarWithThresholds(sweepBarIdx-1,forBuy,
+                                                                          m_followThroughATRMult,m_followThroughBodyRatio) : false);
    r.sweepFollowThroughBarIndex=(r.sweepFollowThrough ? sweepBarIdx-1 : -1);
    // Sweep quality now WEIGHTS the 25-pt sweep score instead of it being
    // flat 0-or-25 — a barely-qualifying C sweep and a decisive A sweep no
