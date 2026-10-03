@@ -306,6 +306,19 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
             errors.append(f"MedisTouch_v2.8.mq5 missing decision architecture input: {token}")
     if "g_decision.ConfigureDecisionArchitecture" not in ea:
         errors.append("MedisTouch_v2.8.mq5 missing DecisionArchitecture configuration wiring")
+    for token in (
+        "InpSweepFollowThroughATRMult=1.2",
+        "InpSweepFollowThroughBodyRatio=0.6",
+        "g_scoring.ConfigureSweepQuality",
+        "followThroughATRMult",
+        "followThroughBodyRatio",
+    ):
+        if token not in ea and token not in inducement and token not in scoring:
+            errors.append(f"Missing sweep follow-through threshold wiring/token: {token}")
+    if "IsDisplacementBarWithThresholds" not in inducement:
+        errors.append("Inducement.mqh does not expose the shared thresholded displacement helper")
+    if "m_followThroughATRMult, m_followThroughBodyRatio" not in inducement:
+        errors.append("Inducement.mqh sweep grading is not using independent follow-through thresholds")
     # Actionable strategy routing must consume only completed bars.
     for file_name, source in (
         ("StrategySetupBuilders.mqh", strategy_builders),
