@@ -26,11 +26,10 @@
 // forcing every bar into one of two buckets a weak signal can't actually
 // support.
 //
-// DIAGNOSTIC ONLY. Nothing reads Classify()'s return value except
-// CSV logging (see SetupReasons.regime in Core/Config.mqh) and, later,
-// the strategy-selection engine this doc argues for — which does not
-// exist yet. No entry filter, confidence calculation, or order path
-// consults this today.
+// REGIME IS AN ACTIVE ROUTING INPUT. Classify() feeds strategy diagnostics
+// and the peer-strategy selection path in StrategyTradeZone. It remains a
+// routing signal rather than an unconditional trade gate: structural,
+// environment, execution, and risk firewalls decide final admission.
 class CRegimeDetector
   {
 private:
