@@ -280,13 +280,15 @@ public:
          r.structural_stage=sv.stage;
          r.structural_score=sv.score;
          r.structural_reason=sv.reason;
-         if(sv.state==STRUCTURE_INVALID)
+         if(sv.state==STRUCTURE_INVALID || sv.state==STRUCTURE_DEGRADED)
            {
             r.decision_blocking_layer=FIREWALL_STRUCTURE;
-            r.decision_reason=sv.reason;
+            r.decision_reason=(sv.state==STRUCTURE_DEGRADED
+                               ? "structural chain contains a degraded component; full structural validity is required"
+                               : sv.reason);
             lifecycle.Advance(setup,SETUP_EXPIRED);
             out.layer=FIREWALL_STRUCTURE;
-            out.reason=sv.reason;
+            out.reason=r.decision_reason;
             return out;
            }
         }
