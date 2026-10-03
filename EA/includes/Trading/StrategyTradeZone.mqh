@@ -500,7 +500,7 @@ bool CTradeDecision::ApplyQualityFirewall(TradeSetup &setup,bool isSMC)
    int degradedMinSample=(m_environmentMemory!=NULL?m_environmentMemory.DegradedMinimumSample():0);
    TradeQualityResult q=firewall.Evaluate(setup,isSMC,m_enableStructuralValidator,m_enableEnvironmentHardBlock,
                                           degradedMinSample,m_minQualityScore,m_maxExecutionSpreadPoints,
-                                          m_requireCausalFVG);
+                                          m_requireCausalFVG,m_requireFullyValidSMC);
    setup.decision_state=q.decision;
    setup.risk_class=q.riskClass;
    setup.setup_lifecycle=(q.decision==DECISION_WAIT?SETUP_WAITING_RETEST:(q.decision==DECISION_TRADE?SETUP_ENTRY_ELIGIBLE:SETUP_EXPIRED));
