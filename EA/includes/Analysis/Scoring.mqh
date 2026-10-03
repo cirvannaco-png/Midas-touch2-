@@ -228,11 +228,14 @@ public:
    // strategically late before any order is even built. OFF by default,
    // same discipline as every other v2.8/v2.9 gate.
    void              ConfigureChaseFilter(bool requireChaseFilter, double maxChaseDistATR = 0.75);
-   // v2.9 addition — passthrough to CInducement::ConfigureQualityGates().
-   // See that method's comment for the OFF-by-default rationale.
+   // v2.16: initial-impulse and post-sweep displacement are separate events
+   // and therefore get separate thresholds. Defaults preserve the current
+   // behavior; threshold changes remain research controls until OOS-validated.
    void              ConfigureSweepQuality(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
                                            bool requireFreshSetup, int maxBarsSinceBOS = 5,
-                                           bool allowSingleSwingStructure = false);
+                                           bool allowSingleSwingStructure = false,
+                                           double followThroughATRMult = 0.0,
+                                           double followThroughBodyRatio = -1.0);
    // v2.9. warnMinutesBefore/After must be >= the EA's hard-block window
    // (InpNewsMinutesBefore/After) or they're clamped up to it inside
    // CNewsFilter::ConfigureWarningWindow() — WARNING is defined as a
@@ -442,10 +445,12 @@ void CScoringEngine::ConfigureChaseFilter(bool requireChaseFilter, double maxCha
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureSweepQuality(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
                                            bool requireFreshSetup, int maxBarsSinceBOS,
-                                           bool allowSingleSwingStructure)
+                                           bool allowSingleSwingStructure,
+                                           double followThroughATRMult,
+                                           double followThroughBodyRatio)
   {
    m_inducement.ConfigureQualityGates(requireMinSweepGrade, minSweepGrade, requireFreshSetup, maxBarsSinceBOS,
-                                      allowSingleSwingStructure);
+                                      allowSingleSwingStructure, followThroughATRMult, followThroughBodyRatio);
   }
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureNewsAwareness(CNewsFilter* newsFilter, int warnMinutesBefore,
