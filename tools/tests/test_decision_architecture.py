@@ -180,12 +180,22 @@ def test_structural_validator_requires_complete_provenance():
     assert "r.fvg_distance_atr>2.0" in quality
 
 
-def test_structural_degraded_smc_is_blocked_before_later_firewalls():
+def test_strict_smc_structural_validity_gate_is_feature_flagged():
     quality = read("EA/includes/Decision/DecisionQuality.mqh")
-    assert "if(sv.state==STRUCTURE_INVALID || sv.state==STRUCTURE_DEGRADED)" in quality
-    assert "full structural validity is required" in quality
-    # The old quality-score escape hatch must not remain after the validator.
-    assert 'r.decision_reason="structurally degraded setup below the quality threshold";' not in quality
+    strategy = read("EA/includes/Trading/StrategyTradeZone.mqh")
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    assert "sv.state==STRUCTURE_INVALID" in quality
+    assert "sv.state==STRUCTURE_DEGRADED && requireFullyValidSMC" in quality
+    assert "m_requireFullyValidSMC" in strategy
+    assert "bool requireFullyValidSMC=false" in strategy
+    assert "m_requireFullyValidSMC=requireFullyValidSMC" in strategy
+    assert "m_requireCausalFVG,m_requireFullyValidSMC" in strategy
+    assert "InpRequireSMCStructuralValidity=false" in ea
+    assert "InpMaxExecutionSpreadPoints,InpRequireSMCStructuralValidity" in ea
+    # Baseline behavior remains available for comparison because the research
+    # gate defaults OFF; strict mode is the candidate to validate on MT5 OOS.
+    assert "!requireFullyValidSMC" in quality
+    assert "structurally degraded setup below the quality threshold" in quality
 
 
 def test_multi_trade_is_downstream_from_decision_risk():
