@@ -292,7 +292,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
                // v2.15 diagnostics — same append-only discipline.
                "SelectedStrategy", "SelectedStrategyScore",
                "DecisionState", "BlockingLayer", "DecisionReason", "QualityScore",
-               "StructuralState", "StructuralStage", "Lifecycle", "ExpectedReturnR", "RegimeID");
+               "StructuralState", "StructuralStage", "Lifecycle", "ExpectedReturnR", "RegimeID", "CalibrationLowerBound");
       m_headerWritten = true;
      }
 
@@ -346,7 +346,8 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
             EnumToString(setup.reasons.structural_stage),
             EnumToString(setup.setup_lifecycle),
             DoubleToString(setup.expected_return_r, 3),
-            setup.reasons.regime_id);
+            setup.reasons.regime_id,
+            DoubleToString(setup.calibration_lower_bound, 2));
 
    FileClose(handle);
    return true;
@@ -388,7 +389,7 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
                // v2.15 — same rationale.
                "SelectedStrategy", "SelectedStrategyScore",
                "DecisionState", "BlockingLayer", "DecisionReason", "QualityScore",
-               "StructuralState", "StructuralStage", "Lifecycle", "ExpectedReturnR", "RegimeID");
+               "StructuralState", "StructuralStage", "Lifecycle", "ExpectedReturnR", "RegimeID", "CalibrationLowerBound");
       m_outcomeHeaderWritten = true;
      }
 
@@ -463,7 +464,8 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
             EnumToString(p.setup.reasons.structural_stage),
             EnumToString(p.setup.setup_lifecycle),
             DoubleToString(p.setup.expected_return_r, 3),
-            p.setup.reasons.regime_id);
+            p.setup.reasons.regime_id,
+            DoubleToString(p.setup.calibration_lower_bound, 2));
 
    FileClose(handle);
    return true;
