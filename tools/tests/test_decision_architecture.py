@@ -387,6 +387,14 @@ def test_key_level_candidates_stay_on_the_correct_side():
     assert "if(dist < 0) continue;" in t
     assert "if(dist < 0) dist = 0.0;" not in t
 
+def test_extended_key_levels_use_server_time_for_session_bars():
+    session = read("EA/includes/Core/SessionFilter.mqh")
+    levels = read("EA/includes/SmartMoney/ExtendedKeyLevels.mqh")
+    assert "CurrentSessionStartServer()" in session
+    assert "datetime CSessionFilter::CurrentSessionStartServer()" in session
+    assert "CurrentSessionStartServer()" in levels
+    assert "CurrentSessionStartGMT()" not in levels
+    assert "iTime(m_symbol, PERIOD_W1, 0)" in levels
 def test_structural_validator_fails_closed_on_non_finite_inputs():
     t = read("EA/includes/Decision/DecisionQuality.mqh")
     assert "!MathIsValidNumber(r.liquidity_pool_price)" in t
