@@ -24,6 +24,12 @@ private:
    int                   m_minModifyIntervalSec;
    ulong                 m_lastModifyTickets[];
    datetime              m_lastModifyTimes[];
+   bool                  m_tp1Done[];
+   bool                  m_tp2Done[];
+
+   int    TargetStateIndex(ulong ticket);
+   bool   TargetReached(bool isBuy,double price,double target) const;
+   bool   CloseTargetSlice(int idx,ulong ticket,bool isBuy,double target,double fraction);
 
    double CurrentExitPrice(string symbol,bool isBuy);
    double RMultiple(const TradeDecisionRecord &dec,double entry,double price);
@@ -52,6 +58,8 @@ void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
    m_minModifyIntervalSec=MathMax(0,minModifyIntervalSec);
    ArrayResize(m_lastModifyTickets,0);
    ArrayResize(m_lastModifyTimes,0);
+   ArrayResize(m_tp1Done,0);
+   ArrayResize(m_tp2Done,0);
    m_audit.Init();
 
    DynamicStopConfig cfg;
@@ -104,6 +112,57 @@ void CPositionManager::RecordModification(ulong ticket)
    ArrayResize(m_lastModifyTimes,n+1);
    m_lastModifyTickets[n]=ticket;
    m_lastModifyTimes[n]=TimeCurrent();
+  }
+
+int CPositionManager::TargetStateIndex(ulong ticket)
+  {
+   for(int i=0;i<ArraySize(m_lastModifyTickets);i++)
+      if(m_lastModifyTickets[i]==ticket)
+        return i;
+
+   int n=ArraySize(m_lastModifyTickets);
+   ArrayResize(m_lastModifyTickets,n+1);
+   ArrayResize(m_lastModifyTimes,n+1);
+   ArrayResize(m_tp1Done,n+1);
+   ArrayResize(m_tp2Done,n+1);
+   m_lastModifyTickets[n]=ticket;
+   m_lastModifyTimes[n]=0;
+   m_tp1Done[n]=false;
+   m_tp2Done[n]=false;
+   return n;
+  }
+
+bool CPositionManager::TargetReached(bool isBuy,double price,double target) const
+  {
+   if(price<=0.0 || target<=0.0) return false;
+   return isBuy ? price>=target : price<=target;
+  }
+
+bool CPositionManager::CloseTargetSlice(int idx,ulong ticket,bool isBuy,double target,double fraction)
+  {
+   if(idx<0 || ticket==0 || fraction<=0.0 || m_broker==NULL || m_orders==NULL) return false;
+   TradeDecisionRecord dec=m_orders.DecisionAt(idx);
+   double price=CurrentExitPrice(dec.symbol,isBuy);
+   if(!TargetReached(isBuy,price,target)) return false;
+   if(!PositionSelectByTicket(ticket)) return false;
+
+   double currentVolume=PositionGetDouble(POSITION_VOLUME);
+   double originalVolume=m_orders.VolumeAt(idx);
+   double minVolume=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_MIN);
+   double step=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_STEP);
+   if(currentVolume<=0.0 || originalVolume<=0.0 || minVolume<=0.0) return false;
+
+   double closeVolume=MathMin(currentVolume-minVolume,originalVolume*MathMin(1.0,MathMax(0.0,fraction)));
+   if(step>0.0) closeVolume=MathFloor(closeVolume/step)*step;
+   if(closeVolume<minVolume || closeVolume>=currentVolume) return false;
+
+   if(m_broker.ClosePartial(ticket,closeVolume))
+     {
+      m_orders.TransitionAt(idx,TS_PARTIAL);
+      m_orders.TransitionAt(idx,TS_RUNNER);
+      return true;
+     }
+   return false;
   }
 
 // Return the newest CONFIRMED swing on the opposite side of the position.
@@ -176,15 +235,29 @@ void CPositionManager::OnTick(double currentAtr)
         }
 
       ENUM_TRADE_STATE stateAfterStop=m_orders.StateAt(i);
-      if(stateAfterStop==TS_PROTECTED && r>=m_partialAtR)
+
+      // Research target ladder: TP1 realizes the first slice and TP2 realizes
+      // a second slice, both from the original leg volume. The final TP order
+      // remains attached to the runner. Promotion requires locked OOS evidence.
+      if(InpEnableTargetLadder)
+        {
+         int targetState=TargetStateIndex(ticket);
+         if(!m_tp1Done[targetState] && dec.setup.tp1>0.0 &&
+            CloseTargetSlice(i,ticket,isBuy,dec.setup.tp1,InpTP1PartialFraction))
+            m_tp1Done[targetState]=true;
+         if(!m_tp2Done[targetState] && dec.setup.tp2>0.0 &&
+            CloseTargetSlice(i,ticket,isBuy,dec.setup.tp2,InpTP2PartialFraction))
+            m_tp2Done[targetState]=true;
+        }
+      else if((stateAfterStop==TS_PROTECTED || stateAfterStop==TS_FILLED) && r>=m_partialAtR)
         {
          double vol=m_orders.VolumeAt(i)*m_partialFraction;
          double minVol=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_MIN);
-         if(vol>=minVol && m_broker.ClosePartial(ticket,vol))
+         if(vol>=minVol && vol<PositionGetDouble(POSITION_VOLUME) && m_broker.ClosePartial(ticket,vol))
             m_orders.TransitionAt(i,TS_PARTIAL);
+         if(m_orders.StateAt(i)==TS_PARTIAL)
+            m_orders.TransitionAt(i,TS_RUNNER);
         }
-      if(m_orders.StateAt(i)==TS_PARTIAL)
-         m_orders.TransitionAt(i,TS_RUNNER);
      }
   }
 #endif
