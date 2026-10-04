@@ -118,7 +118,11 @@ int CPositionManager::TargetStateIndex(ulong ticket)
   {
    for(int i=0;i<ArraySize(m_lastModifyTickets);i++)
       if(m_lastModifyTickets[i]==ticket)
-        return i;
+        {
+         if(ArraySize(m_tp1Done)<ArraySize(m_lastModifyTickets)) ArrayResize(m_tp1Done,ArraySize(m_lastModifyTickets));
+         if(ArraySize(m_tp2Done)<ArraySize(m_lastModifyTickets)) ArrayResize(m_tp2Done,ArraySize(m_lastModifyTickets));
+         return i;
+        }
 
    int n=ArraySize(m_lastModifyTickets);
    ArrayResize(m_lastModifyTickets,n+1);
