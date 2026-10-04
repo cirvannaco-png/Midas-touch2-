@@ -347,6 +347,17 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
         if token not in portfolio:
             errors.append(f"PortfolioManager.mqh missing optional correlation exposure contract: {token}")
 
+    session_filter = by_rel.get("includes/Core/SessionFilter.mqh", "")
+    extended_levels = by_rel.get("includes/SmartMoney/ExtendedKeyLevels.mqh", "")
+    if "datetime CSessionFilter::CurrentSessionStartServer()" not in session_filter:
+        errors.append("SessionFilter.mqh missing server-time session boundary contract")
+    if "CurrentSessionStartServer()" not in extended_levels:
+        errors.append("ExtendedKeyLevels.mqh is not using server-time session boundaries")
+    if "CurrentSessionStartGMT()" in extended_levels:
+        errors.append("ExtendedKeyLevels.mqh compares GMT session boundaries directly with server-time bars")
+    if "iTime(m_symbol, PERIOD_W1, 0)" not in extended_levels:
+        errors.append("ExtendedKeyLevels.mqh weekly cache is not anchored to broker W1 bar time")
+    
     keylevel = by_rel.get("includes/Strategies/KeyLevelReaction.mqh", "")
     for token in ("if(forBuy && z.bottom > price) continue;", "if(!forBuy && z.top < price) continue;"):
         if token not in keylevel:
