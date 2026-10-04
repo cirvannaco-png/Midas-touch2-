@@ -300,7 +300,8 @@ void OnTick(){g_monitor.OnTickCheck();g_dailyTradeTarget.OnTick();g_pool.DetectA
       return;
      }
    chosen.calibrated_probability=g_tracker.GetCalibratedProbability(chosen.confidence,chosen.calibration_sample,chosen.calibration_has_enough_data);
-   g_decision.FinalizeWithCalibration(chosen,InpDecisionRequireCalibration,InpMinCalibratedProbability);
+   chosen.calibration_lower_bound=g_tracker.GetConservativeProbability(chosen.confidence);
+   g_decision.FinalizeWithCalibration(chosen,InpDecisionRequireCalibration,InpMinCalibratedProbability,chosen.calibration_lower_bound);
    if(chosen.decision_state!=DECISION_TRADE)
      {
       // WAIT/REJECT is a valid final decision state, but it is never routed
