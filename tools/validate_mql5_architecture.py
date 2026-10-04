@@ -342,6 +342,26 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     for token in ("RollingCorrelation", "ConfigureCorrelationGuard", "m_enableCorrelationGuard"):
         if token not in portfolio:
             errors.append(f"PortfolioManager.mqh missing optional correlation exposure contract: {token}")
+
+    keylevel = by_rel.get("includes/Strategies/KeyLevelReaction.mqh", "")
+    for token in ("if(forBuy && z.bottom > price) continue;", "if(!forBuy && z.top < price) continue;"):
+        if token not in keylevel:
+            errors.append(f"KeyLevelReaction.mqh missing wrong-side zone guard: {token}")
+    if "if(dist < 0) dist = 0.0;" in keylevel:
+        errors.append("KeyLevelReaction.mqh still clamps wrong-side candidates to zero distance")
+    position_manager = by_rel.get("includes/Execution/PositionManager.mqh", "")
+    for token in ("m_tp1Done", "m_tp2Done", "CloseTargetSlice", "InpEnableTargetLadder", "dec.setup.tp1", "dec.setup.tp2"):
+        if token not in position_manager and token != "InpEnableTargetLadder":
+            errors.append(f"PositionManager.mqh missing target-ladder contract: {token}")
+    if "InpEnableTargetLadder=false" not in ea:
+        errors.append("MedisTouch_v2.8.mq5 target-ladder research gate must default OFF")
+    calibration = by_rel.get("includes/Trading/CalibrationEngine.mqh", "")
+    quality_calibration = by_rel.get("includes/Decision/DecisionQuality.mqh", "")
+    for token in ("GetConservativeProbability", "const double z = 1.96"):
+        if token not in calibration:
+            errors.append(f"CalibrationEngine.mqh missing conservative calibration contract: {token}")
+    if "setup.calibration_lower_bound>=minCalibratedProbability" not in quality_calibration:
+        errors.append("DecisionQuality.mqh high-conviction risk class is missing conservative calibration bound")
     for token in ("InpEnableCorrelationGuard=false", "InpCorrelationLookback", "InpCorrelationThreshold", "g_portfolio.ConfigureCorrelationGuard"):
         if token not in ea:
             errors.append(f"MedisTouch_v2.8.mq5 missing portfolio correlation guard wiring: {token}")
