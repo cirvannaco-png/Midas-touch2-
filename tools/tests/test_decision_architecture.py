@@ -315,7 +315,7 @@ def test_backtest_risk_sizing_matches_live_policy():
 
 def test_decision_store_persists_full_state_lineage_append_only():
     store = read("EA/includes/Decision/DecisionStore.mqh")
-    assert "string p[39]" in store
+    assert "string p[40]" in store
     assert "p[25]=IntegerToString((int)rec.setup.decision_state)" in store
     assert "p[26]=IntegerToString((int)rec.setup.reasons.structural_state)" in store
     assert "p[27]=IntegerToString((int)rec.setup.reasons.structural_stage)" in store
@@ -325,6 +325,8 @@ def test_decision_store_persists_full_state_lineage_append_only():
     assert "p[34]=DoubleToString(rec.setup.reasons.quality_score,4)" in store
     assert "p[35]=DoubleToString(rec.setup.expected_return_r,6)" in store
     assert "if(n>=39)" in store
+    assert "p[39]=DoubleToString(rec.setup.calibration_lower_bound,4)" in store
+    assert "if(n>=40) rec.setup.calibration_lower_bound=StringToDouble(f[39]);" in store
 
 
 def test_all_actionable_strategy_routing_is_closed_bar_and_cross_tf_safe():
