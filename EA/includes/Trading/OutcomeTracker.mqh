@@ -80,6 +80,8 @@ public:
      { m_publisher = publisher; m_weightVersion = weightVersion; }
    double            GetCalibratedProbability(double confidence, int &sampleSizeOut, bool &hasEnoughDataOut) const
      { return m_calibration.GetCalibratedProbability(confidence, sampleSizeOut, hasEnoughDataOut); }
+   double            GetConservativeProbability(double confidence) const
+     { return m_calibration.GetConservativeProbability(confidence); }
    const CCalibrationEngine* CalibrationEngine() const { return GetPointer(m_calibration); }
   };
 
