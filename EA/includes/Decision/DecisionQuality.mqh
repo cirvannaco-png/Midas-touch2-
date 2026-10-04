@@ -403,9 +403,11 @@ public:
       return out;
      }
 
-   void FinalizeWithCalibration(TradeSetup &setup,bool requireCalibratedProbability,double minCalibratedProbability) const
+   void FinalizeWithCalibration(TradeSetup &setup,bool requireCalibratedProbability,double minCalibratedProbability,
+                                   double conservativeProbability) const
      {
       if(setup.decision_state==DECISION_REJECT) return;
+      setup.calibration_lower_bound=MathMax(0.0,MathMin(100.0,conservativeProbability));
 
       if(requireCalibratedProbability && !setup.calibration_has_enough_data)
         {
@@ -451,6 +453,7 @@ public:
          if(setup.expected_return_r>0.25 &&
             setup.reasons.quality_score>=90.0 &&
             setup.calibrated_probability>=minCalibratedProbability+8.0 &&
+            setup.calibration_lower_bound>=minCalibratedProbability &&
             environmentQualified)
            {
             setup.risk_class=RISK_CLASS_HIGH_CONVICTION;
