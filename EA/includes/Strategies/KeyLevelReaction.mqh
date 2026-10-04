@@ -194,12 +194,9 @@ bool CKeyLevelEngine::FindNearestLevel(bool forBuy, double atr, double price, do
    if(m_valueArea != NULL && m_valueArea.IsValid())
      {
       double lvl = forBuy ? m_valueArea.VAL() : m_valueArea.VAH();
-      if(forBuy ? (lvl > price) : (lvl < price)) { /* wrong side: not a support/resistance candidate */ }
-      else
-        {
-         double dist = forBuy ? (price - lvl) : (lvl - price);
-         if(dist <= bestDist) { bestDist = dist; levelPrice = lvl; source = LEVEL_VALUE_AREA; found = true; }
-        }
+      if(forBuy ? (lvl > price) : (lvl < price)) continue;
+      double dist = forBuy ? (price - lvl) : (lvl - price);
+      if(dist <= bestDist) { bestDist = dist; levelPrice = lvl; source = LEVEL_VALUE_AREA; found = true; }
       if(dist <= bestDist) { bestDist = dist; levelPrice = lvl; source = LEVEL_VALUE_AREA; found = true; }
      }
    if(m_liquidity != NULL)
