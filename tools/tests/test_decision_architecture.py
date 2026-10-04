@@ -329,6 +329,19 @@ def test_decision_store_persists_full_state_lineage_append_only():
     assert "if(n>=40) rec.setup.calibration_lower_bound=StringToDouble(f[39]);" in store
 
 
+def test_regime_stability_is_closed_bar_and_deduplicated():
+    regime = read("EA/includes/Regime/RegimeDetector.mqh")
+    scoring = read("EA/includes/Analysis/Scoring.mqh")
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    assert "ClassifyStable(datetime referenceTime)" in regime
+    assert "referenceTime==m_lastReferenceTime" in regime
+    assert "return REGIME_TRANSITION;" in regime
+    assert "ConfigureRegimeStability" in scoring
+    assert "GetCandle(1).time" in scoring
+    assert "InpRequireRegimeStability=false" in ea
+    assert "InpRegimeStabilityBars=2" in ea
+
+
 def test_all_actionable_strategy_routing_is_closed_bar_and_cross_tf_safe():
     builders = read("EA/includes/Trading/StrategySetupBuilders.mqh")
     momentum = read("EA/includes/Strategies/MomentumBreakout.mqh")
