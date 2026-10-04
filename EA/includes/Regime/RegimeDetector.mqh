@@ -37,15 +37,41 @@ private:
    CVolatilityRegime*   m_volRegime;
    CMarketPhase*        m_phase;
 
+   bool                 m_requireStability;
+   int                  m_stabilityBars;
+   datetime             m_lastReferenceTime;
+   ENUM_MARKET_REGIME   m_lastRawRegime;
+   ENUM_MARKET_REGIME   m_stableRegime;
+   int                  m_candidateStreak;
+
+   ENUM_MARKET_REGIME   ClassifyRaw();
+
 public:
-                        CRegimeDetector() : m_trend(NULL), m_volRegime(NULL), m_phase(NULL) {}
+                        CRegimeDetector() : m_trend(NULL), m_volRegime(NULL), m_phase(NULL),
+                                                        m_requireStability(false), m_stabilityBars(2),
+                                                        m_lastReferenceTime(0), m_lastRawRegime(REGIME_UNDEFINED),
+                                                        m_stableRegime(REGIME_UNDEFINED), m_candidateStreak(0) {}
    void                 Init(CTrendEngine* trend, CVolatilityRegime* volRegime, CMarketPhase* phase)
      {
       m_trend = trend;
       m_volRegime = volRegime;
       m_phase = phase;
+      m_lastReferenceTime=0;
+      m_lastRawRegime=REGIME_UNDEFINED;
+      m_stableRegime=REGIME_UNDEFINED;
+      m_candidateStreak=0;
+     }
+   void                 ConfigureStability(bool requireStability=false,int stabilityBars=2)
+     {
+      m_requireStability=requireStability;
+      m_stabilityBars=MathMax(1,stabilityBars);
+      m_lastReferenceTime=0;
+      m_lastRawRegime=REGIME_UNDEFINED;
+      m_stableRegime=REGIME_UNDEFINED;
+      m_candidateStreak=0;
      }
    ENUM_MARKET_REGIME   Classify();
+   ENUM_MARKET_REGIME   ClassifyStable(datetime referenceTime);
   };
 //+------------------------------------------------------------------+
 ENUM_MARKET_REGIME CRegimeDetector::Classify()
