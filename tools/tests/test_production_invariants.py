@@ -142,6 +142,18 @@ def test_dynamic_stop_cannot_widen_structural_risk():
     assert "IsTighter(isBuy,candidate,currentSL)" in t
 
 
+def test_structural_quality_fails_closed_on_non_finite_values():
+    t=(ROOT/"EA"/"includes"/"Decision"/"DecisionQuality.mqh").read_text()
+    assert "!MathIsValidNumber(r.liquidity_pool_price)" in t
+    assert "!MathIsValidNumber(r.sweep_penetration_atr)" in t
+    assert "!MathIsValidNumber(r.fvg_distance_atr)" in t
+    assert "if(!MathIsValidNumber(v)) return 0.0;" in t
+
+def test_target_ladder_stage_is_restart_safe():
+    t=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
+    assert "void CPositionManager::SyncTargetStage" in t
+    assert "m_tp1Done[state]=true" in t
+    assert "m_tp2Done[state]=true" in t
 def test_target_ladder_is_explicitly_disabled_by_default():
     t=EA.read_text()
     pm=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
