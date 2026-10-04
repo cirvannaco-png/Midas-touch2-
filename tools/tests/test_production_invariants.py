@@ -142,6 +142,27 @@ def test_dynamic_stop_cannot_widen_structural_risk():
     assert "IsTighter(isBuy,candidate,currentSL)" in t
 
 
+def test_target_ladder_is_explicitly_disabled_by_default():
+    t=EA.read_text()
+    pm=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
+    assert "InpEnableTargetLadder=false" in t
+    assert "if(InpEnableTargetLadder)" in pm
+    assert "CloseTargetSlice" in pm
+    assert "dec.setup.tp1" in pm
+    assert "dec.setup.tp2" in pm
+
+def test_key_level_engine_rejects_wrong_side_levels():
+    t=(ROOT/"EA"/"includes"/"Strategies"/"KeyLevelReaction.mqh").read_text()
+    assert "if(forBuy && z.bottom > price) continue;" in t
+    assert "if(!forBuy && z.top < price) continue;" in t
+    assert "if(dist < 0) continue;" in t
+    assert "if(dist < 0) dist = 0.0;" not in t
+
+def test_high_conviction_uses_calibration_lower_bound():
+    t=(ROOT/"EA"/"includes"/"Decision"/"DecisionQuality.mqh").read_text()
+    c=(ROOT/"EA"/"includes"/"Trading"/"CalibrationEngine.mqh").read_text()
+    assert "setup.calibration_lower_bound>=minCalibratedProbability" in t
+    assert "const double z = 1.96" in c
 def test_reject_and_wait_are_logged_instead_of_disappearing():
     t=EA.read_text()
     assert "REJECT/WAIT is first-class telemetry" in t
