@@ -30,6 +30,7 @@ private:
    int    TargetStateIndex(ulong ticket);
    bool   TargetReached(bool isBuy,double price,double target) const;
    bool   CloseTargetSlice(int idx,ulong ticket,bool isBuy,double target,double fraction);
+   void   SyncTargetStage(int idx,ulong ticket);
 
    double CurrentExitPrice(string symbol,bool isBuy);
    double RMultiple(const TradeDecisionRecord &dec,double entry,double price);
@@ -142,6 +143,38 @@ bool CPositionManager::TargetReached(bool isBuy,double price,double target) cons
    return isBuy ? price>=target : price<=target;
   }
 
+void CPositionManager::SyncTargetStage(int idx,ulong ticket)
+  {
+   if(idx<0 || ticket==0 || !PositionSelectByTicket(ticket)) return;
+   int state=TargetStateIndex(ticket);
+   if(state<0) return;
+
+   TradeDecisionRecord dec=m_orders.DecisionAt(idx);
+   double original=m_orders.VolumeAt(idx);
+   double current=PositionGetDouble(POSITION_VOLUME);
+   if(original<=0.0 || current<=0.0) return;
+
+   double minVol=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_MIN);
+   double step=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_STEP);
+   if(minVol<=0.0) return;
+
+   double first=MathMin(current+original,original*MathMin(1.0,MathMax(0.0,InpTP1PartialFraction)));
+   first=MathMin(original-minVol,first);
+   if(step>0.0) first=MathFloor(first/step)*step;
+
+   if(first>=minVol && current <= original-first+(step>0.0?step*0.5:0.00000001))
+      m_tp1Done[state]=true;
+
+   if(m_tp1Done[state])
+     {
+      double afterFirst=original-first;
+      double second=MathMin(afterFirst-minVol,original*MathMin(1.0,MathMax(0.0,InpTP2PartialFraction)));
+      if(step>0.0) second=MathFloor(second/step)*step;
+      if(second>=minVol && current <= afterFirst-second+(step>0.0?step*0.5:0.00000001))
+         m_tp2Done[state]=true;
+     }
+  }
+
 bool CPositionManager::CloseTargetSlice(int idx,ulong ticket,bool isBuy,double target,double fraction)
   {
    if(idx<0 || ticket==0 || fraction<=0.0 || m_broker==NULL || m_orders==NULL) return false;
@@ -245,6 +278,7 @@ void CPositionManager::OnTick(double currentAtr)
       // remains attached to the runner. Promotion requires locked OOS evidence.
       if(InpEnableTargetLadder)
         {
+         SyncTargetStage(i,ticket);
          int targetState=TargetStateIndex(ticket);
          if(!m_tp1Done[targetState] && dec.setup.tp1>0.0 &&
             CloseTargetSlice(i,ticket,isBuy,dec.setup.tp1,InpTP1PartialFraction))
