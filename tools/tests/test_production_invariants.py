@@ -165,8 +165,10 @@ def test_target_ladder_is_explicitly_disabled_by_default():
     t=EA.read_text()
     pm=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
     assert "InpEnableTargetLadder=false" in t
-    assert "if(InpEnableTargetLadder)" in pm
+    assert "if(m_enableTargetLadder)" in pm
     assert "CloseTargetSlice" in pm
+    assert "m_tp1PartialFraction" in pm
+    assert "m_tp2PartialFraction" in pm
     assert "dec.setup.tp1" in pm
     assert "dec.setup.tp2" in pm
 
