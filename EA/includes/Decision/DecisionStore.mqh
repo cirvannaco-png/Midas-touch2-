@@ -46,13 +46,13 @@ string CDecisionStore::SerializeDecision(const TradeDecisionRecord &rec)
   {
    // v2.19+ append-only contract: keep the historical fields readable while
    // making thesis invalidation and selected strategy durable across restart.
-   string p[39]; p[0]=IntegerToString(rec.decision_id);p[1]=rec.symbol;p[2]=IntegerToString((int)rec.setup.type);p[3]=DoubleToString(rec.setup.entry_top,_Digits);
+   string p[40]; p[0]=IntegerToString(rec.decision_id);p[1]=rec.symbol;p[2]=IntegerToString((int)rec.setup.type);p[3]=DoubleToString(rec.setup.entry_top,_Digits);
    p[4]=DoubleToString(rec.setup.entry_bottom,_Digits);p[5]=DoubleToString(rec.setup.invalidation,_Digits);p[6]=DoubleToString(rec.setup.stop_loss,_Digits);
    p[7]=DoubleToString(rec.setup.tp1,_Digits);p[8]=DoubleToString(rec.setup.tp2,_Digits);p[9]=DoubleToString(rec.setup.final_tp,_Digits);
    p[10]=DoubleToString(rec.setup.confidence,2);p[11]=IntegerToString((long)rec.decided_time);p[12]=IntegerToString((int)rec.action);
    p[13]=rec.reduce_risk?"1":"0";p[14]=IntegerToString((int)rec.setup.reasons.selected_strategy);p[15]=rec.decision_fingerprint;p[16]=rec.decision_schema_version;p[17]=rec.strategy_version;p[18]=rec.model_version;p[19]=rec.calibration_version;p[20]=rec.feature_schema_version;p[21]=rec.environment_schema_version;p[22]=rec.weight_version;p[23]=rec.environment_key;p[24]=IntegerToString((int)rec.timeframe);
-   p[25]=IntegerToString((int)rec.setup.decision_state);p[26]=IntegerToString((int)rec.setup.reasons.structural_state);p[27]=IntegerToString((int)rec.setup.reasons.structural_stage);p[28]=IntegerToString((int)rec.setup.reasons.decision_blocking_layer);p[29]=IntegerToString((int)rec.setup.risk_class);p[30]=IntegerToString((int)rec.setup.setup_lifecycle);p[31]=DoubleToString(rec.setup.calibrated_probability,4);p[32]=IntegerToString(rec.setup.calibration_sample);p[33]=rec.setup.calibration_has_enough_data?"1":"0";p[34]=DoubleToString(rec.setup.reasons.quality_score,4);p[35]=DoubleToString(rec.setup.expected_return_r,6);p[36]=rec.setup.reasons.regime_id;p[37]=rec.setup.reasons.environment_memory_status;p[38]=IntegerToString(rec.setup.reasons.environment_memory_sample);
-   string line=p[0];for(int i=1;i<39;i++)line+=DECISION_CSV_SEP+p[i];return line;
+   p[25]=IntegerToString((int)rec.setup.decision_state);p[26]=IntegerToString((int)rec.setup.reasons.structural_state);p[27]=IntegerToString((int)rec.setup.reasons.structural_stage);p[28]=IntegerToString((int)rec.setup.reasons.decision_blocking_layer);p[29]=IntegerToString((int)rec.setup.risk_class);p[30]=IntegerToString((int)rec.setup.setup_lifecycle);p[31]=DoubleToString(rec.setup.calibrated_probability,4);p[32]=IntegerToString(rec.setup.calibration_sample);p[33]=rec.setup.calibration_has_enough_data?"1":"0";p[34]=DoubleToString(rec.setup.reasons.quality_score,4);p[35]=DoubleToString(rec.setup.expected_return_r,6);p[36]=rec.setup.reasons.regime_id;p[37]=rec.setup.reasons.environment_memory_status;p[38]=IntegerToString(rec.setup.reasons.environment_memory_sample);p[39]=DoubleToString(rec.setup.calibration_lower_bound,4);
+   string line=p[0];for(int i=1;i<40;i++)line+=DECISION_CSV_SEP+p[i];return line;
   }
 bool CDecisionStore::ParseDecision(const string line,TradeDecisionRecord &rec)
   {
@@ -84,6 +84,7 @@ bool CDecisionStore::ParseDecision(const string line,TradeDecisionRecord &rec)
          rec.setup.reasons.regime_id=f[36];
          rec.setup.reasons.environment_memory_status=f[37];
          rec.setup.reasons.environment_memory_sample=(int)StringToInteger(f[38]);
+         if(n>=40) rec.setup.calibration_lower_bound=StringToDouble(f[39]);
         }
      }
    else
