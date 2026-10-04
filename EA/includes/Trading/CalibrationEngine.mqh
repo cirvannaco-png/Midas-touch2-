@@ -101,6 +101,26 @@ public:
       return 100.0 * w / total;
      }
 
+   // Conservative 95% Wilson lower bound. This is intentionally
+   // separate from the empirical win-rate: it answers "how low could the
+   // bucket's true win probability plausibly be?" and is used only for
+   // elevated-risk promotion, not for ordinary probability reporting.
+   double            GetConservativeProbability(double confidence) const
+     {
+      int b = BucketIndex(confidence);
+      double w = (double)m_wins[b], l = (double)m_losses[b];
+      double n = w + l;
+      if(n <= 0.0) return 0.0;
+
+      const double z = 1.96;
+      double p = w / n;
+      double z2 = z*z;
+      double denom = 1.0 + z2/n;
+      double centre = (p + z2/(2.0*n)) / denom;
+      double margin = z*MathSqrt((p*(1.0-p)/n) + (z2/(4.0*n*n))) / denom;
+      return 100.0*MathMax(0.0,centre-margin);
+     }
+
    // Whole-curve dump for the dashboard/CSV export — one row per bucket,
    // "" for the string return means "print this yourself", kept simple
    // rather than building a UI dependency into this file.
