@@ -61,7 +61,7 @@ void CFVG::Detect()
          if(gap >= m_minSizeATR * atr)
            {
             FVGZone zone;
-            zone.time = cd1.time;
+            zone.time = cd0.time;
             zone.top = cd0.low;
             zone.bottom = cd2.high;
             zone.dir = FVG_BULL;
@@ -79,7 +79,7 @@ void CFVG::Detect()
          if(gap >= m_minSizeATR * atr)
            {
             FVGZone zone;
-            zone.time = cd1.time;
+            zone.time = cd0.time;
             zone.top = cd2.low;
             zone.bottom = cd0.high;
             zone.dir = FVG_BEAR;
@@ -112,21 +112,37 @@ void CFVG::UpdateState(FVGZone &zone)
          break;
       if(zone.dir == FVG_BULL)
         {
+         if(cd.close < zone.bottom)
+           {
+            zone.state = FVG_INVALIDATED;
+            return;
+           }
          if(cd.low <= zone.top && cd.high >= zone.bottom)
            {
             if(cd.close >= zone.top)
+              {
                zone.state = FVG_MITIGATED;
-            else if(zone.state == FVG_FRESH)
+               return;
+              }
+            if(zone.state == FVG_FRESH)
                zone.state = FVG_TESTED;
            }
         }
       else
         {
+         if(cd.close > zone.top)
+           {
+            zone.state = FVG_INVALIDATED;
+            return;
+           }
          if(cd.high >= zone.bottom && cd.low <= zone.top)
            {
             if(cd.close <= zone.bottom)
+              {
                zone.state = FVG_MITIGATED;
-            else if(zone.state == FVG_FRESH)
+               return;
+              }
+            if(zone.state == FVG_FRESH)
                zone.state = FVG_TESTED;
            }
         }

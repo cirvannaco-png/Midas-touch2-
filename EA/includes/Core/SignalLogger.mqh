@@ -282,7 +282,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
                "HtfOBConfluence", "HtfOBState", "VolRegime", "SessionOK",
                // v2.10 diagnostics. Appended, never inserted: parsers keyed
                // on column position keep working.
-               "ContradictionPenalty", "EnvScore", "ExecScore", "EnvExecConfidence",
+               "ContradictionPenalty", "EnvScore", "ExecScore", "EnvExecConfidence", "SweepPrice", "SweepTime",
                // v2.12 diagnostics — same append-only discipline.
                "Regime", "MomentumScore", "BreakoutScore", "BreakoutClass",
                // v2.13 diagnostics — same append-only discipline.
@@ -290,7 +290,9 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
                // v2.14 diagnostics — same append-only discipline.
                "KeyLevelSource", "KeyLevelReaction", "KeyLevelScore",
                // v2.15 diagnostics — same append-only discipline.
-               "SelectedStrategy", "SelectedStrategyScore");
+               "SelectedStrategy", "SelectedStrategyScore",
+               "DecisionState", "BlockingLayer", "DecisionReason", "QualityScore",
+               "StructuralState", "StructuralStage", "Lifecycle", "ExpectedReturnR", "RegimeID", "CalibrationLowerBound");
       m_headerWritten = true;
      }
 
@@ -324,6 +326,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
             DoubleToString(setup.reasons.env_score, 3),
             DoubleToString(setup.reasons.exec_score, 3),
             DoubleToString(setup.reasons.env_exec_confidence, 1),
+            DoubleToString(setup.reasons.sweep_price, _Digits), (long)setup.reasons.sweep_time,
             RegimeLabel(setup.reasons.regime),
             DoubleToString(setup.reasons.momentum_score, 1),
             DoubleToString(setup.reasons.breakout_score, 1),
@@ -334,7 +337,17 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
             KeyLevelReactionLabel(setup.reasons.keylevel_reaction),
             DoubleToString(setup.reasons.keylevel_score, 1),
             SelectedStrategyLabel(setup.reasons.selected_strategy),
-            DoubleToString(setup.reasons.selected_strategy_score, 1));
+            DoubleToString(setup.reasons.selected_strategy_score, 1),
+            EnumToString(setup.reasons.decision_state),
+            EnumToString(setup.reasons.decision_blocking_layer),
+            setup.reasons.decision_reason,
+            DoubleToString(setup.reasons.quality_score, 2),
+            EnumToString(setup.reasons.structural_state),
+            EnumToString(setup.reasons.structural_stage),
+            EnumToString(setup.setup_lifecycle),
+            DoubleToString(setup.expected_return_r, 3),
+            setup.reasons.regime_id,
+            DoubleToString(setup.calibration_lower_bound, 2));
 
    FileClose(handle);
    return true;
@@ -374,7 +387,9 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
                // v2.14 — same rationale.
                "KeyLevelSource", "KeyLevelReaction", "KeyLevelScore",
                // v2.15 — same rationale.
-               "SelectedStrategy", "SelectedStrategyScore");
+               "SelectedStrategy", "SelectedStrategyScore",
+               "DecisionState", "BlockingLayer", "DecisionReason", "QualityScore",
+               "StructuralState", "StructuralStage", "Lifecycle", "ExpectedReturnR", "RegimeID", "CalibrationLowerBound");
       m_outcomeHeaderWritten = true;
      }
 
@@ -440,7 +455,17 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
             KeyLevelReactionLabel(p.setup.reasons.keylevel_reaction),
             DoubleToString(p.setup.reasons.keylevel_score, 1),
             SelectedStrategyLabel(p.setup.reasons.selected_strategy),
-            DoubleToString(p.setup.reasons.selected_strategy_score, 1));
+            DoubleToString(p.setup.reasons.selected_strategy_score, 1),
+            EnumToString(p.setup.reasons.decision_state),
+            EnumToString(p.setup.reasons.decision_blocking_layer),
+            p.setup.reasons.decision_reason,
+            DoubleToString(p.setup.reasons.quality_score, 2),
+            EnumToString(p.setup.reasons.structural_state),
+            EnumToString(p.setup.reasons.structural_stage),
+            EnumToString(p.setup.setup_lifecycle),
+            DoubleToString(p.setup.expected_return_r, 3),
+            p.setup.reasons.regime_id,
+            DoubleToString(p.setup.calibration_lower_bound, 2));
 
    FileClose(handle);
    return true;

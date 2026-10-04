@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 ROOT=Path(__file__).resolve().parents[2]
 EA=ROOT/"EA"/"MedisTouch_v2.8.mq5"
@@ -57,8 +58,8 @@ def test_legacy_decisions_do_not_fabricate_invalidation():
 
 def test_strategy_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
     t=TRADE_ZONE.read_text()
-    assert "TradeSetup out;ZeroMemory(out);" in t
-    assert "m_lastSetup=out;return out;" in t
+    assert re.search(r"TradeSetup\s+out;\s*ZeroMemory\(out\);",t)
+    assert re.search(r"m_lastSetup\s*=\s*out;\s*return\s+out;",t)
     assert "return TradeSetup();" not in t
 
 def test_strategy_trade_zone_applies_spread_floor_then_rechecks_invalidation():
@@ -132,3 +133,141 @@ def test_outcome_tracker_aggregates_risk_across_child_fills():
     assert "p.weightedRiskDistLots=p.riskDist*volume" in t
     assert "p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume" in t
     assert "p.weightedRiskDistLots>0.0?p.weightedRiskDistLots" in t
+
+
+def test_dynamic_stop_cannot_widen_structural_risk():
+    t=(ROOT/"EA"/"includes"/"Execution"/"DynamicStopEngine.mqh").read_text()
+    assert "bool IsTighter" in t
+    assert "candidate would widen or equal current stop" in t
+    assert "IsTighter(isBuy,candidate,currentSL)" in t
+
+
+def test_structural_quality_fails_closed_on_non_finite_values():
+    t=(ROOT/"EA"/"includes"/"Decision"/"DecisionQuality.mqh").read_text()
+    assert "!MathIsValidNumber(r.liquidity_pool_price)" in t
+    assert "!MathIsValidNumber(r.sweep_penetration_atr)" in t
+    assert "!MathIsValidNumber(r.fvg_distance_atr)" in t
+    assert "if(!MathIsValidNumber(v)) return 0.0;" in t
+
+def test_target_ladder_stage_is_restart_safe():
+    t=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
+    assert "void CPositionManager::SyncTargetStage" in t
+    assert "m_tp1Done[state]=true" in t
+    assert "m_tp2Done[state]=true" in t
+
+
+def test_target_ladder_fractions_are_validated():
+    t=EA.read_text()
+    assert "InpTP1PartialFraction<=0.0" in t
+    assert "InpTP1PartialFraction+InpTP2PartialFraction>=1.0" in t
+    assert "INIT_PARAMETERS_INCORRECT" in t
+def test_target_ladder_is_explicitly_disabled_by_default():
+    t=EA.read_text()
+    pm=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
+    assert "InpEnableTargetLadder=false" in t
+    assert "if(m_enableTargetLadder)" in pm
+    assert "CloseTargetSlice" in pm
+    assert "m_tp1PartialFraction" in pm
+    assert "m_tp2PartialFraction" in pm
+    assert "dec.setup.tp1" in pm
+    assert "dec.setup.tp2" in pm
+
+def test_key_level_engine_rejects_wrong_side_levels():
+    t=(ROOT/"EA"/"includes"/"Strategies"/"KeyLevelReaction.mqh").read_text()
+    assert "if(forBuy && z.bottom > price) continue;" in t
+    assert "if(!forBuy && z.top < price) continue;" in t
+    assert "if(dist < 0) continue;" in t
+    assert "if(dist < 0) dist = 0.0;" not in t
+
+def test_high_conviction_uses_calibration_lower_bound():
+    t=(ROOT/"EA"/"includes"/"Decision"/"DecisionQuality.mqh").read_text()
+    c=(ROOT/"EA"/"includes"/"Trading"/"CalibrationEngine.mqh").read_text()
+    assert "setup.calibration_lower_bound>=minCalibratedProbability" in t
+    assert "const double z = 1.96" in c
+def test_reject_and_wait_are_logged_instead_of_disappearing():
+    t=EA.read_text()
+    assert "REJECT/WAIT is first-class telemetry" in t
+    assert "g_logger.LogSetup(buySetup" in t
+    assert "g_logger.LogSetup(sellSetup" in t
+    assert "buySetup.decision_state!=DECISION_TRADE" in t
+
+
+def test_risk_class_controls_sizing_without_replacing_structural_invalidation():
+    t=EA.read_text()
+    assert "RiskClassSizingMultiplier(chosen.risk_class)" in t
+    cfg=(ROOT/"EA"/"includes"/"Core"/"Config.mqh").read_text()
+    assert "RISK_CLASS_HIGH_CONVICTION: return 1.00" in cfg
+    assert "RISK_CLASS_STANDARD:        return 0.75" in cfg
+    assert "RISK_CLASS_MINIMAL:         return 1.00" in cfg
+
+
+def test_pending_signal_checks_structural_invalidation():
+    t=EA.read_text()
+    assert "g_lifecycleSetup.invalidation" in t
+    assert "Structural thesis invalidation was crossed before entry" in t
+
+
+def test_provenance_is_published():
+    t=(ROOT/"EA"/"includes"/"Signals"/"SignalPublisher.mqh").read_text()
+    for token in (
+        "liquidity_scope",
+        "liquidity_archetype",
+        "sweep_penetration_atr",
+        "sweep_rejection_ratio",
+        "displacement_atr",
+        "bos_distance_atr",
+        "fvg_causal",
+        "invalidation_distance_atr",
+        "regime_id",
+    ):
+        assert token in t
+
+
+def test_noncausal_fvg_is_degraded_not_falsely_causal():
+    t=(ROOT/"EA"/"includes"/"Decision/DecisionQuality.mqh").read_text()
+    assert "STRUCTURE_STAGE_FVG_NONCAUSAL" in t
+    assert "bool degraded=(!r.fvg_causal" in t
+
+
+def test_bos_age_is_persisted_in_provenance():
+    s=(ROOT/"EA"/"includes"/"Analysis/Scoring.mqh").read_text()
+    p=(ROOT/"EA"/"includes"/"Signals/SignalPublisher.mqh").read_text()
+    assert "out.bos_age_bars" in s
+    assert "bos_age_bars" in p
+
+
+def test_risk_class_requires_expected_return_when_calibrated():
+    t=(ROOT/"EA"/"includes"/"Decision/DecisionQuality.mqh").read_text()
+    assert "setup.expected_return_r" in t
+    assert "expected_return_r>0.25" in t
+    assert "expected_return_r>0.0" in t
+
+def test_partial_exit_does_not_close_setup_lifecycle():
+    t=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTracker.mqh").read_text()
+    partial=t[t.index("void COutcomeTracker::ApplyPartial"):t.index("bool COutcomeTracker::IntrabarReplayGeneric")]
+    assert "SETUP_CLOSED" not in partial
+    assert "SETUP_MANAGED" in partial
+    assert "void COutcomeTracker::FinalizeExit" in t
+    assert "p.setup.setup_lifecycle=SETUP_CLOSED" in t
+    live=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh").read_text()
+    assert "p.setup.setup_lifecycle=SETUP_CLOSED" in live
+
+
+def test_strategy_absence_becomes_reject_not_inactive_setup():
+    t=(ROOT/"EA"/"includes"/"Trading"/"StrategyTradeZone.mqh").read_text()
+    assert "TradeSetup CTradeDecision::BuildRejected" in t
+    assert "decision_state=DECISION_REJECT" in t
+    assert "setup_lifecycle=SETUP_EXPIRED" in t
+
+
+def test_signal_logger_persists_decision_provenance():
+    t=(ROOT/"EA"/"includes"/"Core"/"SignalLogger.mqh").read_text()
+    for token in ("DecisionState", "BlockingLayer", "DecisionReason", "QualityScore", "Lifecycle", "ExpectedReturnR", "RegimeID"):
+        assert token in t
+
+
+def test_elevated_risk_requires_qualified_environment_memory():
+    t=(ROOT/"EA"/"includes"/"Decision"/"DecisionQuality.mqh").read_text()
+    assert "environmentQualified" in t
+    assert 'setup.reasons.environment_memory_status=="QUALIFIED"' in t
+    assert "environmentNotDegraded" in t

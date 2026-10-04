@@ -26,11 +26,10 @@
 // forcing every bar into one of two buckets a weak signal can't actually
 // support.
 //
-// DIAGNOSTIC ONLY. Nothing reads Classify()'s return value except
-// CSV logging (see SetupReasons.regime in Core/Config.mqh) and, later,
-// the strategy-selection engine this doc argues for — which does not
-// exist yet. No entry filter, confidence calculation, or order path
-// consults this today.
+// REGIME IS AN ACTIVE ROUTING INPUT. Classify() feeds strategy diagnostics
+// and the peer-strategy selection path in StrategyTradeZone. It remains a
+// routing signal rather than an unconditional trade gate: structural,
+// environment, execution, and risk firewalls decide final admission.
 class CRegimeDetector
   {
 private:
@@ -38,24 +37,116 @@ private:
    CVolatilityRegime*   m_volRegime;
    CMarketPhase*        m_phase;
 
+   bool                 m_requireStability;
+   int                  m_stabilityBars;
+   datetime             m_lastReferenceTime;
+   ENUM_MARKET_REGIME   m_lastRawRegime;
+   ENUM_MARKET_REGIME   m_stableRegime;
+   int                  m_candidateStreak;
+
+   ENUM_MARKET_REGIME   ClassifyRaw();
+
 public:
-                        CRegimeDetector() : m_trend(NULL), m_volRegime(NULL), m_phase(NULL) {}
+                        CRegimeDetector() : m_trend(NULL), m_volRegime(NULL), m_phase(NULL),
+                                                        m_requireStability(false), m_stabilityBars(2),
+                                                        m_lastReferenceTime(0), m_lastRawRegime(REGIME_UNDEFINED),
+                                                        m_stableRegime(REGIME_UNDEFINED), m_candidateStreak(0) {}
    void                 Init(CTrendEngine* trend, CVolatilityRegime* volRegime, CMarketPhase* phase)
      {
       m_trend = trend;
       m_volRegime = volRegime;
       m_phase = phase;
+      m_lastReferenceTime=0;
+      m_lastRawRegime=REGIME_UNDEFINED;
+      m_stableRegime=REGIME_UNDEFINED;
+      m_candidateStreak=0;
+     }
+   void                 ConfigureStability(bool requireStability=false,int stabilityBars=2)
+     {
+      m_requireStability=requireStability;
+      m_stabilityBars=MathMax(1,stabilityBars);
+      m_lastReferenceTime=0;
+      m_lastRawRegime=REGIME_UNDEFINED;
+      m_stableRegime=REGIME_UNDEFINED;
+      m_candidateStreak=0;
      }
    ENUM_MARKET_REGIME   Classify();
+   ENUM_MARKET_REGIME   ClassifyStable(datetime referenceTime);
   };
 //+------------------------------------------------------------------+
 ENUM_MARKET_REGIME CRegimeDetector::Classify()
+  {
+   return ClassifyRaw();
+  }
+
+//+------------------------------------------------------------------+
+// Stability gate: an actionable regime must repeat on N distinct
+// completed decision bars before peer strategy routing can use it.
+// TRANSITION/UNDEFINED are always fail-safe. Buy and sell evaluations
+// on the same completed bar are deduplicated by referenceTime.
+//+------------------------------------------------------------------+
+ENUM_MARKET_REGIME CRegimeDetector::ClassifyStable(datetime referenceTime)
+  {
+   ENUM_MARKET_REGIME raw=ClassifyRaw();
+   if(!m_requireStability)
+      return raw;
+   if(referenceTime<=0)
+      return REGIME_UNDEFINED;
+
+   if(referenceTime==m_lastReferenceTime)
+      return m_stableRegime;
+
+   m_lastReferenceTime=referenceTime;
+
+   if(raw==REGIME_UNDEFINED)
+     {
+      m_lastRawRegime=raw;
+      m_stableRegime=REGIME_UNDEFINED;
+      m_candidateStreak=0;
+      return REGIME_UNDEFINED;
+     }
+
+   if(raw==REGIME_TRANSITION)
+     {
+      m_lastRawRegime=raw;
+      m_stableRegime=REGIME_TRANSITION;
+      m_candidateStreak=0;
+      return REGIME_TRANSITION;
+     }
+
+   if(raw==m_stableRegime)
+     {
+      m_lastRawRegime=raw;
+      m_candidateStreak=0;
+      return m_stableRegime;
+     }
+
+   if(raw==m_lastRawRegime)
+      m_candidateStreak++;
+   else
+     {
+      m_lastRawRegime=raw;
+      m_candidateStreak=1;
+     }
+
+   if(m_candidateStreak>=m_stabilityBars)
+     {
+      m_stableRegime=raw;
+      m_candidateStreak=0;
+      return raw;
+     }
+
+   return REGIME_TRANSITION;
+  }
+
+//+------------------------------------------------------------------+
+ENUM_MARKET_REGIME CRegimeDetector::ClassifyRaw()
   {
    if(m_trend == NULL || m_volRegime == NULL || m_phase == NULL)
       return REGIME_UNDEFINED;
 
    ENUM_TREND_STATE  trend = m_trend.GetCurrentTrend();
-   ENUM_VOL_REGIME   vol   = m_volRegime.Classify(0);
+   ENUM_VOL_REGIME   vol   = m_volRegime.Classify(1);
    ENUM_MARKET_PHASE phase = m_phase.Detect();
 
    // Fail closed on an unverifiable volatility read, same convention as

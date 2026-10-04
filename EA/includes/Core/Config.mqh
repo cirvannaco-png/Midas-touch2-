@@ -28,9 +28,42 @@ enum ENUM_KEYLEVEL_SOURCE { LEVEL_NONE, LEVEL_SR, LEVEL_ORDER_BLOCK, LEVEL_VALUE
 enum ENUM_KEYLEVEL_REACTION { REACTION_NONE, REACTION_REJECTION, REACTION_BREAK, REACTION_RETEST, REACTION_FAILED_BREAK, REACTION_ACCEPTANCE, REACTION_ABSORPTION };
 enum ENUM_SELECTED_STRATEGY { STRATEGY_NONE, STRATEGY_SMC, STRATEGY_MOMENTUM_BREAKOUT, STRATEGY_MEAN_REVERSION, STRATEGY_KEY_LEVEL };
 enum ENUM_SWEEP_GRADE { SWEEP_GRADE_NONE, SWEEP_GRADE_C, SWEEP_GRADE_B, SWEEP_GRADE_A };
+enum ENUM_INDUCEMENT_STRUCTURE { INDUCEMENT_STRUCTURE_NONE, INDUCEMENT_STRUCTURE_SINGLE_SWING, INDUCEMENT_STRUCTURE_EQUAL_POOL };
+enum ENUM_STRUCTURAL_STATE { STRUCTURE_INVALID, STRUCTURE_DEGRADED, STRUCTURE_VALID, STRUCTURE_NOT_APPLICABLE };
+enum ENUM_LIQUIDITY_SCOPE { LIQUIDITY_SCOPE_UNKNOWN, LIQUIDITY_SCOPE_INTERNAL, LIQUIDITY_SCOPE_EXTERNAL };
+enum ENUM_LIQUIDITY_ARCHETYPE { LIQUIDITY_ARCHETYPE_NONE, LIQUIDITY_ARCHETYPE_SINGLE_SWING, LIQUIDITY_ARCHETYPE_EQUAL_POOL, LIQUIDITY_ARCHETYPE_EXTERNAL_POOL };
+enum ENUM_STRUCTURE_STAGE { STRUCTURE_STAGE_NO_STRUCTURE, STRUCTURE_STAGE_LIQUIDITY_IDENTIFIED, STRUCTURE_STAGE_LIQUIDITY_SWEPT, STRUCTURE_STAGE_VALID_DISPLACEMENT, STRUCTURE_STAGE_CONFIRMING_BOS, STRUCTURE_STAGE_FVG_NONCAUSAL, STRUCTURE_STAGE_CAUSAL_FVG, STRUCTURE_STAGE_LOCATION_VALID, STRUCTURE_STAGE_FRESHNESS_VALID, STRUCTURE_STAGE_INVALIDATION_DEFINED, STRUCTURE_STAGE_STRUCTURALLY_VALID, STRUCTURE_STAGE_STRUCTURALLY_INVALID };
+enum ENUM_DECISION_STATE { DECISION_REJECT, DECISION_WAIT, DECISION_TRADE };
+enum ENUM_RISK_CLASS { RISK_CLASS_NONE, RISK_CLASS_MINIMAL, RISK_CLASS_STANDARD, RISK_CLASS_HIGH_CONVICTION };
+enum ENUM_SETUP_LIFECYCLE { SETUP_DETECTED, SETUP_ARMED, SETUP_WAITING_RETEST, SETUP_RETEST_CONFIRMED, SETUP_ENTRY_ELIGIBLE, SETUP_FILLED, SETUP_MANAGED, SETUP_CLOSED, SETUP_EXPIRED };
+enum ENUM_FIREWALL_LAYER { FIREWALL_NONE, FIREWALL_STRUCTURE, FIREWALL_ENVIRONMENT, FIREWALL_EXECUTION, FIREWALL_RISK, FIREWALL_CALIBRATION };
 
 struct ImpulseLeg { bool valid; datetime start_time; datetime end_time; int start_bar; int end_bar; double start_price; double end_price; bool bullish; double strength; };
-struct InducementResult { bool valid; bool impulseFound; bool internalStructureFound; bool sweepFound; bool bosConfirmed; double impulseScore; double structureScore; double sweepScore; double bosScore; double totalScore; ImpulseLeg leg; string reason; ENUM_SWEEP_GRADE sweepGrade; double sweepGradeScore; double bosStrength; int barsSinceSweep; int barsSinceBOS; double timeDecay; double bosClosePrice; int bosBarIndex; };
+struct InducementResult
+  {
+   bool valid; bool impulseFound; bool internalStructureFound; bool sweepFound; bool bosConfirmed;
+   double impulseScore; double structureScore; double sweepScore; double bosScore; double totalScore;
+   ImpulseLeg leg; string reason; ENUM_SWEEP_GRADE sweepGrade; double sweepGradeScore;
+   double bosStrength; int barsSinceSweep; int barsSinceBOS; double timeDecay; double bosClosePrice; int bosBarIndex;
+   ENUM_INDUCEMENT_STRUCTURE structureType;
+   double liquidityPoolPrice;
+   int liquidityPoolNearBarIndex;
+   int liquidityPoolFarBarIndex;
+   int liquidityPoolBarSpan;
+   double liquidityPoolSpacingATR;
+   int liquidityAgeBars;
+   double sweepPenetrationATR;
+   double sweepRejectionRatio;
+   double sweepPrice;
+   datetime sweepTime;
+   double sweepShapeScore;
+   bool sweepFollowThrough;
+   int sweepFollowThroughBarIndex;
+   double displacementATR;
+   double displacementBodyRatio;
+   double bosDistanceATR;
+   datetime bosTime;
+  };
 struct OutcomeStats { int wins; int losses; int scratches; int ambiguous; double netPnL; double grossProfit; double grossLoss; double totalCommission; double totalSpreadCost; double totalSlippageCost; double sumRMultiple; int resolvedCount; int ExcludingAmbiguousTotal() const { return wins + losses; } double WinRateExcludingAmbiguous() const { int t=wins+losses; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsLoss() const { int t=wins+losses+ambiguous; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsWin() const { int t=wins+losses+ambiguous; return t>0?100.0*(wins+ambiguous)/t:0.0; } double ProfitFactor() const { if(grossLoss>0)return grossProfit/grossLoss; return grossProfit>0?-1.0:0.0; } double ExpectancyPerTrade() const { return resolvedCount>0?netPnL/resolvedCount:0.0; } double AverageRMultiple() const { return resolvedCount>0?sumRMultiple/resolvedCount:0.0; } };
 struct CandleData { datetime time; double open; double high; double low; double close; long tick_volume; long real_volume; double atr; };
 struct SwingPoint { datetime time; double price; bool is_high; int bar_index; double strength; };
@@ -51,6 +84,19 @@ struct SetupReasons {
    double exec_score; double env_exec_confidence; ENUM_MARKET_REGIME regime; double momentum_score; double breakout_score; ENUM_BREAKOUT_CLASS breakout_class;
    double reversion_score; ENUM_REVERSION_CLASS reversion_class; ENUM_KEYLEVEL_SOURCE keylevel_source; ENUM_KEYLEVEL_REACTION keylevel_reaction; double keylevel_score;
    ENUM_SELECTED_STRATEGY selected_strategy; double selected_strategy_score;
+   ENUM_LIQUIDITY_SCOPE liquidity_scope; ENUM_LIQUIDITY_ARCHETYPE liquidity_archetype;
+   double liquidity_event_price; double liquidity_event_strength; bool liquidity_event_external;
+
+   // Structural provenance and hierarchical decision telemetry.
+   ENUM_INDUCEMENT_STRUCTURE inducement_structure_type; double liquidity_pool_price; int liquidity_pool_near_bar_index; int liquidity_pool_far_bar_index;
+   int liquidity_pool_bar_span; double liquidity_pool_spacing_atr; int liquidity_age_bars; double sweep_penetration_atr; double sweep_rejection_ratio;
+   double sweep_shape_score; double sweep_price; datetime sweep_time; bool sweep_follow_through; int sweep_follow_through_bar_index; double displacement_atr; double displacement_body_ratio; double bos_distance_atr; datetime bos_time;
+   ENUM_FVG_STATE fvg_state; int fvg_age_bars; double fvg_distance_atr; bool fvg_causal; int fvg_bos_age_gap; int bos_age_bars;
+   double invalidation_distance_atr;
+   ENUM_STRUCTURAL_STATE structural_state; ENUM_STRUCTURE_STAGE structural_stage; double structural_score; string structural_reason;
+   double structure_family_score; double liquidity_family_score; double location_family_score; double execution_family_score; double environment_family_score; double quality_score;
+   ENUM_DECISION_STATE decision_state; ENUM_FIREWALL_LAYER decision_blocking_layer; string decision_reason;
+   ENUM_RISK_CLASS risk_class; ENUM_SETUP_LIFECYCLE setup_lifecycle; string regime_id;
    // Environment telemetry. These are observations only and never act as
    // standalone trading gates.
    double trend_strength; double liquidity_score; int liquidity_bucket;
@@ -58,6 +104,7 @@ struct SetupReasons {
    string environment_memory_status; int environment_memory_sample;
    double environment_memory_win_rate; double environment_memory_avg_r;
    double environment_memory_profit_factor; double environment_memory_adjustment;
+   double expected_return_r;
 };
 
 struct TradeSetup {
@@ -72,17 +119,32 @@ struct TradeSetup {
    double confidence;
    datetime creation_time;
    bool active;
+   double expected_return_r;
+   ENUM_DECISION_STATE decision_state;
+   ENUM_RISK_CLASS risk_class;
+   ENUM_SETUP_LIFECYCLE setup_lifecycle;
    SetupReasons reasons;
    double calibrated_probability;
    int calibration_sample;
    bool calibration_has_enough_data;
+   double calibration_lower_bound;
 };
 
 double ResolveExecutionEntry(const TradeSetup &setup) { return setup.type==ORDER_TYPE_BUY?setup.entry_top:setup.entry_bottom; }
+double RiskClassSizingMultiplier(ENUM_RISK_CLASS riskClass)
+  {
+   switch(riskClass)
+     {
+      case RISK_CLASS_HIGH_CONVICTION: return 1.00;
+      case RISK_CLASS_STANDARD:        return 0.75;
+      case RISK_CLASS_MINIMAL:         return 1.00; // CDecisionEngine's reduced-risk policy halves this class.
+      default:                         return 0.00;
+     }
+  }
 
 struct PendingSetup {
    TradeSetup setup; double entryRef; double riskDist; double mfePrice; double maePrice; bool tp1Hit; bool tp2Hit; int barsElapsed; datetime lastBarTime; bool filled; datetime fillTime; int barsToFill; bool sameBarCollision;
-   double sizingEntryPrice; double mgmtRiskDist; double weightedRiskDistLots; double lots; double entryFillPrice; double currentSL; bool beDone; bool partialDone; double remainingLots; double realizedPnL; double totalCommission; double totalSpreadCost; double totalSlippageCost;
+   double sizingEntryPrice; double mgmtRiskDist; double weightedRiskDistLots; double lots; double entryFillPrice; double currentSL; bool beDone; bool partialDone; double remainingLots; double realizedPnL; double totalCommission; double totalSpreadCost; double totalSlippageCost; double maeR; double mfeR; int timeToMAE; int timeToMFE; datetime maeTime; datetime mfeTime;
    double confidenceAtSignal; double confidenceDecayed; int decayBars; long decisionId; string decision_fingerprint;
 };
 

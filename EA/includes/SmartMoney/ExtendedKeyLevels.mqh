@@ -58,7 +58,7 @@ public:
    // Current SESSION's high/low so far: scans `candles` (pass the same
    // chart-TF series every other source in KeyLevelReaction.mqh uses,
    // for the same self-consistency reason) for CLOSED bars at or after
-   // the session's own start, per CSessionFilter::CurrentSessionStartGMT().
+   // the session's own start, per CSessionFilter::CurrentSessionStartServer().
    // Returns false during SESSION_DEAD (no boundary to measure from) or
    // if no closed bar has printed since the session opened yet — a
    // session that just opened has no range to speak of, and reporting
@@ -75,16 +75,13 @@ public:
 //+------------------------------------------------------------------+
 void CExtendedKeyLevels::RefreshPrevWeekIfStale()
   {
-   datetime now = TimeCurrent();
-   MqlDateTime t;
-   TimeToStruct(now, t);
-   int dow = t.day_of_week; // 0 = Sunday
-   int daysSinceMonday = (dow == 0) ? 6 : (dow - 1);
-   MqlDateTime mon = t;
-   mon.hour = 0; mon.min = 0; mon.sec = 0;
-   datetime mondayThisWeek = StructToTime(mon) - (long)daysSinceMonday * 86400;
+   // Use the broker's current W1 bar boundary as the cache key so the
+   // cache follows the same time basis as iHigh/iLow(PERIOD_W1,1), including
+   // any broker-specific week boundary rather than assuming calendar Monday.
+   datetime currentWeek = iTime(m_symbol, PERIOD_W1, 0);
+   if(currentWeek<=0) { m_prevWeekValid=false; return; }
 
-   if(m_prevWeekValid && mondayThisWeek == m_prevWeekCachedForMonday)
+   if(m_prevWeekValid && currentWeek == m_prevWeekCachedForMonday)
       return; // still the same trading week as last time this was refreshed — cache holds
 
    double h = iHigh(m_symbol, PERIOD_W1, 1);
@@ -100,7 +97,7 @@ void CExtendedKeyLevels::RefreshPrevWeekIfStale()
      }
    m_prevWeekHigh = h;
    m_prevWeekLow = l;
-   m_prevWeekCachedForMonday = mondayThisWeek;
+   m_prevWeekCachedForMonday = currentWeek;
    m_prevWeekValid = true;
   }
 //+------------------------------------------------------------------+
@@ -171,7 +168,6 @@ bool CExtendedKeyLevels::NearestSessionLevel(bool forBuy, double price, double m
 bool CExtendedKeyLevels::NearestRoundLevel(bool forBuy, double price, double maxDist, double &levelPrice)
   {
    levelPrice = 0.0;
-   if(m_roundStep <= 0.0) return false;
    if(m_roundStep <= 0.0) return false;
 
    double below = MathFloor(price / m_roundStep) * m_roundStep;

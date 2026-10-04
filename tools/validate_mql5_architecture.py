@@ -180,8 +180,27 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     trade_zone = by_rel.get("includes/Trading/TradeZone.mqh", "")
     risk = by_rel.get("includes/Trading/RiskEngine.mqh", "")
     strategy = by_rel.get("includes/Trading/StrategyTradeZone.mqh", "")
+    quality = by_rel.get("includes/Decision/DecisionQuality.mqh", "")
+    config = by_rel.get("includes/Core/Config.mqh", "")
+    fvg = by_rel.get("includes/SmartMoney/FVG.mqh", "")
+    inducement = by_rel.get("includes/SmartMoney/Inducement.mqh", "")
+    environment_memory = by_rel.get("includes/Trading/EnvironmentStrategyMemory.mqh", "")
+    outcome_live = by_rel.get("includes/Trading/OutcomeTrackerLive.mqh", "")
+    outcome_backtest = by_rel.get("includes/Trading/OutcomeTracker.mqh", "")
+    decision_engine = by_rel.get("includes/Decision/DecisionEngine.mqh", "")
+    dynamic_stop = by_rel.get("includes/Execution/DynamicStopEngine.mqh", "")
+    publisher = by_rel.get("includes/Signals/SignalPublisher.mqh", "")
     multi = by_rel.get("includes/Portfolio/MultiTradeEngine.mqh", "")
     ea = by_rel.get("MedisTouch_v2.8.mq5", "")
+    strategy_builders = by_rel.get("includes/Trading/StrategySetupBuilders.mqh", "")
+    momentum = by_rel.get("includes/Strategies/MomentumBreakout.mqh", "")
+    mean_reversion = by_rel.get("includes/Strategies/MeanReversion.mqh", "")
+    key_level = by_rel.get("includes/Strategies/KeyLevelReaction.mqh", "")
+    regime = by_rel.get("includes/Regime/RegimeDetector.mqh", "")
+    market_phase = by_rel.get("includes/SmartMoney/MarketPhase.mqh", "")
+    liquidity = by_rel.get("includes/SmartMoney/Liquidity.mqh", "")
+    fvg_engine = by_rel.get("includes/SmartMoney/FVG.mqh", "")
+    value_area = by_rel.get("includes/SmartMoney/ValueAreaEngine.mqh", "")
 
     if "class CTradeDecision" in trade_zone:
         errors.append("TradeZone.mqh still defines CTradeDecision; StrategyTradeZone must be the single authority")
@@ -191,6 +210,188 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
         errors.append("RiskEngine.mqh still depends on legacy TradeZone.mqh")
     if "class CTradeDecision" not in strategy:
         errors.append("StrategyTradeZone.mqh no longer defines the authoritative CTradeDecision")
+    if '#include "../Decision/DecisionQuality.mqh"' not in strategy:
+        errors.append("StrategyTradeZone.mqh is missing hierarchical DecisionQuality integration")
+    for token in ("class CStructuralValidator", "class CTradeQualityFirewall", "DECISION_TRADE", "DECISION_WAIT", "DECISION_REJECT"):
+        if token not in quality:
+            errors.append(f"DecisionQuality.mqh missing required architecture contract: {token}")
+    for token in ("ENUM_STRUCTURAL_STATE", "ENUM_DECISION_STATE", "ENUM_RISK_CLASS", "ENUM_SETUP_LIFECYCLE", "ENUM_FIREWALL_LAYER"):
+        if token not in config:
+            errors.append(f"Config.mqh missing decision architecture enum: {token}")
+    if "FVG_INVALIDATED" not in fvg or "cd.close < zone.bottom" not in fvg or "cd.close > zone.top" not in fvg:
+        errors.append("FVG lifecycle is missing symmetric adverse-close invalidation")
+    for token in ("ENUM_LIQUIDITY_SCOPE", "ENUM_LIQUIDITY_ARCHETYPE", "STRUCTURE_STAGE_FVG_NONCAUSAL", "SETUP_FILLED", "SETUP_MANAGED", "SETUP_CLOSED"):
+        if token not in config:
+            errors.append(f"Config.mqh missing lifecycle/provenance contract: {token}")
+    if "Never compare raw bar indices across those series" not in strategy or "PeriodSeconds(m_fvgCtx.candles.Timeframe())" not in strategy or "zone.time<=ind.bosTime" not in strategy:
+        errors.append("StrategyTradeZone.mqh still permits cross-timeframe causal FVG comparison by raw bar index")
+    for token in ("RiskClassSizingMultiplier", "RISK_CLASS_HIGH_CONVICTION", "RISK_CLASS_STANDARD", "RISK_CLASS_MINIMAL", "expected_return_r"):
+        if token not in config:
+            errors.append(f"Config.mqh missing risk-class sizing contract: {token}")
+    if "IsTighter(isBuy,candidate,currentSL)" not in dynamic_stop:
+        errors.append("DynamicStopEngine.mqh missing immutable-tightening-only stop invariant")
+    partial_zone = by_rel.get("includes/Trading/OutcomeTracker.mqh", "")
+    if "void COutcomeTracker::ApplyPartial" in partial_zone:
+        partial_section = partial_zone[partial_zone.index("void COutcomeTracker::ApplyPartial"):partial_zone.index("bool COutcomeTracker::IntrabarReplayGeneric")]
+        if "SETUP_CLOSED" in partial_section:
+            errors.append("OutcomeTracker ApplyPartial incorrectly closes the setup lifecycle")
+        if "SETUP_MANAGED" not in partial_section:
+            errors.append("OutcomeTracker ApplyPartial missing managed lifecycle transition")
+    if "void COutcomeTracker::FinalizeExit" in partial_zone:
+        if "p.setup.setup_lifecycle=SETUP_CLOSED" not in partial_zone:
+            errors.append("OutcomeTracker FinalizeExit missing closed lifecycle transition")
+    if "p.setup.setup_lifecycle=SETUP_CLOSED" not in outcome_live:
+        errors.append("OutcomeTrackerLive Finalize missing closed lifecycle transition")
+    for token in ("g_logger.LogSetup(buySetup", "g_logger.LogSetup(sellSetup", "REJECT/WAIT is first-class telemetry"):
+        if token not in ea:
+            errors.append(f"EA missing first-class reject/wait telemetry: {token}")
+    if "TradeSetup CTradeDecision::BuildRejected" not in strategy:
+        errors.append("StrategyTradeZone.mqh missing first-class rejected setup constructor")
+    logger = by_rel.get("includes/Core/SignalLogger.mqh", "")
+    for token in ("DecisionState", "BlockingLayer", "DecisionReason", "QualityScore", "Lifecycle", "ExpectedReturnR", "RegimeID"):
+        if token not in logger:
+            errors.append(f"SignalLogger.mqh missing decision provenance column: {token}")
+    for token in ("liquidity_scope", "liquidity_archetype", "bos_distance_atr", "bos_age_bars", "fvg_causal", "invalidation_distance_atr", "expected_return_r", "regime_id"):
+        if token not in publisher:
+            errors.append(f"SignalPublisher.mqh missing structural decision provenance field: {token}")
+    for token in ("structureType", "liquidityPoolPrice", "sweepPenetrationATR", "sweepRejectionRatio", "sweepFollowThrough", "displacementATR"):
+        if token not in inducement:
+            errors.append(f"Inducement.mqh missing structural provenance telemetry: {token}")
+    if "IsDegraded(const EnvironmentMemoryEvidence" not in environment_memory:
+        errors.append("EnvironmentStrategyMemory.mqh missing explicit degraded-evidence predicate")
+    for token in ("maeR", "mfeR", "timeToMAE", "timeToMFE"):
+        if token not in outcome_live or token not in outcome_backtest:
+            errors.append(f"Outcome trackers missing MAE/MFE timing telemetry: {token}")
+    # Structural integrity must be observable and must remain anchored to
+    # the production sweep event, not a reconstructed proxy.
+    for token in ("double sweepPrice;", "datetime sweepTime;"):
+        if token not in config:
+            errors.append(f"Config.mqh missing authoritative sweep provenance field: {token}")
+    for token in ("r.sweepPrice=forBuy?sweepCandle.low:sweepCandle.high;", "r.sweepTime=sweepCandle.time;"):
+        if token not in inducement:
+            errors.append(f"Inducement.mqh missing authoritative sweep event provenance: {token}")
+    for token in ("out.sweep_price = ind.sweepPrice;", "out.sweep_time = ind.sweepTime;"):
+        if token not in by_rel.get("includes/Analysis/Scoring.mqh", ""):
+            errors.append(f"Scoring.mqh missing sweep provenance propagation: {token}")
+    if "setup.invalidation=forBuy?(setup.reasons.sweep_price-0.05*atr):(setup.reasons.sweep_price+0.05*atr);" not in strategy:
+        errors.append("StrategyTradeZone.mqh does not anchor structural invalidation to the authoritative sweep")
+    if "double entry=ResolveExecutionEntry(setup);" not in strategy:
+        errors.append("StrategyTradeZone.mqh does not use the canonical execution entry price for SMC target construction")
+    if "p.entryRef = ResolveExecutionEntry(setup);" not in outcome_backtest or "p.sizingEntryPrice = ResolveExecutionEntry(setup);" not in outcome_backtest:
+        errors.append("OutcomeTracker.mqh does not use the canonical execution entry price")
+    durable_save_pos = ea.find("if(!g_store.Save(decision))")
+    tracker_pos = ea.find("g_tracker.AddSetup(chosen,decision.decision_id,decision.decision_fingerprint)")
+    execute_gate_pos = ea.find("if(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)")
+    if durable_save_pos < 0 or tracker_pos < durable_save_pos or execute_gate_pos < 0 or tracker_pos > execute_gate_pos:
+        errors.append("Outcome tracking is admitted before durable executable decision acceptance")
+    decision_store = by_rel.get("includes/Decision/DecisionStore.mqh", "")
+    for token in ("string p[40]", "if(n>=39)", "rec.setup.reasons.structural_state", "rec.setup.calibrated_probability", "rec.setup.reasons.quality_score"):
+        if token not in decision_store:
+            errors.append(f"DecisionStore.mqh missing durable decision lineage field/restore logic: {token}")
+    if "p[39]=DoubleToString(rec.setup.calibration_lower_bound,4)" not in decision_store:
+        errors.append("DecisionStore.mqh missing calibration lower-bound persistence")
+    if "if(n>=40) rec.setup.calibration_lower_bound=StringToDouble(f[39]);" not in decision_store:
+        errors.append("DecisionStore.mqh missing calibration lower-bound restore")
+    for token in ("setup.setup_lifecycle=SETUP_EXPIRED", "q.decision==DECISION_TRADE?SETUP_ENTRY_ELIGIBLE:SETUP_EXPIRED"):
+        if token not in strategy and token not in quality:
+            errors.append(f"StrategyTradeZone/DecisionQuality lifecycle mapping missing: {token}")
+    for token in ("setup.decision_state!=DECISION_TRADE", "setup.risk_class<RISK_CLASS_STANDARD", "setup.expected_return_r<=0.0"):
+        if token not in multi:
+            errors.append(f"MultiTradeEngine.mqh missing downstream risk-quality gate: {token}")
+    if "setup.decision_state!=DECISION_TRADE" not in outcome_live or "setup.setup_lifecycle!=SETUP_ENTRY_ELIGIBLE" not in outcome_live:
+        errors.append("OutcomeTrackerLive.mqh can admit non-TRADE or pre-entry-eligible setups")
+    if "setup.decision_state!=DECISION_TRADE" not in outcome_backtest or "setup.setup_lifecycle!=SETUP_ENTRY_ELIGIBLE" not in outcome_backtest:
+        errors.append("OutcomeTracker.mqh can admit non-TRADE or pre-entry-eligible setups")
+    for token in ("setup.decision_state == DECISION_REJECT", "setup.decision_state == DECISION_WAIT", "setup.decision_state != DECISION_TRADE"):
+        if token not in decision_engine:
+            errors.append(f"DecisionEngine.mqh missing authoritative decision-state guard: {token}")
+    for token in ("InpEnableDecisionArchitecture", "InpEnableStructuralValidator", "InpRequireSMCStructuralValidity", "InpEnableEnvironmentHardBlock", "InpRequireCausalFVG", "InpMinQualityScore", "InpDecisionRequireCalibration"):
+        if token not in ea:
+            errors.append(f"MedisTouch_v2.8.mq5 missing decision architecture input: {token}")
+    if "g_decision.ConfigureDecisionArchitecture" not in ea:
+        errors.append("MedisTouch_v2.8.mq5 missing DecisionArchitecture configuration wiring")
+    for token in (
+        "InpSweepFollowThroughATRMult=1.2",
+        "InpSweepFollowThroughBodyRatio=0.6",
+        "g_scoring.ConfigureSweepQuality",
+        "followThroughATRMult",
+        "followThroughBodyRatio",
+    ):
+        if token not in ea and token not in inducement and token not in scoring:
+            errors.append(f"Missing sweep follow-through threshold wiring/token: {token}")
+    if "IsDisplacementBarWithThresholds" not in inducement:
+        errors.append("Inducement.mqh does not expose the shared thresholded displacement helper")
+    if "m_followThroughATRMult, m_followThroughBodyRatio" not in inducement:
+        errors.append("Inducement.mqh sweep grading is not using independent follow-through thresholds")
+    regime_stability = by_rel.get("includes/Regime/RegimeDetector.mqh", "")
+    for token in ("ClassifyStable(datetime referenceTime)", "referenceTime==m_lastReferenceTime", "return REGIME_TRANSITION;"):
+        if token not in regime_stability:
+            errors.append(f"RegimeDetector.mqh missing conservative stability invariant: {token}")
+    if "ConfigureRegimeStability" not in by_rel.get("includes/Analysis/Scoring.mqh", ""):
+        errors.append("Scoring.mqh missing regime stability configuration")
+    for token in ("InpRequireRegimeStability=false", "InpRegimeStabilityBars=2", "g_scoring.ConfigureRegimeStability"):
+        if token not in ea:
+            errors.append(f"MedisTouch_v2.8.mq5 missing regime stability wiring: {token}")
+
+    # Actionable strategy routing must consume only completed bars.
+    for file_name, source in (
+        ("StrategySetupBuilders.mqh", strategy_builders),
+        ("MomentumBreakout.mqh", momentum),
+        ("MeanReversion.mqh", mean_reversion),
+        ("KeyLevelReaction.mqh", key_level),
+        ("RegimeDetector.mqh", regime),
+        ("MarketPhase.mqh", market_phase),
+    ):
+        if "GetCandle(0)" in source or "GetATR(0)" in source or "Classify(0)" in source:
+            errors.append(f"{file_name} contains open-bar decision evidence")
+    if "HasNearbyLiquidityEvent(const BOSEvent &bos)" not in momentum or "m_liquidity.Timeframe()" not in momentum:
+        errors.append("MomentumBreakout.mqh still correlates BOS and liquidity using incompatible raw bar indices")
+    if "GetCandle(0)" in value_area or "GetATR(0)" in value_area or "TimeCurrent()" in value_area:
+        errors.append("ValueAreaEngine.mqh contains forming-bar/time-now profile inputs")
+    if "Timeframe() const" not in liquidity:
+        errors.append("Liquidity.mqh does not expose its timeframe for cross-timeframe event correlation")
+    if "zone.time = cd0.time;" not in fvg_engine or "zone.time = cd1.time;" in fvg_engine:
+        errors.append("FVG.mqh is not anchoring FVG provenance to the completed formation bar")
+    portfolio = by_rel.get("includes/Portfolio/PortfolioManager.mqh", "")
+    for token in ("RollingCorrelation", "ConfigureCorrelationGuard", "m_enableCorrelationGuard"):
+        if token not in portfolio:
+            errors.append(f"PortfolioManager.mqh missing optional correlation exposure contract: {token}")
+
+    session_filter = by_rel.get("includes/Core/SessionFilter.mqh", "")
+    extended_levels = by_rel.get("includes/SmartMoney/ExtendedKeyLevels.mqh", "")
+    if "datetime CSessionFilter::CurrentSessionStartServer()" not in session_filter:
+        errors.append("SessionFilter.mqh missing server-time session boundary contract")
+    if "CurrentSessionStartServer()" not in extended_levels:
+        errors.append("ExtendedKeyLevels.mqh is not using server-time session boundaries")
+    if "CurrentSessionStartGMT()" in extended_levels:
+        errors.append("ExtendedKeyLevels.mqh compares GMT session boundaries directly with server-time bars")
+    if "iTime(m_symbol, PERIOD_W1, 0)" not in extended_levels:
+        errors.append("ExtendedKeyLevels.mqh weekly cache is not anchored to broker W1 bar time")
+    
+    keylevel = by_rel.get("includes/Strategies/KeyLevelReaction.mqh", "")
+    for token in ("if(forBuy && z.bottom > price) continue;", "if(!forBuy && z.top < price) continue;"):
+        if token not in keylevel:
+            errors.append(f"KeyLevelReaction.mqh missing wrong-side zone guard: {token}")
+    if "if(dist < 0) dist = 0.0;" in keylevel:
+        errors.append("KeyLevelReaction.mqh still clamps wrong-side candidates to zero distance")
+    position_manager = by_rel.get("includes/Execution/PositionManager.mqh", "")
+    for token in ("m_tp1Done", "m_tp2Done", "CloseTargetSlice", "SyncTargetStage", "m_enableTargetLadder", "m_tp1PartialFraction", "m_tp2PartialFraction", "dec.setup.tp1", "dec.setup.tp2"):
+        if token not in position_manager:
+            errors.append(f"PositionManager.mqh missing target-ladder contract: {token}")
+    for token in ("InpEnableTargetLadder=false", "InpTP1PartialFraction=0.50", "InpTP2PartialFraction=0.25",
+                  "InpTP1PartialFraction+InpTP2PartialFraction>=1.0", "INIT_PARAMETERS_INCORRECT"):
+        if token not in ea:
+            errors.append(f"MedisTouch_v2.8.mq5 missing target-ladder safety contract: {token}")
+    calibration = by_rel.get("includes/Trading/CalibrationEngine.mqh", "")
+    quality_calibration = by_rel.get("includes/Decision/DecisionQuality.mqh", "")
+    for token in ("GetConservativeProbability", "const double z = 1.96"):
+        if token not in calibration:
+            errors.append(f"CalibrationEngine.mqh missing conservative calibration contract: {token}")
+    if "setup.calibration_lower_bound>=minCalibratedProbability" not in quality_calibration:
+        errors.append("DecisionQuality.mqh high-conviction risk class is missing conservative calibration bound")
+    for token in ("InpEnableCorrelationGuard=false", "InpCorrelationLookback", "InpCorrelationThreshold", "g_portfolio.ConfigureCorrelationGuard"):
+        if token not in ea:
+            errors.append(f"MedisTouch_v2.8.mq5 missing portfolio correlation guard wiring: {token}")
 
     # The multi-trade planner is a portfolio policy component. It may evaluate
     # eligibility/allocation, but it must not reach into order submission or
@@ -278,3 +479,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# risk-class promotion must remain conservative even when calibration has enough samples
+# and requires qualified environment memory for elevated classes.
