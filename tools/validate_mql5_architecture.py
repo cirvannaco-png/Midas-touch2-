@@ -323,6 +323,16 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
         errors.append("Inducement.mqh does not expose the shared thresholded displacement helper")
     if "m_followThroughATRMult, m_followThroughBodyRatio" not in inducement:
         errors.append("Inducement.mqh sweep grading is not using independent follow-through thresholds")
+    regime_stability = by_rel.get("includes/Regime/RegimeDetector.mqh", "")
+    for token in ("ClassifyStable(datetime referenceTime)", "referenceTime==m_lastReferenceTime", "return REGIME_TRANSITION;"):
+        if token not in regime_stability:
+            errors.append(f"RegimeDetector.mqh missing conservative stability invariant: {token}")
+    if "ConfigureRegimeStability" not in by_rel.get("includes/Analysis/Scoring.mqh", ""):
+        errors.append("Scoring.mqh missing regime stability configuration")
+    for token in ("InpRequireRegimeStability=false", "InpRegimeStabilityBars=2", "g_scoring.ConfigureRegimeStability"):
+        if token not in ea:
+            errors.append(f"MedisTouch_v2.8.mq5 missing regime stability wiring: {token}")
+
     # Actionable strategy routing must consume only completed bars.
     for file_name, source in (
         ("StrategySetupBuilders.mqh", strategy_builders),
