@@ -73,7 +73,7 @@ public:
                                       bool requireFullyValidSMC=false);
 
    void FinalizeWithCalibration(TradeSetup &setup,bool requireCalibratedProbability,
-                                double minCalibratedProbability);
+                                double minCalibratedProbability,double conservativeProbability=0.0);
 
    TradeSetup GenerateBuySetup();
    TradeSetup GenerateSellSetup();
@@ -518,11 +518,11 @@ bool CTradeDecision::ApplyQualityFirewall(TradeSetup &setup,bool isSMC)
   }
 
 void CTradeDecision::FinalizeWithCalibration(TradeSetup &setup,bool requireCalibratedProbability,
-                                              double minCalibratedProbability)
+                                              double minCalibratedProbability,double conservativeProbability)
   {
    if(!m_enableDecisionArchitecture||!setup.active) return;
    CTradeQualityFirewall firewall;
-   firewall.FinalizeWithCalibration(setup,requireCalibratedProbability,minCalibratedProbability);
+   firewall.FinalizeWithCalibration(setup,requireCalibratedProbability,minCalibratedProbability,conservativeProbability);
    setup.reasons.decision_state=setup.decision_state;
   }
 
