@@ -354,11 +354,13 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     if "if(dist < 0) dist = 0.0;" in keylevel:
         errors.append("KeyLevelReaction.mqh still clamps wrong-side candidates to zero distance")
     position_manager = by_rel.get("includes/Execution/PositionManager.mqh", "")
-    for token in ("m_tp1Done", "m_tp2Done", "CloseTargetSlice", "InpEnableTargetLadder", "dec.setup.tp1", "dec.setup.tp2"):
-        if token not in position_manager and token != "InpEnableTargetLadder":
+    for token in ("m_tp1Done", "m_tp2Done", "CloseTargetSlice", "SyncTargetStage", "dec.setup.tp1", "dec.setup.tp2"):
+        if token not in position_manager:
             errors.append(f"PositionManager.mqh missing target-ladder contract: {token}")
-    if "InpEnableTargetLadder=false" not in ea:
-        errors.append("MedisTouch_v2.8.mq5 target-ladder research gate must default OFF")
+    for token in ("InpEnableTargetLadder=false", "InpTP1PartialFraction=0.50", "InpTP2PartialFraction=0.25",
+                  "InpTP1PartialFraction+InpTP2PartialFraction>=1.0", "INIT_PARAMETERS_INCORRECT"):
+        if token not in ea:
+            errors.append(f"MedisTouch_v2.8.mq5 missing target-ladder safety contract: {token}")
     calibration = by_rel.get("includes/Trading/CalibrationEngine.mqh", "")
     quality_calibration = by_rel.get("includes/Decision/DecisionQuality.mqh", "")
     for token in ("GetConservativeProbability", "const double z = 1.96"):
