@@ -154,6 +154,13 @@ def test_target_ladder_stage_is_restart_safe():
     assert "void CPositionManager::SyncTargetStage" in t
     assert "m_tp1Done[state]=true" in t
     assert "m_tp2Done[state]=true" in t
+
+
+def test_target_ladder_fractions_are_validated():
+    t=EA.read_text()
+    assert "InpTP1PartialFraction<=0.0" in t
+    assert "InpTP1PartialFraction+InpTP2PartialFraction>=1.0" in t
+    assert "INIT_PARAMETERS_INCORRECT" in t
 def test_target_ladder_is_explicitly_disabled_by_default():
     t=EA.read_text()
     pm=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
