@@ -387,6 +387,22 @@ def test_key_level_candidates_stay_on_the_correct_side():
     assert "if(dist < 0) continue;" in t
     assert "if(dist < 0) dist = 0.0;" not in t
 
+def test_structural_validator_fails_closed_on_non_finite_inputs():
+    t = read("EA/includes/Decision/DecisionQuality.mqh")
+    assert "!MathIsValidNumber(r.liquidity_pool_price)" in t
+    assert "!MathIsValidNumber(r.sweep_penetration_atr)" in t
+    assert "!MathIsValidNumber(r.displacement_atr)" in t
+    assert "!MathIsValidNumber(r.bos_distance_atr)" in t
+    assert "!MathIsValidNumber(r.fvg_distance_atr)" in t
+    assert "if(!MathIsValidNumber(v)) return 0.0;" in t
+
+
+def test_target_ladder_recovers_stage_from_remaining_volume():
+    t = read("EA/includes/Execution/PositionManager.mqh")
+    assert "void CPositionManager::SyncTargetStage" in t
+    assert "PositionGetDouble(POSITION_VOLUME)" in t
+    assert "m_tp1Done[state]=true" in t
+    assert "m_tp2Done[state]=true" in t
 
 def test_target_ladder_is_feature_flagged_and_uses_staged_partials():
     ea = read("EA/MedisTouch_v2.8.mq5")
