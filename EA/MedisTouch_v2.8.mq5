@@ -188,6 +188,9 @@ input double InpBreakEvenAtR=1.0;
 input double InpPartialAtR=2.0;
 input double InpPartialFraction=0.5;
 input double InpTrailATRMult=1.5;
+input bool InpEnableTargetLadder=false;   // research gate: use TP1/TP2 partials before the final liquidity target
+input double InpTP1PartialFraction=0.50;  // fraction of the original leg volume realized at TP1
+input double InpTP2PartialFraction=0.25;  // fraction of the original leg volume realized at TP2
 input group "Trade Simulator costs (v2.7)"
 input double InpSimCommissionPerLot=7.0;
 input double InpSimSpreadPoints=10.0;
