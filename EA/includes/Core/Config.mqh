@@ -127,6 +127,7 @@ struct TradeSetup {
    double calibrated_probability;
    int calibration_sample;
    bool calibration_has_enough_data;
+   double calibration_lower_bound;
 };
 
 double ResolveExecutionEntry(const TradeSetup &setup) { return setup.type==ORDER_TYPE_BUY?setup.entry_top:setup.entry_bottom; }
