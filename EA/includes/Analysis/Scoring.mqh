@@ -209,6 +209,7 @@ public:
    // enabled=false to restore pre-v2.8 all-sessions behavior.
    void              ConfigureSessionFilter(bool enabled, bool allowTokyo = false, bool allowLondon = true,
                                             bool allowNewYork = true, bool allowOverlap = true);
+   void              ConfigureRegimeStability(bool requireStability = false, int stabilityBars = 2);
    // v2.9 addition. FVGScore() now ranks every qualifying FVG and keeps
    // the best-scoring one instead of returning the first match found —
    // "first" had no relationship to "best" (freshness/proximity), so two
@@ -430,6 +431,11 @@ void CScoringEngine::ConfigureSessionFilter(bool enabled, bool allowTokyo, bool 
                                             bool allowNewYork, bool allowOverlap)
   {
    m_sessionFilter.Configure(enabled, allowTokyo, allowLondon, allowNewYork, allowOverlap);
+  }
+//+------------------------------------------------------------------+
+void CScoringEngine::ConfigureRegimeStability(bool requireStability,int stabilityBars)
+  {
+   m_regimeDetector.ConfigureStability(requireStability,stabilityBars);
   }
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureFVGProximity(double maxDistATR)
@@ -1005,7 +1011,8 @@ void CScoringEngine::ConfigureStrategySelection(double minSelectionScore)
 // diagnostic generation added (v2.10 got its own method; this does too).
 void CScoringEngine::PopulateStrategyDiagnostics(bool forBuy, double confidence, SetupReasons &out)
   {
-   out.regime = m_regimeDetector.Classify();
+   datetime decisionBarTime=(m_priceRef!=NULL&&m_priceRef.Total()>1)?m_priceRef.GetCandle(1).time:0;
+   out.regime = m_regimeDetector.ClassifyStable(decisionBarTime);
    m_momentumEngine.Evaluate(forBuy, out.momentum_score, out.breakout_score, out.breakout_class);
    // v2.13: independent second strategy score, same call site, same
    // "never feeds back" discipline as the momentum/breakout call above.
