@@ -197,7 +197,6 @@ bool CKeyLevelEngine::FindNearestLevel(bool forBuy, double atr, double price, do
       if(forBuy ? (lvl > price) : (lvl < price)) continue;
       double dist = forBuy ? (price - lvl) : (lvl - price);
       if(dist <= bestDist) { bestDist = dist; levelPrice = lvl; source = LEVEL_VALUE_AREA; found = true; }
-      if(dist <= bestDist) { bestDist = dist; levelPrice = lvl; source = LEVEL_VALUE_AREA; found = true; }
      }
    if(m_liquidity != NULL)
      {
