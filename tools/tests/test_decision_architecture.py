@@ -404,6 +404,13 @@ def test_target_ladder_recovers_stage_from_remaining_volume():
     assert "m_tp1Done[state]=true" in t
     assert "m_tp2Done[state]=true" in t
 
+
+def test_target_ladder_fractions_are_validated_at_startup():
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    assert "InpTP1PartialFraction<=0.0" in ea
+    assert "InpTP1PartialFraction+InpTP2PartialFraction>=1.0" in ea
+    assert "INIT_PARAMETERS_INCORRECT" in ea
+
 def test_target_ladder_is_feature_flagged_and_uses_staged_partials():
     ea = read("EA/MedisTouch_v2.8.mq5")
     pm = read("EA/includes/Execution/PositionManager.mqh")
