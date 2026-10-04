@@ -136,6 +136,22 @@ Calibration data is persisted under a versioned schema filename so a strategy/mo
 
 The evidence-gated calibration decision is intentionally optional until sufficient locked-OOS and MT5 evidence exists.
 
+## Conservative calibration for elevated risk
+
+The calibrated probability remains the empirical bucket win rate. In addition, Midas computes a 95% Wilson lower confidence bound for the same bucket. The lower bound is not substituted for the displayed probability; it is a conservative uncertainty measure used only when considering high-conviction risk.
+
+This prevents a small bucket with an apparently excellent observed win rate from automatically qualifying for elevated sizing. Standard risk continues to use the empirical probability only when its existing positive-expected-R and environment requirements are satisfied.
+
+## Target ladder research gate
+
+Midas assigns a target ladder from resting liquidity and higher-timeframe levels:
+
+- TP1: nearest eligible internal liquidity;
+- TP2: next eligible external liquidity beyond TP1;
+- TP3/final: a valid weekly liquidity level when available, otherwise a deterministic ATR fallback.
+
+A feature-gated target-management path can realize a partial at TP1, a second partial at TP2, and leave the final target on the runner. `InpEnableTargetLadder` defaults OFF until locked OOS testing demonstrates better loss containment and/or expectancy without unacceptable payoff or trade-count degradation.
+
 ## Sweep follow-through displacement hardening
 
 The SMC chain distinguishes the initial impulse from the displacement that should follow an internal liquidity sweep.
