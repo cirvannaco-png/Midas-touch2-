@@ -377,3 +377,41 @@ def test_value_area_profile_is_closed_bar_only():
     assert "GetCandle(1)" in value_area
     assert "GetATR(1)" in value_area
     assert "TimeCurrent()" not in value_area
+
+def test_key_level_candidates_stay_on_the_correct_side():
+    t = read("EA/includes/Strategies/KeyLevelReaction.mqh")
+    assert "if(forBuy && z.bottom > price) continue;" in t
+    assert "if(!forBuy && z.top < price) continue;" in t
+    assert "if(dist < 0) continue;" in t
+    assert "if(dist < 0) dist = 0.0;" not in t
+
+
+def test_target_ladder_is_feature_flagged_and_uses_staged_partials():
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    pm = read("EA/includes/Execution/PositionManager.mqh")
+    assert "InpEnableTargetLadder=false" in ea
+    assert "InpTP1PartialFraction=0.50" in ea
+    assert "InpTP2PartialFraction=0.25" in ea
+    assert "m_tp1Done" in pm
+    assert "m_tp2Done" in pm
+    assert "CloseTargetSlice" in pm
+    assert "dec.setup.tp1" in pm
+    assert "dec.setup.tp2" in pm
+    assert "if(InpEnableTargetLadder)" in pm
+    assert "stateAfterStop==TS_PROTECTED || stateAfterStop==TS_FILLED" in pm
+
+
+def test_calibration_high_conviction_uses_conservative_bound():
+    calibration = read("EA/includes/Trading/CalibrationEngine.mqh")
+    quality = read("EA/includes/Decision/DecisionQuality.mqh")
+    config = read("EA/includes/Core/Config.mqh")
+    ea = read("EA/MedisTouch_v2.8.mq5")
+    tracker = read("EA/includes/Trading/OutcomeTracker.mqh")
+    live = read("EA/includes/Trading/OutcomeTrackerLive.mqh")
+    assert "GetConservativeProbability" in calibration
+    assert "const double z = 1.96" in calibration
+    assert "calibration_lower_bound" in config
+    assert "setup.calibration_lower_bound>=minCalibratedProbability" in quality
+    assert "chosen.calibration_lower_bound=g_tracker.GetConservativeProbability" in ea
+    assert "GetConservativeProbability(double confidence)" in tracker
+    assert "GetConservativeProbability(double confidence)" in live
