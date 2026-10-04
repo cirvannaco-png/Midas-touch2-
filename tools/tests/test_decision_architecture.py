@@ -422,7 +422,10 @@ def test_target_ladder_is_feature_flagged_and_uses_staged_partials():
     assert "CloseTargetSlice" in pm
     assert "dec.setup.tp1" in pm
     assert "dec.setup.tp2" in pm
-    assert "if(InpEnableTargetLadder)" in pm
+    assert "if(m_enableTargetLadder)" in pm
+    assert "m_tp1PartialFraction" in pm
+    assert "m_tp2PartialFraction" in pm
+    assert "enableTargetLadder=false" in pm
     assert "stateAfterStop==TS_PROTECTED || stateAfterStop==TS_FILLED" in pm
 
 
