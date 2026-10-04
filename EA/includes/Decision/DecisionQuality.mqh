@@ -88,22 +88,28 @@ public:
         }
       out.stage=STRUCTURE_STAGE_LIQUIDITY_IDENTIFIED;
 
-      if(!r.liquidity_swept || r.liquidity_pool_price<=0.0 ||
-         r.sweep_penetration_atr<=0.0 || r.sweep_rejection_ratio<=0.0)
+      if(!r.liquidity_swept ||
+         !MathIsValidNumber(r.liquidity_pool_price) || r.liquidity_pool_price<=0.0 ||
+         !MathIsValidNumber(r.sweep_penetration_atr) || r.sweep_penetration_atr<=0.0 ||
+         !MathIsValidNumber(r.sweep_rejection_ratio) || r.sweep_rejection_ratio<=0.0)
         {
          out.reason="liquidity identified but sweep provenance is incomplete or not confirmed";
          return out;
         }
       out.stage=STRUCTURE_STAGE_LIQUIDITY_SWEPT;
 
-      if(!r.sweep_follow_through || r.displacement_atr<=0.0 || r.displacement_body_ratio<=0.0)
+      if(!r.sweep_follow_through ||
+         !MathIsValidNumber(r.displacement_atr) || r.displacement_atr<=0.0 ||
+         !MathIsValidNumber(r.displacement_body_ratio) || r.displacement_body_ratio<=0.0)
         {
          out.reason="sweep did not produce confirmed displacement follow-through";
          return out;
         }
       out.stage=STRUCTURE_STAGE_VALID_DISPLACEMENT;
 
-      if(!r.bos_confirmed || r.bos_time<=0 || r.bos_distance_atr<=0.0 || r.bos_strength<=0.0)
+      if(!r.bos_confirmed || r.bos_time<=0 ||
+         !MathIsValidNumber(r.bos_distance_atr) || r.bos_distance_atr<=0.0 ||
+         !MathIsValidNumber(r.bos_strength) || r.bos_strength<=0.0)
         {
          out.reason="displacement has no confirming production BOS provenance";
          return out;
@@ -128,7 +134,8 @@ public:
       else
          out.stage=STRUCTURE_STAGE_CAUSAL_FVG;
 
-      if(r.fvg_age_bars<0 || r.fvg_distance_atr<0.0 || r.fvg_distance_atr>2.0)
+      if(r.fvg_age_bars<0 || !MathIsValidNumber(r.fvg_distance_atr) ||
+         r.fvg_distance_atr<0.0 || r.fvg_distance_atr>2.0)
         {
          out.reason="FVG provenance is stale, non-finite, or too distant from decision price";
          return out;
@@ -142,7 +149,7 @@ public:
       out.stage=STRUCTURE_STAGE_LOCATION_VALID;
 
       bool freshOrTested=(r.fvg_state==FVG_FRESH || r.fvg_state==FVG_TESTED);
-      if(!freshOrTested || r.time_decay<=0.0)
+      if(!freshOrTested || !MathIsValidNumber(r.time_decay) || r.time_decay<=0.0)
         {
          out.reason="entry zone is no longer fresh/tradeable or structure has fully decayed";
          return out;
@@ -150,7 +157,8 @@ public:
       out.stage=STRUCTURE_STAGE_FRESHNESS_VALID;
 
       bool buy=(setup.type==ORDER_TYPE_BUY);
-      bool invalidationDefined=(setup.invalidation>0.0 && setup.stop_loss>0.0 &&
+      bool invalidationDefined=(MathIsValidNumber(setup.invalidation) && setup.invalidation>0.0 &&
+                                MathIsValidNumber(setup.stop_loss) && setup.stop_loss>0.0 &&
                                 ((buy && setup.stop_loss<setup.invalidation && setup.invalidation<setup.entry_bottom) ||
                                  (!buy && setup.stop_loss>setup.invalidation && setup.invalidation>setup.entry_top)));
       if(!invalidationDefined)
@@ -165,7 +173,8 @@ public:
       double displacement=MathMin(MathMax(r.displacement_atr/2.0,0.0),1.0);
       double fvgQuality=(r.fvg_state==FVG_FRESH)?1.0:0.70;
       double location=(r.premium_discount_ok && !r.value_area_contradiction)?1.0:0.0;
-      double invalidation=(r.invalidation_distance_atr>0.0)?MathMin(1.0,r.invalidation_distance_atr/2.0):1.0;
+      double invalidation=(MathIsValidNumber(r.invalidation_distance_atr) && r.invalidation_distance_atr>0.0)
+                     ?MathMin(1.0,r.invalidation_distance_atr/2.0):0.0;
 
       out.score=100.0*(0.20*sweep+0.25*bos+0.15*displacement+0.15*fvgQuality+0.15*location+0.10*invalidation);
       // A tested FVG is a legitimate retest lifecycle state. Its quality
@@ -190,7 +199,11 @@ public:
 class CTradeQualityFirewall
   {
 private:
-   double Clamp01(double v) const { return MathMin(1.0,MathMax(0.0,v)); }
+   double Clamp01(double v) const
+     {
+      if(!MathIsValidNumber(v)) return 0.0;
+      return MathMin(1.0,MathMax(0.0,v));
+     }
 
    double EnvironmentFactor(const SetupReasons &r) const
      {
