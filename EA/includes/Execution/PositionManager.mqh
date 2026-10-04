@@ -158,8 +158,7 @@ void CPositionManager::SyncTargetStage(int idx,ulong ticket)
    double step=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_STEP);
    if(minVol<=0.0) return;
 
-   double first=MathMin(current+original,original*MathMin(1.0,MathMax(0.0,InpTP1PartialFraction)));
-   first=MathMin(original-minVol,first);
+   double first=MathMin(original-minVol,original*MathMin(1.0,MathMax(0.0,InpTP1PartialFraction)));
    if(step>0.0) first=MathFloor(first/step)*step;
 
    if(first>=minVol && current <= original-first+(step>0.0?step*0.5:0.00000001))
