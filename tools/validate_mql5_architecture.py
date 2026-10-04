@@ -285,9 +285,13 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     if durable_save_pos < 0 or tracker_pos < durable_save_pos or execute_gate_pos < 0 or tracker_pos > execute_gate_pos:
         errors.append("Outcome tracking is admitted before durable executable decision acceptance")
     decision_store = by_rel.get("includes/Decision/DecisionStore.mqh", "")
-    for token in ("string p[39]", "if(n>=39)", "rec.setup.reasons.structural_state", "rec.setup.calibrated_probability", "rec.setup.reasons.quality_score"):
+    for token in ("string p[40]", "if(n>=39)", "rec.setup.reasons.structural_state", "rec.setup.calibrated_probability", "rec.setup.reasons.quality_score"):
         if token not in decision_store:
             errors.append(f"DecisionStore.mqh missing durable decision lineage field/restore logic: {token}")
+    if "p[39]=DoubleToString(rec.setup.calibration_lower_bound,4)" not in decision_store:
+        errors.append("DecisionStore.mqh missing calibration lower-bound persistence")
+    if "if(n>=40) rec.setup.calibration_lower_bound=StringToDouble(f[39]);" not in decision_store:
+        errors.append("DecisionStore.mqh missing calibration lower-bound restore")
     for token in ("setup.setup_lifecycle=SETUP_EXPIRED", "q.decision==DECISION_TRADE?SETUP_ENTRY_ELIGIBLE:SETUP_EXPIRED"):
         if token not in strategy and token not in quality:
             errors.append(f"StrategyTradeZone/DecisionQuality lifecycle mapping missing: {token}")
