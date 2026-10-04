@@ -142,6 +142,12 @@ The calibrated probability remains the empirical bucket win rate. In addition, M
 
 This prevents a small bucket with an apparently excellent observed win rate from automatically qualifying for elevated sizing. Standard risk continues to use the empirical probability only when its existing positive-expected-R and environment requirements are satisfied.
 
+## Regime stability research gate
+
+The raw regime classifier can move between TRENDING, RANGING, and TRANSITION as its component reads change. An optional stability gate now requires the same actionable regime to appear on consecutive completed decision bars before peer-strategy routing can use it. Until confirmation, routing is conservatively treated as REGIME_TRANSITION; REGIME_UNDEFINED also fails closed.
+
+InpRequireRegimeStability defaults OFF. The gate is a research candidate, not a claimed edge: promotion requires locked OOS evidence that reduced regime churn improves loss containment/expectancy without destructive trade-count collapse, followed by MetaEditor plus MT5 Strategy Tester parity.
+
 ## Target ladder research gate
 
 Midas assigns a target ladder from resting liquidity and higher-timeframe levels:
