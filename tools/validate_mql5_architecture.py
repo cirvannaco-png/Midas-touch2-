@@ -354,7 +354,7 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     if "if(dist < 0) dist = 0.0;" in keylevel:
         errors.append("KeyLevelReaction.mqh still clamps wrong-side candidates to zero distance")
     position_manager = by_rel.get("includes/Execution/PositionManager.mqh", "")
-    for token in ("m_tp1Done", "m_tp2Done", "CloseTargetSlice", "SyncTargetStage", "dec.setup.tp1", "dec.setup.tp2"):
+    for token in ("m_tp1Done", "m_tp2Done", "CloseTargetSlice", "SyncTargetStage", "m_enableTargetLadder", "m_tp1PartialFraction", "m_tp2PartialFraction", "dec.setup.tp1", "dec.setup.tp2"):
         if token not in position_manager:
             errors.append(f"PositionManager.mqh missing target-ladder contract: {token}")
     for token in ("InpEnableTargetLadder=false", "InpTP1PartialFraction=0.50", "InpTP2PartialFraction=0.25",
