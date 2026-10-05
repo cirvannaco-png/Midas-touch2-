@@ -2,8 +2,6 @@ name: Midas Touch - GitHub to GitLab Sync
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -17,7 +15,6 @@ jobs:
     name: Sync GitHub main to private GitLab main
     if: >
       ${{ github.event_name == 'workflow_dispatch' ||
-          github.event_name == 'push' ||
           (github.event_name == 'workflow_run' &&
            github.event.workflow_run.conclusion == 'success' &&
            github.event.workflow_run.head_branch == github.event.repository.default_branch) }}
