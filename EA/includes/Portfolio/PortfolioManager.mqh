@@ -11,6 +11,7 @@ private:
    string CorrelationGroup(string symbol); double OpenRiskAmount(ulong ticket);
 public:
    void Init(double maxPortfolioRiskPercent,int maxPositionsPerSymbol,int maxPositionsPerGroup,ulong magic,CRiskEngine* risk);
+   void SetPositionLimits(int maxPositionsPerSymbol,int maxPositionsPerGroup);
    bool AllowNewTrade(string symbol,double proposedRiskAmount,string &reasonOut);
    bool AllowNewTradeBatch(string symbol,double proposedRiskAmount,int proposedPositions,string &reasonOut);
   };
@@ -18,6 +19,13 @@ void CPortfolioManager::Init(double maxPortfolioRiskPercent,int maxPositionsPerS
   {
    m_maxPortfolioRiskPercent=MathMax(0.0,maxPortfolioRiskPercent); m_maxPositionsPerSymbol=MathMax(1,maxPositionsPerSymbol);
    m_maxPositionsPerGroup=MathMax(1,maxPositionsPerGroup); m_magic=magic; m_risk=risk;
+  }
+// Adaptive capacity changes position-count gates only. The aggregate
+// portfolio-risk cap remains the independent exposure governor.
+void CPortfolioManager::SetPositionLimits(int maxPositionsPerSymbol,int maxPositionsPerGroup)
+  {
+   m_maxPositionsPerSymbol=MathMax(1,maxPositionsPerSymbol);
+   m_maxPositionsPerGroup=MathMax(1,maxPositionsPerGroup);
   }
 string CPortfolioManager::CorrelationGroup(string symbol)
   {
