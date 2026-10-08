@@ -28,7 +28,7 @@ def test_rolling_20_50_and_full_trade_results_drive_capacity():
     assert "m_longWindow(50)" in t
     assert "shortStats.AverageRMultiple()" in g
     assert "longStats.AverageRMultiple()" in g
-    assert "stats.AverageRMultiple()" in g
+    assert "lifetime.AverageRMultiple()" in g
 
 
 def test_progressive_levels_remain_harder_and_use_pf_wr_avg_r():
