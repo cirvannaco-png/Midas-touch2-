@@ -24,6 +24,9 @@ def test_rolling_20_50_and_full_trade_results_drive_capacity():
     assert "ConfigureRollingPerformance" in t
     assert "GetRollingStats" in t
     assert "RecordRollingOutcome(rr,coarseOutcome==\"win\")" in t
+    assert "void RecordRollingOutcome(double realizedR,bool win)" in t
+    assert "void BuildRollingStats(int window,OutcomeStats &out) const" in t
+    assert "m_rollingHead=(m_rollingHead+1)%capacity" in t
     assert "m_shortWindow(20)" in t
     assert "m_longWindow(50)" in t
     assert "shortStats.AverageRMultiple()" in g
