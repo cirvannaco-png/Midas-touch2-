@@ -150,14 +150,14 @@ input double InpFullRiskConfidence=85.0;
 input int InpMaxSpreadPoints=0;
 input group "Execution"
 input bool InpUseMarketOrders=true;
-input double InpRiskPercentPerTrade=0.5;
-input int InpMaxOpenTrades=3;
+input double InpRiskPercentPerTrade=0.35;
+input int InpMaxOpenTrades=2;
 input ulong InpMagicNumber=987654321;
 input bool InpAllowMinLotOverride=false;
-input double InpMaxDailyLossPercent=3.0;
-input double InpMaxDrawdownPercent=10.0;
-input double InpDeriskStartPercent=5.0;
-input double InpDeriskFloor=0.25;
+input double InpMaxDailyLossPercent=2.0;
+input double InpMaxDrawdownPercent=8.0;
+input double InpDeriskStartPercent=3.0;
+input double InpDeriskFloor=0.15;
 input bool InpUseNewsFilter=false;
 input string InpNewsFilterFile="MedisTouch_News.csv";
 input int InpNewsMinutesBefore=15;
@@ -169,7 +169,7 @@ input group "Position Management"
 input double InpBreakEvenAtR=1.0;
 input double InpPartialAtR=2.0;
 input double InpPartialFraction=0.5;
-input double InpTrailATRMult=1.5;
+input double InpTrailATRMult=1.5; // runner simulation/reference trail; live DynamicStopEngine is independently enabled
 input group "Trade Simulator costs (v2.7)"
 input double InpSimCommissionPerLot=7.0;
 input double InpSimSpreadPoints=10.0;
