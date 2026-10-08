@@ -30,9 +30,11 @@ private:
 
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
+   void              SetMaxOpenTrades(int maxOpenTrades);
    bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0);
    bool              RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice=0.0,int legIndex=0);
    int               OpenCount();
+   int               MaxOpenTrades() const { return m_maxOpen; }
    int               Total() { return ArraySize(m_trades); }
    void              Prune();
    bool              MarkFilledFromPending(ulong orderTicket,ulong positionTicket,double fillPrice=0.0);
@@ -59,6 +61,12 @@ void COrderManager::Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMon
    m_maxOpen=MathMax(1,maxOpenTrades);
    m_monitor=monitor;
    ArrayResize(m_trades,0);
+  }
+// Adaptive capacity changes only the admission ceiling for NEW orders.
+// Existing trades are never closed solely because capacity contracts.
+void COrderManager::SetMaxOpenTrades(int maxOpenTrades)
+  {
+   m_maxOpen=MathMax(1,maxOpenTrades);
   }
 //+------------------------------------------------------------------+
 int COrderManager::FindByDecisionAndLeg(long id,int legIndex)
