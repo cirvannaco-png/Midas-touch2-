@@ -53,7 +53,7 @@ private:
    int    m_perSymbol;
    int    m_perGroup;
 
-   int    m_lastResolvedCount;
+   int    m_lastEvidenceSample;
    int    m_tradesSinceChange;
    int    m_promotionCandidate;
    int    m_promotionStreak;
@@ -165,7 +165,7 @@ public:
       m_provenMaxOpen(5),m_provenPerSymbol(5),m_provenPerGroup(5),
       m_eliteMaxOpen(6),m_elitePerSymbol(6),m_elitePerGroup(6),
       m_statisticalLevel(0),m_effectiveLevel(0),m_maxOpen(3),m_perSymbol(3),m_perGroup(3),
-      m_lastResolvedCount(0),m_tradesSinceChange(0),m_promotionCandidate(0),m_promotionStreak(0),m_demotionStreak(0),
+      m_lastEvidenceSample(0),m_tradesSinceChange(0),m_promotionCandidate(0),m_promotionStreak(0),m_demotionStreak(0),
       m_regimeEligible(true),m_executionHealthy(true) {}
 
    void Init(bool enabled,
@@ -221,15 +221,15 @@ public:
       m_provenPromotionCooldown=MathMax(m_strongPromotionCooldown,provenPromotionCooldown);
       m_elitePromotionCooldown=MathMax(m_provenPromotionCooldown,elitePromotionCooldown);
       m_statisticalLevel=0;m_effectiveLevel=0;m_maxOpen=m_baselineMaxOpen;m_perSymbol=m_baselinePerSymbol;m_perGroup=m_baselinePerGroup;
-      m_lastResolvedCount=0;m_tradesSinceChange=0;m_promotionCandidate=0;m_promotionStreak=0;m_demotionStreak=0;
+      m_lastEvidenceSample=0;m_tradesSinceChange=0;m_promotionCandidate=0;m_promotionStreak=0;m_demotionStreak=0;
       m_regimeEligible=true;m_executionHealthy=true;
      }
 
    void Refresh(const OutcomeStats &lifetime,const OutcomeStats &shortStats,const OutcomeStats &longStats,double drawdownPercent,bool executionHealthy)
      {
-      int resolved=lifetime.resolvedCount;
-      int delta=resolved-m_lastResolvedCount;
-      if(delta<0)delta=resolved; // safe recovery after any tracker reset
+      int evidenceSample=lifetime.wins+lifetime.losses;
+      int delta=evidenceSample-m_lastEvidenceSample;
+      if(delta<0)delta=evidenceSample; // safe recovery after any tracker reset
       if(delta>0)
         {
          m_tradesSinceChange+=delta;
@@ -257,7 +257,7 @@ public:
          if(m_statisticalLevel>0 && m_demotionStreak>=m_demotionConfirmations)
            ApplyLevel(m_statisticalLevel-1);
         }
-      m_lastResolvedCount=resolved;
+      m_lastEvidenceSample=evidenceSample;
       m_executionHealthy=executionHealthy;
       RecomputeEffectiveLevel(MathMax(0.0,drawdownPercent));
      }
