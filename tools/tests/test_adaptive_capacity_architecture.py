@@ -78,6 +78,9 @@ def test_execution_health_kill_switch_is_capacity_only():
     assert "CapacityExpansionHealthy" in t
     assert "m_recentBrokerRejects" in t
     assert "m_capacityLatencyFault" in t
+    assert "m_maxRecentBrokerRejects" in t
+    assert "return m_recentBrokerRejects<=m_maxRecentBrokerRejects" in t
     e = EA.read_text()
     assert "InpAdaptiveCapacityMaxRecentBrokerRejects" in e
     assert "InpAdaptiveCapacityMaxFillLatencyMs" in e
+\n\ndef test_baseline_risk_envelope_is_unchanged():\n    t = EA.read_text()\n    assert "input double InpRiskPercentPerTrade=0.5;" in t\n    assert "input double InpMaxPortfolioRiskPercent=3.0;" in t\n    assert "input int InpMaxOpenTrades=3;" in t\n    assert "input int InpMaxPositionsPerSymbol=3;" in t\n    assert "input int InpMaxPositionsPerGroup=3;" in t\n
