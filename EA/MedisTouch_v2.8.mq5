@@ -175,9 +175,9 @@ input double InpSimCommissionPerLot=7.0;
 input double InpSimSpreadPoints=10.0;
 input double InpSimSlippagePoints=2.0;
 input group "Portfolio (account-wide, across every symbol this magic number trades)"
-input double InpMaxPortfolioRiskPercent=3.0;
-input int InpMaxPositionsPerSymbol=3;
-input int InpMaxPositionsPerGroup=3;
+input double InpMaxPortfolioRiskPercent=1.5;
+input int InpMaxPositionsPerSymbol=2;
+input int InpMaxPositionsPerGroup=2;
 input group "Portfolio — High-Probability Multi-Trade"
 input bool InpEnableMultiTrade=true;
 input double InpMultiTradeDualProbability=90.0;
