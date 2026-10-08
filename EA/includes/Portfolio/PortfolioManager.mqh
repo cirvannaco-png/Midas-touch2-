@@ -7,17 +7,18 @@
 class CPortfolioManager
   {
 private:
-   double m_maxPortfolioRiskPercent; int m_maxPositionsPerSymbol; int m_maxPositionsPerGroup; ulong m_magic; CRiskEngine* m_risk;
+   double m_maxPortfolioRiskPercent; double m_maxCorrelationGroupRiskPercent; int m_maxPositionsPerSymbol; int m_maxPositionsPerGroup; ulong m_magic; CRiskEngine* m_risk;
    string CorrelationGroup(string symbol); double OpenRiskAmount(ulong ticket);
 public:
    void Init(double maxPortfolioRiskPercent,int maxPositionsPerSymbol,int maxPositionsPerGroup,ulong magic,CRiskEngine* risk);
    void SetPositionLimits(int maxPositionsPerSymbol,int maxPositionsPerGroup);
+   void SetCorrelationGroupRiskLimit(double maxCorrelationGroupRiskPercent);
    bool AllowNewTrade(string symbol,double proposedRiskAmount,string &reasonOut);
    bool AllowNewTradeBatch(string symbol,double proposedRiskAmount,int proposedPositions,string &reasonOut);
   };
 void CPortfolioManager::Init(double maxPortfolioRiskPercent,int maxPositionsPerSymbol,int maxPositionsPerGroup,ulong magic,CRiskEngine* risk)
   {
-   m_maxPortfolioRiskPercent=MathMax(0.0,maxPortfolioRiskPercent); m_maxPositionsPerSymbol=MathMax(1,maxPositionsPerSymbol);
+   m_maxPortfolioRiskPercent=MathMax(0.0,maxPortfolioRiskPercent); m_maxCorrelationGroupRiskPercent=0.0; m_maxPositionsPerSymbol=MathMax(1,maxPositionsPerSymbol);
    m_maxPositionsPerGroup=MathMax(1,maxPositionsPerGroup); m_magic=magic; m_risk=risk;
   }
 // Adaptive capacity changes position-count gates only. The aggregate
@@ -26,6 +27,10 @@ void CPortfolioManager::SetPositionLimits(int maxPositionsPerSymbol,int maxPosit
   {
    m_maxPositionsPerSymbol=MathMax(1,maxPositionsPerSymbol);
    m_maxPositionsPerGroup=MathMax(1,maxPositionsPerGroup);
+  }
+void CPortfolioManager::SetCorrelationGroupRiskLimit(double maxCorrelationGroupRiskPercent)
+  {
+   m_maxCorrelationGroupRiskPercent=MathMax(0.0,maxCorrelationGroupRiskPercent);
   }
 string CPortfolioManager::CorrelationGroup(string symbol)
   {
@@ -53,6 +58,7 @@ bool CPortfolioManager::AllowNewTradeBatch(string symbol,double proposedRiskAmou
 
    string group=CorrelationGroup(symbol);
    double totalRisk=proposedRiskAmount;
+   double groupRisk=proposedRiskAmount;
    int symbolCount=0;
    int groupCount=0;
    bool unknown=false;
@@ -67,13 +73,14 @@ bool CPortfolioManager::AllowNewTradeBatch(string symbol,double proposedRiskAmou
       if(CorrelationGroup(posSymbol)==group) groupCount++;
       double risk=OpenRiskAmount(ticket);
       if(risk<0.0) unknown=true;
-      else totalRisk+=risk;
+      else {totalRisk+=risk;if(CorrelationGroup(posSymbol)==group)groupRisk+=risk;}
      }
 
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
    if(equity<=0.0){reasonOut="account equity unavailable/non-positive";return false;}
 
    double maxRiskAmount=equity*(m_maxPortfolioRiskPercent/100.0);
+   double maxGroupRiskAmount=equity*(m_maxCorrelationGroupRiskPercent/100.0);
    if(symbolCount+proposedPositions>m_maxPositionsPerSymbol)
      {
       reasonOut=StringFormat("%s would have %d position(s), above the per-symbol limit %d",
@@ -89,6 +96,11 @@ bool CPortfolioManager::AllowNewTradeBatch(string symbol,double proposedRiskAmou
    if(unknown)
      {
       reasonOut="an existing open position under this magic number has uncomputable risk — refusing new exposure until its stop/risk can be verified";
+      return false;
+     }
+   if(m_maxCorrelationGroupRiskPercent>0.0 && groupRisk>maxGroupRiskAmount)
+     {
+      reasonOut=StringFormat("correlation group %s would have open risk %.2f, above the %.2f%% group-risk cap (%.2f)",group,groupRisk,m_maxCorrelationGroupRiskPercent,maxGroupRiskAmount);
       return false;
      }
    if(totalRisk>maxRiskAmount)
