@@ -29,6 +29,7 @@ private:
    bool              m_drawdownAlertFired;
    int               m_healthWindowSec;
    int               m_recentBrokerRejects;
+   int               m_maxRecentBrokerRejects;
    datetime          m_healthWindowStart;
    double            m_maxCapacityFillLatencyMs;
    bool              m_capacityLatencyFault;
@@ -76,6 +77,7 @@ void CProductionMonitor::Init(string symbol, int heartbeatIntervalSec, double ma
    m_drawdownAlertFired = false;
    m_healthWindowSec=MathMax(60,capacityHealthWindowMin*60);
    m_recentBrokerRejects=0;
+   m_maxRecentBrokerRejects=MathMax(0,maxRecentBrokerRejects);
    m_healthWindowStart=m_startTime;
    m_maxCapacityFillLatencyMs=MathMax(0.0,maxCapacityFillLatencyMs);
    m_capacityLatencyFault=false;
@@ -183,7 +185,7 @@ bool CProductionMonitor::CapacityExpansionHealthy()
       m_recentBrokerRejects=0;
       m_capacityLatencyFault=false;
      }
-   return m_recentBrokerRejects<=2 && !m_capacityLatencyFault;
+   return m_recentBrokerRejects<=m_maxRecentBrokerRejects && !m_capacityLatencyFault;
   }
 //+------------------------------------------------------------------+
 string CProductionMonitor::StatusSummary()
