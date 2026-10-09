@@ -106,7 +106,12 @@ def test_placed_retcode_is_not_treated_as_completed_mutation():
 def test_market_request_without_fill_remains_pending_for_reconciliation():
     broker = BROKER.read_text(encoding="utf-8")
     orders = ORDERS.read_text(encoding="utf-8")
-    assert "fillPriceOut=(dealTicket>0 ? m_trade.ResultPrice() : 0.0);" in broker
-    assert "fill not confirmed" in orders
+    # A market request is only treated as filled after the deal maps to the live position.
+    # Keep this invariant aligned with BrokerAdapter's deal/position reconciliation logic.
+    assert "fillPriceOut=0.0;" in broker
+    assert "dealTicket>0 && ticketOut>0 && PositionSelectByTicket(ticketOut)" in broker
+    assert "dealPositionId>0 && livePositionId==dealPositionId" in broker
+    assert "fillPriceOut=m_trade.ResultPrice();" in broker
+    assert "accepted without a confirmed live-position ticket" in orders
     assert "if(fillPrice>0.0)" in orders
     assert "MarkFilledFromPending" in orders
