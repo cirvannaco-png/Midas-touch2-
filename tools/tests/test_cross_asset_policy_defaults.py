@@ -57,3 +57,13 @@ def test_minimum_lot_override_emits_explicit_risk_warning():
     text = EA.read_text(encoding="utf-8")
     assert "RISK BUDGET OVERRIDE:" in text
     assert "Disable InpAllowMinLotOverride to preserve strict sizing." in text
+
+
+def test_market_orders_size_and_validate_at_worst_allowed_fill():
+    ea = EA.read_text(encoding="utf-8")
+    risk = RISK.read_text(encoding="utf-8")
+    assert "bool CRiskEngine::ValidateSetupAtEntry(" in risk
+    assert "sizingEntry=(chosen.type==ORDER_TYPE_BUY)?entry+deviation:entry-deviation;" in ea
+    assert "ValidateSetupAtEntry(chosen,sizingEntry,InpMinRiskReward,InpMaxSLDistanceATR,atr)" in ea
+    assert "InpRiskPercentPerTrade*fraction,sizingEntry,chosen.stop_loss" in ea
+    assert "RiskAmountForLots(_Symbol,legLots[leg],sizingEntry,chosen.stop_loss)" in ea
