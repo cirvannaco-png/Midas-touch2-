@@ -104,8 +104,16 @@ def client():
         async def _offline_shutdown_bot():
             bot_module.application = None
 
+        async def _offline_outbox_worker(stop_event):
+            # Endpoint tests verify durable enqueue behavior. The worker's
+            # delivery transaction is driven directly in worker-focused tests;
+            # disabling its polling loop here avoids concurrent SQLite writes
+            # racing fixture cleanup across TestClient event loops.
+            await stop_event.wait()
+
         main_module.init_bot = _offline_init_bot
         main_module.shutdown_bot = _offline_shutdown_bot
+        main_module.run_outbox_worker = _offline_outbox_worker
         from app.models import BotSetting, Payment, Signal, SignalDeliveryOutbox, Subscriber, TradeEvent
 
         with TestClient(app) as c:
