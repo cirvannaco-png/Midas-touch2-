@@ -21,33 +21,40 @@ def test_daily_target_counts_qualified_completed_outcomes_not_entries():
     assert "realizedR+1e-9<m_minQualifiedR" in target
 
 
-def test_target_is_weekday_only_and_persists_across_restarts():
+def test_weekday_counter_persists_and_serializes_cross_symbol_updates():
     target = TARGET.read_text()
 
     assert "t.day_of_week>=1 && t.day_of_week<=5" in target
     assert "DateKey(at)!=m_dateKey" in target
-    assert "GlobalVariableSet(m_storageKey+\".D\"" in target
-    assert "GlobalVariableSet(m_storageKey+\".C\"" in target
-    assert "GlobalVariableCheck(m_storageKey+\".C\")" in target
-    assert "AccountInfoInteger(ACCOUNT_LOGIN)" in target
-    assert "SyncStoredState();return;" in target
-    assert "GlobalVariablesFlush();" in target
+    assert "CounterKey(int dateKey)" in target
+    assert "GlobalVariableSetOnCondition(m_lockKey,now,0.0)" in target
+    assert "GlobalVariableSetOnCondition(m_lockKey,now,observed)" in target
+    assert "GlobalVariableSetOnCondition(m_lockKey,0.0,token)" in target
+    assert "Under the shared lock, marker and counter writes are serialized" in target
     assert "GlobalVariableCheck(countedKey)" in target
     assert "QualifiedKey(ulong positionId)" in target
+    assert "GlobalVariablesFlush();" in target
+    assert "dateWrite==0 || countWrite==0" not in target
+    assert "countWrite==0" in target
+    assert "InitializeCurrentDayState()" in target
+    assert "GlobalVariableCheck(m_storageKey+\".D\")" in target
+    assert "GlobalVariableCheck(m_storageKey+\".C\")" in target
+    assert "AccountInfoInteger(ACCOUNT_LOGIN)" in target
     assert "m_lastPositionId" not in target
-    assert "markerWrite==0" in target
     assert "trade not counted." in target
-    assert "dateWrite==0 || countWrite==0" in target
 
 
-def test_entry_dealing_costs_are_included_before_qualification():
+def test_entry_costs_are_included_before_qualification_and_source_is_well_formed():
     ea = EA.read_text()
     tracker = TRACKER.read_text()
+    target = TARGET.read_text()
 
     assert "g_tracker.RecordExecutionCosts(decisionId,entryCommission,entrySwap,entryFee)" in ea
     assert "p.realizedPnL+=commission+swap+fee" in tracker
     assert "LastFinalizedR()const{return m_lastFinalizedR;}" in tracker
-    assert "No trades were forced." in TARGET.read_text()
+    assert "No trades were forced." in target
     assert "g_dailyTradeTarget.Init(InpMinimumQualifiedTradesPerDay,InpMinimumQualifiedTradeR,InpMagicNumber)" in ea
+    # Catch literal backslash-n tokens that are invalid in normal MQL source.
     assert "\\n" not in ea
     assert "\\n" not in tracker
+    assert "\\n" not in target
