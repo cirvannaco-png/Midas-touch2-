@@ -294,8 +294,9 @@ bool CBrokerAdapter::CloseFull(ulong ticket)
   {
    if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
    if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   if(m_trade.PositionClose(ticket)) return true;
-   LastRequestOk("CloseFull"); return false;
+   bool requestSent=m_trade.PositionClose(ticket);
+   bool serverAccepted=LastRequestOk("CloseFull");
+   return requestSent && serverAccepted;
   }
 #endif
 //+------------------------------------------------------------------+
