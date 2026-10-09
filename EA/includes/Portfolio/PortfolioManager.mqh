@@ -29,11 +29,28 @@ string CPortfolioManager::CorrelationGroup(string symbol)
 double CPortfolioManager::OpenRiskAmount(ulong ticket)
   {
    if(m_risk==NULL || !PositionSelectByTicket(ticket)) return -1.0;
-   string symbol=PositionGetString(POSITION_SYMBOL); double entry=PositionGetDouble(POSITION_PRICE_OPEN);
-   double sl=PositionGetDouble(POSITION_SL); double volume=PositionGetDouble(POSITION_VOLUME);
+
+   string symbol=PositionGetString(POSITION_SYMBOL);
+   ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+   double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+   double sl=PositionGetDouble(POSITION_SL);
+   double volume=PositionGetDouble(POSITION_VOLUME);
+
+   // Missing protection is unknown risk, so the portfolio gate must fail closed.
    if(sl<=0.0 || entry<=0.0 || volume<=0.0) return -1.0;
+
+   // Use the remaining adverse distance to the actual stop. A stop at or
+   // beyond entry locks out price-based loss at the stop, so its planned
+   // stop risk is zero rather than "unknown". Gaps, slippage and broker
+   // execution can still make a realized loss exceed this stop-based estimate.
+   if(type==POSITION_TYPE_BUY && sl>=entry) return 0.0;
+   if(type==POSITION_TYPE_SELL && sl<=entry) return 0.0;
+
+   // Any nonstandard/invalid position geometry is not safe to estimate.
+   if(type!=POSITION_TYPE_BUY && type!=POSITION_TYPE_SELL) return -1.0;
+
    double risk=m_risk.RiskAmountForLots(symbol,volume,entry,sl);
-   return risk>0.0 ? risk : -1.0;
+   return risk>0.0 ? risk : -1.0; // Invalid tick metadata remains unknown, not zero risk.
   }
 bool CPortfolioManager::AllowNewTradeBatch(string symbol,double proposedRiskAmount,int proposedPositions,string &reasonOut)
   {
