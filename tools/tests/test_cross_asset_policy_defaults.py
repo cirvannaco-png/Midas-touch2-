@@ -5,6 +5,7 @@ EA = ROOT / "EA" / "MedisTouch_v2.8.mq5"
 INDICATOR = ROOT / "EA" / "MedisTouch_Indicator_v2.8.mq5"
 KEY_LEVELS = ROOT / "EA" / "includes" / "SmartMoney" / "ExtendedKeyLevels.mqh"
 RISK = ROOT / "EA" / "includes" / "Trading" / "RiskEngine.mqh"
+PORTFOLIO = ROOT / "EA" / "includes" / "Portfolio" / "PortfolioManager.mqh"
 
 
 def test_fx_session_filter_is_opt_in():
@@ -67,3 +68,17 @@ def test_market_orders_size_and_validate_at_worst_allowed_fill():
     assert "ValidateSetupAtEntry(chosen,sizingEntry,InpMinRiskReward,InpMaxSLDistanceATR,atr)" in ea
     assert "InpRiskPercentPerTrade*fraction,sizingEntry,chosen.stop_loss" in ea
     assert "RiskAmountForLots(_Symbol,legLots[leg],sizingEntry,chosen.stop_loss)" in ea
+
+
+def test_portfolio_risk_includes_open_pending_orders():
+    text = PORTFOLIO.read_text(encoding="utf-8")
+    assert "double PendingOrderRiskAmount(ulong ticket);" in text
+    assert "for(int i=0;i<OrdersTotal();i++)" in text
+    assert "ORDER_VOLUME_CURRENT" in text
+    assert "PendingOrderRiskAmount(ticket)" in text
+    assert "position or pending order under this magic number has uncomputable risk" in text
+
+
+def test_final_target_cannot_be_missing_or_negative():
+    text = RISK.read_text(encoding="utf-8")
+    assert "setup.final_tp<=0.0 || setup.tp2<0.0" in text
