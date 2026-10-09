@@ -196,8 +196,11 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
      {
       if(m_trade.Buy(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketBuy"))
         {
+         ulong dealTicket=m_trade.ResultDeal();
          ticketOut=ResolvePositionTicket();
-         fillPriceOut=m_trade.ResultPrice();
+         fillPriceOut=(dealTicket>0 ? m_trade.ResultPrice() : 0.0);
+         if(dealTicket==0 && ticketOut>0)
+            PrintFormat("MedisTouch BrokerAdapter: %s accepted without a confirmed fill deal; retaining order #%I64u as pending for transaction reconciliation.", "MARKET_ORDER", ticketOut);
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
         }
@@ -220,8 +223,11 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
      {
       if(m_trade.Sell(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketSell"))
         {
+         ulong dealTicket=m_trade.ResultDeal();
          ticketOut=ResolvePositionTicket();
-         fillPriceOut=m_trade.ResultPrice();
+         fillPriceOut=(dealTicket>0 ? m_trade.ResultPrice() : 0.0);
+         if(dealTicket==0 && ticketOut>0)
+            PrintFormat("MedisTouch BrokerAdapter: %s accepted without a confirmed fill deal; retaining order #%I64u as pending for transaction reconciliation.", "MARKET_ORDER", ticketOut);
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
         }
