@@ -6,6 +6,8 @@ INDICATOR = ROOT / "EA" / "MedisTouch_Indicator_v2.8.mq5"
 KEY_LEVELS = ROOT / "EA" / "includes" / "SmartMoney" / "ExtendedKeyLevels.mqh"
 RISK = ROOT / "EA" / "includes" / "Trading" / "RiskEngine.mqh"
 PORTFOLIO = ROOT / "EA" / "includes" / "Portfolio" / "PortfolioManager.mqh"
+BROKER = ROOT / "EA" / "includes" / "Execution" / "BrokerAdapter.mqh"
+ORDERS = ROOT / "EA" / "includes" / "Execution" / "OrderManager.mqh"
 
 
 def test_fx_session_filter_is_opt_in():
@@ -82,3 +84,22 @@ def test_portfolio_risk_includes_open_pending_orders():
 def test_final_target_cannot_be_missing_or_negative():
     text = RISK.read_text(encoding="utf-8")
     assert "setup.final_tp<=0.0 || setup.tp2<0.0" in text
+
+
+def test_broker_mutations_require_server_retcode_confirmation():
+    text = BROKER.read_text(encoding="utf-8")
+    for method in ("CancelOrder", "ModifySLTP", "ClosePartial", "CloseFull"):
+        start = text.index(f"CBrokerAdapter::{method}(")
+        body = text[start:]
+        body = body[:body.index("\\n//+------------------------------------------------------------------+") if "\\n//+------------------------------------------------------------------+" in body else len(body)]
+        assert "LastRequestOk(" in body, f"{method} must inspect the broker retcode"
+        assert "serverAccepted" in body, f"{method} must not rely on the CTrade bool alone"
+
+
+def test_market_request_without_fill_remains_pending_for_reconciliation():
+    broker = BROKER.read_text(encoding="utf-8")
+    orders = ORDERS.read_text(encoding="utf-8")
+    assert "fillPriceOut=(dealTicket>0 ? m_trade.ResultPrice() : 0.0);" in broker
+    assert "fill not confirmed" in orders
+    assert "if(fillPrice>0.0)" in orders
+    assert "MarkFilledFromPending" in orders
