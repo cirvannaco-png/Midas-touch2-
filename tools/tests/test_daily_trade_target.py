@@ -16,7 +16,7 @@ def test_daily_target_counts_qualified_completed_outcomes_not_entries():
     assert "OnQualifiedClose(datetime at,double realizedR,ulong positionId)" in target
     assert "g_dailyTradeTarget.OnExecution" not in ea
     assert "OnExecution(" not in target
-    assert "tracked&&!stillOpen&&g_tracker.LastFinalizedQualified()" in ea
+    assert "if(tracked && !stillOpen && g_tracker.LastFinalizedQualified())" in ea
     assert "m_lastFinalizedQualified=(sized&&coarseOutcome==\"win\"" in tracker
     assert "realizedR+1e-9<m_minQualifiedR" in target
 
@@ -38,6 +38,8 @@ def test_target_is_weekday_only_and_persists_across_restarts():
     assert "markerWrite==0" in target
     assert "trade not counted." in target
     assert "GlobalVariablesFlush();" in target
+    assert "markerWrite==0" in target
+    assert "GlobalVariableCheck(countedKey)" in target
 
 
 def test_entry_dealing_costs_are_included_before_qualification():
