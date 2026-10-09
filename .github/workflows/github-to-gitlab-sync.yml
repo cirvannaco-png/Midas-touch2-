@@ -53,14 +53,26 @@ jobs:
           git config --global user.name "midas-sync-bot"
           git config --global user.email "midas-sync-bot@users.noreply.github.com"
 
-          sync_user="${GITLAB_SYNC_USER:-oauth2}"
-          clone_url="https://${sync_user}:${GITLAB_SYNC_TOKEN}@gitlab.com/midas-touch-group1/midas-touch2.git"
+          export GITLAB_SYNC_USER="${GITLAB_SYNC_USER:-oauth2}"
+          export GIT_ASKPASS=/tmp/midas-gitlab-askpass.sh
+          export GIT_TERMINAL_PROMPT=0
+          cat > "${GIT_ASKPASS}" <<'ASKPASS'
+          #!/usr/bin/env sh
+          case "$1" in
+            *Username*) printf '%s\n' "$GITLAB_SYNC_USER" ;;
+            *Password*) printf '%s\n' "$GITLAB_SYNC_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "${GIT_ASKPASS}"
+
           rm -rf /tmp/midas-gitlab-tree
-          if ! git clone --depth 1 --branch main "${clone_url}" /tmp/midas-gitlab-tree; then
+          if ! git clone --depth 1 --branch main \
+            "https://gitlab.com/midas-touch-group1/midas-touch2.git" \
+            /tmp/midas-gitlab-tree; then
             echo "::error::GitLab authentication/clone failed. Verify GITLAB_SYNC_TOKEN is unexpired, has write_repository scope, can access project 86337573, and matches GITLAB_SYNC_USER for the token type."
             exit 1
           fi
-          unset clone_url
 
           rsync -a --delete \
             --exclude '.git/' \
