@@ -263,8 +263,9 @@ bool CBrokerAdapter::PlaceLimit(string symbol,ENUM_ORDER_TYPE type,double volume
 bool CBrokerAdapter::CancelOrder(ulong ticket)
   {
    if(!IsConnected()) return false;
-   if(m_trade.OrderDelete(ticket)) return true;
-   LastRequestOk("CancelOrder"); return false;
+   bool requestSent=m_trade.OrderDelete(ticket);
+   bool serverAccepted=LastRequestOk("CancelOrder");
+   return requestSent && serverAccepted;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
