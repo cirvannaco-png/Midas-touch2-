@@ -237,7 +237,9 @@ input string InpModelVersion="model-v1";
 input string InpCalibrationVersion="calibration-v1";
 input string InpFeatureSchemaVersion="feature-v1";
 input string InpEnvironmentSchemaVersion="environment-v1";
-input group "Daily Qualified-Trade Objective — reporting only, never forces entries"\ninput int InpMinimumQualifiedTradesPerDay=3;\ninput double InpMinimumQualifiedTradeR=0.25;
+input group "Daily Qualified-Trade Objective — reporting only, never forces entries"
+input int InpMinimumQualifiedTradesPerDay=3;
+input double InpMinimumQualifiedTradeR=0.25;
 input string InpConfigSyncEndpoint="";
 input int InpConfigSyncPollMinutes=15;
 input group "Production Monitoring"
