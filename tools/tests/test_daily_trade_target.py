@@ -17,7 +17,7 @@ def test_daily_target_counts_qualified_completed_outcomes_not_entries():
     assert "g_dailyTradeTarget.OnExecution" not in ea
     assert "OnExecution(" not in target
     assert "tracked && !stillOpen && g_tracker.LastFinalizedQualified()" in ea
-    assert "m_lastFinalizedQualified=(sized&&coarseOutcome==\\"win\\"" in tracker
+    assert 'm_lastFinalizedQualified=(sized&&coarseOutcome=="win"' in tracker
     assert "realizedR+1e-9<m_minQualifiedR" in target
 
 
