@@ -46,14 +46,14 @@ private:
    bool EnsureLock()
      {
       if(GlobalVariableCheck(m_lockKey))return true;
+      // GlobalVariableTemp creates the missing lock at zero without a check-then-set reset race.
       ResetLastError();
-      datetime created=GlobalVariableSet(m_lockKey,0.0);
-      if(created==0 && !GlobalVariableCheck(m_lockKey))
+      bool created=GlobalVariableTemp(m_lockKey);
+      if(!created && !GlobalVariableCheck(m_lockKey))
         {
          PrintFormat("Midas Touch daily target: cannot create shared lock (error %d).",GetLastError());
          return false;
         }
-      GlobalVariablesFlush();
       return GlobalVariableCheck(m_lockKey);
      }
 
