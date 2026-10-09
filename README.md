@@ -66,6 +66,14 @@ See [`telegram-bridge/README.md`](telegram-bridge/README.md) for full environmen
   layout (`Experts/`, `Include/`, `Scripts/`). Nothing new should be added
   there — `EA/` is the source of truth.
 
+## Daily qualified-trade objective
+
+The EA targets **three qualified completed trades per weekday (Monday–Friday)**. This is a measurement objective, not a quota that overrides signal validation, risk controls, spread/session conditions, or execution safeguards.
+
+A trade counts only after the complete tracked decision closes, its aggregate realized result is positive, and it reaches at least `InpMinimumQualifiedTradeR` (default **0.25R**). Entry fills and partial exits do not count as successful trades on their own. Entry commissions, swap, and fees are included in the tracked outcome before qualification. The target is based on broker-server deal time and is shared by EA instances with the same account and magic number in one MT5 terminal. Its daily count is persisted in terminal global variables across EA restarts.
+
+The default goal is configured by `InpMinimumQualifiedTradesPerDay=3` and `InpMinimumQualifiedTradeR=0.25`. If the market does not provide three qualifying setups, the EA leaves the target unmet rather than forcing trades. The target is not a promise of daily profitability or a guarantee that three qualifying opportunities will exist.
+
 ## Confidence diagnostics (v2.10)
 
 v2.10 addresses two known weaknesses of the additive confidence score
