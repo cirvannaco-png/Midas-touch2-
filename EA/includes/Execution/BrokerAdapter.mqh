@@ -275,8 +275,9 @@ bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
    bool isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
    double refPrice=isBuy ? SymbolInfoDouble(symbol,SYMBOL_BID) : SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,isBuy,"ModifySLTP")) return false;
-   if(m_trade.PositionModify(ticket,sl,tp)) return true;
-   LastRequestOk("ModifySLTP"); return false;
+   bool requestSent=m_trade.PositionModify(ticket,sl,tp);
+   bool serverAccepted=LastRequestOk("ModifySLTP");
+   return requestSent && serverAccepted;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::ClosePartial(ulong ticket,double volume)
