@@ -34,7 +34,7 @@ private:
    string QualifiedKey(ulong positionId)
      {
       // Global variables are terminal-scoped; account + magic + position forms an idempotency key.
-      return StringFormat("Q%I64d.%I64u.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),m_magic,positionId);
+      return StringFormat("MT%I64d.%I64u.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),m_magic,positionId);
      }
 
    void Persist()
