@@ -94,3 +94,10 @@ def test_baseline_risk_envelope_is_unchanged():
     assert "input int InpMaxOpenTrades=3;" in t
     assert "input int InpMaxPositionsPerSymbol=3;" in t
     assert "input int InpMaxPositionsPerGroup=3;" in t
+
+
+def test_breakeven_positions_are_zero_risk_not_unknown_risk():
+    t = PORTFOLIO.read_text()
+    assert "if(MathAbs(entry-sl)<=1e-12)return 0.0;" in t
+    assert "if(tickSize<=0.0 || tickValue<=0.0)return -1.0;" in t
+    assert "if(risk<0.0)unknown=true;" in t
