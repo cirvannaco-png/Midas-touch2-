@@ -10,7 +10,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from math import isfinite
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 
 @dataclass(frozen=True)
