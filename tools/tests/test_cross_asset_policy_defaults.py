@@ -91,7 +91,7 @@ def test_broker_mutations_require_server_retcode_confirmation():
     for method in ("CancelOrder", "ModifySLTP", "ClosePartial", "CloseFull"):
         start = text.index(f"CBrokerAdapter::{method}(")
         body = text[start:]
-        body = body[:body.index("\\n//+------------------------------------------------------------------+") if "\\n//+------------------------------------------------------------------+" in body else len(body)]
+        body = body[:body.index("\n//+------------------------------------------------------------------+") if "\n//+------------------------------------------------------------------+" in body else len(body)]
         assert "LastRequestOk(" in body, f"{method} must inspect the broker retcode"
         assert "serverAccepted" in body, f"{method} must not rely on the CTrade bool alone"
 
