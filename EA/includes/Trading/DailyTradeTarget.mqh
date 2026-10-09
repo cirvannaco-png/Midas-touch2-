@@ -10,14 +10,12 @@ class CDailyTradeTarget
 private:
    int      m_target;
    int      m_count;
-   int      m_year;
-   int      m_dayOfYear;
    int      m_dateKey;
    bool     m_weekday;
    bool     m_reported;
    double   m_minQualifiedR;
-   ulong    m_lastPositionId;
    string   m_storageKey;
+   ulong    m_magic;
 
    int DateKey(datetime at)
      {
@@ -33,12 +31,18 @@ private:
       return t.day_of_week>=1 && t.day_of_week<=5;
      }
 
+   string QualifiedKey(ulong positionId)
+     {
+      // Global variables are terminal-scoped; account + magic + position forms an idempotency key.
+      return StringFormat("MT2Q.%I64d.%I64u.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),m_magic,positionId);
+     }
+
    void Persist()
      {
       if(StringLen(m_storageKey)<=0 || m_dateKey<=0)return;
       GlobalVariableSet(m_storageKey+".D",(double)m_dateKey);
       GlobalVariableSet(m_storageKey+".C",(double)m_count);
-      GlobalVariableSet(m_storageKey+".P",(double)m_lastPositionId);
+      GlobalVariablesFlush();
      }
 
    void SyncStoredState()
@@ -46,7 +50,6 @@ private:
       if(StringLen(m_storageKey)<=0 || !GlobalVariableCheck(m_storageKey+".D"))return;
       if((int)GlobalVariableGet(m_storageKey+".D")!=m_dateKey)return;
       if(GlobalVariableCheck(m_storageKey+".C"))m_count=MathMax(m_count,MathMax(0,(int)GlobalVariableGet(m_storageKey+".C")));
-      if(GlobalVariableCheck(m_storageKey+".P"))m_lastPositionId=(ulong)MathMax(0.0,GlobalVariableGet(m_storageKey+".P"));
       if(m_target>0 && m_weekday && m_count>=m_target)m_reported=true;
      }
 
@@ -61,8 +64,6 @@ private:
       if(m_target>0 && m_weekday && m_count<m_target && m_dateKey>0)
          PrintFormat("Midas Touch daily qualified-trade target not met: prior weekday %d/%d. No trades were forced.",m_count,m_target);
 
-      m_year=t.year;
-      m_dayOfYear=t.day_of_year;
       m_dateKey=nextKey;
       m_weekday=(t.day_of_week>=1 && t.day_of_week<=5);
       m_count=0;
@@ -71,8 +72,7 @@ private:
      }
 
 public:
-   CDailyTradeTarget():m_target(3),m_count(0),m_year(0),m_dayOfYear(0),m_dateKey(0),
-      m_weekday(false),m_reported(false),m_minQualifiedR(0.25),m_lastPositionId(0),m_storageKey(""){}
+   CDailyTradeTarget():m_target(3),m_count(0),m_dateKey(0),m_weekday(false),m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_magic(0){}
 
    void Init(int target,double minQualifiedR,ulong magic)
      {
@@ -80,21 +80,14 @@ public:
       m_minQualifiedR=MathMax(0.0,minQualifiedR);
       // Shared account+magic state aggregates all chart-symbol instances in this terminal.
       m_storageKey=StringFormat("MT2DT.%I64d.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),magic);
+      m_magic=magic;
       m_count=0;
-      m_year=0;
-      m_dayOfYear=0;
       m_dateKey=0;
       m_reported=false;
-      m_lastPositionId=0;
-
-      if(GlobalVariableCheck(m_storageKey+".P"))
-         m_lastPositionId=(ulong)MathMax(0.0,GlobalVariableGet(m_storageKey+".P"));
 
       datetime now=TimeCurrent();
       MqlDateTime t;
       if(now<=0 || !TimeToStruct(now,t))return;
-      m_year=t.year;
-      m_dayOfYear=t.day_of_year;
       m_dateKey=t.year*1000+t.day_of_year;
       m_weekday=(t.day_of_week>=1 && t.day_of_week<=5);
 
@@ -117,9 +110,12 @@ public:
       Rollover();
       if(m_target<=0 || at<=0 || realizedR<=0.0 || realizedR+1e-9<m_minQualifiedR)return;
       if(!IsWeekday(at) || DateKey(at)!=m_dateKey)return;
-      if(positionId>0 && positionId==m_lastPositionId)return;
-
-      if(positionId>0)m_lastPositionId=positionId;
+      if(positionId<=0)return;
+      string countedKey=QualifiedKey(positionId);
+      if(GlobalVariableCheck(countedKey))return;
+      // Mark first: a crash may undercount one trade, but cannot double-count it on replay.
+      GlobalVariableSet(countedKey,(double)m_dateKey);
+      GlobalVariablesFlush();
       m_count++;
       Persist();
       if(!m_reported && m_count>=m_target)
