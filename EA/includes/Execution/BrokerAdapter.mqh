@@ -285,8 +285,9 @@ bool CBrokerAdapter::ClosePartial(ulong ticket,double volume)
   {
    if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
    if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   if(m_trade.PositionClosePartial(ticket,volume)) return true;
-   LastRequestOk("ClosePartial"); return false;
+   bool requestSent=m_trade.PositionClosePartial(ticket,volume);
+   bool serverAccepted=LastRequestOk("ClosePartial");
+   return requestSent && serverAccepted;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::CloseFull(ulong ticket)
