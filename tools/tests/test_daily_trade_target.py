@@ -27,6 +27,7 @@ def test_weekday_counter_persists_and_serializes_cross_symbol_updates():
     assert "t.day_of_week>=1 && t.day_of_week<=5" in target
     assert "DateKey(at)!=m_dateKey" in target
     assert "CounterKey(int dateKey)" in target
+    assert "GlobalVariableTemp(m_lockKey)" in target
     assert "GlobalVariableSetOnCondition(m_lockKey,now,0.0)" in target
     assert "GlobalVariableSetOnCondition(m_lockKey,now,observed)" in target
     assert "GlobalVariableSetOnCondition(m_lockKey,0.0,token)" in target
