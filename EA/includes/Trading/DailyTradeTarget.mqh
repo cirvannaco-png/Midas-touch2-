@@ -74,7 +74,7 @@ public:
    CDailyTradeTarget():m_target(3),m_count(0),m_year(0),m_dayOfYear(0),m_dateKey(0),
       m_weekday(false),m_reported(false),m_minQualifiedR(0.25),m_lastPositionId(0),m_storageKey(""){}
 
-   void Init(int target,double minQualifiedR,string symbol,ulong magic)
+   void Init(int target,double minQualifiedR,ulong magic)
      {
       m_target=MathMax(0,target);
       m_minQualifiedR=MathMax(0.0,minQualifiedR);
