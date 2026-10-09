@@ -36,7 +36,7 @@ These are experiment defaults, not live recommendations. Gaps, liquidity and exe
 
 1. Size against the effective stop at the executable entry, not only the prior close.
 2. Sum remaining risk using each live position's current volume and effective protective stop; a trailing stop reduces risk only if active at the broker.
-3. A position missing valid protection counts as unknown risk and blocks new exposure until reconciled.
+3. A position missing valid protection or valid tick-value metadata counts as unknown risk and blocks new exposure until reconciled. A verified stop at or beyond entry (long: SL >= entry; short: SL <= entry) contributes zero remaining price-stop risk, not unknown risk. Gaps and slippage can still cause losses beyond stop-defined risk.
 4. Reserve the full intended order-batch risk before submitting its first leg; reconcile partial broker acceptance.
 5. TP1 reduces only the configured fraction; after confirmed closure, move remaining stops to entry plus/minus the configured offset.
 6. TP2 reduces its configured fraction and arms the runner trail only after confirmed closure.
