@@ -96,7 +96,7 @@ double CRiskEngine::CalculateLotSize(string symbol,double riskPercent,double ent
    // Round down before applying the broker maximum to avoid exceeding
    // the risk budget because of volume-step rounding.
    lots=MathMin(maxLot,lots);
-   lots=MathFloor(lots/lotStep+1e-9)*lotStep;
+   lots=MathFloor(lots/lotStep)*lotStep;
    lots=NormalizeDouble(lots,8);
 
    if(lots<minLot)
