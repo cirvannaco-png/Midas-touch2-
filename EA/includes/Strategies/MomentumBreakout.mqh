@@ -68,7 +68,7 @@ private:
    int                  m_momentumLookbackBars;    // window for the momentum score (default 10)
 
    bool                 FindRecentBOS(bool forBuy, BOSEvent &out);
-   bool                 HasNearbyLiquidityEvent(int barIndex);
+   bool                 HasNearbyLiquidityEvent(const BOSEvent &bos);
    bool                 ClosedBackAcross(const BOSEvent &ev, bool forBuy);
    double               PreBreakExtensionATR(int barIndex, bool forBuy);
 
@@ -122,16 +122,21 @@ bool CMomentumBreakoutEngine::FindRecentBOS(bool forBuy, BOSEvent &out)
    return false;
   }
 //+------------------------------------------------------------------+
-bool CMomentumBreakoutEngine::HasNearbyLiquidityEvent(int barIndex)
+bool CMomentumBreakoutEngine::HasNearbyLiquidityEvent(const BOSEvent &bos)
   {
-   if(m_liquidity == NULL) return false;
+   if(m_liquidity == NULL || bos.time <= 0) return false;
+   int tfSeconds = PeriodSeconds(m_liquidity.Timeframe());
+   if(tfSeconds <= 0) return false;
    int n = m_liquidity.EventCount();
    for(int i = 0; i < n; i++)
      {
       LiquidityEvent ev = m_liquidity.GetEvent(i);
-      if(MathAbs(ev.bar_index - barIndex) <= m_liqOverlapBars)
+      if(ev.time <= 0) continue;
+      double gapBars = MathAbs((double)(ev.time - bos.time)) / (double)tfSeconds;
+      if(gapBars <= (double)m_liqOverlapBars)
          return true;
-      if(ev.bar_index - barIndex > m_liqOverlapBars + m_recencyBars) break; // sorted most-recent-first; far enough away we can stop
+      if(ev.time < bos.time && gapBars > (double)(m_liqOverlapBars + m_recencyBars))
+         break;
      }
    return false;
   }
@@ -184,14 +189,15 @@ void CMomentumBreakoutEngine::Evaluate(bool forBuy, double &momentumScore, doubl
       int atrCount = 0;
       for(int i = 0; i < m_momentumLookbackBars; i++)
         {
-         double a = m_candles.GetATR(i);
+         int shift = i + 1;
+         double a = m_candles.GetATR(shift);
          if(a > 0) { sumAtr += a; atrCount++; }
         }
       if(atrCount > 0)
         {
          double avgAtr = sumAtr / atrCount;
-         CandleData now = m_candles.GetCandle(0);
-         CandleData then = m_candles.GetCandle(m_momentumLookbackBars);
+         CandleData now = m_candles.GetCandle(1);
+         CandleData then = m_candles.GetCandle(m_momentumLookbackBars + 1);
          double netMove = forBuy ? (now.close - then.close) : (then.close - now.close);
          double raw = netMove / (avgAtr * m_momentumLookbackBars * 0.35); // 0.35 = expected fraction of ATR moved per bar in a genuine trend; empirical starting point, not fit
          momentumScore = MathMax(0.0, MathMin(raw * 100.0, 100.0));
@@ -210,7 +216,7 @@ void CMomentumBreakoutEngine::Evaluate(bool forBuy, double &momentumScore, doubl
       breakoutClass = BREAKOUT_FAILED;
       return;
      }
-   if(HasNearbyLiquidityEvent(ev.bar_index))
+   if(HasNearbyLiquidityEvent(ev))
      {
       breakoutClass = BREAKOUT_LIQUIDITY;
       return;

@@ -54,6 +54,7 @@ public:
    // during SESSION_DEAD — there is no "current session" to report a
    // start for.
    datetime          CurrentSessionStartGMT();
+   datetime          CurrentSessionStartServer();
    bool              IsAllowed(); // true if gate disabled, or current session is in the allow-list
   };
 //+------------------------------------------------------------------+
@@ -158,6 +159,20 @@ ENUM_TRADING_SESSION CSessionFilter::CurrentSession()
 // SESSION_LONDON_NY_OVERLAP starts when the LATER of the two opens (NY,
 // in every real-world case here) — the overlap by definition can't have
 // begun before both sides are open.
+datetime CSessionFilter::CurrentSessionStartServer()
+  {
+   datetime startGMT = CurrentSessionStartGMT();
+   if(startGMT==0) return 0;
+
+   // Bar timestamps and TimeCurrent() are in broker/server time. Convert
+   // the session boundary from the GMT basis used by CurrentSession() into
+   // the same timestamp basis before another engine compares it with bars.
+   datetime nowServer = TimeCurrent();
+   datetime nowGMT = TimeGMT();
+   long offsetSeconds = (long)(nowServer - nowGMT);
+   return startGMT + offsetSeconds;
+  }
+//+------------------------------------------------------------------+
 datetime CSessionFilter::CurrentSessionStartGMT()
   {
    datetime nowGmt = TimeGMT();

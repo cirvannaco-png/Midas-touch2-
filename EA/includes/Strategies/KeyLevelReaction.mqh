@@ -166,9 +166,10 @@ bool CKeyLevelEngine::FindNearestLevel(bool forBuy, double atr, double price, do
       for(int i = 0; i < n; i++)
         {
          SRZone z = m_sr.GetZone(i);
-         double lvl = forBuy ? z.top : z.bottom;
+         if(forBuy && z.bottom > price) continue;
+         if(!forBuy && z.top < price) continue;
+         double lvl = forBuy ? MathMin(price,z.top) : MathMax(price,z.bottom);
          double dist = forBuy ? (price - lvl) : (lvl - price);
-         if(dist < 0) dist = 0.0;
          if(dist <= bestDist) { bestDist = dist; levelPrice = lvl; source = LEVEL_SR; found = true; }
         }
      }
@@ -183,17 +184,18 @@ bool CKeyLevelEngine::FindNearestLevel(bool forBuy, double atr, double price, do
          // acts as resistance -> use its bottom.
          if(forBuy && z.dir != FVG_BULL) continue;
          if(!forBuy && z.dir != FVG_BEAR) continue;
-         double lvl = forBuy ? z.top : z.bottom;
+         if(forBuy && z.bottom > price) continue;
+         if(!forBuy && z.top < price) continue;
+         double lvl = forBuy ? MathMin(price,z.top) : MathMax(price,z.bottom);
          double dist = forBuy ? (price - lvl) : (lvl - price);
-         if(dist < 0) dist = 0.0;
          if(dist <= bestDist) { bestDist = dist; levelPrice = lvl; source = LEVEL_ORDER_BLOCK; found = true; }
         }
      }
    if(m_valueArea != NULL && m_valueArea.IsValid())
      {
       double lvl = forBuy ? m_valueArea.VAL() : m_valueArea.VAH();
+      if(forBuy ? (lvl > price) : (lvl < price)) continue;
       double dist = forBuy ? (price - lvl) : (lvl - price);
-      if(dist < 0) dist = 0.0;
       if(dist <= bestDist) { bestDist = dist; levelPrice = lvl; source = LEVEL_VALUE_AREA; found = true; }
      }
    if(m_liquidity != NULL)
@@ -206,7 +208,7 @@ bool CKeyLevelEngine::FindNearestLevel(bool forBuy, double atr, double price, do
          if(!ev.external) continue; // doc's "previous day high/low" maps to external D1 sweeps specifically, not internal equal-highs/lows
          if(ev.type != target) continue;
          double dist = forBuy ? (price - ev.price) : (ev.price - price);
-         if(dist < 0) dist = 0.0;
+         if(dist < 0) continue;
          if(dist <= bestDist) { bestDist = dist; levelPrice = ev.price; source = LEVEL_LIQUIDITY_POOL; found = true; }
         }
      }
@@ -272,9 +274,9 @@ void CKeyLevelEngine::Evaluate(bool forBuy, ENUM_KEYLEVEL_SOURCE &source, ENUM_K
    reactionScore = 0.0;
 
    if(m_candles == NULL || m_candles.Total() < m_lookbackBars + 1) return;
-   double atr = m_candles.GetATR(0);
+   double atr = m_candles.GetATR(1);
    if(atr <= 0) return;
-   double price = m_candles.GetCandle(0).close; // live/current-bar proxy, same convention as the other two strategy modules
+   double price = m_candles.GetCandle(1).close;
 
    double levelPrice;
    if(!FindNearestLevel(forBuy, atr, price, levelPrice, source))

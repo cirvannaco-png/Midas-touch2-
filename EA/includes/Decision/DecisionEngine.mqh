@@ -120,6 +120,25 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
       return rec;
      }
 
+   // Hierarchical admission is authoritative: a raw confidence score can
+   // never rescue a setup rejected or held by the structural/environment/
+   // execution/risk firewall.
+   if(setup.decision_state == DECISION_REJECT)
+     {
+      rec.reason = StringFormat("setup rejected by decision firewall: %s",setup.reasons.decision_reason);
+      return rec;
+     }
+   if(setup.decision_state == DECISION_WAIT)
+     {
+      rec.reason = StringFormat("setup held by decision firewall: %s",setup.reasons.decision_reason);
+      return rec;
+     }
+   if(setup.decision_state != DECISION_TRADE)
+     {
+      rec.reason = "setup has no explicit TRADE admission state";
+      return rec;
+     }
+
    if(!ValidateSetupGeometry(setup))
      {
       rec.reason = "setup rejected: invalid entry/invalidation/stop/target geometry";
@@ -132,10 +151,13 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
       return rec;
      }
 
-   const double executeThreshold = m_environment.ExecuteThreshold(setup, m_minConfidenceExecute);
-   const double signalThreshold  = m_environment.SignalThreshold(setup, m_minConfidenceSignal);
-   bool canExecute = m_enableExecution && setup.confidence >= executeThreshold;
-   bool canSignal  = m_enableSignals  && setup.confidence >= signalThreshold;
+   // Confidence is intentionally not an admission gate. Structural,
+   // environment, execution, risk, and optional calibration firewalls have
+   // already decided whether this setup may exist as a TRADE. Raw confidence
+   // remains available for diagnostics/risk reduction and backwards-compatible
+   // decision metadata.
+   bool canExecute = m_enableExecution;
+   bool canSignal  = m_enableSignals;
 
    string environmentReason;
    if(m_environment.BlockExecution(setup, environmentReason))
@@ -160,8 +182,7 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
 
    if(rec.action == POLICY_IGNORE)
      {
-      rec.reason += StringFormat("confidence %.1f below thresholds (execute %.1f / signal %.1f; environment %s)",
-                                 setup.confidence, executeThreshold, signalThreshold,
+      rec.reason += StringFormat("policy did not authorize execution or signalling (environment %s)",
                                  m_environment.StateName(setup));
       return rec;
      }
@@ -170,7 +191,11 @@ TradeDecisionRecord CDecisionEngine::Decide(const TradeSetup &setup)
    // CalculateLotSize(halveForReducedRisk) contract. That gives transition
    // and recovery decisions a deterministic 50% sizing reduction without
    // introducing a second, potentially divergent sizing path.
-   rec.reduce_risk = (setup.confidence < m_fullRiskConfidence) || m_environment.ReduceRisk(setup);
+   // Raw confidence is not a risk-allocation authority. Risk class is derived
+   // from structural quality and, when available, calibrated probability plus
+   // expected return; environment policy may still impose a defensive reduction.
+   rec.reduce_risk = (setup.risk_class == RISK_CLASS_MINIMAL) ||
+                     m_environment.ReduceRisk(setup);
    rec.valid = true;
    rec.decision_id = m_nextId++;
    rec.reason += StringFormat("%s at confidence %.1f (environment %s)%s", TradePolicyToString(rec.action),

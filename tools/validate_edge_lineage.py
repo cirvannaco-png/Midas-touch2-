@@ -7,6 +7,7 @@ removes explicit contracts that make the strategy and signal path auditable.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -95,13 +96,13 @@ def main() -> int:
     trade_zone = texts.get("EA/includes/Trading/StrategyTradeZone.mqh", "")
     if "SelectPeerStrategy(forBuy,reasons,selected,selectedScore)" not in trade_zone:
         errors.append("TradeZone: authoritative strategy selection is not explicitly wired")
-    if "if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons)" not in trade_zone:
+    if not re.search(r"if\s*\(selected\s*==\s*STRATEGY_SMC\)\s*out\s*=\s*BuildSMC\(forBuy,selectedScore,reasons\)",trade_zone):
         errors.append("TradeZone: selected SMC strategy is not built through its owned builder")
-    if "else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))" not in trade_zone:
+    if not re.search(r"else\s+if\s*\(!BuildNonSMC\(forBuy,selected,selectedScore,reasons,out\)\)",trade_zone):
         errors.append("TradeZone: selected challenger strategy is not built through its owned builder")
     if "out.reasons.selected_strategy=selected" not in trade_zone:
         errors.append("TradeZone: selected strategy provenance is not retained on the completed setup")
-    if "m_lastSetup=out;return out;" not in trade_zone:
+    if not re.search(r"m_lastSetup\s*=\s*out;\s*return\s+out;",trade_zone):
         errors.append("TradeZone: completed setup is not returned through the owned last-setup path")
     if "return TradeSetup();" in trade_zone:
         errors.append("TradeZone: temporary TradeSetup return reintroduced in a fail-closed path")

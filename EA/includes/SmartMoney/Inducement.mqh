@@ -31,16 +31,26 @@ class CInducement
 private:
    CCandleData*      m_candles;
    int               m_lookbackBars;
-   double            m_impulseATRMult;   // min (bar range / ATR) to qualify as a displacement bar
-   double            m_impulseBodyRatio; // min body/range ratio for a displacement bar
+   double            m_impulseATRMult;   // min (bar range / ATR) for the initial impulse displacement
+   double            m_impulseBodyRatio; // min body/range ratio for the initial impulse displacement
+   // v2.16: sweep follow-through is a separate displacement event. It may
+   // legitimately be smaller than the initial impulse, so its thresholds are
+   // configurable independently. Defaults match the impulse thresholds to
+   // preserve existing behavior until the ablation is validated.
+   double            m_followThroughATRMult;
+   double            m_followThroughBodyRatio;
    double            m_equalTolATR;      // tolerance band for "equal" highs/lows, as a fraction of ATR
    int               m_maxLegExtend;     // how many bars a leg can be extended outward while still qualifying
+   bool              m_allowSingleSwingStructure;
 
    bool              IsDisplacementBar(int idx, bool bullish);
+   bool              IsDisplacementBarWithThresholds(int idx, bool bullish, double atrMult, double bodyRatio);
    bool              FindImpulse(bool bullish, ImpulseLeg &leg);
    bool              FindMinorSwing(int idx, bool wantHigh); // local 1-bar fractal
    bool              FindEqualPair(bool wantLows, int scanFrom, int scanTo, double atr,
                                    double &poolPrice, int &nearIdx, int &farIdx);
+   bool              FindSingleSwing(bool wantLows, int scanFrom, int scanTo,
+                                     double &poolPrice, int &nearIdx);
 
    // --- v2.9 additions ---------------------------------------------
    bool              m_requireMinSweepGrade; // OFF by default — see Configure()
@@ -63,14 +73,18 @@ public:
    // and returned on every call regardless of these flags; only whether
    // a sub-B-grade or fully-decayed setup gets hard-rejected is gated.
    void              ConfigureQualityGates(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
-                                            bool requireFreshSetup, int maxBarsSinceBOS = 5);
+                                            bool requireFreshSetup, int maxBarsSinceBOS = 5,
+                                            bool allowSingleSwingStructure = false,
+                                            double followThroughATRMult = 0.0,
+                                            double followThroughBodyRatio = -1.0);
    InducementResult  Validate(bool forBuy);
   };
 //+------------------------------------------------------------------+
 CInducement::CInducement() : m_candles(NULL), m_lookbackBars(40), m_impulseATRMult(1.2),
-                              m_impulseBodyRatio(0.6), m_equalTolATR(0.2), m_maxLegExtend(10),
+                              m_impulseBodyRatio(0.6), m_followThroughATRMult(1.2),
+                              m_followThroughBodyRatio(0.6), m_equalTolATR(0.2), m_maxLegExtend(10),
                               m_requireMinSweepGrade(false), m_minSweepGrade(SWEEP_GRADE_B),
-                              m_requireFreshSetup(false), m_maxBarsSinceBOS(5) {}
+                              m_requireFreshSetup(false), m_maxBarsSinceBOS(5), m_allowSingleSwingStructure(false) {}
 //+------------------------------------------------------------------+
 void CInducement::Init(CCandleData* candles, int lookbackBars, double impulseATRMult,
                        double impulseBodyRatio, double equalTolATR, int maxLegExtend)
@@ -84,15 +98,32 @@ void CInducement::Init(CCandleData* candles, int lookbackBars, double impulseATR
   }
 //+------------------------------------------------------------------+
 void CInducement::ConfigureQualityGates(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
-                                        bool requireFreshSetup, int maxBarsSinceBOS)
+                                        bool requireFreshSetup, int maxBarsSinceBOS,
+                                        bool allowSingleSwingStructure,
+                                        double followThroughATRMult,
+                                        double followThroughBodyRatio)
   {
    m_requireMinSweepGrade = requireMinSweepGrade;
    m_minSweepGrade = minSweepGrade;
    m_requireFreshSetup = requireFreshSetup;
    m_maxBarsSinceBOS = MathMax(1, maxBarsSinceBOS);
+   m_allowSingleSwingStructure = allowSingleSwingStructure;
+   // Keep the research control behavior-preserving when omitted. A zero ATR
+   // threshold or negative body-ratio sentinel means "use the impulse value".
+   m_followThroughATRMult = (followThroughATRMult > 0.0 ? followThroughATRMult : m_impulseATRMult);
+   m_followThroughBodyRatio = (followThroughBodyRatio >= 0.0 ? MathMin(followThroughBodyRatio,1.0) : m_impulseBodyRatio);
   }
 //+------------------------------------------------------------------+
 bool CInducement::IsDisplacementBar(int idx, bool bullish)
+  {
+   return IsDisplacementBarWithThresholds(idx, bullish, m_impulseATRMult, m_impulseBodyRatio);
+  }
+//+------------------------------------------------------------------+
+// v2.16: shared displacement test with caller-specific thresholds.
+// Initial-impulse detection keeps the historical thresholds; sweep
+// follow-through can use its own thresholds because it validates a
+// different event in the SMC chain.
+bool CInducement::IsDisplacementBarWithThresholds(int idx, bool bullish, double atrMult, double bodyRatio)
   {
    if(m_candles == NULL) return false;
    CandleData cd = m_candles.GetCandle(idx);
@@ -101,13 +132,13 @@ bool CInducement::IsDisplacementBar(int idx, bool bullish)
    double range = cd.high - cd.low;
    if(range <= 0) return false;
    double body = MathAbs(cd.close - cd.open);
-   double bodyRatio = body / range;
+   double actualBodyRatio = body / range;
    bool directional = bullish ? (cd.close > cd.open) : (cd.close < cd.open);
    if(!directional) return false;
-   if(range / atr < m_impulseATRMult) return false;
-   if(bodyRatio < m_impulseBodyRatio) return false;
+   if(range / atr < atrMult) return false;
+   if(actualBodyRatio < bodyRatio) return false;
    // Opposite wick should be small — a big rejection wick against the
-   // move undercuts the "displacement" read even if the body qualifies.
+   // move undercuts the displacement read even if the body qualifies.
    double oppWick = bullish ? (cd.open - cd.low) : (cd.high - cd.open);
    if(oppWick > 0.3 * range) return false;
    return true;
@@ -133,7 +164,7 @@ bool CInducement::FindImpulse(bool bullish, ImpulseLeg &leg)
       int olderBar = i; // extend toward higher index (older)
       double bestExtreme = bullish ? m_candles.GetCandle(i).high : m_candles.GetCandle(i).low;
 
-      for(int k = i - 1; k >= MathMax(0, i - m_maxLegExtend); k--)
+      for(int k = i - 1; k >= MathMax(1, i - m_maxLegExtend); k--)
         {
          CandleData cd = m_candles.GetCandle(k);
          bool extends = bullish ? (cd.high >= bestExtreme) : (cd.low <= bestExtreme);
@@ -224,6 +255,28 @@ bool CInducement::FindEqualPair(bool wantLows, int scanFrom, int scanTo, double 
    return false;
   }
 //+------------------------------------------------------------------+
+// Fallback liquidity provenance: a single confirmed internal minor
+// swing can be used as a liquidity pool when explicitly enabled. This
+// does not alter the default behavior; production remains equal-pool
+// only until the single-swing route is validated out of sample.
+//+------------------------------------------------------------------+
+bool CInducement::FindSingleSwing(bool wantLows, int scanFrom, int scanTo,
+                                  double &poolPrice, int &nearIdx)
+  {
+   poolPrice=0.0;
+   nearIdx=-1;
+   if(m_candles==NULL) return false;
+   for(int i=scanFrom;i<=scanTo;i++)
+     {
+      if(!FindMinorSwing(i,wantLows ? false : true)) continue;
+      poolPrice=wantLows ? m_candles.GetCandle(i).low : m_candles.GetCandle(i).high;
+      nearIdx=i;
+      return poolPrice>0.0;
+     }
+   return false;
+  }
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 // v2.9. Grades the sweep bar itself instead of just recording that
 // price wicked past the pool and closed back inside it. Three
 // components, each 0-1, blended 40/30/30:
@@ -262,7 +315,7 @@ ENUM_SWEEP_GRADE CInducement::GradeSweep(int sweepBarIdx, bool forBuy, double po
    else
       shapeScore = MathMax(0.0, 1.0 - MathAbs(penetrationATR - 0.30) / 0.60);
 
-   bool followThrough = (sweepBarIdx - 1 >= 0) ? IsDisplacementBar(sweepBarIdx - 1, forBuy) : false;
+   bool followThrough = (sweepBarIdx - 1 >= 1) ? IsDisplacementBarWithThresholds(sweepBarIdx - 1, forBuy, m_followThroughATRMult, m_followThroughBodyRatio) : false;
 
    gradeScore = MathMax(0.0, MathMin(0.4 * rejectionRatio + 0.3 * shapeScore + 0.3 * (followThrough ? 1.0 : 0.0), 1.0));
 
@@ -342,15 +395,35 @@ InducementResult CInducement::Validate(bool forBuy)
 
    // Bullish impulse -> look for equal LOWS in the pullback (resting
    // sell-side liquidity that a stop-hunt would sweep before continuing
-   // up). Bearish impulse -> equal HIGHS.
+   // up). Bearish impulse -> equal HIGHS. When explicitly enabled, a
+   // single production minor swing can be the fallback liquidity source.
    double poolPrice; int nearIdx, farIdx;
-   bool structureFound = FindEqualPair(forBuy /*wantLows*/, 0, pullbackTo, atr, poolPrice, nearIdx, farIdx);
+   bool equalPool = FindEqualPair(forBuy /*wantLows*/, 0, pullbackTo, atr, poolPrice, nearIdx, farIdx);
+   bool structureFound = equalPool;
+   if(!structureFound && m_allowSingleSwingStructure)
+     {
+      structureFound = FindSingleSwing(forBuy,0,pullbackTo,poolPrice,nearIdx);
+      farIdx=-1;
+     }
    r.internalStructureFound = structureFound;
+   r.structureType = equalPool ? INDUCEMENT_STRUCTURE_EQUAL_POOL :
+                      (structureFound ? INDUCEMENT_STRUCTURE_SINGLE_SWING : INDUCEMENT_STRUCTURE_NONE);
    r.structureScore = structureFound ? 10.0 : 0.0;
    if(!structureFound)
      {
-      r.reason = "Impulse found, but no internal equal-highs/lows structure formed in the pullback";
+      r.reason = "Impulse found, but no authoritative internal liquidity structure formed in the pullback";
       return r;
+     }
+   r.liquidityPoolPrice=poolPrice;
+   r.liquidityPoolNearBarIndex=nearIdx;
+   r.liquidityPoolFarBarIndex=farIdx;
+   r.liquidityPoolBarSpan=(farIdx>=0 ? MathAbs(farIdx-nearIdx) : 0);
+   r.liquidityAgeBars=MathMax(0,nearIdx);
+   if(equalPool && farIdx>=0)
+     {
+      double nearPrice=forBuy ? m_candles.GetCandle(nearIdx).low : m_candles.GetCandle(nearIdx).high;
+      double farPrice =forBuy ? m_candles.GetCandle(farIdx).low  : m_candles.GetCandle(farIdx).high;
+      r.liquidityPoolSpacingATR=(atr>0.0 ? MathAbs(nearPrice-farPrice)/atr : 0.0);
      }
 
    // Sweep: scan from the more-recent equal swing forward to now (index 0)
@@ -358,7 +431,7 @@ InducementResult CInducement::Validate(bool forBuy)
    bool sweepFound = false;
    double sweepStrength = 0.0;
    int sweepBarIdx = -1;
-   for(int i = nearIdx - 1; i >= 0; i--)
+   for(int i = nearIdx - 1; i >= 1; i--)
      {
       CandleData cd = m_candles.GetCandle(i);
       double barATR = m_candles.GetATR(i);
@@ -401,6 +474,26 @@ InducementResult CInducement::Validate(bool forBuy)
    r.sweepGrade = sweepGrade;
    r.sweepGradeScore = sweepGradeScore;
    r.barsSinceSweep = sweepBarIdx;
+
+   CandleData sweepCandle=m_candles.GetCandle(sweepBarIdx);
+   r.sweepPrice=forBuy?sweepCandle.low:sweepCandle.high;
+   r.sweepTime=sweepCandle.time;
+   double sweepATR=m_candles.GetATR(sweepBarIdx);
+   if(sweepATR>0.0)
+     {
+      double wick=forBuy ? (poolPrice-sweepCandle.low) : (sweepCandle.high-poolPrice);
+      double closeBack=forBuy ? (sweepCandle.close-poolPrice) : (poolPrice-sweepCandle.close);
+      r.sweepPenetrationATR=MathMax(0.0,wick/sweepATR);
+      r.sweepRejectionRatio=(wick>0.0 ? MathMax(0.0,MathMin(closeBack/wick,1.0)) : 0.0);
+      r.sweepShapeScore=(r.sweepPenetrationATR>=0.03 && r.sweepPenetrationATR<=0.60)
+                         ? 1.0
+                         : MathMax(0.0,1.0-MathAbs(r.sweepPenetrationATR-0.30)/0.60);
+     }
+   // Keep the structural provenance field identical to GradeSweep():
+   // the follow-through thresholds are a single configurable event definition.
+   r.sweepFollowThrough=(sweepBarIdx-1>=1 ? IsDisplacementBarWithThresholds(sweepBarIdx-1,forBuy,
+                                                                          m_followThroughATRMult,m_followThroughBodyRatio) : false);
+   r.sweepFollowThroughBarIndex=(r.sweepFollowThrough ? sweepBarIdx-1 : -1);
    // Sweep quality now WEIGHTS the 25-pt sweep score instead of it being
    // flat 0-or-25 — a barely-qualifying C sweep and a decisive A sweep no
    // longer score identically just because both technically passed.
@@ -427,7 +520,7 @@ InducementResult CInducement::Validate(bool forBuy)
    int bosBarIdx = -1;
    if((forBuy && minorOpp > -DBL_MAX) || (!forBuy && minorOpp < DBL_MAX))
      {
-      for(int i = sweepBarIdx - 1; i >= 0; i--)
+      for(int i = sweepBarIdx - 1; i >= 1; i--)
         {
          CandleData cd = m_candles.GetCandle(i);
          if(forBuy && cd.close > minorOpp) { bosConfirmed = true; bosBarIdx = i; break; }
@@ -446,10 +539,26 @@ InducementResult CInducement::Validate(bool forBuy)
    // time decay on how stale the confirmed setup already is.
    double bosStrength = BOSStrength(bosBarIdx, minorOpp, forBuy);
    r.bosStrength = bosStrength;
+   double bosATR=m_candles.GetATR(bosBarIdx);
+   r.bosDistanceATR=(bosATR>0.0 ? MathAbs(m_candles.GetCandle(bosBarIdx).close-minorOpp)/bosATR : 0.0);
+   r.bosTime=m_candles.GetCandle(bosBarIdx).time;
    r.bosScore = 20.0 * MathMax(bosStrength, 0.15);
    r.barsSinceBOS = bosBarIdx;
    r.bosBarIndex = bosBarIdx;
    r.bosClosePrice = m_candles.GetCandle(bosBarIdx).close;
+   if(r.sweepFollowThrough && sweepBarIdx>1)
+     {
+      CandleData displacement=m_candles.GetCandle(sweepBarIdx-1);
+      double dATR=m_candles.GetATR(sweepBarIdx-1);
+      double range=displacement.high-displacement.low;
+      r.displacementATR=(dATR>0.0 ? range/dATR : 0.0);
+      r.displacementBodyRatio=(range>0.0 ? MathAbs(displacement.close-displacement.open)/range : 0.0);
+     }
+   else
+     {
+      r.displacementATR=leg.strength*3.0;
+      r.displacementBodyRatio=0.0;
+     }
    double timeDecay = TimeDecay(bosBarIdx);
    r.timeDecay = timeDecay;
    if(m_requireFreshSetup && timeDecay <= 0.0)

@@ -8,6 +8,7 @@
 #include "../Core/SignalLogger.mqh"
 #include "../Analysis/TFContext.mqh"
 #include "RiskEngine.mqh"
+#include "../Portfolio/EnvironmentPolicy.mqh"
 #include "CalibrationEngine.mqh"
 #include "../Signals/SignalPublisher.mqh"
 
@@ -34,6 +35,7 @@ private:
    double            m_spreadPoints;
    double            m_slippagePoints;
    CCalibrationEngine m_calibration;
+   CEnvironmentPolicy m_environmentPolicy;
    bool              m_calibrationEnabled;
    double            m_decayHalfLifeBars;
    CSignalPublisher* m_publisher;
@@ -73,11 +75,13 @@ public:
    bool              GetFillState(datetime creation_time, long decisionId, bool &filled, double &fillPrice,
                                   datetime &fillTime, int &barsToFill);
    void              ConfigureConfidenceDecay(double halfLifeBars = 12.0) { m_decayHalfLifeBars = halfLifeBars; }
-   void              ConfigureCalibration(bool enabled, int minSample = 30) { m_calibrationEnabled = enabled; m_calibration.Init(m_symbol, minSample); }
+   void              ConfigureCalibration(bool enabled, int minSample = 30, string schemaVersion = "v1") { m_calibrationEnabled = enabled; m_calibration.Init(m_symbol, minSample, false, schemaVersion); }
    void              ConfigurePublishing(CSignalPublisher* publisher, string weightVersion)
      { m_publisher = publisher; m_weightVersion = weightVersion; }
    double            GetCalibratedProbability(double confidence, int &sampleSizeOut, bool &hasEnoughDataOut) const
      { return m_calibration.GetCalibratedProbability(confidence, sampleSizeOut, hasEnoughDataOut); }
+   double            GetConservativeProbability(double confidence) const
+     { return m_calibration.GetConservativeProbability(confidence); }
    const CCalibrationEngine* CalibrationEngine() const { return GetPointer(m_calibration); }
   };
 
@@ -167,6 +171,7 @@ void COutcomeTracker::CloseSlice(PendingSetup &p, double closeLots, double rawEx
 
 void COutcomeTracker::ApplyPartial(PendingSetup &p, double triggerPrice, bool isBuy)
   {
+   if(p.setup.setup_lifecycle==SETUP_FILLED) p.setup.setup_lifecycle=SETUP_MANAGED;
    if(p.lots > 0)
      {
       double closeLots = p.lots * m_partialFraction;
@@ -234,6 +239,7 @@ string COutcomeTracker::ResolveCollision(bool isBuy, CandleData &bar0, double ad
 void COutcomeTracker::FinalizeExit(int idx, PendingSetup &p, string outcome, double rawExitPrice,
                                    bool sameBarCollision, bool ambiguous)
   {
+   p.setup.setup_lifecycle=SETUP_CLOSED;
    bool isBuy = (p.setup.type == ORDER_TYPE_BUY);
    if(p.remainingLots > 0) CloseSlice(p, p.remainingLots, rawExitPrice, isBuy);
    p.sameBarCollision = sameBarCollision;
@@ -297,10 +303,15 @@ void COutcomeTracker::AddSetup(TradeSetup &setup, long decisionId)
   {
    PendingSetup p;
    ZeroMemory(p);
+   if(!setup.active || setup.decision_state!=DECISION_TRADE ||
+      setup.setup_lifecycle!=SETUP_ENTRY_ELIGIBLE || decisionId<=0)
+      return;
    p.setup = setup;
    p.decisionId = decisionId;
    bool isBuy = (setup.type == ORDER_TYPE_BUY);
-   p.entryRef = isBuy ? setup.entry_bottom : setup.entry_top;
+   // Research execution must use the same price convention as live OrderManager:
+   // BUY -> entry_top, SELL -> entry_bottom.
+   p.entryRef = ResolveExecutionEntry(setup);
    p.riskDist = MathAbs(p.entryRef - setup.stop_loss);
    p.mfePrice = p.entryRef;
    p.maePrice = p.entryRef;
@@ -318,12 +329,15 @@ void COutcomeTracker::AddSetup(TradeSetup &setup, long decisionId)
    p.confidenceAtSignal = setup.confidence;
    p.confidenceDecayed = setup.confidence;
    p.decayBars = 0;
-   p.sizingEntryPrice = isBuy ? setup.entry_top : setup.entry_bottom;
+   p.sizingEntryPrice = ResolveExecutionEntry(setup);
    p.mgmtRiskDist = MathAbs(p.sizingEntryPrice - setup.stop_loss);
    bool exceededBudget = false;
+   bool reduceRisk = (setup.risk_class == RISK_CLASS_MINIMAL) ||
+                     m_environmentPolicy.ReduceRisk(setup);
    p.lots = (p.mgmtRiskDist > 0)
-            ? m_risk.CalculateLotSize(m_symbol, m_riskPercent, p.sizingEntryPrice, setup.stop_loss,
-                                      false, m_allowMinLotOverride, exceededBudget)
+            ? m_risk.CalculateLotSize(m_symbol, m_riskPercent*RiskClassSizingMultiplier(setup.risk_class),
+                                      p.sizingEntryPrice, setup.stop_loss,
+                                      reduceRisk, m_allowMinLotOverride, exceededBudget)
             : 0.0;
    p.currentSL = setup.stop_loss;
    p.beDone = false;
@@ -437,10 +451,10 @@ void COutcomeTracker::ApplyDecay(PendingSetup &p) const
 void COutcomeTracker::Update(CTFContext* executionCtx)
   {
    if(executionCtx == NULL || executionCtx.candles.Total() == 0) return;
-   // Outcome tracking is an execution/backtest concern. Never feed the FVG,
-   // BOS, liquidity, or other analysis timeframe here. The caller passes the
-   // EA chart/execution context explicitly and Init() stores the same TF.
-   CandleData bar0 = executionCtx.candles.GetCandle(0);
+   // Outcome tracking is an execution/backtest concern. Consume only
+   // completed execution bars so historical OHLC cannot leak future intrabar
+   // extremes into fills, MAE/MFE, or management decisions.
+   CandleData bar0 = executionCtx.candles.GetCandle(1);
    if(PeriodSeconds(executionCtx.candles.Timeframe()) <= 0 || executionCtx.candles.Timeframe() != m_entryTF) return;
 
    for(int i = m_count - 1; i >= 0; i--)
@@ -499,13 +513,37 @@ void COutcomeTracker::Update(CTFContext* executionCtx)
 
       if(isBuy)
         {
-         if(bar0.high > p.mfePrice) p.mfePrice = bar0.high;
-         if(bar0.low < p.maePrice) p.maePrice = bar0.low;
+         if(bar0.high > p.mfePrice)
+           {
+            p.mfePrice = bar0.high;
+            p.mfeR = (p.mgmtRiskDist>0.0 ? (p.mfePrice-p.entryRef)/p.mgmtRiskDist : 0.0);
+            p.timeToMFE = p.barsElapsed;
+            p.mfeTime = bar0.time;
+           }
+         if(bar0.low < p.maePrice)
+           {
+            p.maePrice = bar0.low;
+            p.maeR = (p.mgmtRiskDist>0.0 ? (p.entryRef-p.maePrice)/p.mgmtRiskDist : 0.0);
+            p.timeToMAE = p.barsElapsed;
+            p.maeTime = bar0.time;
+           }
         }
       else
         {
-         if(bar0.low < p.mfePrice) p.mfePrice = bar0.low;
-         if(bar0.high > p.maePrice) p.maePrice = bar0.high;
+         if(bar0.low < p.mfePrice)
+           {
+            p.mfePrice = bar0.low;
+            p.mfeR = (p.mgmtRiskDist>0.0 ? (p.entryRef-p.mfePrice)/p.mgmtRiskDist : 0.0);
+            p.timeToMFE = p.barsElapsed;
+            p.mfeTime = bar0.time;
+           }
+         if(bar0.high > p.maePrice)
+           {
+            p.maePrice = bar0.high;
+            p.maeR = (p.mgmtRiskDist>0.0 ? (p.maePrice-p.entryRef)/p.mgmtRiskDist : 0.0);
+            p.timeToMAE = p.barsElapsed;
+            p.maeTime = bar0.time;
+           }
         }
       m_pending[i] = p;
 

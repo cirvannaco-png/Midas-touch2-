@@ -209,6 +209,7 @@ public:
    // enabled=false to restore pre-v2.8 all-sessions behavior.
    void              ConfigureSessionFilter(bool enabled, bool allowTokyo = false, bool allowLondon = true,
                                             bool allowNewYork = true, bool allowOverlap = true);
+   void              ConfigureRegimeStability(bool requireStability = false, int stabilityBars = 2);
    // v2.9 addition. FVGScore() now ranks every qualifying FVG and keeps
    // the best-scoring one instead of returning the first match found —
    // "first" had no relationship to "best" (freshness/proximity), so two
@@ -228,10 +229,14 @@ public:
    // strategically late before any order is even built. OFF by default,
    // same discipline as every other v2.8/v2.9 gate.
    void              ConfigureChaseFilter(bool requireChaseFilter, double maxChaseDistATR = 0.75);
-   // v2.9 addition — passthrough to CInducement::ConfigureQualityGates().
-   // See that method's comment for the OFF-by-default rationale.
+   // v2.16: initial-impulse and post-sweep displacement are separate events
+   // and therefore get separate thresholds. Defaults preserve the current
+   // behavior; threshold changes remain research controls until OOS-validated.
    void              ConfigureSweepQuality(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
-                                           bool requireFreshSetup, int maxBarsSinceBOS = 5);
+                                           bool requireFreshSetup, int maxBarsSinceBOS = 5,
+                                           bool allowSingleSwingStructure = false,
+                                           double followThroughATRMult = 0.0,
+                                           double followThroughBodyRatio = -1.0);
    // v2.9. warnMinutesBefore/After must be >= the EA's hard-block window
    // (InpNewsMinutesBefore/After) or they're clamped up to it inside
    // CNewsFilter::ConfigureWarningWindow() — WARNING is defined as a
@@ -428,6 +433,11 @@ void CScoringEngine::ConfigureSessionFilter(bool enabled, bool allowTokyo, bool 
    m_sessionFilter.Configure(enabled, allowTokyo, allowLondon, allowNewYork, allowOverlap);
   }
 //+------------------------------------------------------------------+
+void CScoringEngine::ConfigureRegimeStability(bool requireStability,int stabilityBars)
+  {
+   m_regimeDetector.ConfigureStability(requireStability,stabilityBars);
+  }
+//+------------------------------------------------------------------+
 void CScoringEngine::ConfigureFVGProximity(double maxDistATR)
   {
    m_fvgMaxDistATR = (maxDistATR > 0) ? maxDistATR : 1.25;
@@ -440,9 +450,13 @@ void CScoringEngine::ConfigureChaseFilter(bool requireChaseFilter, double maxCha
   }
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureSweepQuality(bool requireMinSweepGrade, ENUM_SWEEP_GRADE minSweepGrade,
-                                           bool requireFreshSetup, int maxBarsSinceBOS)
+                                           bool requireFreshSetup, int maxBarsSinceBOS,
+                                           bool allowSingleSwingStructure,
+                                           double followThroughATRMult,
+                                           double followThroughBodyRatio)
   {
-   m_inducement.ConfigureQualityGates(requireMinSweepGrade, minSweepGrade, requireFreshSetup, maxBarsSinceBOS);
+   m_inducement.ConfigureQualityGates(requireMinSweepGrade, minSweepGrade, requireFreshSetup, maxBarsSinceBOS,
+                                      allowSingleSwingStructure, followThroughATRMult, followThroughBodyRatio);
   }
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureNewsAwareness(CNewsFilter* newsFilter, int warnMinutesBefore,
@@ -457,7 +471,7 @@ void CScoringEngine::ConfigureNewsAwareness(CNewsFilter* newsFilter, int warnMin
 double CScoringEngine::CurrentPrice()
   {
    if(m_priceRef == NULL || m_priceRef.Total() == 0) return 0.0;
-   return m_priceRef.GetCandle(0).close;
+   return m_priceRef.Total()>1 ? m_priceRef.GetCandle(1).close : 0.0;
   }
 //+------------------------------------------------------------------+
 double CScoringEngine::TrendScore(bool forBuy)
@@ -482,7 +496,7 @@ double CScoringEngine::FVGScore(bool forBuy)
   {
    if(m_fvgCtx == NULL || m_fvgCtx.candles.Total() == 0) return 0.0;
    double price = CurrentPrice();
-   double atr = m_fvgCtx.candles.GetATR(0);
+   double atr = m_fvgCtx.candles.GetATR(1);
    if(price <= 0 || atr <= 0) return 0.0;
    ENUM_FVG_DIR wantDir = forBuy ? FVG_BULL : FVG_BEAR;
 
@@ -511,7 +525,7 @@ double CScoringEngine::SRScore(bool forBuy)
   {
    if(m_srCtx == NULL || m_srCtx.candles.Total() == 0) return 0.0;
    double price = CurrentPrice();
-   double atr = m_srCtx.candles.GetATR(0);
+   double atr = m_srCtx.candles.GetATR(1);
    if(price <= 0 || atr <= 0) return 0.0;
 
    for(int i = 0; i < m_srCtx.sr.Count(); i++)
@@ -573,7 +587,7 @@ double CScoringEngine::OBScore(bool forBuy)
    if(m_htfObCtx == NULL) return 0.0;
    double price = CurrentPrice();
    if(price <= 0) return 0.0;
-   double atr = m_htfObCtx.candles.GetATR(0);
+   double atr = m_htfObCtx.candles.GetATR(1);
    if(atr <= 0) return 0.0;
 
    OrderBlockZone z;
@@ -590,7 +604,7 @@ double CScoringEngine::OBScore(bool forBuy)
 double CScoringEngine::CalculateConfidence(bool forBuy)
   {
    // v2.8: session gate runs first and cheapest — no point evaluating the
-   // rest of the pipeline for a bar that's going to be rejected anyway.
+   // rest of the pipeline for a closed bar that is going to be rejected anyway.
    if(!m_sessionFilter.IsAllowed())
       return 0.0;
 
@@ -606,7 +620,7 @@ double CScoringEngine::CalculateConfidence(bool forBuy)
    if(m_requireChaseFilter && ind.bosBarIndex >= 0 && m_bosCtx != NULL)
      {
       double price = CurrentPrice();
-      double atr = m_bosCtx.candles.GetATR(0);
+      double atr = m_bosCtx.candles.GetATR(1);
       if(price > 0 && atr > 0)
         {
          double chaseDist = forBuy ? (price - ind.bosClosePrice) : (ind.bosClosePrice - price);
@@ -688,7 +702,7 @@ double CScoringEngine::CalculateConfidence(bool forBuy)
      }
    if(m_blockLowVolRegime)
      {
-      ENUM_VOL_REGIME regime = m_volRegime.Classify(0);
+      ENUM_VOL_REGIME regime = m_volRegime.Classify(1);
       if(regime == VOL_REGIME_LOW)
          return 0.0;
       // VOL_REGIME_UNDEFINED (not enough ATR history) fails OPEN here,
@@ -739,6 +753,32 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.inducement_valid = ind.valid;
    out.bos_confirmed = ind.bosConfirmed;
    out.liquidity_swept = ind.sweepFound;
+   out.inducement_structure_type = ind.structureType;
+   out.liquidity_pool_price = ind.liquidityPoolPrice;
+   out.liquidity_pool_near_bar_index = ind.liquidityPoolNearBarIndex;
+   out.liquidity_pool_far_bar_index = ind.liquidityPoolFarBarIndex;
+   out.liquidity_pool_bar_span = ind.liquidityPoolBarSpan;
+   out.liquidity_pool_spacing_atr = ind.liquidityPoolSpacingATR;
+   out.liquidity_age_bars = ind.liquidityAgeBars;
+   out.sweep_penetration_atr = ind.sweepPenetrationATR;
+   out.sweep_rejection_ratio = ind.sweepRejectionRatio;
+   out.sweep_price = ind.sweepPrice;
+   out.sweep_time = ind.sweepTime;
+   out.sweep_shape_score = ind.sweepShapeScore;
+   out.sweep_follow_through = ind.sweepFollowThrough;
+   out.sweep_follow_through_bar_index = ind.sweepFollowThroughBarIndex;
+   out.displacement_atr = ind.displacementATR;
+   out.displacement_body_ratio = ind.displacementBodyRatio;
+   out.bos_distance_atr = ind.bosDistanceATR;
+   out.bos_time = ind.bosTime;
+   out.bos_age_bars = MathMax(0,ind.barsSinceBOS);
+   out.liquidity_scope = ind.structureType==INDUCEMENT_STRUCTURE_NONE ? LIQUIDITY_SCOPE_UNKNOWN : LIQUIDITY_SCOPE_INTERNAL;
+   out.liquidity_archetype = ind.structureType==INDUCEMENT_STRUCTURE_EQUAL_POOL ? LIQUIDITY_ARCHETYPE_EQUAL_POOL :
+                             (ind.structureType==INDUCEMENT_STRUCTURE_SINGLE_SWING ? LIQUIDITY_ARCHETYPE_SINGLE_SWING : LIQUIDITY_ARCHETYPE_NONE);
+   out.liquidity_event_price = ind.liquidityPoolPrice;
+   out.liquidity_event_strength = ind.sweepGradeScore;
+   out.liquidity_event_external = false;
+   out.invalidation_distance_atr = 0.0;
    out.trend_aligned   = (TrendScore(forBuy) >= 0.6);
    out.fresh_fvg       = (FVGScore(forBuy) > 0.0);
    out.sr_confluence   = (SRScore(forBuy) > 0.0);
@@ -782,12 +822,12 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.htf_ob_confluence = (OBScore(forBuy) > 0.0);
    if(m_htfObCtx != NULL && price > 0)
      {
-      double atr = m_htfObCtx.candles.GetATR(0);
+      double atr = m_htfObCtx.candles.GetATR(1);
       OrderBlockZone z;
       if(atr > 0 && m_htfObCtx.orderBlock.NearestZone(forBuy ? FVG_BULL : FVG_BEAR, price, atr, m_obDistATRMax, z))
          out.htf_ob_state = z.state;
      }
-   out.vol_regime = m_volRegime.Classify(0);
+   out.vol_regime = m_volRegime.Classify(1);
    out.session = m_sessionFilter.CurrentSession();
    out.session_ok = m_sessionFilter.IsAllowed();
 
@@ -800,7 +840,7 @@ void CScoringEngine::EvaluateReasons(bool forBuy, SetupReasons &out)
    out.chase_ok = true;
    if(ind.bosBarIndex >= 0 && m_bosCtx != NULL && price > 0)
      {
-      double atrB = m_bosCtx.candles.GetATR(0);
+      double atrB = m_bosCtx.candles.GetATR(1);
       if(atrB > 0)
         {
          out.chase_dist_atr = (forBuy ? (price - ind.bosClosePrice) : (ind.bosClosePrice - price)) / atrB;
@@ -971,7 +1011,8 @@ void CScoringEngine::ConfigureStrategySelection(double minSelectionScore)
 // diagnostic generation added (v2.10 got its own method; this does too).
 void CScoringEngine::PopulateStrategyDiagnostics(bool forBuy, double confidence, SetupReasons &out)
   {
-   out.regime = m_regimeDetector.Classify();
+   datetime decisionBarTime=(m_priceRef!=NULL&&m_priceRef.Total()>1)?m_priceRef.GetCandle(1).time:0;
+   out.regime = m_regimeDetector.ClassifyStable(decisionBarTime);
    m_momentumEngine.Evaluate(forBuy, out.momentum_score, out.breakout_score, out.breakout_class);
    // v2.13: independent second strategy score, same call site, same
    // "never feeds back" discipline as the momentum/breakout call above.
