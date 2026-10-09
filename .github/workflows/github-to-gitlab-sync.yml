@@ -27,30 +27,46 @@ jobs:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
-      - name: Require GitLab synchronization credential
+      - name: Validate GitLab synchronization credentials
         env:
           GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
+          GITLAB_SYNC_USER: ${{ secrets.GITLAB_SYNC_USER }}
         run: |
           set -euo pipefail
           if [ -z "${GITLAB_SYNC_TOKEN}" ]; then
             echo "::error::Missing GitHub Actions secret GITLAB_SYNC_TOKEN."
-            echo "Configure a GitLab token with write_repository (or api + write_repository) access to private project 86337573."
+            echo "Create a GitLab token with write_repository access to private project 86337573."
             exit 1
+          fi
+          if [ -z "${GITLAB_SYNC_USER}" ]; then
+            echo "GITLAB_SYNC_USER is unset; using oauth2 (supported for personal access tokens)."
+            echo "For a project/group access token or deploy token, set GITLAB_SYNC_USER to the token's GitLab username."
           fi
 
       - name: Reconcile GitLab main by source-tree parity
         env:
           GITLAB_SYNC_TOKEN: ${{ secrets.GITLAB_SYNC_TOKEN }}
+          GITLAB_SYNC_USER: ${{ secrets.GITLAB_SYNC_USER }}
           GITHUB_SYNC_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
           git config --global user.name "midas-sync-bot"
           git config --global user.email "midas-sync-bot@users.noreply.github.com"
 
+          sync_user="${GITLAB_SYNC_USER:-oauth2}"
+          clone_url="https://${sync_user}:${GITLAB_SYNC_TOKEN}@gitlab.com/midas-touch-group1/midas-touch2.git"
           rm -rf /tmp/midas-gitlab-tree
-          git clone --depth 1 --branch main             "https://oauth2:${GITLAB_SYNC_TOKEN}@gitlab.com/midas-touch-group1/midas-touch2.git"             /tmp/midas-gitlab-tree
+          if ! git clone --depth 1 --branch main "${clone_url}" /tmp/midas-gitlab-tree; then
+            echo "::error::GitLab authentication/clone failed. Verify GITLAB_SYNC_TOKEN is unexpired, has write_repository scope, can access project 86337573, and matches GITLAB_SYNC_USER for the token type."
+            exit 1
+          fi
+          unset clone_url
 
-          rsync -a --delete             --exclude '.git/'             --exclude '.github/'             "${GITHUB_WORKSPACE}/"             /tmp/midas-gitlab-tree/
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            "${GITHUB_WORKSPACE}/" \
+            /tmp/midas-gitlab-tree/
 
           cd /tmp/midas-gitlab-tree
           git add -A
@@ -78,4 +94,4 @@ jobs:
         if: ${{ failure() }}
         run: |
           echo "::warning::GitHub -> GitLab synchronization failed."
-          echo "::warning::Repair GITLAB_SYNC_TOKEN for private project 86337573 if authentication failed."
+          echo "::warning::Check GITLAB_SYNC_TOKEN expiry/scope/project access and GITLAB_SYNC_USER token-type compatibility."
