@@ -1,6 +1,6 @@
 # Dual-Lane Risk Governor — Research Contract
 
-Status: research-only architecture and metrics tooling. No live execution behavior is changed by this research branch. Source of truth remains EA/MedisTouch_v2.8.mq5 and EA/includes/.
+Status: isolated research branch; nothing is merged into `main` or deployed from this branch. It contains research-only analytics plus proposed risk-engine guard changes. Merging `EA/includes/Trading/RiskEngine.mqh` changes setup rejection and lot sizing, so it requires MetaEditor compilation and MT5 tester review before any live use. Source of truth remains `EA/MedisTouch_v2.8.mq5` and `EA/includes/`.
 
 ## Target
 
@@ -10,7 +10,7 @@ The requested account-return target is a $10,000 starting balance, +$8,700 net p
 
 - Analysis/scoring identifies candidate setups but does not silently change order size.
 - Decision policy classifies a candidate and persistently records its risk lane.
-- Risk engine sizes from the executable entry and protective stop using symbol tick size/value and broker volume constraints.
+- Risk engine sizes from the executable entry to the protective stop via MT5 `OrderCalcProfit` in account currency, then rounds down to broker volume constraints. This estimate excludes gap/slippage, commission and swap.
 - Portfolio governor enforces aggregate open-stop risk before a batch is submitted; unknown risk must fail closed.
 - Execution/recovery must reconstruct the same lane after restart; lane state cannot exist only in memory.
 - Position management owns partial exits, break-even protection, trailing stops and time exits.
