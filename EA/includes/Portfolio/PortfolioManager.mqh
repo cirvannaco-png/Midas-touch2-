@@ -45,6 +45,12 @@ double CPortfolioManager::OpenRiskAmount(ulong ticket)
    string symbol=PositionGetString(POSITION_SYMBOL); double entry=PositionGetDouble(POSITION_PRICE_OPEN);
    double sl=PositionGetDouble(POSITION_SL); double volume=PositionGetDouble(POSITION_VOLUME);
    if(sl<=0.0 || entry<=0.0 || volume<=0.0) return -1.0;
+   // A stop exactly at entry is known zero downside risk, not missing risk data.
+   // Keep genuinely uncomputable non-zero-distance positions fail-closed.
+   if(MathAbs(entry-sl)<=1e-12)return 0.0;
+   double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tickValue=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_VALUE);
+   if(tickSize<=0.0 || tickValue<=0.0)return -1.0;
    double risk=m_risk.RiskAmountForLots(symbol,volume,entry,sl);
    return risk>0.0 ? risk : -1.0;
   }
