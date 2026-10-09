@@ -15,8 +15,6 @@ private:
    bool     m_reported;
    double   m_minQualifiedR;
    string   m_storageKey;
-   string   m_lockKey;
-   ulong    m_magic;
 
    int DateKey(datetime at)
      {
@@ -32,113 +30,27 @@ private:
       return t.day_of_week>=1 && t.day_of_week<=5;
      }
 
-   string CounterKey(int dateKey)
+   string PositionMarker(ulong positionId)
      {
-      // One counter per broker-server date avoids rollover writes clobbering another chart's count.
-      return StringFormat("MTC.%I64d.%I64u.%d",AccountInfoInteger(ACCOUNT_LOGIN),m_magic,dateKey);
+      // Include the full integer in the name; do not round ulong IDs through double.
+      return m_storageKey+".X."+StringFormat("%I64u",positionId);
      }
 
-   string QualifiedKey(ulong positionId)
+   void Persist()
      {
-      return StringFormat("MT%I64d.%I64u.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),m_magic,positionId);
+      if(StringLen(m_storageKey)<=0 || m_dateKey<=0)return;
+      // Store the count before publishing its date key during rollover.
+      GlobalVariableSet(m_storageKey+".C",(double)m_count);
+      GlobalVariableSet(m_storageKey+".D",(double)m_dateKey);
      }
 
-   bool EnsureLock()
+   void SyncStoredState()
      {
-      if(GlobalVariableCheck(m_lockKey))return true;
-      // GlobalVariableTemp creates the missing lock at zero without a check-then-set reset race.
-      ResetLastError();
-      bool created=GlobalVariableTemp(m_lockKey);
-      if(!created && !GlobalVariableCheck(m_lockKey))
-        {
-         PrintFormat("Midas Touch daily target: cannot create shared lock (error %d).",GetLastError());
-         return false;
-        }
-      return GlobalVariableCheck(m_lockKey);
-     }
-
-   bool AcquireLock(double &tokenOut)
-     {
-      tokenOut=0.0;
-      if(!EnsureLock())return false;
-
-      // A lease based on local wall-clock time allows recovery if a terminal/EA stops while holding the lock.
-      for(int attempt=0;attempt<100;attempt++)
-        {
-         double observed=GlobalVariableGet(m_lockKey);
-         double now=(double)TimeLocal();
-         if(observed==0.0 && GlobalVariableSetOnCondition(m_lockKey,now,0.0))
-           {
-            tokenOut=now;
-            return true;
-           }
-         if(observed>0.0 && now-observed>15.0 &&
-            GlobalVariableSetOnCondition(m_lockKey,now,observed))
-           {
-            tokenOut=now;
-            Print("Midas Touch daily target: reclaimed a stale shared counter lock.");
-            return true;
-           }
-         Sleep(10);
-        }
-      Print("Midas Touch daily target: shared counter lock unavailable; qualified close was not counted.");
-      return false;
-     }
-
-   void ReleaseLock(double token)
-     {
-      if(token<=0.0)return;
-      if(!GlobalVariableSetOnCondition(m_lockKey,0.0,token))
-         Print("Midas Touch daily target: shared counter lock release failed; stale-lock recovery will handle it.");
-      GlobalVariablesFlush();
-     }
-
-   bool EnsureCounter(int dateKey)
-     {
-      string key=CounterKey(dateKey);
-      if(GlobalVariableCheck(key))return true;
-      ResetLastError();
-      datetime created=GlobalVariableSet(key,0.0);
-      if(created==0 && !GlobalVariableCheck(key))
-        {
-         PrintFormat("Midas Touch daily target: cannot create daily counter (error %d).",GetLastError());
-         return false;
-        }
-      return GlobalVariableCheck(key);
-     }
-
-   int ReadCounter(int dateKey)
-     {
-      if(dateKey<=0)return 0;
-      string key=CounterKey(dateKey);
-      if(!GlobalVariableCheck(key))return 0;
-      return MathMax(0,(int)GlobalVariableGet(key));
-     }
-
-   void InitializeCurrentDayState()
-     {
-      double token=0.0;
-      if(!AcquireLock(token))return;
-
-      // Migrate same-day state from the previous counter format, if present.
-      string currentKey=CounterKey(m_dateKey);
-      if(!GlobalVariableCheck(currentKey))
-        {
-         int initialCount=0;
-         if(GlobalVariableCheck(m_storageKey+".D") &&
-            (int)GlobalVariableGet(m_storageKey+".D")==m_dateKey &&
-            GlobalVariableCheck(m_storageKey+".C"))
-            initialCount=MathMax(0,(int)GlobalVariableGet(m_storageKey+".C"));
-
-         ResetLastError();
-         datetime created=GlobalVariableSet(currentKey,(double)initialCount);
-         if(created==0 && !GlobalVariableCheck(currentKey))
-            PrintFormat("Midas Touch daily target: initial counter migration failed (error %d).",GetLastError());
-         else
-            GlobalVariablesFlush();
-        }
-      ReleaseLock(token);
-      m_count=ReadCounter(m_dateKey);
+      if(StringLen(m_storageKey)<=0 || !GlobalVariableCheck(m_storageKey+".D"))return;
+      if((int)GlobalVariableGet(m_storageKey+".D")!=m_dateKey)return;
+      if(GlobalVariableCheck(m_storageKey+".C"))
+         m_count=MathMax(m_count,MathMax(0,(int)GlobalVariableGet(m_storageKey+".C")));
+      if(m_target>0 && m_weekday && m_count>=m_target)m_reported=true;
      }
 
    void Rollover()
@@ -147,35 +59,55 @@ private:
       MqlDateTime t;
       if(now<=0 || !TimeToStruct(now,t))return;
       int nextKey=t.year*1000+t.day_of_year;
+      if(nextKey==m_dateKey){SyncStoredState();return;}
 
-      if(nextKey==m_dateKey)
-        {
-         m_count=ReadCounter(m_dateKey);
-         if(m_target>0 && m_weekday && m_count>=m_target)m_reported=true;
-         return;
-        }
-
-      int previousCount=ReadCounter(m_dateKey);
-      if(m_target>0 && m_weekday && m_dateKey>0 && previousCount<m_target)
-         PrintFormat("Midas Touch daily qualified-trade target not met: prior weekday %d/%d. No trades were forced.",previousCount,m_target);
+      if(m_target>0 && m_weekday && m_count<m_target && m_dateKey>0)
+         PrintFormat("Midas Touch daily qualified-trade target not met: prior weekday %d/%d. No trades were forced.",m_count,m_target);
 
       m_dateKey=nextKey;
       m_weekday=(t.day_of_week>=1 && t.day_of_week<=5);
-      m_count=ReadCounter(m_dateKey);
-      m_reported=(m_target>0 && m_weekday && m_count>=m_target);
+      m_count=0;
+      m_reported=false;
+      Persist();
+     }
+
+   bool TryClaimPosition(ulong positionId)
+     {
+      if(positionId==0)return true; // No stable ID: caller's tracking is the only deduplication.
+      string marker=PositionMarker(positionId);
+      if(!GlobalVariableCheck(marker))
+         GlobalVariableSet(marker,0.0);
+      // Atomic claim prevents repeated close notifications from counting the same position
+      // when the marker already exists and is claimed.
+      return GlobalVariableSetOnCondition(marker,1.0,0.0);
+     }
+
+   int IncrementPersistedCount()
+     {
+      string countKey=m_storageKey+".C";
+      if(!GlobalVariableCheck(countKey))GlobalVariableSet(countKey,(double)m_count);
+      // CAS avoids lost increments when multiple chart instances qualify trades together.
+      for(int attempt=0;attempt<100;attempt++)
+        {
+         double observed=GlobalVariableGet(countKey);
+         if(observed<0.0)observed=0.0;
+         if(GlobalVariableSetOnCondition(countKey,observed+1.0,observed))
+            return (int)(observed+1.0);
+        }
+      Print("Midas Touch: daily counter update deferred after concurrent update contention.");
+      return -1;
      }
 
 public:
    CDailyTradeTarget():m_target(3),m_count(0),m_dateKey(0),m_weekday(false),
-      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""),m_magic(0){}
+      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""){}
 
    void Init(int target,double minQualifiedR,ulong magic)
      {
       m_target=MathMax(0,target);
       m_minQualifiedR=MathMax(0.0,minQualifiedR);
-      m_magic=magic;
+      // Shared account+magic state aggregates chart-symbol instances in this terminal.
       m_storageKey=StringFormat("MT2DT.%I64d.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),magic);
-      m_lockKey=StringFormat("MTL.%I64d.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),magic);
       m_count=0;
       m_dateKey=0;
       m_weekday=false;
@@ -183,14 +115,16 @@ public:
 
       datetime now=TimeCurrent();
       MqlDateTime t;
-      if(now<=0 || !TimeToStruct(now,t))
-        {
-         Print("Midas Touch daily target: server time unavailable; target counter not initialized.");
-         return;
-        }
+      if(now<=0 || !TimeToStruct(now,t))return;
       m_dateKey=t.year*1000+t.day_of_year;
       m_weekday=(t.day_of_week>=1 && t.day_of_week<=5);
-      InitializeCurrentDayState();
+
+      if(GlobalVariableCheck(m_storageKey+".D") &&
+         (int)GlobalVariableGet(m_storageKey+".D")==m_dateKey &&
+         GlobalVariableCheck(m_storageKey+".C"))
+         m_count=MathMax(0,(int)GlobalVariableGet(m_storageKey+".C"));
+
+      Persist();
       if(m_target>0 && m_weekday && m_count>=m_target)
         {
          m_reported=true;
@@ -198,66 +132,23 @@ public:
         }
      }
 
-   // Call only after the whole tracked decision closes and aggregate realized R is known.
+   // Call only after the complete decision is closed and aggregate realized R is known.
    void OnQualifiedClose(datetime at,double realizedR,ulong positionId)
      {
       Rollover();
       if(m_target<=0 || at<=0 || realizedR<=0.0 || realizedR+1e-9<m_minQualifiedR)return;
-      if(!IsWeekday(at) || DateKey(at)<=0)return;
-      if(positionId<=0)return;
-      int eventDateKey=DateKey(at);
+      if(!IsWeekday(at) || DateKey(at)!=m_dateKey)return;
+      if(!TryClaimPosition(positionId))return;
 
-      double token=0.0;
-      if(!AcquireLock(token))return;
-
-      string countedKey=QualifiedKey(positionId);
-      if(GlobalVariableCheck(countedKey))
-        {
-         ReleaseLock(token);
-         m_count=ReadCounter(m_dateKey);
-         return;
-        }
-
-      int dateKey=eventDateKey;
-      if(!EnsureCounter(dateKey))
-        {
-         ReleaseLock(token);
-         return;
-        }
-
-      // Under the shared lock, marker and counter writes are serialized across chart instances.
-      ResetLastError();
-      datetime markerWrite=GlobalVariableSet(countedKey,(double)dateKey);
-      if(markerWrite==0)
-        {
-         PrintFormat("Midas Touch daily target: unable to record position %I64u idempotency marker (error %d); trade not counted.",positionId,GetLastError());
-         ReleaseLock(token);
-         return;
-        }
-      GlobalVariablesFlush();
-
-      string dailyKey=CounterKey(dateKey);
-      int currentCount=MathMax(0,(int)GlobalVariableGet(dailyKey));
-      ResetLastError();
-      datetime countWrite=GlobalVariableSet(dailyKey,(double)(currentCount+1));
-      if(countWrite==0)
-        {
-         PrintFormat("Midas Touch daily target: failed to persist qualified count for position %I64u (error %d); count may be understated.",positionId,GetLastError());
-         ReleaseLock(token);
-         return;
-        }
-      GlobalVariablesFlush();
-      int eventDayCount=currentCount+1;
-      if(dateKey==m_dateKey)m_count=eventDayCount;
-      ReleaseLock(token);
-
-      if(dateKey==m_dateKey && !m_reported && m_count>=m_target)
+      int updated=IncrementPersistedCount();
+      if(updated<0)return;
+      m_count=updated;
+      GlobalVariableSet(m_storageKey+".D",(double)m_dateKey);
+      if(!m_reported && m_count>=m_target)
         {
          m_reported=true;
          PrintFormat("Midas Touch daily qualified-trade target reached: %d/%d (minimum %.2fR per closed trade).",m_count,m_target,m_minQualifiedR);
         }
-      else if(dateKey!=m_dateKey)
-         PrintFormat("Midas Touch: recorded a delayed qualified close for broker date %d; current day counter is unchanged.",dateKey);
      }
 
    void OnTick(){Rollover();}
