@@ -289,5 +289,58 @@ void OnTick(){g_monitor.OnTickCheck();g_dailyTradeTarget.OnTick();g_pool.DetectA
    g_capacity.SetContext(regimeEligible,executionHealthy,g_riskGuard.CurrentDrawdownPercent());
    g_orders.SetMaxOpenTrades(g_capacity.MaxOpenTrades());
    g_portfolio.SetPositionLimits(g_capacity.MaxPositionsPerSymbol(),g_capacity.MaxPositionsPerGroup());chosen.calibrated_probability=g_tracker.GetCalibratedProbability(chosen.confidence,chosen.calibration_sample,chosen.calibration_has_enough_data);if(InpLogSignals){ENUM_TREND_STATE t=g_trendCtx.trend.GetCurrentTrend();g_logger.LogSetup(chosen,_Symbol,InpFVGTF,EnumToString(t));}TradeDecisionRecord decision=g_router.Decide(chosen);decision.timeframe=_Period;decision.decision_schema_version=InpDecisionSchemaVersion;decision.strategy_version=InpStrategyVersion;decision.model_version=InpModelVersion;decision.calibration_version=InpCalibrationVersion;decision.feature_schema_version=InpFeatureSchemaVersion;decision.environment_schema_version=InpEnvironmentSchemaVersion;decision.weight_version=InpWeightSetVersion;decision.environment_key=g_environmentMemory.Key(chosen.reasons);decision.spread_points=chosen.reasons.spread_points;decision.decision_fingerprint=DecisionFingerprintFor(decision);if(InpTrackOutcomes)g_tracker.AddSetup(chosen,decision.decision_id,decision.decision_fingerprint);if(!decision.valid||decision.action==POLICY_IGNORE)return;if(!g_store.Save(decision)){PrintFormat("MedisTouch EA: decision #%I64d rejected — durable DecisionStore write failed.",decision.decision_id);return;}if(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL){int availableSlots=g_orders.MaxOpenTrades()-g_orders.OpenCount();if(availableSlots<0)availableSlots=0;MultiTradePlan plan;bool planOk=g_multiTrade.Build(decision.setup,availableSlots,plan);if(!planOk){PrintFormat("MedisTouch EA: decision #%I64d rejected — multi-trade plan construction failed.",decision.decision_id);return;}double entry=ResolveExecutionEntry(chosen);double legLots[3];double legRisk[3];for(int leg=0;leg<3;leg++){legLots[leg]=0.0;legRisk[leg]=0.0;}bool sizingOk=true;for(int leg=0;leg<plan.legCount;leg++){double fraction=plan.riskFraction[leg];bool exceeded=false;legLots[leg]=g_risk.CalculateLotSize(_Symbol,InpRiskPercentPerTrade*fraction,entry,chosen.stop_loss,decision.reduce_risk,InpAllowMinLotOverride,exceeded,g_riskGuard.SizeMultiplier());if(legLots[leg]<=0.0){sizingOk=false;break;}legRisk[leg]=g_risk.RiskAmountForLots(_Symbol,legLots[leg],entry,chosen.stop_loss);}if(!sizingOk){PrintFormat("MedisTouch EA: decision #%I64d skipped — one or more execution legs cannot satisfy broker lot/risk constraints.",decision.decision_id);return;}double totalProposedRisk=0.0;for(int leg=0;leg<plan.legCount;leg++)totalProposedRisk+=legRisk[leg];string block;if(!g_portfolio.AllowNewTradeBatch(_Symbol,totalProposedRisk,plan.legCount,block)){PrintFormat("MedisTouch EA: decision #%I64d blocked — %s",decision.decision_id,block);return;}ulong tickets[3];bool submittedAny=false;double maxDeviation=InpMaxEntryDeviationATR*atr;for(int leg=0;leg<plan.legCount;leg++){TradeDecisionRecord legDecision=decision;legDecision.setup.final_tp=plan.target[leg];legDecision.reason+=StringFormat("; multi-trade leg %d/%d (%s)",leg+1,plan.legCount,plan.label[leg]);ulong ticket=0;if(g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,ticket,leg)){submittedAny=true;tickets[leg]=ticket;if(!g_store.SaveExecution(decision.decision_id,legLots[leg],ticket,leg,plan.target[leg]))PrintFormat("CRITICAL: decision #%I64d leg %d executed but execution record was not durably persisted.",decision.decision_id,leg);}else g_monitor.NotifyBrokerReject();}if(!submittedAny)PrintFormat("MedisTouch EA: decision #%I64d rejected by broker on every requested execution leg.",decision.decision_id);}if(decision.action==POLICY_SIGNAL_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL){g_publisher.Publish(decision);g_lifecycleDecisionId=decision.decision_id;g_lifecycleCreationTime=chosen.creation_time;g_lifecycleSetup=chosen;g_lifecycleStatus="valid";}}
-void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result){if(trans.type!=TRADE_TRANSACTION_DEAL_ADD||trans.deal==0)return;if(!HistoryDealSelect(trans.deal))return;if(HistoryDealGetString(trans.deal,DEAL_SYMBOL)!=_Symbol)return;if((ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=InpMagicNumber)return;ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(trans.deal,DEAL_ENTRY);ulong position=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);if(position==0)return;datetime dealTime=(datetime)HistoryDealGetInteger(trans.deal,DEAL_TIME);double price=HistoryDealGetDouble(trans.deal,DEAL_PRICE);double volume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);long decisionId=-1;if(entry==DEAL_ENTRY_IN){ulong orderTicket=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);g_orders.MarkFilledFromPending(orderTicket,position,price);decisionId=g_orders.DecisionIdForTicket(position);if(decisionId>0&&g_tracker.MarkExecuted(decisionId,price,dealTime,volume)){double entryCommission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION),entrySwap=HistoryDealGetDouble(trans.deal,DEAL_SWAP),entryFee=HistoryDealGetDouble(trans.deal,DEAL_FEE);g_tracker.RecordExecutionCosts(decisionId,entryCommission,entrySwap,entryFee);}return;}if(entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY||entry==DEAL_ENTRY_INOUT){decisionId=g_orders.DecisionIdForTicket(position);if(decisionId<=0)return;double profit=HistoryDealGetDouble(trans.deal,DEAL_PROFIT),commission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION),swap=HistoryDealGetDouble(trans.deal,DEAL_SWAP),fee=HistoryDealGetDouble(trans.deal,DEAL_FEE);double net=profit+commission+swap+fee;bool stillOpen=g_orders.HasLiveTradeForDecision(decisionId);ENUM_DEAL_REASON reason=(ENUM_DEAL_REASON)HistoryDealGetInteger(trans.deal,DEAL_REASON);string outcome="closed";if(reason==DEAL_REASON_SL)outcome="SL_Hit";else if(reason==DEAL_REASON_TP)outcome="FinalTP_Hit";bool tracked=g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome);if(tracked&&!stillOpen&&g_tracker.LastFinalizedQualified())g_dailyTradeTarget.OnQualifiedClose(dealTime,g_tracker.LastFinalizedR(),position);}}
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+  {
+   if(trans.type!=TRADE_TRANSACTION_DEAL_ADD || trans.deal==0)return;
+   if(!HistoryDealSelect(trans.deal))return;
+   if(HistoryDealGetString(trans.deal,DEAL_SYMBOL)!=_Symbol)return;
+   if((ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=InpMagicNumber)return;
+
+   ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
+   ulong position=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+   if(position==0)return;
+   datetime dealTime=(datetime)HistoryDealGetInteger(trans.deal,DEAL_TIME);
+   double price=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
+   double volume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
+   long decisionId=-1;
+
+   if(entry==DEAL_ENTRY_IN)
+     {
+      ulong orderTicket=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
+      g_orders.MarkFilledFromPending(orderTicket,position,price);
+      decisionId=g_orders.DecisionIdForTicket(position);
+      if(decisionId>0 && g_tracker.MarkExecuted(decisionId,price,dealTime,volume))
+        {
+         double entryCommission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION);
+         double entrySwap=HistoryDealGetDouble(trans.deal,DEAL_SWAP);
+         double entryFee=HistoryDealGetDouble(trans.deal,DEAL_FEE);
+         g_tracker.RecordExecutionCosts(decisionId,entryCommission,entrySwap,entryFee);
+        }
+      return;
+     }
+
+   if(entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY || entry==DEAL_ENTRY_INOUT)
+     {
+      decisionId=g_orders.DecisionIdForTicket(position);
+      if(decisionId<=0)return;
+
+      double profit=HistoryDealGetDouble(trans.deal,DEAL_PROFIT);
+      double commission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION);
+      double swap=HistoryDealGetDouble(trans.deal,DEAL_SWAP);
+      double fee=HistoryDealGetDouble(trans.deal,DEAL_FEE);
+      double net=profit+commission+swap+fee;
+      bool stillOpen=g_orders.HasLiveTradeForDecision(decisionId);
+
+      ENUM_DEAL_REASON reason=(ENUM_DEAL_REASON)HistoryDealGetInteger(trans.deal,DEAL_REASON);
+      string outcome="closed";
+      if(reason==DEAL_REASON_SL)outcome="SL_Hit";
+      else if(reason==DEAL_REASON_TP)outcome="FinalTP_Hit";
+
+      bool tracked=g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome);
+      if(tracked && !stillOpen && g_tracker.LastFinalizedQualified())
+         g_dailyTradeTarget.OnQualifiedClose(dealTime,g_tracker.LastFinalizedR(),position);
+     }
+  }
 //+------------------------------------------------------------------+
