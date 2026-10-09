@@ -7,7 +7,7 @@ Midas Touch is an MT5 Expert Advisor (EA) suite with a production-ready Telegram
 | Directory | What it is |
 |-----------|------------|
 | [`EA/`](EA/) | MQL5 source for Midas Touch (v2.10 engine) — Expert Advisor, indicator, and the `includes/` engine tree |
-| [`tools/`](tools/) | CI include-tree validator, offline confidence-model comparison script, and the trade-tagging recalibration suite (`metrics_engine.py`, `calibration_matrix.py`, `gating.py`, `stats.py`) — copied into the bridge's Docker image and driven in production by `telegram-bridge/app/calibration.py`; also runnable standalone against the production DB for ad-hoc reports |
+| [`tools/`](tools/) | CI include-tree validator, offline confidence-model comparison and trade-tagging tools; `position_ledger_metrics.py` is research-only and aggregates MT5 partial closes into complete positions for net performance reporting |
 | [`mql5/`](mql5/) | Legacy placeholder tree mirroring the MT5 terminal layout (Experts / Include / Scripts) |
 | [`telegram-bridge/`](telegram-bridge/) | Production FastAPI service: receives signals from the EA and posts them to Telegram |
 | [`medis_touch/`](medis_touch/) | Non-production Midas Touch handbook/reference implementation used for architecture, lifecycle, and execution-control research; not the live bridge runtime |
