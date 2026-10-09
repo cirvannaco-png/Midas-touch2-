@@ -49,3 +49,5 @@ def test_entry_dealing_costs_are_included_before_qualification():
     assert "LastFinalizedR()const{return m_lastFinalizedR;}" in tracker
     assert "No trades were forced." in TARGET.read_text()
     assert "g_dailyTradeTarget.Init(InpMinimumQualifiedTradesPerDay,InpMinimumQualifiedTradeR,InpMagicNumber)" in ea
+    assert "\\n" not in ea
+    assert "\\n" not in tracker
