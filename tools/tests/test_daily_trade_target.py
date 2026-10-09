@@ -35,6 +35,9 @@ def test_target_is_weekday_only_and_persists_across_restarts():
     assert "GlobalVariableCheck(countedKey)" in target
     assert "QualifiedKey(ulong positionId)" in target
     assert "m_lastPositionId" not in target
+    assert "markerWrite==0" in target
+    assert "trade not counted." in target
+    assert "GlobalVariablesFlush();" in target
 
 
 def test_entry_dealing_costs_are_included_before_qualification():
