@@ -203,8 +203,9 @@ public:
      {
       Rollover();
       if(m_target<=0 || at<=0 || realizedR<=0.0 || realizedR+1e-9<m_minQualifiedR)return;
-      if(!IsWeekday(at) || DateKey(at)!=m_dateKey)return;
+      if(!IsWeekday(at) || DateKey(at)<=0)return;
       if(positionId<=0)return;
+      int eventDateKey=DateKey(at);
 
       double token=0.0;
       if(!AcquireLock(token))return;
@@ -217,7 +218,7 @@ public:
          return;
         }
 
-      int dateKey=DateKey(at);
+      int dateKey=eventDateKey;
       if(!EnsureCounter(dateKey))
         {
          ReleaseLock(token);
@@ -246,14 +247,17 @@ public:
          return;
         }
       GlobalVariablesFlush();
-      m_count=currentCount+1;
+      int eventDayCount=currentCount+1;
+      if(dateKey==m_dateKey)m_count=eventDayCount;
       ReleaseLock(token);
 
-      if(!m_reported && m_count>=m_target)
+      if(dateKey==m_dateKey && !m_reported && m_count>=m_target)
         {
          m_reported=true;
          PrintFormat("Midas Touch daily qualified-trade target reached: %d/%d (minimum %.2fR per closed trade).",m_count,m_target,m_minQualifiedR);
         }
+      else if(dateKey!=m_dateKey)
+         PrintFormat("Midas Touch: recorded a delayed qualified close for broker date %d; current day counter is unchanged.",dateKey);
      }
 
    void OnTick(){Rollover();}
