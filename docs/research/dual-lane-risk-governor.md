@@ -36,7 +36,7 @@ These are experiment defaults, not live recommendations. Gaps, liquidity and exe
 
 1. Size against the effective stop at the executable entry, not only the prior close.
 2. Sum remaining risk using each live position's current volume and effective protective stop; a trailing stop reduces risk only if active at the broker.
-3. A position missing valid protection or valid tick-value metadata counts as unknown risk and blocks new exposure until reconciled. A verified stop at or beyond entry (long: SL >= entry; short: SL <= entry) contributes zero remaining price-stop risk, not unknown risk. Gaps and slippage can still cause losses beyond stop-defined risk.
+3. A position missing valid protection or with an uncomputable account-currency stop-loss estimate counts as unknown risk and blocks new exposure until reconciled. A verified stop at or beyond entry (long: SL >= entry; short: SL <= entry) contributes zero remaining price-stop risk, not unknown risk. Gaps and slippage can still cause losses beyond stop-defined risk.
 4. Reserve the full intended order-batch risk before submitting its first leg; reconcile partial broker acceptance.
 5. TP1 reduces only the configured fraction; after confirmed closure, move remaining stops to entry plus/minus the configured offset.
 6. TP2 reduces its configured fraction and arms the runner trail only after confirmed closure.
@@ -44,6 +44,9 @@ These are experiment defaults, not live recommendations. Gaps, liquidity and exe
 8. Hard time exit cancels conflicting pending orders, closes remaining volume and reconciles the actual broker position.
 9. State transitions must be idempotent across duplicate ticks, callbacks and restarts.
 10. Daily trade count is a maximum only; the strategy must never weaken entry quality to fill a quota.
+11. Active pending orders reserve portfolio risk and count against symbol/group concurrency limits. Missing or invalid protection on a pending order is unknown exposure and blocks new entries.
+12. A market request without a confirmed deal must remain pending until the transaction event reconciles order to position; a request-method boolean alone is not fill confirmation.
+13. Stop modification, pending-order cancellation, and close operations must check the trade-server retcode; a successful local request call is not sufficient evidence that the broker accepted the operation.
 
 ## Test design
 
