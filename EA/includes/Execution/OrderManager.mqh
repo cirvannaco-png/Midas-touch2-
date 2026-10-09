@@ -204,10 +204,18 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
       if(ok)
         {
          m_trades[idx].fsm.SetTicket(ticket);
-         m_trades[idx].fsm.Transition(TS_FILLED);
-         m_trades[idx].fillPrice=fillPrice;
-         double totalMs=m_trades[idx].fsm.TotalLatencyMs();
-         if(m_monitor!=NULL && totalMs>=0.0) m_monitor.NotifyTradeLatency(totalMs,m_broker.LastLatencyMs());
+         if(fillPrice>0.0)
+           {
+            // Only a confirmed deal price can advance a market request to
+            // FILLED. A server-accepted request with no deal remains PENDING
+            // until OnTradeTransaction reconciles the matching order->position.
+            m_trades[idx].fsm.Transition(TS_FILLED);
+            m_trades[idx].fillPrice=fillPrice;
+            double totalMs=m_trades[idx].fsm.TotalLatencyMs();
+            if(m_monitor!=NULL && totalMs>=0.0) m_monitor.NotifyTradeLatency(totalMs,m_broker.LastLatencyMs());
+           }
+         else
+            PrintFormat("MedisTouch OrderManager: decision #%I64d accepted but fill not confirmed; request remains pending under ticket %I64u.",decision.decision_id,ticket);
         }
       else m_trades[idx].fsm.Transition(TS_REJECTED);
      }
