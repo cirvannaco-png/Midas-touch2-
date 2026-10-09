@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import inf
 from statistics import mean
-from typing import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from .smc_self_test import (
     FrozenSMCConfiguration,
