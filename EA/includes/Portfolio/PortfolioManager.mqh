@@ -8,7 +8,7 @@ class CPortfolioManager
   {
 private:
    double m_maxPortfolioRiskPercent; int m_maxPositionsPerSymbol; int m_maxPositionsPerGroup; ulong m_magic; CRiskEngine* m_risk;
-   string CorrelationGroup(string symbol); double OpenRiskAmount(ulong ticket);
+   string CorrelationGroup(string symbol); double OpenRiskAmount(ulong ticket); double PendingOrderRiskAmount(ulong ticket);
 public:
    void Init(double maxPortfolioRiskPercent,int maxPositionsPerSymbol,int maxPositionsPerGroup,ulong magic,CRiskEngine* risk);
    bool AllowNewTrade(string symbol,double proposedRiskAmount,string &reasonOut);
@@ -52,6 +52,34 @@ double CPortfolioManager::OpenRiskAmount(ulong ticket)
    double risk=m_risk.RiskAmountForLots(symbol,volume,entry,sl);
    return risk>0.0 ? risk : -1.0; // Invalid tick metadata remains unknown, not zero risk.
   }
+double CPortfolioManager::PendingOrderRiskAmount(ulong ticket)
+  {
+   if(m_risk==NULL || ticket==0 || !OrderSelect(ticket)) return -1.0;
+
+   string symbol=OrderGetString(ORDER_SYMBOL);
+   ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+   double entry=OrderGetDouble(ORDER_PRICE_OPEN);
+   double sl=OrderGetDouble(ORDER_SL);
+   double volume=OrderGetDouble(ORDER_VOLUME_CURRENT);
+
+   // An active order without a protective stop is unknown exposure. Unlike
+   // an already-open position, a pending order with a stop on the wrong side
+   // must not be interpreted as zero risk: the pending order has not yet
+   // earned any locked-in protection.
+   if(symbol=="" || entry<=0.0 || sl<=0.0 || volume<=0.0) return -1.0;
+
+   bool isBuy=(type==ORDER_TYPE_BUY || type==ORDER_TYPE_BUY_LIMIT ||
+               type==ORDER_TYPE_BUY_STOP || type==ORDER_TYPE_BUY_STOP_LIMIT);
+   bool isSell=(type==ORDER_TYPE_SELL || type==ORDER_TYPE_SELL_LIMIT ||
+                type==ORDER_TYPE_SELL_STOP || type==ORDER_TYPE_SELL_STOP_LIMIT);
+   if(!isBuy && !isSell) return -1.0;
+   if(isBuy && sl>=entry) return -1.0;
+   if(isSell && sl<=entry) return -1.0;
+
+   double risk=m_risk.RiskAmountForLots(symbol,volume,entry,sl);
+   return risk>0.0 ? risk : -1.0;
+  }
+
 bool CPortfolioManager::AllowNewTradeBatch(string symbol,double proposedRiskAmount,int proposedPositions,string &reasonOut)
   {
    reasonOut="";
@@ -79,6 +107,22 @@ bool CPortfolioManager::AllowNewTradeBatch(string symbol,double proposedRiskAmou
       else totalRisk+=risk;
      }
 
+   // Include live pending orders as contingent exposure. Otherwise an
+   // EA instance could reserve a portfolio budget with a pending limit
+   // order and another instance could spend the same budget before fill.
+   for(int i=0;i<OrdersTotal();i++)
+     {
+      ulong ticket=OrderGetTicket(i); // Selects this active order.
+      if(ticket==0) continue;
+      if((ulong)OrderGetInteger(ORDER_MAGIC)!=m_magic) continue;
+      string orderSymbol=OrderGetString(ORDER_SYMBOL);
+      if(orderSymbol==symbol) symbolCount++;
+      if(CorrelationGroup(orderSymbol)==group) groupCount++;
+      double risk=PendingOrderRiskAmount(ticket);
+      if(risk<0.0) unknown=true;
+      else totalRisk+=risk;
+     }
+
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
    if(equity<=0.0){reasonOut="account equity unavailable/non-positive";return false;}
 
@@ -97,7 +141,7 @@ bool CPortfolioManager::AllowNewTradeBatch(string symbol,double proposedRiskAmou
      }
    if(unknown)
      {
-      reasonOut="an existing open position under this magic number has uncomputable risk — refusing new exposure until its stop/risk can be verified";
+      reasonOut="an existing position or pending order under this magic number has uncomputable risk — refusing new exposure until its stop/risk can be verified";
       return false;
      }
    if(totalRisk>maxRiskAmount)
