@@ -40,9 +40,12 @@ private:
    void Persist()
      {
       if(StringLen(m_storageKey)<=0 || m_dateKey<=0)return;
-      GlobalVariableSet(m_storageKey+".D",(double)m_dateKey);
-      GlobalVariableSet(m_storageKey+".C",(double)m_count);
+      ResetLastError();
+      datetime dateWrite=GlobalVariableSet(m_storageKey+".D",(double)m_dateKey);
+      datetime countWrite=GlobalVariableSet(m_storageKey+".C",(double)m_count);
       GlobalVariablesFlush();
+      if(dateWrite==0 || countWrite==0)
+         PrintFormat("Midas Touch daily target persistence failed (error %d); current count is %d/%d.",GetLastError(),m_count,m_target);
      }
 
    void SyncStoredState()
@@ -114,7 +117,13 @@ public:
       string countedKey=QualifiedKey(positionId);
       if(GlobalVariableCheck(countedKey))return;
       // Mark first: a crash may undercount one trade, but cannot double-count it on replay.
-      GlobalVariableSet(countedKey,(double)m_dateKey);
+      ResetLastError();
+      datetime markerWrite=GlobalVariableSet(countedKey,(double)m_dateKey);
+      if(markerWrite==0)
+        {
+         PrintFormat("Midas Touch daily target: unable to record position %I64u idempotency marker (error %d); trade not counted.",positionId,GetLastError());
+         return;
+        }
       GlobalVariablesFlush();
       m_count++;
       Persist();
