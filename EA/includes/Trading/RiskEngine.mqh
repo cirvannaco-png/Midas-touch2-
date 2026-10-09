@@ -161,7 +161,7 @@ bool CRiskEngine::ValidateSetupAtEntry(const TradeSetup &setup,double entry,doub
    double tp1=setup.tp1;
    if(!MathIsValidNumber(sl) || !MathIsValidNumber(tp1) ||
       !MathIsValidNumber(setup.tp2) || !MathIsValidNumber(setup.final_tp) ||
-      sl<=0.0 || tp1<=0.0)
+      sl<=0.0 || tp1<=0.0 || setup.final_tp<=0.0 || setup.tp2<0.0)
       return false;
 
    if(setup.type==ORDER_TYPE_BUY)
