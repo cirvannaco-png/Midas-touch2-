@@ -129,7 +129,7 @@ bool CExtendedKeyLevels::NearestSessionLevel(bool forBuy, double price, double m
    levelPrice = 0.0;
    if(candles == NULL || sessionFilter == NULL) return false;
 
-   datetime sessionStart = sessionFilter.CurrentSessionStartGMT();
+   datetime sessionStart = sessionFilter.CurrentSessionStartServer();
    if(sessionStart == 0) return false; // SESSION_DEAD
 
    double sessHigh = -1.0;

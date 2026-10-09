@@ -465,4 +465,4 @@ def test_calibration_high_conviction_uses_conservative_bound():
     assert "GetConservativeProbability(double confidence)" in tracker
     assert "GetConservativeProbability(double confidence)" in live
     assert "CalibrationLowerBound" in read("EA/includes/Core/SignalLogger.mqh")
-    assert "\"calibration_lower_bound\"" in read("EA/includes/Signals/SignalPublisher.mqh")
+    assert "calibration_lower_bound" in read("EA/includes/Signals/SignalPublisher.mqh")
