@@ -15,6 +15,7 @@ private:
    bool     m_reported;
    double   m_minQualifiedR;
    string   m_storageKey;
+   string   m_lockKey;
    ulong    m_magic;
 
    int DateKey(datetime at)
@@ -31,29 +32,113 @@ private:
       return t.day_of_week>=1 && t.day_of_week<=5;
      }
 
+   string CounterKey(int dateKey)
+     {
+      // One counter per broker-server date avoids rollover writes clobbering another chart's count.
+      return StringFormat("MTC.%I64d.%I64u.%d",AccountInfoInteger(ACCOUNT_LOGIN),m_magic,dateKey);
+     }
+
    string QualifiedKey(ulong positionId)
      {
-      // Global variables are terminal-scoped; account + magic + position forms an idempotency key.
       return StringFormat("MT%I64d.%I64u.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),m_magic,positionId);
      }
 
-   void Persist()
+   bool EnsureLock()
      {
-      if(StringLen(m_storageKey)<=0 || m_dateKey<=0)return;
+      if(GlobalVariableCheck(m_lockKey))return true;
       ResetLastError();
-      datetime dateWrite=GlobalVariableSet(m_storageKey+".D",(double)m_dateKey);
-      datetime countWrite=GlobalVariableSet(m_storageKey+".C",(double)m_count);
+      datetime created=GlobalVariableSet(m_lockKey,0.0);
+      if(created==0 && !GlobalVariableCheck(m_lockKey))
+        {
+         PrintFormat("Midas Touch daily target: cannot create shared lock (error %d).",GetLastError());
+         return false;
+        }
       GlobalVariablesFlush();
-      if(dateWrite==0 || countWrite==0)
-         PrintFormat("Midas Touch daily target persistence failed (error %d); current count is %d/%d.",GetLastError(),m_count,m_target);
+      return GlobalVariableCheck(m_lockKey);
      }
 
-   void SyncStoredState()
+   bool AcquireLock(double &tokenOut)
      {
-      if(StringLen(m_storageKey)<=0 || !GlobalVariableCheck(m_storageKey+".D"))return;
-      if((int)GlobalVariableGet(m_storageKey+".D")!=m_dateKey)return;
-      if(GlobalVariableCheck(m_storageKey+".C"))m_count=MathMax(m_count,MathMax(0,(int)GlobalVariableGet(m_storageKey+".C")));
-      if(m_target>0 && m_weekday && m_count>=m_target)m_reported=true;
+      tokenOut=0.0;
+      if(!EnsureLock())return false;
+
+      // A lease based on local wall-clock time allows recovery if a terminal/EA stops while holding the lock.
+      for(int attempt=0;attempt<100;attempt++)
+        {
+         double observed=GlobalVariableGet(m_lockKey);
+         double now=(double)TimeLocal();
+         if(observed==0.0 && GlobalVariableSetOnCondition(m_lockKey,now,0.0))
+           {
+            tokenOut=now;
+            return true;
+           }
+         if(observed>0.0 && now-observed>15.0 &&
+            GlobalVariableSetOnCondition(m_lockKey,now,observed))
+           {
+            tokenOut=now;
+            Print("Midas Touch daily target: reclaimed a stale shared counter lock.");
+            return true;
+           }
+         Sleep(10);
+        }
+      Print("Midas Touch daily target: shared counter lock unavailable; qualified close was not counted.");
+      return false;
+     }
+
+   void ReleaseLock(double token)
+     {
+      if(token<=0.0)return;
+      if(!GlobalVariableSetOnCondition(m_lockKey,0.0,token))
+         Print("Midas Touch daily target: shared counter lock release failed; stale-lock recovery will handle it.");
+      GlobalVariablesFlush();
+     }
+
+   bool EnsureCounter(int dateKey)
+     {
+      string key=CounterKey(dateKey);
+      if(GlobalVariableCheck(key))return true;
+      ResetLastError();
+      datetime created=GlobalVariableSet(key,0.0);
+      if(created==0 && !GlobalVariableCheck(key))
+        {
+         PrintFormat("Midas Touch daily target: cannot create daily counter (error %d).",GetLastError());
+         return false;
+        }
+      return GlobalVariableCheck(key);
+     }
+
+   int ReadCounter(int dateKey)
+     {
+      if(dateKey<=0)return 0;
+      string key=CounterKey(dateKey);
+      if(!GlobalVariableCheck(key))return 0;
+      return MathMax(0,(int)GlobalVariableGet(key));
+     }
+
+   void InitializeCurrentDayState()
+     {
+      double token=0.0;
+      if(!AcquireLock(token))return;
+
+      // Migrate same-day state from the previous counter format, if present.
+      string currentKey=CounterKey(m_dateKey);
+      if(!GlobalVariableCheck(currentKey))
+        {
+         int initialCount=0;
+         if(GlobalVariableCheck(m_storageKey+".D") &&
+            (int)GlobalVariableGet(m_storageKey+".D")==m_dateKey &&
+            GlobalVariableCheck(m_storageKey+".C"))
+            initialCount=MathMax(0,(int)GlobalVariableGet(m_storageKey+".C"));
+
+         ResetLastError();
+         datetime created=GlobalVariableSet(currentKey,(double)initialCount);
+         if(created==0 && !GlobalVariableCheck(currentKey))
+            PrintFormat("Midas Touch daily target: initial counter migration failed (error %d).",GetLastError());
+         else
+            GlobalVariablesFlush();
+        }
+      ReleaseLock(token);
+      m_count=ReadCounter(m_dateKey);
      }
 
    void Rollover()
@@ -62,44 +147,50 @@ private:
       MqlDateTime t;
       if(now<=0 || !TimeToStruct(now,t))return;
       int nextKey=t.year*1000+t.day_of_year;
-      if(nextKey==m_dateKey){SyncStoredState();return;}
 
-      if(m_target>0 && m_weekday && m_count<m_target && m_dateKey>0)
-         PrintFormat("Midas Touch daily qualified-trade target not met: prior weekday %d/%d. No trades were forced.",m_count,m_target);
+      if(nextKey==m_dateKey)
+        {
+         m_count=ReadCounter(m_dateKey);
+         if(m_target>0 && m_weekday && m_count>=m_target)m_reported=true;
+         return;
+        }
+
+      int previousCount=ReadCounter(m_dateKey);
+      if(m_target>0 && m_weekday && m_dateKey>0 && previousCount<m_target)
+         PrintFormat("Midas Touch daily qualified-trade target not met: prior weekday %d/%d. No trades were forced.",previousCount,m_target);
 
       m_dateKey=nextKey;
       m_weekday=(t.day_of_week>=1 && t.day_of_week<=5);
-      m_count=0;
-      m_reported=false;
-      Persist();
+      m_count=ReadCounter(m_dateKey);
+      m_reported=(m_target>0 && m_weekday && m_count>=m_target);
      }
 
 public:
-   CDailyTradeTarget():m_target(3),m_count(0),m_dateKey(0),m_weekday(false),m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_magic(0){}
+   CDailyTradeTarget():m_target(3),m_count(0),m_dateKey(0),m_weekday(false),
+      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""),m_magic(0){}
 
    void Init(int target,double minQualifiedR,ulong magic)
      {
       m_target=MathMax(0,target);
       m_minQualifiedR=MathMax(0.0,minQualifiedR);
-      // Shared account+magic state aggregates all chart-symbol instances in this terminal.
-      m_storageKey=StringFormat("MT2DT.%I64d.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),magic);
       m_magic=magic;
+      m_storageKey=StringFormat("MT2DT.%I64d.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),magic);
+      m_lockKey=StringFormat("MTL.%I64d.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),magic);
       m_count=0;
       m_dateKey=0;
+      m_weekday=false;
       m_reported=false;
 
       datetime now=TimeCurrent();
       MqlDateTime t;
-      if(now<=0 || !TimeToStruct(now,t))return;
+      if(now<=0 || !TimeToStruct(now,t))
+        {
+         Print("Midas Touch daily target: server time unavailable; target counter not initialized.");
+         return;
+        }
       m_dateKey=t.year*1000+t.day_of_year;
       m_weekday=(t.day_of_week>=1 && t.day_of_week<=5);
-
-      if(GlobalVariableCheck(m_storageKey+".D") &&
-         (int)GlobalVariableGet(m_storageKey+".D")==m_dateKey &&
-         GlobalVariableCheck(m_storageKey+".C"))
-         m_count=MathMax(0,(int)GlobalVariableGet(m_storageKey+".C"));
-
-      Persist();
+      InitializeCurrentDayState();
       if(m_target>0 && m_weekday && m_count>=m_target)
         {
          m_reported=true;
@@ -107,26 +198,57 @@ public:
         }
      }
 
-   // Call only after an entire decision/trade has closed and its aggregate R is known.
+   // Call only after the whole tracked decision closes and aggregate realized R is known.
    void OnQualifiedClose(datetime at,double realizedR,ulong positionId)
      {
       Rollover();
       if(m_target<=0 || at<=0 || realizedR<=0.0 || realizedR+1e-9<m_minQualifiedR)return;
       if(!IsWeekday(at) || DateKey(at)!=m_dateKey)return;
       if(positionId<=0)return;
+
+      double token=0.0;
+      if(!AcquireLock(token))return;
+
       string countedKey=QualifiedKey(positionId);
-      if(GlobalVariableCheck(countedKey))return;
-      // Mark first: a crash may undercount one trade, but cannot double-count it on replay.
+      if(GlobalVariableCheck(countedKey))
+        {
+         ReleaseLock(token);
+         m_count=ReadCounter(m_dateKey);
+         return;
+        }
+
+      int dateKey=DateKey(at);
+      if(!EnsureCounter(dateKey))
+        {
+         ReleaseLock(token);
+         return;
+        }
+
+      // Under the shared lock, marker and counter writes are serialized across chart instances.
       ResetLastError();
-      datetime markerWrite=GlobalVariableSet(countedKey,(double)m_dateKey);
+      datetime markerWrite=GlobalVariableSet(countedKey,(double)dateKey);
       if(markerWrite==0)
         {
          PrintFormat("Midas Touch daily target: unable to record position %I64u idempotency marker (error %d); trade not counted.",positionId,GetLastError());
+         ReleaseLock(token);
          return;
         }
       GlobalVariablesFlush();
-      m_count++;
-      Persist();
+
+      string dailyKey=CounterKey(dateKey);
+      int currentCount=MathMax(0,(int)GlobalVariableGet(dailyKey));
+      ResetLastError();
+      datetime countWrite=GlobalVariableSet(dailyKey,(double)(currentCount+1));
+      if(countWrite==0)
+        {
+         PrintFormat("Midas Touch daily target: failed to persist qualified count for position %I64u (error %d); count may be understated.",positionId,GetLastError());
+         ReleaseLock(token);
+         return;
+        }
+      GlobalVariablesFlush();
+      m_count=currentCount+1;
+      ReleaseLock(token);
+
       if(!m_reported && m_count>=m_target)
         {
          m_reported=true;
