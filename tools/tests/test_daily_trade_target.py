@@ -31,6 +31,10 @@ def test_target_is_weekday_only_and_persists_across_restarts():
     assert "GlobalVariableCheck(m_storageKey+\".C\")" in target
     assert "AccountInfoInteger(ACCOUNT_LOGIN)" in target
     assert "SyncStoredState();return;" in target
+    assert "GlobalVariablesFlush();" in target
+    assert "GlobalVariableCheck(countedKey)" in target
+    assert "QualifiedKey(ulong positionId)" in target
+    assert "m_lastPositionId" not in target
 
 
 def test_entry_dealing_costs_are_included_before_qualification():
@@ -41,3 +45,4 @@ def test_entry_dealing_costs_are_included_before_qualification():
     assert "p.realizedPnL+=commission+swap+fee" in tracker
     assert "LastFinalizedR()const{return m_lastFinalizedR;}" in tracker
     assert "No trades were forced." in TARGET.read_text()
+    assert "g_dailyTradeTarget.Init(InpMinimumQualifiedTradesPerDay,InpMinimumQualifiedTradeR,InpMagicNumber)" in ea
