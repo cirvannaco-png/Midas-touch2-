@@ -41,13 +41,22 @@ private:
       GlobalVariableSet(m_storageKey+".P",(double)m_lastPositionId);
      }
 
+   void SyncStoredState()
+     {
+      if(StringLen(m_storageKey)<=0 || !GlobalVariableCheck(m_storageKey+".D"))return;
+      if((int)GlobalVariableGet(m_storageKey+".D")!=m_dateKey)return;
+      if(GlobalVariableCheck(m_storageKey+".C"))m_count=MathMax(m_count,MathMax(0,(int)GlobalVariableGet(m_storageKey+".C")));
+      if(GlobalVariableCheck(m_storageKey+".P"))m_lastPositionId=(ulong)MathMax(0.0,GlobalVariableGet(m_storageKey+".P"));
+      if(m_target>0 && m_weekday && m_count>=m_target)m_reported=true;
+     }
+
    void Rollover()
      {
       datetime now=TimeCurrent();
       MqlDateTime t;
       if(now<=0 || !TimeToStruct(now,t))return;
       int nextKey=t.year*1000+t.day_of_year;
-      if(nextKey==m_dateKey)return;
+      if(nextKey==m_dateKey){SyncStoredState();return;}
 
       if(m_target>0 && m_weekday && m_count<m_target && m_dateKey>0)
          PrintFormat("Midas Touch daily qualified-trade target not met: prior weekday %d/%d. No trades were forced.",m_count,m_target);
@@ -69,8 +78,8 @@ public:
      {
       m_target=MathMax(0,target);
       m_minQualifiedR=MathMax(0.0,minQualifiedR);
-      // Separate state by EA magic number and symbol so multiple instances do not share counts.
-      m_storageKey=StringFormat("MT2DT.%I64u.%s",magic,symbol);
+      // Shared account+magic state aggregates all chart-symbol instances in this terminal.
+      m_storageKey=StringFormat("MT2DT.%I64d.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),magic);
       m_count=0;
       m_year=0;
       m_dayOfYear=0;
