@@ -29,13 +29,31 @@ def test_psychological_price_grid_is_not_xau_hardcoded():
     assert "single-symbol XAUUSD" not in levels
 
 
-def test_risk_sizing_uses_symbol_native_trade_properties():
+def test_risk_sizing_uses_mt5_account_currency_profit_model():
     text = RISK.read_text(encoding="utf-8")
     for token in (
-        "SYMBOL_TRADE_TICK_SIZE",
-        "SYMBOL_TRADE_TICK_VALUE",
+        "OrderCalcProfit(",
+        "EstimateStopLossPerLot",
+        "ACCOUNT_EQUITY",
         "SYMBOL_VOLUME_MIN",
         "SYMBOL_VOLUME_MAX",
         "SYMBOL_VOLUME_STEP",
+        "MathFloor(lots/lotStep",
     ):
         assert token in text
+
+
+def test_risk_validation_requires_directional_sl_tp_geometry():
+    text = RISK.read_text(encoding="utf-8")
+    assert "if(!(sl<entry && tp1>entry)) return false;" in text
+    assert "if(!(sl>entry && tp1<entry)) return false;" in text
+    assert "setup.tp2>0.0 && setup.tp2<=entry" in text
+    assert "setup.final_tp>0.0 && setup.final_tp<=entry" in text
+    assert "setup.tp2>0.0 && setup.tp2>=entry" in text
+    assert "setup.final_tp>0.0 && setup.final_tp>=entry" in text
+
+
+def test_minimum_lot_override_emits_explicit_risk_warning():
+    text = EA.read_text(encoding="utf-8")
+    assert "RISK BUDGET OVERRIDE:" in text
+    assert "Disable InpAllowMinLotOverride to preserve strict sizing." in text
