@@ -184,10 +184,23 @@ ulong CBrokerAdapter::ResolvePositionTicket()
    ulong positionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
    if(positionId==0)
      {
-      PrintFormat("MedisTouch BrokerAdapter: deal #%d has no DEAL_POSITION_ID; falling back to order ticket.",dealTicket);
+      PrintFormat("MedisTouch BrokerAdapter: deal #%I64u has no DEAL_POSITION_ID; falling back to order ticket for reconciliation.",dealTicket);
       return m_trade.ResultOrder();
      }
-   return positionId;
+
+   // DEAL_POSITION_ID is POSITION_IDENTIFIER, not guaranteed to be the
+   // current POSITION_TICKET. The manager uses tickets for PositionSelectByTicket,
+   // so resolve the live ticket by the stable identifier before returning.
+   for(int i=0;i<PositionsTotal();i++)
+     {
+      ulong positionTicket=PositionGetTicket(i);
+      if(positionTicket==0 || !PositionSelectByTicket(positionTicket)) continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionId)
+         return positionTicket;
+     }
+
+   PrintFormat("MedisTouch BrokerAdapter: no live ticket found for position identifier %I64u; retaining order ticket for transaction reconciliation.",positionId);
+   return m_trade.ResultOrder();
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
@@ -203,9 +216,16 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
         {
          ulong dealTicket=m_trade.ResultDeal();
          ticketOut=ResolvePositionTicket();
-         fillPriceOut=(dealTicket>0 ? m_trade.ResultPrice() : 0.0);
-         if(dealTicket==0 && ticketOut>0)
-            PrintFormat("MedisTouch BrokerAdapter: %s accepted without a confirmed fill deal; retaining order #%I64u as pending for transaction reconciliation.", "MARKET_ORDER", ticketOut);
+         fillPriceOut=0.0;
+         if(dealTicket>0 && ticketOut>0 && PositionSelectByTicket(ticketOut))
+           {
+            ulong dealPositionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
+            ulong livePositionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+            if(dealPositionId>0 && livePositionId==dealPositionId)
+               fillPriceOut=m_trade.ResultPrice();
+           }
+         if(fillPriceOut<=0.0 && ticketOut>0)
+            PrintFormat("MedisTouch BrokerAdapter: market request accepted without a confirmed live-position mapping; retaining ticket #%I64u as pending for transaction reconciliation.",ticketOut);
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
         }
@@ -230,9 +250,16 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
         {
          ulong dealTicket=m_trade.ResultDeal();
          ticketOut=ResolvePositionTicket();
-         fillPriceOut=(dealTicket>0 ? m_trade.ResultPrice() : 0.0);
-         if(dealTicket==0 && ticketOut>0)
-            PrintFormat("MedisTouch BrokerAdapter: %s accepted without a confirmed fill deal; retaining order #%I64u as pending for transaction reconciliation.", "MARKET_ORDER", ticketOut);
+         fillPriceOut=0.0;
+         if(dealTicket>0 && ticketOut>0 && PositionSelectByTicket(ticketOut))
+           {
+            ulong dealPositionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
+            ulong livePositionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+            if(dealPositionId>0 && livePositionId==dealPositionId)
+               fillPriceOut=m_trade.ResultPrice();
+           }
+         if(fillPriceOut<=0.0 && ticketOut>0)
+            PrintFormat("MedisTouch BrokerAdapter: market request accepted without a confirmed live-position mapping; retaining ticket #%I64u as pending for transaction reconciliation.",ticketOut);
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
         }
