@@ -96,6 +96,13 @@ def test_broker_mutations_require_server_retcode_confirmation():
         assert "serverAccepted" in body, f"{method} must not rely on the CTrade bool alone"
 
 
+def test_placed_retcode_is_not_treated_as_completed_mutation():
+    text = BROKER.read_text(encoding="utf-8")
+    assert "if(code==TRADE_RETCODE_DONE || code==TRADE_RETCODE_DONE_PARTIAL) return true;" in text
+    assert 'if(code==TRADE_RETCODE_PLACED &&' in text
+    assert '(action=="PlaceLimit" || action=="MarketBuy" || action=="MarketSell")) return true;' in text
+
+
 def test_market_request_without_fill_remains_pending_for_reconciliation():
     broker = BROKER.read_text(encoding="utf-8")
     orders = ORDERS.read_text(encoding="utf-8")
