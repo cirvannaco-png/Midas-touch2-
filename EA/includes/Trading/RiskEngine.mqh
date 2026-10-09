@@ -16,6 +16,7 @@ private:
 
 public:
    bool              ValidateSetup(TradeSetup &setup,double minRR,double maxSLDistanceATR,double currentATR);
+   bool              ValidateSetupAtEntry(const TradeSetup &setup,double entry,double minRR,double maxSLDistanceATR,double currentATR);
    double            CalculateLotSize(string symbol,double riskPercent,double entry,double stopLoss,
                                       bool halveForReducedRisk,bool allowMinLotOverride,bool &exceededRiskBudget,
                                       double sizeMultiplier=1.0);
@@ -134,23 +135,33 @@ double CRiskEngine::RiskAmountForLots(string symbol,double lots,double entry,dou
   }
 
 //+------------------------------------------------------------------+
-// Reject malformed/wrong-sided stop or target geometry before it can
-// reach sizing or execution. Absolute distances alone are insufficient:
-// BUY requires SL < entry < TP1, while SELL requires TP1 < entry < SL.
+// Validate at the strategy's resolved entry for the normal setup gate.
 //+------------------------------------------------------------------+
 bool CRiskEngine::ValidateSetup(TradeSetup &setup,double minRR,double maxSLDistanceATR,double currentATR)
   {
+   return ValidateSetupAtEntry(setup,ResolveExecutionEntry(setup),minRR,maxSLDistanceATR,currentATR);
+  }
+
+//+------------------------------------------------------------------+
+// Validate geometry at a specified executable or conservative entry.
+// This is used a second time before sizing a market order, where the
+// worst allowed fill inside the configured deviation band must still
+// satisfy the same RR and ATR risk limits.
+//+------------------------------------------------------------------+
+bool CRiskEngine::ValidateSetupAtEntry(const TradeSetup &setup,double entry,double minRR,double maxSLDistanceATR,double currentATR)
+  {
    if(!setup.active || (setup.type!=ORDER_TYPE_BUY && setup.type!=ORDER_TYPE_SELL))
       return false;
-   if(!MathIsValidNumber(minRR) || minRR<=0.0 ||
-      !MathIsValidNumber(maxSLDistanceATR) || !MathIsValidNumber(currentATR))
+   if(!MathIsValidNumber(entry) || !MathIsValidNumber(minRR) ||
+      !MathIsValidNumber(maxSLDistanceATR) || !MathIsValidNumber(currentATR) ||
+      entry<=0.0 || minRR<=0.0)
       return false;
 
-   double entry=ResolveExecutionEntry(setup);
    double sl=setup.stop_loss;
    double tp1=setup.tp1;
-   if(!MathIsValidNumber(entry) || !MathIsValidNumber(sl) || !MathIsValidNumber(tp1) ||
-      entry<=0.0 || sl<=0.0 || tp1<=0.0)
+   if(!MathIsValidNumber(sl) || !MathIsValidNumber(tp1) ||
+      !MathIsValidNumber(setup.tp2) || !MathIsValidNumber(setup.final_tp) ||
+      sl<=0.0 || tp1<=0.0)
       return false;
 
    if(setup.type==ORDER_TYPE_BUY)
