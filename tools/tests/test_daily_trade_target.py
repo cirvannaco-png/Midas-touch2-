@@ -37,6 +37,9 @@ def test_target_is_weekday_only_and_daily_state_survives_restarts():
     assert "EnsureBaselineLocked(dateKey)" in target
     assert "GlobalVariableSet(CountKey(dateKey),(double)currentCount)" in target
     assert "GlobalVariablesFlush();" in target
+    assert "m_reconcilePending=false" in target
+    assert "if(m_reconcilePending || !GlobalVariableCheck(key))" in target
+    assert "GlobalVariablesFlush();\n\n      if(!EnsureBaselineLocked(closeDateKey))" in target
     assert "AccountInfoInteger(ACCOUNT_LOGIN)" in target
     assert "SyncStoredState();" in target
 
@@ -56,6 +59,7 @@ def test_counter_serializes_updates_and_deduplicates_closes():
     assert "GlobalVariableSet(marker,(double)at)" in target
     assert "CountMarkersForDateLocked(closeDateKey)" in target
     assert "MigrateLegacyLastPositionLocked()" in target
+    assert "GlobalVariableDel(legacyKey);" in target
     assert "m_lastPositionId" not in target
 
 
