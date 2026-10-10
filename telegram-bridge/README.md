@@ -39,7 +39,7 @@ directly with commands like `/positions` or `/performance`.
 | POST   | `/trade/retry-failed` | Yes         | Resend up to 5 transiently-failed trade events             |
 | POST   | `/outcome`          | Yes           | Receive a resolved (or no-fill) setup outcome from the EA's OutcomeTracker — see [Trade tagging & recalibration](#trade-tagging--recalibration) |
 | GET    | `/config/{symbol}`  | Yes           | Polled by `ConfigSync.mqh` — reports the most recently approved weight_version, if any. Dormant: null until a real promotion happens |
-| POST   | `/admin/run-cycle`  | Yes           | Trigger one recalibration cycle (metrics → gating decision → Telegram card / auto-rollback). Meant to be called by a scheduler, not a person — see [Scheduling](#scheduling-the-recalibration-cycle) |
+| POST   | `/admin/run-cycle`  | Yes           | Trigger one recalibration cycle (metrics → gating decision → Telegram card / auto-rollback). Meant to be called by a scheduler, not a person — see [Scheduling](#scheduling-the-recalibration-cycle) |\n| POST   | `/research/backtest-evidence` | Yes | Ingest immutable MT5 Strategy Tester evidence, compute metrics, and register a candidate without activating it — see [Backtest evidence ingestion](#backtest-evidence-ingestion) |
 | GET    | `/copy/feed`        | Per-subscriber `X-Copy-Key` | Polled by a paying subscriber's own copier script — see [Payments & copy trading](#payments--copy-trading) |
 | POST   | `/admin/check-subscriptions` | Yes    | Trigger one subscription-enforcement sweep (warn / expire / remove) — see [Payments & copy trading](#payments--copy-trading) |
 | POST   | `/telegram/webhook` | Telegram only | Inbound updates from Telegram (verified via secret token) |
@@ -223,13 +223,16 @@ It is **not** run by an in-process scheduler: this service is on Render's free w
 spins down after 15 minutes idle (see `/render.yaml`), so nothing running inside the process
 could reliably wake itself up on a biweekly schedule.
 
-Instead, the GitLab scheduled pipeline runs every Saturday at 06:00 UTC (safely inside the
-weekend market-closed window), parity-checks the date so it only actually fires every *other*
-Saturday, and `curl`s the endpoint — which conveniently also wakes the sleeping service, since
-the wake-up call and the trigger are the same request. A manually started GitLab pipeline can
-run the cycle on demand regardless of parity.
+Instead, configure a GitLab **pipeline schedule** on the repository's default branch with
+cron `0 6 * * 6` (every Saturday at 06:00 UTC, inside the weekend market-closed window) and
+the variable `SCHEDULE_TASK=biweekly-recalibration`. The job's UTC parity guard makes the
+recalibration request run only every *other* Saturday. The bridge request also wakes a sleeping
+Render service, because wake-up and trigger are the same HTTPS request.
 
-Requires two protected/masked GitLab CI/CD variables:
+The schedule itself is a GitLab project setting and is **not created by this YAML change**. In
+GitLab, open **Build → Pipeline schedules**, create the schedule on the default branch, set the
+cron above, add `SCHEDULE_TASK=biweekly-recalibration`, and save it. Then add these protected/masked
+GitLab CI/CD variables:
 
 | Secret            | Value                                                        |
 |--------------------|--------------------------------------------------------------|
@@ -244,6 +247,56 @@ Because `app/calibration.py` imports `tools/gating.py` and `tools/metrics_engine
 hand against production data), `telegram-bridge/Dockerfile` copies `tools/` into the image
 alongside `app/` — if you ever restructure the Dockerfile, keep that `COPY tools/ ./tools/`
 line, or `/admin/run-cycle` will 500 on every call in production while working fine locally.
+
+## Backtest evidence ingestion
+
+`POST /research/backtest-evidence` accepts a normalized MT5 Strategy Tester evidence bundle under the same `X-API-Key` authorization as the admin routes. This endpoint stores immutable, append-only configuration-evaluation evidence; it does not treat a backtest as a live trade, and it cannot by itself activate a new configuration.
+
+### Required evidence contract
+
+The JSON payload must include the exact strategy/instrument/timeframe/parameter identity, `data_version`, `optimizer_version`, a tester provenance manifest (EA commit/build, terminal build, dataset and report SHA-256 digests, period, fill policy, and spread/commission/slippage assumptions), and normalized trade outcomes.
+
+Trade rows are assigned to chronological `train`, fold-specific `validation`, or `locked_oos` partitions. Each fold must have non-overlapping trade IDs between its train and validation sets and respect time ordering. At least three folds are required; each fold needs 20 resolved training outcomes and 10 resolved validation outcomes. Locked OOS must occur after all validation windows and contain at least 30 resolved outcomes. Filled trade rows must carry transaction-cost fields; no-fill/ambiguous rows must not invent a realized-R result.
+
+A robust parameter plateau must include at least one separately identified neighboring parameter configuration, replayed over the same declared historical period, with at least 30 resolved OOS outcomes and expectancy within 10% of the submitted candidate. Feature-importance, clustered-MDA, paired counterfactual, and (for exit changes) scale-out replay artifacts are retained with the evidence. The server computes the primary trade metrics and composite objective from the submitted trade rows; missing research artifacts or failing OOS quality leaves the candidate at `BACKTESTED` rather than promoting it.
+
+The endpoint has a separate bounded upload-size limit controlled by `MAX_BACKTEST_EVIDENCE_BODY_SIZE` (default 5 MiB); regular signal endpoints keep their smaller request-body limit.
+
+### Lifecycle boundary
+
+A complete, positive OOS evaluation may move a registered candidate from `OPTIMIZED` through `BACKTESTED` to `VALIDATED`. It deliberately does **not** skip `QUARANTINE`, `SHADOW`, or `CHALLENGER`, create a promotion approval, change the Champion, or activate the EA. Those stages must be backed by their own governance/evidence workflow, followed by human approval and an exact configuration-hash ACK from the EA.
+
+`report_sha256` and `dataset_sha256` are preserved as provenance references and `ingest_payload_sha256` is computed by the server. The service cannot independently read an MT5 terminal's local report file, so the declared source report/data hashes are not proof of authorship by themselves. Use a trusted exporter and retain the original reports alongside the returned `config_hash`, `evidence_version`, and `ingest_payload_sha256`.
+
+The accepted schema is implemented in `app/api/backtest_evidence.py`; regression coverage lives in `tests/test_backtest_evidence_api.py`.
+
+### OutcomeTracker CSV builder and submitter CLI
+
+The repository now includes a strict normalizer for the EA's versioned `MedisTouch_Outcomes_v2_<symbol>.csv` format. It reads the `SignalID` epoch suffix, `OutcomeEpoch`, `RealizedR`, fill/collision state, cost fields, and the actual `Symbol`/`EntryTF` values. Tester resolution timestamps are recorded at the resolution bar's close so ambiguous intrabar exit times are not attributed to an earlier partition. It deliberately requires an explicit `signal_id_epoch_basis` (`unix_utc` or `broker_wall_clock`; the latter also needs the verified server UTC offset), three explicit chronological walk-forward fold windows, a locked OOS window, and explicitly declared warm-up/embargo exclusions. It refuses to guess timestamps or silently discard unassigned outcomes. Legacy `MedisTouch_Outcomes_<symbol>.csv` files do not have this required event-time contract and must not be renamed to masquerade as v2 evidence.
+
+Prepare a sidecar manifest containing the exact configuration parameters, EA/terminal build, source commit, data version, historical report path, dataset SHA-256, fold windows, locked OOS dates, and research artifacts. Put relative paths to the source report and CSV beside the manifest. If the raw market-data file is available, set `dataset_path` in the manifest; the builder verifies that its digest matches `dataset_sha256`. The CSV/report/dataset digests are retained as provenance, but they are not cryptographic proof that a file came from MT5.
+
+Build the normalized payload locally (no network request is made by this step):
+
+```bash
+python tools/build_tester_evidence.py --manifest /path/to/run-manifest.json --output /path/to/tester-evidence.json
+```
+
+Then validate the request contract without sending it:
+
+```bash
+python tools/submit_tester_evidence.py --file /path/to/tester-evidence.json --dry-run
+```
+
+To submit, set `BRIDGE_BASE_URL` to the HTTPS Render base URL and `BRIDGE_API_KEY` to the same secret as the bridge's `SECRET_KEY`, then run:
+
+```bash
+python tools/submit_tester_evidence.py --file /path/to/tester-evidence.json
+```
+
+The submitter prints only run/configuration identifiers, evidence version, decision, lifecycle, and digest—never the API key. Do not commit evidence bundles containing confidential broker/data information.
+
+The normalizer does **not** manufacture missing research results. To become promotion-review eligible, the manifest must contain real feature-importance and clustered-MDA artifacts, at least 30 paired counterfactual scenarios, and at least one neighboring parameter configuration replayed over the same data/build/time period and locked OOS window. Exit-affecting changes also require paired scale-out replay evidence. If any of those items are absent, the endpoint records the candidate but leaves it short of VALIDATED.
 
 ## Payments & copy trading
 

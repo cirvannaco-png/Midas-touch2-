@@ -41,7 +41,8 @@ public:
    void              Init(string symbol, int gmtOffsetOverrideHours = 999);
    bool              LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF, string trendLabel);
    bool              LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES entryTF, string outcome,
-                                double exitPrice, ENUM_FILL_POLICY fillPolicy = FILL_CONSERVATIVE);
+                                double exitPrice, ENUM_FILL_POLICY fillPolicy = FILL_CONSERVATIVE,
+                                datetime outcomeTime = 0);
   };
 //+------------------------------------------------------------------+
 CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(false), m_gmtOffsetOverrideHours(999) {}
@@ -49,7 +50,9 @@ CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(
 void CSignalLogger::Init(string symbol, int gmtOffsetOverrideHours)
   {
    m_filename = "MedisTouch_Signals_" + symbol + ".csv";
-   m_outcomeFilename = "MedisTouch_Outcomes_" + symbol + ".csv";
+   // Version the outcome stream because the new OutcomeEpoch column is required by the
+   // chronological evidence builder. Never append new-schema rows to a legacy header.
+   m_outcomeFilename = "MedisTouch_Outcomes_v2_" + symbol + ".csv";
    m_headerWritten = FileIsExist(m_filename);
    m_outcomeHeaderWritten = FileIsExist(m_outcomeFilename);
    m_gmtOffsetOverrideHours = gmtOffsetOverrideHours;
@@ -341,7 +344,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
   }
 //+------------------------------------------------------------------+
 bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES entryTF, string outcome,
-                               double exitPrice, ENUM_FILL_POLICY fillPolicy)
+                               double exitPrice, ENUM_FILL_POLICY fillPolicy, datetime outcomeTime)
   {
    int flags = FILE_CSV | FILE_READ | FILE_WRITE | FILE_SHARE_READ | FILE_ANSI;
    int handle = FileOpen(m_outcomeFilename, flags, ',');
@@ -373,8 +376,9 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
                "ReversionScore", "ReversionClass",
                // v2.14 — same rationale.
                "KeyLevelSource", "KeyLevelReaction", "KeyLevelScore",
-               // v2.15 — same rationale.
-               "SelectedStrategy", "SelectedStrategyScore");
+               // v2.15 — same rationale. OutcomeEpoch is appended so legacy
+               // positional columns remain stable in this versioned outcome file.
+               "SelectedStrategy", "SelectedStrategyScore", "OutcomeEpoch");
       m_outcomeHeaderWritten = true;
      }
 
@@ -407,6 +411,10 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
         }
      }
 
+   datetime resolvedAt = outcomeTime;
+   // Do not infer a resolution timestamp from the last bar's opening time.
+   // A caller without an explicit resolution epoch leaves zero; the strict
+   // evidence builder rejects the row rather than inventing chronology.
    FileWrite(handle, signalId, symbol, EnumToString(entryTF), dir, outcome,
             DoubleToString(exitPrice, _Digits), DoubleToString(p.entryRef, _Digits),
             DoubleToString(p.riskDist, _Digits), p.filled ? "Yes" : "No",
@@ -440,7 +448,8 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
             KeyLevelReactionLabel(p.setup.reasons.keylevel_reaction),
             DoubleToString(p.setup.reasons.keylevel_score, 1),
             SelectedStrategyLabel(p.setup.reasons.selected_strategy),
-            DoubleToString(p.setup.reasons.selected_strategy_score, 1));
+            DoubleToString(p.setup.reasons.selected_strategy_score, 1),
+            (long)resolvedAt);
 
    FileClose(handle);
    return true;
