@@ -32,6 +32,7 @@ def test_target_is_weekday_only_and_daily_state_survives_restarts():
     assert 'legacyCountKey=m_storageKey+".C"' in target
     assert "EnsureBaselineLocked(dateKey)" in target
     assert "GlobalVariableSet(CountKey(dateKey),(double)currentCount)" in target
+    assert "GlobalVariablesFlush();" in target
     assert "AccountInfoInteger(ACCOUNT_LOGIN)" in target
     assert "SyncStoredState();" in target
 
