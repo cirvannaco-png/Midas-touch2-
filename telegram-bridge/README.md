@@ -267,9 +267,19 @@ A complete, positive OOS evaluation may move a registered candidate from `OPTIMI
 
 The accepted schema is implemented in `app/api/backtest_evidence.py`; regression coverage lives in `tests/test_backtest_evidence_api.py`.
 
-### Submitter CLI
+### OutcomeTracker CSV builder and submitter CLI
 
-Once a trusted exporter has assembled the normalized evidence bundle, validate it locally without network access:
+The repository now includes a strict normalizer for the EA's `MedisTouch_Outcomes_<symbol>.csv` format. It reads the `SignalID` epoch suffix, `RealizedR`, fill/collision state, cost fields, and the actual `Symbol`/`EntryTF` values. It deliberately requires an explicit `signal_id_epoch_basis` (`unix_utc` or `broker_wall_clock`; the latter also needs the verified server UTC offset), three explicit chronological walk-forward fold windows, a locked OOS window, and explicitly declared warm-up/embargo exclusions. It refuses to guess timestamps or silently discard unassigned outcomes.
+
+Prepare a sidecar manifest containing the exact configuration parameters, EA/terminal build, source commit, data version, historical report path, dataset SHA-256, fold windows, locked OOS dates, and research artifacts. Put relative paths to the source report and CSV beside the manifest. If the raw market-data file is available, set `dataset_path` in the manifest; the builder verifies that its digest matches `dataset_sha256`. The CSV/report/dataset digests are retained as provenance, but they are not cryptographic proof that a file came from MT5.
+
+Build the normalized payload locally (no network request is made by this step):
+
+```bash
+python tools/build_tester_evidence.py --manifest /path/to/run-manifest.json --output /path/to/tester-evidence.json
+```
+
+Then validate the request contract without sending it:
 
 ```bash
 python tools/submit_tester_evidence.py --file /path/to/tester-evidence.json --dry-run
@@ -281,7 +291,9 @@ To submit, set `BRIDGE_BASE_URL` to the HTTPS Render base URL and `BRIDGE_API_KE
 python tools/submit_tester_evidence.py --file /path/to/tester-evidence.json
 ```
 
-The client prints only the run/configuration identifiers, evidence version, decision, lifecycle, and payload digest. Do not commit evidence bundles containing confidential broker/data information or store the API key in the repository. This CLI transports normalized JSON; it does not parse raw MT5 HTML/XML/CSV output or create missing fold, counterfactual, feature-importance, clustered-MDA, or neighboring-configuration evidence.
+The submitter prints only run/configuration identifiers, evidence version, decision, lifecycle, and digest—never the API key. Do not commit evidence bundles containing confidential broker/data information.
+
+The normalizer does **not** manufacture missing research results. To become promotion-review eligible, the manifest must contain real feature-importance and clustered-MDA artifacts, at least 30 paired counterfactual scenarios, and at least one neighboring parameter configuration replayed over the same data/build/time period and locked OOS window. Exit-affecting changes also require paired scale-out replay evidence. If any of those items are absent, the endpoint records the candidate but leaves it short of VALIDATED.
 
 ## Payments & copy trading
 
