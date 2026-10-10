@@ -166,6 +166,12 @@ class NeighborRun(StrictModel):
     report_sha256: str = Field(min_length=64, max_length=64)
     trades: list[NeighborTrade] = Field(min_length=1, max_length=15000)
 
+    @model_validator(mode="after")
+    def _require_parameters(self):
+        if not self.parameters:
+            raise ValueError("neighbor parameters must not be empty")
+        return self
+
     @field_validator("report_sha256")
     @classmethod
     def _validate_sha256(cls, value: str) -> str:
@@ -360,8 +366,11 @@ async def ingest_backtest_evidence(
     config_hash = identity.config_hash
     if payload.claimed_config_hash and payload.claimed_config_hash != config_hash:
         raise HTTPException(status_code=409, detail="claimed_config_hash does not match canonical configuration identity")
-    if payload.provenance.period_end > datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc)
+    if payload.provenance.period_end > now:
         raise HTTPException(status_code=422, detail="backtest period_end cannot be in the future")
+    if payload.provenance.generated_at > now:
+        raise HTTPException(status_code=422, detail="tester evidence generated_at cannot be in the future")
 
     grouped: dict[int, dict[str, list[Any]]] = defaultdict(lambda: {"train": [], "validation": []})
     holdout = [row for row in payload.trades if row.partition == "locked_oos"]
@@ -448,6 +457,7 @@ async def ingest_backtest_evidence(
     scale_out_complete = len(scale_out_ids) >= MIN_PAIRED_SCENARIOS and len(scale_out_ids) == len(set(scale_out_ids))
     neighbors: list[dict[str, Any]] = []
     stable_neighbors: list[dict[str, Any]] = []
+    seen_neighbor_hashes: set[str] = set()
     for neighbor in payload.parameter_neighbors:
         neighbor_identity = ConfigurationIdentity(
             strategy=payload.strategy,
@@ -460,6 +470,9 @@ async def ingest_backtest_evidence(
         neighbor_hash = neighbor_identity.config_hash
         if neighbor_hash == config_hash:
             raise HTTPException(status_code=422, detail="parameter neighbor cannot have the same configuration hash as candidate")
+        if neighbor_hash in seen_neighbor_hashes:
+            raise HTTPException(status_code=422, detail="parameter-neighbor configurations must be unique")
+        seen_neighbor_hashes.add(neighbor_hash)
         if any(row.timestamp < payload.provenance.period_start or row.timestamp > payload.provenance.period_end for row in neighbor.trades):
             raise HTTPException(status_code=422, detail="parameter-neighbor trade is outside the declared backtest period")
         neighbor_ids = [row.trade_id for row in neighbor.trades]
@@ -593,6 +606,7 @@ async def ingest_backtest_evidence(
         "counterfactual_complete": counterfactual_complete,
         "scale_out_complete": scale_out_complete,
         "research_pass": research_pass,
+        "oos_quality_pass": quality_pass,
         "research_reasons": research_reasons,
     }
 
