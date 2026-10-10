@@ -392,7 +392,7 @@ def _normalize_neighbors(
             "parameters": parameters,
             "report_sha256": report_hash,
             "outcome_csv_sha256": _digest_file(csv_path),
-            "dataset_sha256": declared_dataset_sha,
+            "dataset_sha256": manifest["dataset_sha256"].lower(),
             "ea_source_commit": provenance["ea_source_commit"],
             "ea_build": provenance["ea_build"],
             "terminal_build": provenance["terminal_build"],
