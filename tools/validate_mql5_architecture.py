@@ -146,6 +146,7 @@ INTERFACE_CONTRACTS = {
         "Init": 3,
         "Submit": 6,
         "MarkFilledFromPending": 4,
+        "MarkCancelledOrder": 1,
         "DecisionIdForTicket": 1,
         "HasLiveTradeForDecision": 2,
     },
