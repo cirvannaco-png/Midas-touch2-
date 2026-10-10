@@ -147,7 +147,7 @@ def test_backtest_evidence_ingestion_rejects_duplicate_run_id(client, auth_heade
     assert "already been ingested" in second.json()["detail"]
 
 
-def test_backtest_evidence_rejects_locked_oos_before_validation(client, auth_headers):
+def test_backtest_evidence_rejects_oos_trade_outside_locked_window(client, auth_headers):
     payload = _valid_payload()
     payload["trades"][-1]["timestamp"] = (
         datetime.fromisoformat(payload["provenance"]["period_start"])
@@ -159,7 +159,7 @@ def test_backtest_evidence_rejects_locked_oos_before_validation(client, auth_hea
         json=payload,
     )
     assert response.status_code == 422
-    assert "locked_oos must start after" in response.json()["detail"]
+    assert any("outside the locked OOS window" in item["msg"] for item in response.json()["detail"])
 
 
 def test_backtest_evidence_requires_three_walk_forward_folds(client, auth_headers):
