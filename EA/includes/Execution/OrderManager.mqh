@@ -39,6 +39,7 @@ public:
    int               Total() { return ArraySize(m_trades); }
    void              Prune();
    bool              MarkFilledFromPending(ulong orderTicket,ulong positionIdentifier,double fillPrice=0.0,double fillVolume=0.0);
+   bool              MarkCancelledOrder(ulong orderTicket);
    long              DecisionIdForTicket(ulong ticket);
    double            FillPriceForDecision(long decisionId);
    ENUM_TRADE_STATE  StateAt(int idx) { return m_trades[idx].fsm.State(); }
@@ -191,6 +192,21 @@ bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionIdenti
       else if(fillVolume>0.0)
          m_trades[i].volume+=fillVolume;
       return true;
+     }
+   return false;
+  }
+//+------------------------------------------------------------------+
+bool COrderManager::MarkCancelledOrder(ulong orderTicket)
+  {
+   if(orderTicket==0)return false;
+   for(int i=0;i<ArraySize(m_trades);i++)
+     {
+      if(m_trades[i].fsm.State()!=TS_PENDING || m_trades[i].fsm.Ticket()!=orderTicket)continue;
+      bool cancelled=m_trades[i].fsm.Transition(TS_CANCELLED);
+      if(cancelled)
+         PrintFormat("MedisTouch OrderManager: unfilled order #%I64u (decision #%I64d) was cancelled/expired; slot released.",
+                     orderTicket,m_trades[i].decision.decision_id);
+      return cancelled;
      }
    return false;
   }
