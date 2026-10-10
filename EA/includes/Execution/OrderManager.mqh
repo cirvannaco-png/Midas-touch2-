@@ -15,6 +15,7 @@ struct ManagedTrade
    CTradeStateMachine   fsm;
    double               volume;
    double               fillPrice;
+   ulong                positionIdentifier; // stable POSITION_IDENTIFIER / DEAL_POSITION_ID
    int                  legIndex;
   };
 
@@ -27,6 +28,7 @@ private:
    CProductionMonitor* m_monitor;
    int                 FindByDecisionAndLeg(long id,int legIndex);
    int                 FindByTicket(ulong ticket);
+   bool                PositionIdentifierIsOpen(ulong identifier);
 
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
@@ -42,6 +44,9 @@ public:
    double            FillPriceForDecision(long decisionId);
    ENUM_TRADE_STATE  StateAt(int idx) { return m_trades[idx].fsm.State(); }
    ulong             TicketAt(int idx) { return m_trades[idx].fsm.Ticket(); }
+   ulong             PositionIdentifierAt(int idx) { return m_trades[idx].positionIdentifier; }
+   ulong             PositionTicketAt(int idx);
+   bool              ArchiveClosedPosition(ulong positionIdentifier);
    TradeDecisionRecord DecisionAt(int idx) { return m_trades[idx].decision; }
    double            VolumeAt(int idx) { return m_trades[idx].volume; }
    bool              TransitionAt(int idx,ENUM_TRADE_STATE to) { return m_trades[idx].fsm.Transition(to); }
@@ -79,8 +84,53 @@ int COrderManager::FindByTicket(ulong ticket)
   {
    if(ticket==0) return -1;
    for(int i=0;i<ArraySize(m_trades);i++)
-      if(m_trades[i].fsm.Ticket()==ticket) return i;
+      if(m_trades[i].fsm.Ticket()==ticket ||
+         m_trades[i].positionIdentifier==ticket) return i;
    return -1;
+  }
+//+------------------------------------------------------------------+
+bool COrderManager::PositionIdentifierIsOpen(ulong identifier)
+  {
+   if(identifier==0)return false;
+   for(int i=0;i<PositionsTotal();i++)
+     {
+      ulong currentTicket=PositionGetTicket(i);
+      if(currentTicket==0)continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==identifier)return true;
+     }
+   return false;
+  }
+//+------------------------------------------------------------------+
+ulong COrderManager::PositionTicketAt(int idx)
+  {
+   if(idx<0 || idx>=ArraySize(m_trades))return 0;
+   ulong identifier=m_trades[idx].positionIdentifier;
+   if(identifier==0)return 0;
+   for(int i=0;i<PositionsTotal();i++)
+     {
+      ulong currentTicket=PositionGetTicket(i);
+      if(currentTicket==0)continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==identifier)
+         return currentTicket;
+     }
+   return 0;
+  }
+//+------------------------------------------------------------------+
+bool COrderManager::ArchiveClosedPosition(ulong positionIdentifier)
+  {
+   int idx=FindByTicket(positionIdentifier);
+   if(idx<0 || positionIdentifier==0)return false;
+   if(PositionTicketAt(idx)>0)return false; // Stable identifier still resolves to a live position.
+
+   ENUM_TRADE_STATE state=m_trades[idx].fsm.State();
+   if(state==TS_CLOSED)
+      return m_trades[idx].fsm.Transition(TS_ARCHIVED);
+   if(state==TS_FILLED || state==TS_PROTECTED || state==TS_PARTIAL || state==TS_RUNNER)
+     {
+      if(!m_trades[idx].fsm.Transition(TS_CLOSED))return false;
+      return m_trades[idx].fsm.Transition(TS_ARCHIVED);
+     }
+   return state==TS_ARCHIVED;
   }
 //+------------------------------------------------------------------+
 int COrderManager::OpenCount()
@@ -115,7 +165,8 @@ bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionTicket
    for(int i=0;i<ArraySize(m_trades);i++)
      {
       if(m_trades[i].fsm.State()!=TS_PENDING || m_trades[i].fsm.Ticket()!=orderTicket) continue;
-      m_trades[i].fsm.SetTicket(positionTicket);
+      m_trades[i].positionIdentifier=positionTicket;
+      m_trades[i].fsm.SetTicket(positionTicket); // Stable identifier, never a mutable position ticket.
       if(fillPrice>0.0) m_trades[i].fillPrice=fillPrice;
       bool filled=m_trades[i].fsm.Transition(TS_FILLED);
       if(filled && m_monitor!=NULL)
@@ -147,13 +198,15 @@ bool COrderManager::HasLiveTradeForDecision(long decisionId,ulong excludeTicket)
    for(int i=0;i<ArraySize(m_trades);i++)
      {
       if(m_trades[i].decision.decision_id!=decisionId) continue;
-      if(excludeTicket!=0 && m_trades[i].fsm.Ticket()==excludeTicket) continue;
+      if(excludeTicket!=0 &&
+         (m_trades[i].fsm.Ticket()==excludeTicket ||
+          m_trades[i].positionIdentifier==excludeTicket)) continue;
       ENUM_TRADE_STATE s=m_trades[i].fsm.State();
       if(s==TS_PENDING || s==TS_WAITING) return true;
       if(s==TS_FILLED || s==TS_PROTECTED || s==TS_PARTIAL || s==TS_RUNNER)
         {
-         ulong ticket=m_trades[i].fsm.Ticket();
-         if(ticket!=0 && PositionSelectByTicket(ticket)) return true;
+         if(m_trades[i].positionIdentifier>0 &&
+            PositionTicketAt(i)>0) return true;
         }
      }
    return false;
@@ -229,7 +282,12 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
       if(ok) m_trades[idx].fsm.SetTicket(ticket);
       else m_trades[idx].fsm.Transition(TS_REJECTED);
      }
-   if(ok) ticketOut=ticket;
+   if(ok)
+     {
+      ticketOut=ticket;
+      if(useMarket)
+         m_trades[idx].positionIdentifier=ticket; // BrokerAdapter returns DEAL_POSITION_ID.
+     }
    return ok;
   }
 //+------------------------------------------------------------------+
@@ -243,10 +301,17 @@ bool COrderManager::RestoreTrade(const TradeDecisionRecord &decision,double volu
    m_trades[idx].decision=decision;
    m_trades[idx].volume=volume;
    m_trades[idx].fillPrice=fillPrice;
+   m_trades[idx].positionIdentifier=0;
    m_trades[idx].legIndex=legIndex;
    m_trades[idx].fsm.Start(decision.decision_id);
    m_trades[idx].fsm.BindMonitor(m_monitor);
-   m_trades[idx].fsm.SetTicket(ticket);
+   ulong storedIdentity=ticket;
+   if(state!=TS_PENDING && state!=TS_WAITING && PositionSelectByTicket(ticket))
+     {
+      m_trades[idx].positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      if(m_trades[idx].positionIdentifier>0)storedIdentity=m_trades[idx].positionIdentifier;
+     }
+   m_trades[idx].fsm.SetTicket(storedIdentity);
    m_trades[idx].fsm.ForceState(state);
    return true;
   }
