@@ -370,15 +370,15 @@ async def ingest_backtest_evidence(
     keys = [(row.fold_id, row.partition, row.trade_id) for row in payload.trades]
     if len(keys) != len(set(keys)):
         raise HTTPException(status_code=422, detail="duplicate trade_id within the same fold/partition")
+    for row in train_all:
+        grouped[int(row.fold_id)]["train"].append(row)
+    for row in validation_all:
+        grouped[int(row.fold_id)]["validation"].append(row)
     for fold_id, partitions in grouped.items():
         train_ids = {row.trade_id for row in partitions["train"]}
         validation_ids = {row.trade_id for row in partitions["validation"]}
         if train_ids & validation_ids:
             raise HTTPException(status_code=422, detail=f"fold {fold_id} reuses trade IDs across train and validation")
-    for row in train_all:
-        grouped[int(row.fold_id)]["train"].append(row)
-    for row in validation_all:
-        grouped[int(row.fold_id)]["validation"].append(row)
     if not holdout:
         raise HTTPException(status_code=422, detail="locked_oos outcomes are required")
     holdout_ids = [row.trade_id for row in holdout]
