@@ -76,22 +76,25 @@ def _valid_payload():
             "fill_policy": "FILL_CONSERVATIVE",
         },
         "trades": trades,
-        "parameter_neighbors": [{
-            "parameters": {"min_confidence": 61},
-            "report_sha256": "d" * 64,
-            "dataset_sha256": "b" * 64,
-            "ea_source_commit": "c" * 40,
-            "ea_build": "MidasTouch-test-build",
-            "terminal_build": "MT5-test-terminal",
-            "period_start": start.isoformat(),
-            "period_end": (start + timedelta(days=100)).isoformat(),
-            "trades": [{
-                "trade_id": f"neighbor-holdout-{i}",
-                "timestamp": (start + timedelta(days=60 + i)).isoformat(),
-                "outcome": "win" if i % 5 != 0 else "loss",
-                "realized_r": 0.5 if i % 5 != 0 else -0.5,
-            } for i in range(30)],
-        }],
+        "parameter_neighbors": [
+            {
+                "parameters": {"min_confidence": neighbor_confidence},
+                "report_sha256": ("d" if neighbor_confidence < 60 else "e") * 64,
+                "dataset_sha256": "b" * 64,
+                "ea_source_commit": "c" * 40,
+                "ea_build": "MidasTouch-test-build",
+                "terminal_build": "MT5-test-terminal",
+                "period_start": start.isoformat(),
+                "period_end": (start + timedelta(days=100)).isoformat(),
+                "trades": [{
+                    "trade_id": f"neighbor-holdout-{i}",
+                    "timestamp": (start + timedelta(days=60 + i)).isoformat(),
+                    "outcome": "win" if i % 5 != 0 else "loss",
+                    "realized_r": 0.5 if i % 5 != 0 else -0.5,
+                } for i in range(30)],
+            }
+            for neighbor_confidence in (56, 58, 62, 64, 65)
+        ],
         "feature_importance": [{
             "feature": "liquidity_sweep",
             "delta_metric": 0.04,
@@ -136,6 +139,34 @@ def test_backtest_evidence_is_persisted_but_never_activated(client, auth_headers
     # through the production configuration-sync endpoint.
     config_response = client.get("/config/XAUUSD", headers=auth_headers)
     assert config_response.status_code == 404
+
+
+def test_backtest_evidence_requires_a_minimum_parameter_neighborhood(client, auth_headers):
+    payload = _valid_payload()
+    payload["parameter_neighbors"] = payload["parameter_neighbors"][:1]
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["decision"] == "INSUFFICIENT_EVIDENCE"
+    assert body["lifecycle_status"] == "BACKTESTED"
+    assert any("at least 5 unique local perturbations" in reason for reason in body["research_reasons"])
+
+
+def test_backtest_evidence_holds_when_any_neighbor_breaks_the_plateau(client, auth_headers):
+    payload = _valid_payload()
+    for row in payload["parameter_neighbors"][0]["trades"]:
+        row["outcome"] = "loss"
+        row["realized_r"] = -0.5
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["decision"] == "HOLD"
+    assert body["lifecycle_status"] == "BACKTESTED"
+    assert "not activated" in body["promotion_boundary"]
 
 
 def test_backtest_evidence_ingestion_rejects_duplicate_run_id(client, auth_headers):
