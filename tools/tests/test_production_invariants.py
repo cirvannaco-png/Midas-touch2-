@@ -228,3 +228,18 @@ def test_active_live_guards_and_dynamic_stop_defaults_are_explicit():
     assert "InpEnableDynamicStop = true" in dynamic
     assert "InpDynamicStopActivateAtR = 0.75" in dynamic
     assert "InpDynamicStopBreakevenAtR = 1.00" in dynamic
+
+def test_netting_accounts_cannot_overlap_same_symbol_decisions():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in orders
+    assert "if(OpenCount()>0)" in orders
+    assert "PositionGetString(POSITION_SYMBOL)==decision.symbol" in orders
+    assert "OrderGetString(ORDER_SYMBOL)==decision.symbol" in orders
+    assert "one managed decision at a time is required on netting/exchange accounts" in orders
+
+
+def test_terminal_trade_identity_is_retained_for_delayed_close_events():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    assert "Retain terminal identity records briefly" in orders
+    assert "now-terminalAt<300" in orders
+    assert "fsm.LastChange()" in orders
