@@ -293,7 +293,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
                // v2.14 diagnostics — same append-only discipline.
                "KeyLevelSource", "KeyLevelReaction", "KeyLevelScore",
                // v2.15 diagnostics — same append-only discipline.
-               "SelectedStrategy", "SelectedStrategyScore");
+               "SelectedStrategy", "SelectedStrategyScore", "OutcomeEpoch");
       m_headerWritten = true;
      }
 
@@ -356,7 +356,7 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
 
    if(!m_outcomeHeaderWritten)
      {
-      FileWrite(handle, "SignalID", "OutcomeEpoch", "Symbol", "EntryTF", "Direction", "Outcome", "ExitPrice",
+      FileWrite(handle, "SignalID", "Symbol", "EntryTF", "Direction", "Outcome", "ExitPrice",
                "EntryRef", "RiskDistance", "Filled", "FillTime", "BarsToFill", "MFE_Price", "MAE_Price",
                "MFE_R", "MAE_R", "TP1_Hit", "TP2_Hit", "BarsHeld", "SameBarSLTPCollision", "FillPolicy",
                "Lots", "EntryFillPrice", "BreakEvenDone", "PartialDone", "RealizedNetPnL", "RealizedR",
@@ -414,7 +414,7 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
    if(resolvedAt <= 0) resolvedAt = p.lastBarTime;
    // Leave zero if neither an actual event time nor tracker event time exists; the
    // strict evidence builder will reject that row rather than invent its chronology.
-   FileWrite(handle, signalId, (long)resolvedAt, symbol, EnumToString(entryTF), dir, outcome,
+   FileWrite(handle, signalId, symbol, EnumToString(entryTF), dir, outcome,
             DoubleToString(exitPrice, _Digits), DoubleToString(p.entryRef, _Digits),
             DoubleToString(p.riskDist, _Digits), p.filled ? "Yes" : "No",
             p.filled ? TimeToString(p.fillTime, TIME_DATE | TIME_MINUTES) : "",
@@ -447,7 +447,8 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
             KeyLevelReactionLabel(p.setup.reasons.keylevel_reaction),
             DoubleToString(p.setup.reasons.keylevel_score, 1),
             SelectedStrategyLabel(p.setup.reasons.selected_strategy),
-            DoubleToString(p.setup.reasons.selected_strategy_score, 1));
+            DoubleToString(p.setup.reasons.selected_strategy_score, 1),
+            (long)resolvedAt);
 
    FileClose(handle);
    return true;
