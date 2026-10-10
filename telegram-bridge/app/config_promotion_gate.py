@@ -79,6 +79,14 @@ def _complete_evidence(
             reasons.append("independent holdout evidence is required and must be true")
         if validation.get("purged_walk_forward") is not True:
             reasons.append("purged walk-forward evidence is required and must be true")
+        # New Tester-ingestion evidence includes explicit quality/completeness
+        # results. Preserve compatibility with older snapshots that predate
+        # these fields, but fail closed whenever a newer snapshot records a
+        # negative verdict.
+        if validation.get("research_pass") is False:
+            reasons.append("backtest research evidence did not pass completeness gates")
+        if validation.get("oos_quality_pass") is False:
+            reasons.append("locked OOS quality or parameter-stability gate failed")
 
     statistics = getattr(evaluation, "statistical_evidence", {})
     if require_statistics:

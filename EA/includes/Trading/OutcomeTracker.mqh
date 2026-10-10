@@ -41,6 +41,7 @@ private:
 
    void              RemoveAt(int idx);
    void              Resolve(int idx, string outcome, double exitPrice);
+   datetime          ResolutionEpoch(const PendingSetup &p) const;
    double            PointSize() const;
    double            ValuePerUnitDistance() const;
    double            ApplyEntryCosts(double rawPrice, bool isBuy) const;
@@ -121,6 +122,17 @@ void COutcomeTracker::ConfigureSimulation(double riskPercent, bool allowMinLotOv
   }
 
 double COutcomeTracker::PointSize() const { return SymbolInfoDouble(m_symbol, SYMBOL_POINT); }
+
+// Strategy Tester outcomes are resolved from bar-level OHLC. The exact intrabar
+// event time is unavailable, so timestamp the resolution at the bar close rather
+// than the bar open; this conservatively censors boundary-crossing outcomes and
+// prevents a trade from leaking into an earlier train/validation/OOS partition.
+datetime COutcomeTracker::ResolutionEpoch(const PendingSetup &p) const
+  {
+   int barSeconds = PeriodSeconds(m_entryTF);
+   if(p.lastBarTime <= 0 || barSeconds <= 0) return 0;
+   return p.lastBarTime + barSeconds;
+  }
 
 double COutcomeTracker::ValuePerUnitDistance() const
   {
@@ -258,7 +270,7 @@ void COutcomeTracker::FinalizeExit(int idx, PendingSetup &p, string outcome, dou
         }
      }
    m_pending[idx] = p;
-   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, rawExitPrice, m_fillPolicy);
+   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, rawExitPrice, m_fillPolicy, ResolutionEpoch(p));
    string coarseOutcome;
    if(ambiguous) coarseOutcome = "ambiguous";
    else if(p.lots <= 0) coarseOutcome = "scratch";
@@ -348,7 +360,7 @@ void COutcomeTracker::RemoveAt(int idx)
 
 void COutcomeTracker::Resolve(int idx, string outcome, double exitPrice)
   {
-   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy);
+   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy, ResolutionEpoch(m_pending[idx]));
    PublishIfConfigured(m_pending[idx], "no_fill", "no_fill", false);
    RemoveAt(idx);
   }

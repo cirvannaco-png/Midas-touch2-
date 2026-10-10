@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_MAX_REQUESTS: int = 5
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     MAX_REQUEST_BODY_SIZE: int = 10 * 1024
+    # Dedicated, bounded allowance for authenticated historical Tester evidence.
+    MAX_BACKTEST_EVIDENCE_BODY_SIZE: int = 5 * 1024 * 1024
     PENDING_STALE_SECONDS: int = 120
     ALLOWED_ORIGINS: str = ""
     TELEGRAM_TIMEOUT_SECONDS: float = 8.0

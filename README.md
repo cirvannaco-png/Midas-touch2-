@@ -104,7 +104,7 @@ to size a position.
 To compare the two models on your own logs:
 
 ```bash
-python tools/medistouch_retrain.py MedisTouch_Outcomes_XAUUSD.csv
+python tools/medistouch_retrain.py MedisTouch_Outcomes_v2_XAUUSD.csv
 ```
 
 It reports AUC (ranking quality) for the additive, multiplicative and
@@ -123,9 +123,9 @@ Tuning knobs live in the **"Confidence Diagnostics (v2.10)"** input group:
 | File | Columns added |
 |------|---------------|
 | `MedisTouch_Signals_<SYMBOL>.csv` | `ContradictionPenalty`, `EnvScore`, `ExecScore`, `EnvExecConfidence` |
-| `MedisTouch_Outcomes_<SYMBOL>.csv` | `ConfidenceAtSignal`, `ConfidenceDecayed`, `DecayBars`, plus the four above |
+| `MedisTouch_Outcomes_v2_<SYMBOL>.csv` | `ConfidenceAtSignal`, `ConfidenceDecayed`, `DecayBars`, plus the four above and `OutcomeEpoch` |
 
-Columns are **appended**, so existing position-based parsers keep working.
+Columns are **appended**, so existing position-based parsers keep working. The versioned outcome filename keeps legacy rows with the old header separate; do not concatenate the two files. `OutcomeEpoch` is the outcome-resolution time in epoch seconds, using the same explicit clock basis/offset as the timestamp suffix in `SignalID`. The strict Tester evidence builder requires this field and censors outcomes that resolve after a fold or locked-OOS boundary. Older `MedisTouch_Outcomes_<SYMBOL>.csv` logs remain unchanged and cannot be used as chronological promotion evidence without rebuilding them from a source that has real resolution timestamps.
 
 ## Repository layout
 
