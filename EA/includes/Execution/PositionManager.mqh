@@ -137,11 +137,22 @@ void CPositionManager::OnTick(double currentAtr)
       if(state!=TS_FILLED && state!=TS_PROTECTED && state!=TS_PARTIAL && state!=TS_RUNNER)
          continue;
 
-      ulong ticket=m_orders.TicketAt(i);
-      if(!PositionSelectByTicket(ticket))
+      // Position tickets may change during broker service operations. Resolve the
+      // current ticket through the stable POSITION_IDENTIFIER/DEAL_POSITION_ID.
+      ulong positionIdentifier=m_orders.PositionIdentifierAt(i);
+      ulong ticket=m_orders.PositionTicketAt(i);
+      if(ticket==0 && positionIdentifier==0)
+         ticket=m_orders.TicketAt(i); // compatibility fallback for legacy state only
+
+      if(ticket==0 || !PositionSelectByTicket(ticket))
         {
-         m_orders.TransitionAt(i,TS_CLOSED);
-         m_orders.TransitionAt(i,TS_ARCHIVED);
+         if(positionIdentifier>0)
+            m_orders.ArchiveClosedPosition(positionIdentifier);
+         else
+           {
+            m_orders.TransitionAt(i,TS_CLOSED);
+            m_orders.TransitionAt(i,TS_ARCHIVED);
+           }
          continue;
         }
 
