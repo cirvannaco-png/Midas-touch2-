@@ -10,7 +10,7 @@ import json
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
-from math import isfinite, sqrt, tanh
+from math import sqrt, tanh
 from statistics import mean, pstdev
 from typing import Any, Literal
 
@@ -189,7 +189,6 @@ class CounterfactualEvidence(StrictModel):
     scenario_id: str = Field(min_length=1, max_length=160)
     baseline_realized_r: float = Field(allow_inf_nan=False)
     candidate_realized_r: float = Field(allow_inf_nan=False)
-    p_value: float | None = Field(default=None, gt=0, le=1, allow_inf_nan=False)
 
 
 class ScaleOutEvidence(StrictModel):
@@ -213,6 +212,7 @@ class BacktestEvidenceRequest(StrictModel):
     feature_importance: list[FeatureImportanceEvidence] = Field(default_factory=list, max_length=500)
     clustered_mda: list[ClusteredMDAEvidence] = Field(default_factory=list, max_length=200)
     counterfactual: list[CounterfactualEvidence] = Field(default_factory=list, max_length=30000)
+    paired_test_p_value: float | None = Field(default=None, gt=0, le=1, allow_inf_nan=False)
     scale_out: list[ScaleOutEvidence] = Field(default_factory=list, max_length=30000)
 
     @field_validator("claimed_config_hash")
@@ -287,9 +287,9 @@ def _summarize(rows: list[Any]) -> dict[str, Any]:
         "gross_profit_r": round(gross_profit, 8),
         "gross_loss_r": round(gross_loss, 8),
         "wilson_win_rate_ci": list(_wilson(wins, len(done))) if done else None,
-        "commission_cost_total": round(sum(float(r.commission_cost or 0) for r in rows), 8),
-        "spread_cost_total": round(sum(float(r.spread_cost or 0) for r in rows), 8),
-        "slippage_cost_total": round(sum(float(r.slippage_cost or 0) for r in rows), 8),
+        "commission_cost_total": round(sum(float(getattr(r, "commission_cost", 0) or 0) for r in rows), 8),
+        "spread_cost_total": round(sum(float(getattr(r, "spread_cost", 0) or 0) for r in rows), 8),
+        "slippage_cost_total": round(sum(float(getattr(r, "slippage_cost", 0) or 0) for r in rows), 8),
     }
 
 
@@ -370,6 +370,11 @@ async def ingest_backtest_evidence(
     keys = [(row.fold_id, row.partition, row.trade_id) for row in payload.trades]
     if len(keys) != len(set(keys)):
         raise HTTPException(status_code=422, detail="duplicate trade_id within the same fold/partition")
+    for fold_id, partitions in grouped.items():
+        train_ids = {row.trade_id for row in partitions["train"]}
+        validation_ids = {row.trade_id for row in partitions["validation"]}
+        if train_ids & validation_ids:
+            raise HTTPException(status_code=422, detail=f"fold {fold_id} reuses trade IDs across train and validation")
     for row in train_all:
         grouped[int(row.fold_id)]["train"].append(row)
     for row in validation_all:
@@ -379,6 +384,9 @@ async def ingest_backtest_evidence(
     holdout_ids = [row.trade_id for row in holdout]
     if len(holdout_ids) != len(set(holdout_ids)):
         raise HTTPException(status_code=422, detail="locked_oos trade_id values must be unique")
+    prior_partition_ids = {row.trade_id for row in [*train_all, *validation_all]}
+    if prior_partition_ids & set(holdout_ids):
+        raise HTTPException(status_code=422, detail="locked_oos reuses train/validation trade IDs")
 
     folds: list[dict[str, Any]] = []
     fold_verdicts: list[str] = []
@@ -429,13 +437,12 @@ async def ingest_backtest_evidence(
         mean(row.candidate_realized_r - row.baseline_realized_r for row in payload.counterfactual)
         if counterfactual_complete else None
     )
-    supplied_p_values = [row.p_value for row in payload.counterfactual if row.p_value is not None]
     statistical_evidence: dict[str, Any] = {
         "paired_scenario_count": len(payload.counterfactual),
         "paired_expectancy_delta_r": cf_delta,
     }
-    if supplied_p_values:
-        statistical_evidence["p_value"] = min(supplied_p_values)
+    if payload.paired_test_p_value is not None:
+        statistical_evidence["p_value"] = payload.paired_test_p_value
 
     scale_out_ids = [row.scenario_id for row in payload.scale_out]
     scale_out_complete = len(scale_out_ids) >= MIN_PAIRED_SCENARIOS and len(scale_out_ids) == len(set(scale_out_ids))
@@ -565,6 +572,7 @@ async def ingest_backtest_evidence(
         "feature_importance": [row.model_dump(mode="json") for row in payload.feature_importance],
         "clustered_mda": [row.model_dump(mode="json") for row in payload.clustered_mda],
         "counterfactual": [row.model_dump(mode="json") for row in payload.counterfactual],
+        "paired_test_p_value": payload.paired_test_p_value,
         "scale_out": [row.model_dump(mode="json") for row in payload.scale_out],
         "trade_observations": len(all_records),
     }
@@ -626,7 +634,7 @@ async def ingest_backtest_evidence(
             performance_metrics=performance_metrics,
             risk_metrics=risk_metrics,
             regime_conditions={"source": "backtest_evidence", "change_scope": payload.change_scope},
-            train_start=max(row.timestamp for row in first_fold["train"].values()) if False else min(row.timestamp for row in first_fold["train"]),
+            train_start=min(row.timestamp for row in first_fold["train"]),
             train_end=max(row.timestamp for row in first_fold["train"]),
             validation_start=min(row.timestamp for row in first_fold["validation"]),
             validation_end=max(row.timestamp for row in last_fold["validation"]),
