@@ -49,7 +49,10 @@ private:
 
    bool AcquireLock()
      {
-      if(StringLen(m_lockKey)<=0 || !GlobalVariableTemp(m_lockKey))return false;
+      if(StringLen(m_lockKey)<=0)return false;
+      bool created=GlobalVariableTemp(m_lockKey);
+      // GlobalVariableTemp returns false when another EA already created the lock.
+      if(!created && !GlobalVariableCheck(m_lockKey))return false;
       for(int attempt=0;attempt<100;attempt++)
         {
          if(GlobalVariableSetOnCondition(m_lockKey,1.0,0.0))return true;
