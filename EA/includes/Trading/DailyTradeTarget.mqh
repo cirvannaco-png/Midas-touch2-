@@ -166,6 +166,7 @@ private:
       int currentCount=(int)MathMax(0.0,baseline)+(int)MathMax(0,markerCount);
       bool saved=(GlobalVariableSet(CountKey(dateKey),(double)currentCount)>0);
       if(pruneOldMarkers)PruneOldMarkersLocked(TimeCurrent());
+      if(saved)GlobalVariablesFlush();
       ReleaseLock();
 
       if(!saved)
@@ -281,6 +282,7 @@ public:
       int markerCount=CountMarkersForDateLocked(closeDateKey);
       int reconciled=(int)MathMax(0.0,baseline)+(int)MathMax(0,markerCount);
       bool saved=(GlobalVariableSet(CountKey(closeDateKey),(double)reconciled)>0);
+      if(saved)GlobalVariablesFlush();
       ReleaseLock();
 
       if(!saved)
