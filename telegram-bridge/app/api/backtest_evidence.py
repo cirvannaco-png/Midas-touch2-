@@ -380,6 +380,33 @@ def _objective_score(components: dict[str, float]) -> float:
     return round(sum(weights[name] * components[name] for name in weights), 8)
 
 
+def _is_parameter_neighbor(
+    baseline: dict[str, Any], candidate: dict[str, Any], *, max_relative_step: float = 0.25
+) -> bool:
+    """Reject an unrelated configuration masquerading as a local plateau neighbor."""
+    if set(baseline) != set(candidate):
+        return False
+    changed = False
+    for key, base_value in baseline.items():
+        candidate_value = candidate[key]
+        if base_value == candidate_value:
+            continue
+        changed = True
+        if isinstance(base_value, bool) or isinstance(candidate_value, bool):
+            if not (isinstance(base_value, bool) and isinstance(candidate_value, bool)):
+                return False
+            continue
+        if isinstance(base_value, (int, float)) and isinstance(candidate_value, (int, float)):
+            scale = max(abs(float(base_value)), 1.0)
+            if abs(float(candidate_value) - float(base_value)) / scale > max_relative_step:
+                return False
+            continue
+        # Categorical/text values must match; otherwise this is not a local
+        # numeric-neighborhood comparison.
+        return False
+    return changed
+
+
 @router.post("/research/backtest-evidence")
 async def ingest_backtest_evidence(
     payload: BacktestEvidenceRequest,
@@ -491,6 +518,11 @@ async def ingest_backtest_evidence(
     stable_neighbors: list[dict[str, Any]] = []
     seen_neighbor_hashes: set[str] = set()
     for neighbor in payload.parameter_neighbors:
+        if not _is_parameter_neighbor(payload.parameters, neighbor.parameters):
+            raise HTTPException(
+                status_code=422,
+                detail="parameter-neighbor configuration is not a local perturbation of the candidate",
+            )
         neighbor_identity = ConfigurationIdentity(
             strategy=payload.strategy,
             instrument=payload.instrument,
