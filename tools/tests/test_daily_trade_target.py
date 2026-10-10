@@ -15,9 +15,9 @@ def test_daily_target_counts_qualified_completed_outcomes_not_entries():
     assert "InpMinimumQualifiedTradeR=0.25;" in ea
     assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in ea
     assert "Live trade outcome attribution/learning" in ea
-    assert "g_dailyTradeTarget.Init(g_outcomeAttributionSupported?InpMinimumQualifiedTradesPerDay:0" in ea
-    assert "if(g_outcomeAttributionSupported && decisionId>0 && g_tracker.MarkExecuted" in ea
-    assert "if(!g_outcomeAttributionSupported)return;" in ea
+    assert "g_dailyTradeTarget.Init(g_tradeOutcomeTrackingEnabled?InpMinimumQualifiedTradesPerDay:0" in ea
+    assert "if(g_tradeOutcomeTrackingEnabled && decisionId>0 && g_tracker.MarkExecuted" in ea
+    assert "if(!g_tradeOutcomeTrackingEnabled)return;" in ea
     assert "OnQualifiedClose(datetime at,double realizedR,ulong positionId)" in target
     assert "g_dailyTradeTarget.OnExecution" not in ea
     assert "OnExecution(" not in target
