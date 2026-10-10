@@ -77,6 +77,12 @@ def _valid_payload():
         "parameter_neighbors": [{
             "parameters": {"min_confidence": 61},
             "report_sha256": "d" * 64,
+            "dataset_sha256": "b" * 64,
+            "ea_source_commit": "c" * 40,
+            "ea_build": "MidasTouch-test-build",
+            "terminal_build": "MT5-test-terminal",
+            "period_start": start.isoformat(),
+            "period_end": (start + timedelta(days=100)).isoformat(),
             "trades": [{
                 "trade_id": f"neighbor-holdout-{i}",
                 "timestamp": (start + timedelta(days=60 + i)).isoformat(),
