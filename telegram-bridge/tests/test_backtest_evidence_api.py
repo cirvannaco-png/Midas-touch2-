@@ -66,6 +66,8 @@ def _valid_payload():
             "data_vendor": "fixture-only",
             "period_start": start.isoformat(),
             "period_end": (start + timedelta(days=100)).isoformat(),
+            "locked_oos_start": (start + timedelta(days=60)).isoformat(),
+            "locked_oos_end": (start + timedelta(days=90)).isoformat(),
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "spread_model": "fixed-spread",
             "spread_points": 20,
