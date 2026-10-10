@@ -3,6 +3,7 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
 
 stages:
@@ -24,6 +25,8 @@ mql5-structure:
     - python tools/validate_edge_lineage.py
     - python tools/phase_a_d_manifest.py
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: on_success
 
@@ -43,6 +46,8 @@ governance-tests:
     - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python telegram-bridge/scripts/render_sync_secrets.py --dry-run
     - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-webhook-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in telegram-bridge/tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: on_success
 
@@ -65,6 +70,8 @@ medis-touch-python:
     - bandit -r app/ -q
     - PYTHONPATH="$CI_PROJECT_DIR" pytest -v
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: on_success
 
@@ -77,5 +84,106 @@ telegram-bridge-dependency-audit:
   script:
     - pip-audit -r requirements.txt
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - when: on_success
+
+# Calls the existing, authenticated production endpoint. This job is opt-in via
+# a GitLab pipeline schedule and never runs for pushes, MRs, or manual pipelines.
+biweekly-recalibration:
+  stage: test
+  image: python:3.11-slim
+  resource_group: production-recalibration
+  interruptible: false
+  timeout: 5m
+  script:
+    - |
+      python - <<'PY'
+      import os
+      import sys
+      import urllib.error
+      import urllib.request
+
+      base = os.environ.get("BRIDGE_BASE_URL", "").strip().rstrip("/")
+      api_key = os.environ.get("BRIDGE_API_KEY", "")
+      if not base or not api_key:
+          print("Required protected/masked variables BRIDGE_BASE_URL and BRIDGE_API_KEY are missing.", file=sys.stderr)
+          raise SystemExit(2)
+      if not base.startswith("https://"):
+          print("BRIDGE_BASE_URL must use HTTPS.", file=sys.stderr)
+          raise SystemExit(2)
+
+      url = base + "/admin/run-cycle"
+      request = urllib.request.Request(
+          url,
+          data=b"",
+          headers={"X-API-Key": api_key, "Accept": "application/json"},
+          method="POST",
+      )
+      try:
+          with urllib.request.urlopen(request, timeout=120) as response:
+              body = response.read(16384).decode("utf-8", errors="replace")
+              print(f"Recalibration endpoint returned HTTP {response.status}: {body}")
+              if response.status < 200 or response.status >= 300:
+                  raise SystemExit(1)
+      except urllib.error.HTTPError as error:
+          detail = error.read(16384).decode("utf-8", errors="replace")
+          print(f"Recalibration endpoint returned HTTP {error.code}: {detail}", file=sys.stderr)
+          raise SystemExit(1)
+      except urllib.error.URLError as error:
+          print(f"Recalibration endpoint request failed: {error.reason}", file=sys.stderr)
+          raise SystemExit(1)
+      PY
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SCHEDULE_TASK == "biweekly-recalibration"'
+      when: on_success
+    - when: never
+
+# Daily housekeeping uses the same bridge-authenticated admin API.
+daily-subscriptions:
+  stage: test
+  image: python:3.11-slim
+  interruptible: false
+  timeout: 3m
+  script:
+    - |
+      python - <<'PY'
+      import os
+      import sys
+      import urllib.error
+      import urllib.request
+
+      base = os.environ.get("BRIDGE_BASE_URL", "").strip().rstrip("/")
+      api_key = os.environ.get("BRIDGE_API_KEY", "")
+      if not base or not api_key:
+          print("Required protected/masked variables BRIDGE_BASE_URL and BRIDGE_API_KEY are missing.", file=sys.stderr)
+          raise SystemExit(2)
+      if not base.startswith("https://"):
+          print("BRIDGE_BASE_URL must use HTTPS.", file=sys.stderr)
+          raise SystemExit(2)
+
+      request = urllib.request.Request(
+          base + "/admin/check-subscriptions",
+          data=b"",
+          headers={"X-API-Key": api_key, "Accept": "application/json"},
+          method="POST",
+      )
+      try:
+          with urllib.request.urlopen(request, timeout=60) as response:
+              body = response.read(16384).decode("utf-8", errors="replace")
+              print(f"Subscription sweep endpoint returned HTTP {response.status}: {body}")
+              if response.status < 200 or response.status >= 300:
+                  raise SystemExit(1)
+      except urllib.error.HTTPError as error:
+          detail = error.read(16384).decode("utf-8", errors="replace")
+          print(f"Subscription sweep endpoint returned HTTP {error.code}: {detail}", file=sys.stderr)
+          raise SystemExit(1)
+      except urllib.error.URLError as error:
+          print(f"Subscription sweep request failed: {error.reason}", file=sys.stderr)
+          raise SystemExit(1)
+      PY
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SCHEDULE_TASK == "daily-subscriptions"'
+      when: on_success
+    - when: never

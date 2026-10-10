@@ -109,3 +109,18 @@ No `.mq5` or `.mqh` trading implementation was edited as part of this migration.
 - removal of obsolete platform artifacts
 
 The EA source remains the recovered source of truth.
+
+## Scheduling status and activation gate
+
+The repository schedules are implemented as dedicated GitLab CI jobs in `.gitlab-ci.yml`. Scheduled pipelines are admitted by `workflow: rules`; ordinary validation jobs are intentionally skipped for schedule-triggered pipelines. Only the job whose `SCHEDULE_TASK` exactly matches the schedule variable is allowed to call the corresponding admin endpoint.
+
+This repository file **does not create project-level pipeline schedules or CI/CD variables**. Before calling recalibration "active in production", verify all of the following in the target GitLab project:
+
+1. Create a schedule on the protected default branch with cron `0 6 * * 6` and variable `SCHEDULE_TASK=biweekly-recalibration`. The endpoint is called weekly; the existing server-side Saturday-parity rule anchored to `2026-01-03` determines which cycle dates are eligible.
+2. Create a second schedule with cron `0 7 * * *` and variable `SCHEDULE_TASK=daily-subscriptions`.
+3. Configure `BRIDGE_BASE_URL` as the HTTPS base URL of the production bridge and `BRIDGE_API_KEY` to match that service's `SECRET_KEY`. Mark both **masked** and **protected**, and keep them out of the repository. Ensure the schedule runs on a protected branch so protected variables are available.
+4. Trigger or wait for a scheduled pipeline. Confirm the correct maintenance job ran and returned a successful HTTP status. A successful request with response `status=no_data` means no recalibration was applied; investigate missing/resolved `signal_outcomes` records rather than declaring recalibration complete.
+5. Verify that a `CalibrationCycle` row was persisted for the cycle and inspect the gating decision. Promotion remains gated and may require the configured recalibration thresholds and explicit Telegram approval. A stored cycle is not proof that new EA weights were approved or activated.
+6. Verify the job's latest successful timestamp and the matching production bridge logs after every deployment or secret rotation.
+
+If the project schedules or variables are absent, the production recalibration engine is **not autonomously active**, even though the API endpoint and cycle implementation exist.
