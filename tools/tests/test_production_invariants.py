@@ -132,3 +132,17 @@ def test_outcome_tracker_aggregates_risk_across_child_fills():
     assert "p.weightedRiskDistLots=p.riskDist*volume" in t
     assert "p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume" in t
     assert "p.weightedRiskDistLots>0.0?p.weightedRiskDistLots" in t
+
+def test_position_modify_requires_trade_server_confirmation():
+    """CTrade's bool return is a request-check result, not proof the server applied SLTP."""
+    broker=(ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh").read_text()
+    assert "submitted && m_trade.ResultRetcode()==TRADE_RETCODE_DONE" in broker
+    assert "ModifySLTP was not confirmed by the trade server" in broker
+
+
+def test_partial_and_full_closes_require_confirmed_server_result():
+    broker=(ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh").read_text()
+    assert "submitted && (code==TRADE_RETCODE_DONE || code==TRADE_RETCODE_DONE_PARTIAL)" in broker
+    assert "submitted && code==TRADE_RETCODE_DONE" in broker
+    assert "ClosePartial was not confirmed by the trade server" in broker
+    assert "CloseFull was not confirmed by the trade server" in broker
