@@ -38,7 +38,7 @@ public:
    int               MaxOpenTrades() const { return m_maxOpen; }
    int               Total() { return ArraySize(m_trades); }
    void              Prune();
-   bool              MarkFilledFromPending(ulong orderTicket,ulong positionTicket,double fillPrice=0.0);
+   bool              MarkFilledFromPending(ulong orderTicket,ulong positionIdentifier,double fillPrice=0.0,double fillVolume=0.0);
    long              DecisionIdForTicket(ulong ticket);
    double            FillPriceForDecision(long decisionId);
    ENUM_TRADE_STATE  StateAt(int idx) { return m_trades[idx].fsm.State(); }
@@ -146,30 +146,59 @@ void COrderManager::Prune()
    for(int i=0;i<n;i++) m_trades[i]=kept[i];
   }
 //+------------------------------------------------------------------+
-bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionTicket,double fillPrice)
+bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionIdentifier,double fillPrice,double fillVolume)
   {
+   if(orderTicket==0 || positionIdentifier==0)return false;
+   // First fill of a pending request: replace its order ID with the stable
+   // position ID in the state machine while retaining a separate identity field.
    for(int i=0;i<ArraySize(m_trades);i++)
      {
       if(m_trades[i].fsm.State()!=TS_PENDING || m_trades[i].fsm.Ticket()!=orderTicket) continue;
-      m_trades[i].positionIdentifier=positionTicket;
-      m_trades[i].fsm.SetTicket(positionTicket); // Stable identifier, never a mutable position ticket.
+      m_trades[i].positionIdentifier=positionIdentifier;
+      m_trades[i].fsm.SetTicket(positionIdentifier);
       if(fillPrice>0.0) m_trades[i].fillPrice=fillPrice;
+      if(fillVolume>0.0)m_trades[i].volume=fillVolume;
       bool filled=m_trades[i].fsm.Transition(TS_FILLED);
+      ulong currentTicket=PositionTicketAt(i);
+      if(currentTicket>0 && PositionSelectByTicket(currentTicket))
+        {
+         m_trades[i].volume=PositionGetDouble(POSITION_VOLUME);
+         double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);
+         if(actualEntry>0.0)m_trades[i].fillPrice=actualEntry;
+        }
       if(filled && m_monitor!=NULL)
         {
          double totalMs=m_trades[i].fsm.TotalLatencyMs();
-         if(totalMs>=0.0) m_monitor.NotifyTradeLatency(totalMs,0.0);
+         if(totalMs>=0.0)m_monitor.NotifyTradeLatency(totalMs,0.0);
         }
       return filled;
+     }
+
+   // Additional partial fills for the same broker order arrive after the state
+   // is already Filled. Refresh live aggregate volume/weighted average entry.
+   for(int i=0;i<ArraySize(m_trades);i++)
+     {
+      if(m_trades[i].positionIdentifier!=positionIdentifier)continue;
+      ENUM_TRADE_STATE state=m_trades[i].fsm.State();
+      if(state!=TS_FILLED && state!=TS_PROTECTED && state!=TS_PARTIAL && state!=TS_RUNNER)continue;
+      ulong currentTicket=PositionTicketAt(i);
+      if(currentTicket>0 && PositionSelectByTicket(currentTicket))
+        {
+         m_trades[i].volume=PositionGetDouble(POSITION_VOLUME);
+         double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);
+         if(actualEntry>0.0)m_trades[i].fillPrice=actualEntry;
+        }
+      else if(fillVolume>0.0)
+         m_trades[i].volume+=fillVolume;
+      return true;
      }
    return false;
   }
 //+------------------------------------------------------------------+
 long COrderManager::DecisionIdForTicket(ulong ticket)
   {
-   for(int i=0;i<ArraySize(m_trades);i++)
-      if(m_trades[i].fsm.Ticket()==ticket) return m_trades[i].decision.decision_id;
-   return -1;
+   int idx=FindByTicket(ticket);
+   return idx>=0 ? m_trades[idx].decision.decision_id : -1;
   }
 //+------------------------------------------------------------------+
 double COrderManager::FillPriceForDecision(long decisionId)
@@ -241,21 +270,25 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
      {
       m_trades[idx].fsm.Transition(TS_PENDING);
       string comment="MT#"+IntegerToString(decision.decision_id)+(legIndex>0?":L"+IntegerToString(legIndex):"");
+      bool fillConfirmed=false;
       if(decision.setup.type==ORDER_TYPE_BUY)
-        {
-         ok=m_broker.MarketBuy(decision.symbol,volume,sl,tp,ticket,fillPrice,comment);
-        }
+         ok=m_broker.MarketBuy(decision.symbol,volume,sl,tp,ticket,fillPrice,fillConfirmed,comment);
       else
-        {
-         ok=m_broker.MarketSell(decision.symbol,volume,sl,tp,ticket,fillPrice,comment);
-        }
+         ok=m_broker.MarketSell(decision.symbol,volume,sl,tp,ticket,fillPrice,fillConfirmed,comment);
+
       if(ok)
         {
          m_trades[idx].fsm.SetTicket(ticket);
-         m_trades[idx].fsm.Transition(TS_FILLED);
-         m_trades[idx].fillPrice=fillPrice;
-         double totalMs=m_trades[idx].fsm.TotalLatencyMs();
-         if(m_monitor!=NULL && totalMs>=0.0) m_monitor.NotifyTradeLatency(totalMs,m_broker.LastLatencyMs());
+         if(fillConfirmed)
+           {
+            m_trades[idx].positionIdentifier=ticket;
+            m_trades[idx].fillPrice=fillPrice;
+            m_trades[idx].fsm.Transition(TS_FILLED);
+            double totalMs=m_trades[idx].fsm.TotalLatencyMs();
+            if(m_monitor!=NULL && totalMs>=0.0)m_monitor.NotifyTradeLatency(totalMs,m_broker.LastLatencyMs());
+           }
+         else
+            PrintFormat("MedisTouch OrderManager: decision #%I64d accepted as order #%I64u; awaiting confirmed deal event.",decision.decision_id,ticket);
         }
       else m_trades[idx].fsm.Transition(TS_REJECTED);
      }
@@ -269,12 +302,7 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
       if(ok) m_trades[idx].fsm.SetTicket(ticket);
       else m_trades[idx].fsm.Transition(TS_REJECTED);
      }
-   if(ok)
-     {
-      ticketOut=ticket;
-      if(useMarket)
-         m_trades[idx].positionIdentifier=ticket; // BrokerAdapter returns DEAL_POSITION_ID.
-     }
+   if(ok)ticketOut=ticket;
    return ok;
   }
 //+------------------------------------------------------------------+
