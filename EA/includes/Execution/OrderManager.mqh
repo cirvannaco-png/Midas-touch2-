@@ -32,7 +32,7 @@ private:
 
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
-   bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0);
+   bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0,int defaultDeviationPoints=20);
    bool              RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice=0.0,int legIndex=0);
    int               OpenCount();
    int               Total() { return ArraySize(m_trades); }
@@ -198,7 +198,7 @@ int COrderManager::LegIndexForTicket(ulong ticket)
    return idx<0 ? 0 : m_trades[idx].legIndex;
   }
 //+------------------------------------------------------------------+
-bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex)
+bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex,int defaultDeviationPoints)
   {
    ticketOut=0;
    if(decision.action!=POLICY_EXECUTE_ONLY && decision.action!=POLICY_EXECUTE_AND_SIGNAL) return false;
@@ -208,12 +208,24 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    if(FindByDecisionAndLeg(decision.decision_id,legIndex)>=0) return false;
 
    double entry=ResolveExecutionEntry(decision.setup);
+   int brokerDeviationPoints=(int)MathMax(0,defaultDeviationPoints);
    if(useMarket && maxEntryDeviation>0.0)
      {
       MqlTick tick;
       if(!SymbolInfoTick(decision.symbol,tick)) return false;
       double marketPrice=(decision.setup.type==ORDER_TYPE_BUY)?tick.ask:tick.bid;
+      if(!MathIsValidNumber(marketPrice) || marketPrice<=0.0 || !MathIsValidNumber(entry) || entry<=0.0) return false;
       if(MathAbs(marketPrice-entry)>maxEntryDeviation) return false;
+
+      // Keep the actual broker fill inside the same worst-case band used
+      // by sizing/geometry validation. Convert remaining price room into
+      // broker points and round DOWN so rounding cannot widen the band.
+      double point=SymbolInfoDouble(decision.symbol,SYMBOL_POINT);
+      if(!MathIsValidNumber(point) || point<=0.0) return false;
+      double worstAllowedFill=(decision.setup.type==ORDER_TYPE_BUY)?entry+maxEntryDeviation:entry-maxEntryDeviation;
+      double maxPriceSlippage=(decision.setup.type==ORDER_TYPE_BUY)?worstAllowedFill-marketPrice:marketPrice-worstAllowedFill;
+      if(!MathIsValidNumber(maxPriceSlippage) || maxPriceSlippage<0.0) return false;
+      brokerDeviationPoints=(int)MathMax(0.0,MathFloor(maxPriceSlippage/point));
      }
 
    int idx=ArraySize(m_trades);
@@ -238,11 +250,11 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
       string comment="MT#"+IntegerToString(decision.decision_id)+(legIndex>0?":L"+IntegerToString(legIndex):"");
       if(decision.setup.type==ORDER_TYPE_BUY)
         {
-         ok=m_broker.MarketBuy(decision.symbol,volume,sl,tp,ticket,fillPrice,comment);
+         ok=m_broker.MarketBuy(decision.symbol,volume,sl,tp,ticket,fillPrice,comment,brokerDeviationPoints);
         }
       else
         {
-         ok=m_broker.MarketSell(decision.symbol,volume,sl,tp,ticket,fillPrice,comment);
+         ok=m_broker.MarketSell(decision.symbol,volume,sl,tp,ticket,fillPrice,comment,brokerDeviationPoints);
         }
       if(ok)
         {
