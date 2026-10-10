@@ -412,9 +412,9 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
      }
 
    datetime resolvedAt = outcomeTime;
-   if(resolvedAt <= 0) resolvedAt = p.lastBarTime;
-   // Leave zero if neither an actual event time nor tracker event time exists; the
-   // strict evidence builder will reject that row rather than invent its chronology.
+   // Do not infer a resolution timestamp from the last bar's opening time.
+   // A caller without an explicit resolution epoch leaves zero; the strict
+   // evidence builder rejects the row rather than inventing chronology.
    FileWrite(handle, signalId, symbol, EnumToString(entryTF), dir, outcome,
             DoubleToString(exitPrice, _Digits), DoubleToString(p.entryRef, _Digits),
             DoubleToString(p.riskDist, _Digits), p.filled ? "Yes" : "No",
