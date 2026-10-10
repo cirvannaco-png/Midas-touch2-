@@ -41,8 +41,8 @@ def _write_outcomes(path, days):
             })
 
 
-def _manifest(tmp_path):
-    days = [*range(0, 51), *range(60, 90)]
+def _manifest(tmp_path, *, include_embargo_trade=False):
+    days = [*range(0, 51), *([55] if include_embargo_trade else []), *range(60, 90)]
     csv_path = tmp_path / "outcomes.csv"
     _write_outcomes(csv_path, days)
     report_path = tmp_path / "tester-report.html"
@@ -135,7 +135,7 @@ def test_normalizer_requires_explicit_signal_id_time_basis(tmp_path):
 
 
 def test_normalizer_rejects_unassigned_rows_without_declared_exclusion(tmp_path):
-    manifest_path = _manifest(tmp_path)
+    manifest_path = _manifest(tmp_path, include_embargo_trade=True)
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     data["excluded_windows"] = []
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
