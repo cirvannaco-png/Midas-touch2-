@@ -103,6 +103,9 @@ telegram-bridge-dependency-audit:
 biweekly-recalibration:
   stage: maintenance
   image: alpine:3.21
+  resource_group: production-recalibration
+  interruptible: false
+  timeout: 5m
   before_script:
     - apk add --no-cache ca-certificates curl python3
   script:
