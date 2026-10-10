@@ -45,11 +45,11 @@ governance-tests:
     - ruff check medis_touch/app/ medis_touch/tests/
     - bandit -r medis_touch/app/ -q
     - PYTHONPATH="$CI_PROJECT_DIR" pytest -v medis_touch/tests/test_prediction_governance.py
-    - PYTHONPATH="$CI_PROJECT_DIR/telegram-bridge:$CI_PROJECT_DIR/tools" pytest -v tools/tests
+    - PYTHONPATH="$CI_PROJECT_DIR:$CI_PROJECT_DIR/telegram-bridge" pytest -v tools/tests
     - ruff check telegram-bridge/app/ telegram-bridge/migrations/ telegram-bridge/scripts/ telegram-bridge/tests/
     - bandit -r telegram-bridge/app/ telegram-bridge/scripts/ -q
     - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-secret" python telegram-bridge/scripts/render_sync_secrets.py --dry-run
-    - BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="ci-placeholder-webhook-secret" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in telegram-bridge/tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
+    - PYTHONPATH="$CI_PROJECT_DIR:$CI_PROJECT_DIR/telegram-bridge" BOT_TOKEN="123456:ci-placeholder" CHAT_ID="-1000000000" ADMIN_CHAT_ID="777000777" SECRET_KEY="test-secret-key" WEBHOOK_SECRET_TOKEN="ci-placeholder-webhook-secret" DATABASE_URL="sqlite+aiosqlite:///./ci_signals.db" RATE_LIMIT_ENABLED="false" bash -lc 'set -e; for test_file in telegram-bridge/tests/test_*.py; do echo "=== $test_file ==="; pytest -v "$test_file"; done'
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
