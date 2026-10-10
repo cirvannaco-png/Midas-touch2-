@@ -61,18 +61,25 @@ function Invoke-MetaEditorCompile {
     }
 
     $binaryPath = [System.IO.Path]::ChangeExtension($SourcePath, ".ex5")
+    $metaLogPath = [System.IO.Path]::ChangeExtension($SourcePath, ".log")
     Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $metaLogPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $binaryPath -Force -ErrorAction SilentlyContinue
 
     $compileArg = '/compile:"{0}"' -f $SourcePath
-    $logArg = '/log:"{0}"' -f $LogPath
+    # MetaEditor documents /log as a switch that writes <source>.log beside the source.
+    # Copy that authoritative log to the central log directory only after compilation.
     $includeArg = '/inc:"{0}"' -f (Join-Path $TerminalDataPath "MQL5")
     Write-Host "Compiling: $SourcePath"
     Write-Host "Include root: $(Join-Path $TerminalDataPath 'MQL5')"
-    $process = Start-Process -FilePath $MetaEditorPath -ArgumentList @($compileArg, $logArg, $includeArg) -Wait -PassThru
+    $process = Start-Process -FilePath $MetaEditorPath -ArgumentList @($compileArg, "/log", $includeArg) -Wait -PassThru
 
+    if (-not (Test-Path -LiteralPath $metaLogPath -PathType Leaf)) {
+        throw "MetaEditor did not create its documented source-side compile log for $SourcePath (process exit $($process.ExitCode))."
+    }
+    Copy-Item -LiteralPath $metaLogPath -Destination $LogPath -Force
     if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
-        throw "MetaEditor did not create a compile log for $SourcePath (process exit $($process.ExitCode))."
+        throw "Could not copy MetaEditor log to $LogPath"
     }
 
     $logText = Get-Content -LiteralPath $LogPath -Raw
