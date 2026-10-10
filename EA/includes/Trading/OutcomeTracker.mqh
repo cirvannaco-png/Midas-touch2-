@@ -258,7 +258,7 @@ void COutcomeTracker::FinalizeExit(int idx, PendingSetup &p, string outcome, dou
         }
      }
    m_pending[idx] = p;
-   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, rawExitPrice, m_fillPolicy);
+   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, rawExitPrice, m_fillPolicy, p.lastBarTime);
    string coarseOutcome;
    if(ambiguous) coarseOutcome = "ambiguous";
    else if(p.lots <= 0) coarseOutcome = "scratch";
@@ -348,7 +348,7 @@ void COutcomeTracker::RemoveAt(int idx)
 
 void COutcomeTracker::Resolve(int idx, string outcome, double exitPrice)
   {
-   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy);
+   if(m_logger != NULL) m_logger.LogOutcome(m_pending[idx], m_symbol, m_entryTF, outcome, exitPrice, m_fillPolicy, m_pending[idx].lastBarTime);
    PublishIfConfigured(m_pending[idx], "no_fill", "no_fill", false);
    RemoveAt(idx);
   }
