@@ -304,7 +304,12 @@ public:
       ReleaseLock();
 
       if(!saved)
+        {
+         m_reconcilePending=true;
          Print("Midas Touch daily target: marker was saved but daily count needs reconciliation.");
+        }
+      else
+         m_reconcilePending=false;
 
       if(closeDateKey==m_dateKey)
         {
