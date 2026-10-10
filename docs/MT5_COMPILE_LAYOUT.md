@@ -138,3 +138,9 @@ After both entry points compile:
 5. Run separate baseline and challenger passes on untouched out-of-sample dates. Do not use optimized in-sample values as a live-performance claim. Save the tester HTML report, Journal, EA inputs, and run metadata.
 
 A successful compile and static CI are necessary but not sufficient for live certification. Before using a funded account, pass the Strategy Tester, then demo forward testing, and only then consider controlled live exposure.
+
+## Position identity and partial-exit constraints
+
+The order manager stores stable `POSITION_IDENTIFIER` / `DEAL_POSITION_ID` separately from the service-changeable `POSITION_TICKET`. Runtime management re-resolves the current ticket from the stable identifier before touching SL/TP, and accepted market requests remain Pending until a deal event confirms their fill. Pending slots are released on confirmed cancellation/expiry/rejection events. These paths are covered by source-level regression tests but still require Strategy Tester and demo execution verification.
+
+The Dynamic Stop Engine is enabled by default. Scale-out is enabled only in retail-hedging mode because MT5's `CTrade::PositionClosePartial` is explicitly a hedging-account operation. On netting/exchange accounts, scale-out is skipped rather than approximated with an opposite deal that might reverse an aggregate position. Full position management and SL/TP protection remain active, but use a retail-hedging account for the full multi-leg / outcome-attribution / scale-out feature set. The partial-close adapter also rounds requested volume down to the symbol's lot step and refuses a close that would leave either side below broker minimum volume.
