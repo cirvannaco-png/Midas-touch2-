@@ -146,3 +146,32 @@ def test_partial_and_full_closes_require_confirmed_server_result():
     assert "submitted && code==TRADE_RETCODE_DONE" in broker
     assert "ClosePartial was not confirmed by the trade server" in broker
     assert "CloseFull was not confirmed by the trade server" in broker
+
+def test_position_manager_resolves_mutable_ticket_from_stable_position_identifier():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    manager=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
+    assert "ulong                positionIdentifier;" in orders
+    assert "PositionTicketAt(int idx)" in orders
+    assert "POSITION_IDENTIFIER)==identifier" in orders
+    assert "ArchiveClosedPosition(ulong positionIdentifier)" in orders
+    assert "ulong ticket=m_orders.PositionTicketAt(i);" in manager
+    assert "m_orders.ArchiveClosedPosition(positionIdentifier);" in manager
+    assert "COrderManager::PositionIdentifierIsOpen" not in orders
+
+
+def test_market_order_submission_does_not_assume_accepted_means_filled():
+    broker=(ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh").read_text()
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    ea=EA.read_text()
+    assert "bool &fillConfirmedOut" in broker
+    assert "fillConfirmedOut=false;" in broker
+    assert "if(fillConfirmed)" in orders
+    assert "awaiting confirmed deal event" in orders
+    assert "MarkFilledFromPending(orderTicket,position,price,volume)" in ea
+
+
+def test_partial_fills_refresh_live_position_volume_and_average_entry():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    assert "Additional partial fills for the same broker order" in orders
+    assert "m_trades[i].volume=PositionGetDouble(POSITION_VOLUME);" in orders
+    assert "m_trades[i].fillPrice=PositionGetDouble(POSITION_PRICE_OPEN);" in orders
