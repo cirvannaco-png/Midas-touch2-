@@ -32,7 +32,7 @@ REQUIRED_CSV_COLUMNS = {
 }
 ALLOWED_MANIFEST_KEYS = {
     "strategy", "instrument", "timeframe", "parameters", "data_version",
-    "optimizer_version", "claimed_config_hash", "change_scope", "dataset_sha256",
+    "optimizer_version", "claimed_config_hash", "change_scope", "dataset_sha256", "dataset_path",
     "report_path", "candidate_csv", "run_id", "signal_id_epoch_basis",
     "server_utc_offset_minutes", "provenance", "folds", "excluded_windows",
     "parameter_neighbors", "feature_importance", "clustered_mda", "counterfactual",
@@ -392,7 +392,7 @@ def _normalize_neighbors(
             "parameters": parameters,
             "report_sha256": report_hash,
             "outcome_csv_sha256": _digest_file(csv_path),
-            "dataset_sha256": manifest["dataset_sha256"].lower(),
+            "dataset_sha256": declared_dataset_sha,
             "ea_source_commit": provenance["ea_source_commit"],
             "ea_build": provenance["ea_build"],
             "terminal_build": provenance["terminal_build"],
@@ -415,6 +415,16 @@ def build_evidence(manifest_path: str | Path) -> tuple[dict[str, Any], dict[str,
     manifest = _read_manifest(path)
     report_path = _resolve_path(path, manifest["report_path"], "report_path")
     candidate_csv = _resolve_path(path, manifest["candidate_csv"], "candidate_csv")
+    declared_dataset_sha = str(manifest["dataset_sha256"]).lower()
+    dataset_digest_status = "declared_manifest_only"
+    if manifest.get("dataset_path") is not None:
+        dataset_path = _resolve_path(path, manifest["dataset_path"], "dataset_path")
+        actual_dataset_sha = _digest_file(dataset_path)
+        if actual_dataset_sha != declared_dataset_sha:
+            raise BuildEvidenceError(
+                "dataset_sha256 does not match the supplied dataset_path file digest"
+            )
+        dataset_digest_status = "verified_from_dataset_file"
     provenance_raw = dict(manifest["provenance"])
     allowed_provenance = {
         "ea_source_commit", "ea_build", "terminal_build", "data_vendor",
@@ -450,7 +460,7 @@ def build_evidence(manifest_path: str | Path) -> tuple[dict[str, Any], dict[str,
         "run_id": manifest["run_id"],
         "report_sha256": _digest_file(report_path),
         "outcome_csv_sha256": _digest_file(candidate_csv),
-        "dataset_sha256": str(manifest["dataset_sha256"]).lower(),
+        "dataset_sha256": declared_dataset_sha,
         **{key: value for key, value in provenance.items()},
     }
     for key in ("period_start", "period_end", "locked_oos_start", "locked_oos_end", "generated_at"):
@@ -481,6 +491,7 @@ def build_evidence(manifest_path: str | Path) -> tuple[dict[str, Any], dict[str,
         "status": "built",
         "run_id": manifest["run_id"],
         "candidate_csv_sha256": api_provenance["outcome_csv_sha256"],
+        "dataset_digest_status": dataset_digest_status,
         "report_sha256": api_provenance["report_sha256"],
         "csv_source_rows": len(raw_rows),
         "normalized_partition_rows": len(trades),
