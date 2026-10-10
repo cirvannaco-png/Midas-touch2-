@@ -47,7 +47,9 @@ def _manifest(tmp_path, *, include_embargo_trade=False):
     _write_outcomes(csv_path, days)
     report_path = tmp_path / "tester-report.html"
     report_path.write_text("<html>fixture report</html>", encoding="utf-8")
-    data_sha = hashlib.sha256(b"fixture market dataset bytes").hexdigest()
+    dataset_path = tmp_path / "market-data.bin"
+    dataset_path.write_bytes(b"fixture market dataset bytes")
+    data_sha = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
     manifest = {
         "strategy": "MidasTouchIntegrated",
         "instrument": "XAUUSD",
@@ -56,6 +58,7 @@ def _manifest(tmp_path, *, include_embargo_trade=False):
         "data_version": "xauusd-m15-fixture-data-v1",
         "optimizer_version": "tester-normalizer-test-v1",
         "dataset_sha256": data_sha,
+        "dataset_path": "market-data.bin",
         "report_path": "tester-report.html",
         "candidate_csv": "outcomes.csv",
         "run_id": "normalizer-fixture-run",
@@ -120,6 +123,7 @@ def test_normalizer_builds_chronological_evidence_bundle(tmp_path):
     assert sum(row["partition"] == "locked_oos" for row in payload["trades"]) == 30
     assert {row["fold_id"] for row in payload["trades"] if row["partition"] == "validation"} == {1, 2, 3}
     assert summary["fold_count"] == 3
+    assert summary["dataset_digest_status"] == "verified_from_dataset_file"
     assert summary["excluded_warmup_or_embargo_rows"] == 0
     assert summary["destination_file_not_sent"] is True
     assert "feature_importance" in summary["evidence_gaps_to_check"]
