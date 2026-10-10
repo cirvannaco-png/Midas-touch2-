@@ -16,6 +16,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $stager = Join-Path $repoRoot "tools/stage_mt5_package.py"
 $expertDir = Join-Path $TerminalDataPath "MQL5/Experts/MedisTouch"
 $indicatorDir = Join-Path $TerminalDataPath "MQL5/Indicators/MedisTouch"
+$testRoot = Join-Path $TerminalDataPath "MQL5/Scripts/MedisTouchTests"
 $expertSource = Join-Path $expertDir "MedisTouch_v2.8.mq5"
 $indicatorSource = Join-Path $indicatorDir "MedisTouch_Indicator_v2.8.mq5"
 
@@ -41,7 +42,7 @@ try {
     }
 
     Write-Host "Staging EA and indicator into the selected MT5 data folder..."
-    & python $stager --destination $expertDir --indicator-destination $indicatorDir
+    & python $stager --destination $expertDir --indicator-destination $indicatorDir --test-destination $testRoot
     if ($LASTEXITCODE -ne 0) {
         throw "MQL5 staging failed."
     }
@@ -107,6 +108,19 @@ function Invoke-MetaEditorCompile {
 Invoke-MetaEditorCompile -SourcePath $expertSource -LogPath (Join-Path $LogDirectory "MedisTouch_v2.8.compile.log")
 Invoke-MetaEditorCompile -SourcePath $indicatorSource -LogPath (Join-Path $LogDirectory "MedisTouch_Indicator_v2.8.compile.log")
 
+$testSourceDir = Join-Path $testRoot "tests"
+$testSources = @(
+    "ConfigSyncContract.mq5",
+    "DecisionEngineGeometry.mq5",
+    "DynamicStopEngine.mq5"
+)
+foreach ($testName in $testSources) {
+    $testSource = Join-Path $testSourceDir $testName
+    $testLog = Join-Path $LogDirectory (([System.IO.Path]::GetFileNameWithoutExtension($testName)) + ".compile.log")
+    Invoke-MetaEditorCompile -SourcePath $testSource -LogPath $testLog
+}
+
 Write-Host ""
-Write-Host "MetaEditor compilation completed with zero errors for both entry points."
+Write-Host "MetaEditor compilation completed with zero errors for the EA, indicator, and three compile-test harnesses."
+Write-Host "Run the three staged scripts from the MT5 Navigator Scripts tree and check their Journal output for runtime assertion failures."
 Write-Host "This verifies compilation only; run the Strategy Tester and inspect its report before live deployment."
