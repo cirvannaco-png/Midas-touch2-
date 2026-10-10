@@ -28,7 +28,6 @@ private:
    CProductionMonitor* m_monitor;
    int                 FindByDecisionAndLeg(long id,int legIndex);
    int                 FindByTicket(ulong ticket);
-   bool                PositionIdentifierIsOpen(ulong identifier);
 
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
