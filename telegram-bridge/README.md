@@ -223,13 +223,16 @@ It is **not** run by an in-process scheduler: this service is on Render's free w
 spins down after 15 minutes idle (see `/render.yaml`), so nothing running inside the process
 could reliably wake itself up on a biweekly schedule.
 
-Instead, the GitLab scheduled pipeline runs every Saturday at 06:00 UTC (safely inside the
-weekend market-closed window), parity-checks the date so it only actually fires every *other*
-Saturday, and `curl`s the endpoint — which conveniently also wakes the sleeping service, since
-the wake-up call and the trigger are the same request. A manually started GitLab pipeline can
-run the cycle on demand regardless of parity.
+Instead, configure a GitLab **pipeline schedule** on the repository's default branch with
+cron `0 6 * * 6` (every Saturday at 06:00 UTC, inside the weekend market-closed window) and
+the variable `SCHEDULE_TASK=biweekly-recalibration`. The job's UTC parity guard makes the
+recalibration request run only every *other* Saturday. The bridge request also wakes a sleeping
+Render service, because wake-up and trigger are the same HTTPS request.
 
-Requires two protected/masked GitLab CI/CD variables:
+The schedule itself is a GitLab project setting and is **not created by this YAML change**. In
+GitLab, open **Build → Pipeline schedules**, create the schedule on the default branch, set the
+cron above, add `SCHEDULE_TASK=biweekly-recalibration`, and save it. Then add these protected/masked
+GitLab CI/CD variables:
 
 | Secret            | Value                                                        |
 |--------------------|--------------------------------------------------------------|
@@ -269,7 +272,7 @@ The accepted schema is implemented in `app/api/backtest_evidence.py`; regression
 
 ### OutcomeTracker CSV builder and submitter CLI
 
-The repository now includes a strict normalizer for the EA's `MedisTouch_Outcomes_<symbol>.csv` format. It reads the `SignalID` epoch suffix, `RealizedR`, fill/collision state, cost fields, and the actual `Symbol`/`EntryTF` values. It deliberately requires an explicit `signal_id_epoch_basis` (`unix_utc` or `broker_wall_clock`; the latter also needs the verified server UTC offset), three explicit chronological walk-forward fold windows, a locked OOS window, and explicitly declared warm-up/embargo exclusions. It refuses to guess timestamps or silently discard unassigned outcomes.
+The repository now includes a strict normalizer for the EA's versioned `MedisTouch_Outcomes_v2_<symbol>.csv` format. It reads the `SignalID` epoch suffix, `OutcomeEpoch`, `RealizedR`, fill/collision state, cost fields, and the actual `Symbol`/`EntryTF` values. Tester resolution timestamps are recorded at the resolution bar's close so ambiguous intrabar exit times are not attributed to an earlier partition. It deliberately requires an explicit `signal_id_epoch_basis` (`unix_utc` or `broker_wall_clock`; the latter also needs the verified server UTC offset), three explicit chronological walk-forward fold windows, a locked OOS window, and explicitly declared warm-up/embargo exclusions. It refuses to guess timestamps or silently discard unassigned outcomes. Legacy `MedisTouch_Outcomes_<symbol>.csv` files do not have this required event-time contract and must not be renamed to masquerade as v2 evidence.
 
 Prepare a sidecar manifest containing the exact configuration parameters, EA/terminal build, source commit, data version, historical report path, dataset SHA-256, fold windows, locked OOS dates, and research artifacts. Put relative paths to the source report and CSV beside the manifest. If the raw market-data file is available, set `dataset_path` in the manifest; the builder verifies that its digest matches `dataset_sha256`. The CSV/report/dataset digests are retained as provenance, but they are not cryptographic proof that a file came from MT5.
 
