@@ -5,6 +5,9 @@ EA = ROOT / "EA" / "MedisTouch_v2.8.mq5"
 INDICATOR = ROOT / "EA" / "MedisTouch_Indicator_v2.8.mq5"
 KEY_LEVELS = ROOT / "EA" / "includes" / "SmartMoney" / "ExtendedKeyLevels.mqh"
 RISK = ROOT / "EA" / "includes" / "Trading" / "RiskEngine.mqh"
+PORTFOLIO = ROOT / "EA" / "includes" / "Portfolio" / "PortfolioManager.mqh"
+BROKER = ROOT / "EA" / "includes" / "Execution" / "BrokerAdapter.mqh"
+ORDERS = ROOT / "EA" / "includes" / "Execution" / "OrderManager.mqh"
 
 
 def test_fx_session_filter_is_opt_in():
@@ -29,13 +32,105 @@ def test_psychological_price_grid_is_not_xau_hardcoded():
     assert "single-symbol XAUUSD" not in levels
 
 
-def test_risk_sizing_uses_symbol_native_trade_properties():
+def test_risk_sizing_uses_mt5_account_currency_profit_model():
     text = RISK.read_text(encoding="utf-8")
     for token in (
-        "SYMBOL_TRADE_TICK_SIZE",
-        "SYMBOL_TRADE_TICK_VALUE",
+        "OrderCalcProfit(",
+        "EstimateStopLossPerLot",
+        "ACCOUNT_EQUITY",
         "SYMBOL_VOLUME_MIN",
         "SYMBOL_VOLUME_MAX",
         "SYMBOL_VOLUME_STEP",
+        "MathFloor(lots/lotStep",
     ):
         assert token in text
+
+
+def test_risk_validation_requires_directional_sl_tp_geometry():
+    text = RISK.read_text(encoding="utf-8")
+    assert "if(!(sl<entry && tp1>entry)) return false;" in text
+    assert "if(!(sl>entry && tp1<entry)) return false;" in text
+    assert "setup.tp2>0.0 && setup.tp2<=entry" in text
+    assert "setup.final_tp>0.0 && setup.final_tp<=entry" in text
+    assert "setup.tp2>0.0 && setup.tp2>=entry" in text
+    assert "setup.final_tp>0.0 && setup.final_tp>=entry" in text
+
+
+def test_minimum_lot_override_emits_explicit_risk_warning():
+    text = EA.read_text(encoding="utf-8")
+    assert "RISK BUDGET OVERRIDE:" in text
+    assert "Disable InpAllowMinLotOverride to preserve strict sizing." in text
+
+
+def test_market_orders_size_and_validate_at_worst_allowed_fill():
+    ea = EA.read_text(encoding="utf-8")
+    risk = RISK.read_text(encoding="utf-8")
+    assert "bool CRiskEngine::ValidateSetupAtEntry(" in risk
+    assert "sizingEntry=(chosen.type==ORDER_TYPE_BUY)?entry+deviation:entry-deviation;" in ea
+    assert "ValidateSetupAtEntry(chosen,sizingEntry,InpMinRiskReward,InpMaxSLDistanceATR,atr)" in ea
+    assert "InpRiskPercentPerTrade*fraction,sizingEntry,chosen.stop_loss" in ea
+    assert "RiskAmountForLots(_Symbol,legLots[leg],sizingEntry,chosen.stop_loss)" in ea
+
+
+def test_portfolio_risk_includes_open_pending_orders():
+    text = PORTFOLIO.read_text(encoding="utf-8")
+    assert "double PendingOrderRiskAmount(ulong ticket);" in text
+    assert "for(int i=0;i<OrdersTotal();i++)" in text
+    assert "ORDER_VOLUME_CURRENT" in text
+    assert "PendingOrderRiskAmount(ticket)" in text
+    assert "position or pending order under this magic number has uncomputable risk" in text
+
+
+def test_final_target_cannot_be_missing_or_negative():
+    text = RISK.read_text(encoding="utf-8")
+    assert "setup.final_tp<=0.0 || setup.tp2<0.0" in text
+
+
+def test_broker_mutations_require_server_retcode_confirmation():
+    text = BROKER.read_text(encoding="utf-8")
+    for method in ("CancelOrder", "ModifySLTP", "ClosePartial", "CloseFull"):
+        start = text.index(f"CBrokerAdapter::{method}(")
+        body = text[start:]
+        body = body[:body.index("\n//+------------------------------------------------------------------+") if "\n//+------------------------------------------------------------------+" in body else len(body)]
+        assert "LastRequestOk(" in body, f"{method} must inspect the broker retcode"
+        assert "serverAccepted" in body, f"{method} must not rely on the CTrade bool alone"
+
+
+def test_placed_retcode_is_not_treated_as_completed_mutation():
+    text = BROKER.read_text(encoding="utf-8")
+    assert "if(code==TRADE_RETCODE_DONE || code==TRADE_RETCODE_DONE_PARTIAL) return true;" in text
+    assert 'if(code==TRADE_RETCODE_PLACED &&' in text
+    assert '(action=="PlaceLimit" || action=="MarketBuy" || action=="MarketSell")) return true;' in text
+
+
+def test_market_request_without_fill_remains_pending_for_reconciliation():
+    broker = BROKER.read_text(encoding="utf-8")
+    orders = ORDERS.read_text(encoding="utf-8")
+    # A market request is only treated as filled after the deal maps to the live position.
+    # Keep this invariant aligned with BrokerAdapter's deal/position reconciliation logic.
+    assert "fillPriceOut=0.0;" in broker
+    assert "dealTicket>0 && ticketOut>0 && PositionSelectByTicket(ticketOut)" in broker
+    assert "dealPositionId>0 && livePositionId==dealPositionId" in broker
+    assert "fillPriceOut=m_trade.ResultPrice();" in broker
+    assert "accepted without a confirmed live-position ticket" in orders
+    assert "if(fillPrice>0.0)" in orders
+    assert "MarkFilledFromPending" in orders
+
+
+def test_market_order_slippage_is_bounded_by_the_sized_entry_band():
+    broker = BROKER.read_text(encoding="utf-8")
+    orders = ORDERS.read_text(encoding="utf-8")
+    ea = EA.read_text(encoding="utf-8")
+    assert "int deviationPoints = 20" in broker
+    assert "m_trade.SetDeviationInPoints((ulong)MathMax(0,deviationPoints))" in broker
+    assert "brokerDeviationPoints=(int)MathMax(0.0,MathFloor(maxPriceSlippage/point));" in orders
+    assert "comment,brokerDeviationPoints" in orders
+    assert "double fallbackSlip=20.0*point;" in ea
+    assert "Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0)" in orders
+
+
+def test_atr_entry_band_never_rounds_broker_deviation_outward():
+    orders = ORDERS.read_text(encoding="utf-8")
+    assert "worstAllowedFill=(decision.setup.type==ORDER_TYPE_BUY)?entry+maxEntryDeviation:entry-maxEntryDeviation;" in orders
+    assert "maxPriceSlippage=(decision.setup.type==ORDER_TYPE_BUY)?worstAllowedFill-marketPrice:marketPrice-worstAllowedFill;" in orders
+    assert "MathFloor(maxPriceSlippage/point)" in orders

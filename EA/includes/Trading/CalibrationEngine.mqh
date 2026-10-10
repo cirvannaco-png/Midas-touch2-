@@ -12,13 +12,12 @@
 // the sample survives restarts.
 //
 // HONEST LIMITATIONS — read before trusting the numbers this produces:
-//  1. This does NOT change trading behavior on its own. Nothing in the
-//     EA gates on calibrated probability yet — it is purely an
-//     observability layer that answers "is an 80 actually an 80?" You
-//     have to look at the numbers and decide what to do with them (e.g.
-//     discover 90+ underperforms 80-89 and investigate why, per review
-//     item #9). Wiring a live gate off this is a deliberate next step,
-//     not something this file does implicitly.
+//  1. Calibration does not change the EA's ordinary single-entry eligibility
+//     or turn raw setup confidence into an entry probability. It is consumed
+//     by CMultiTradeEngine as a hard gate for multi-leg exposure: that path
+//     requires a calibrated bucket sample above MIN_SAMPLE and a calibrated
+//     probability above configured thresholds. A calibration result is not
+//     a general-purpose forecast and does not run parameter optimization.
 //  2. Sample sizes below MIN_SAMPLE (default 30) per bucket are reported
 //     but flagged low-confidence — with a live strategy this realistically
 //     means MONTHS of forward/backtest data before any bucket's number
@@ -71,7 +70,7 @@ public:
      }
 
    // Call once per resolved, sized (lots>0), non-ambiguous trade — see
-   // COutcomeTracker::FinalizeExit() for the call site. netPnL > 0 counts
+   // COutcomeTrackerLive::Finalize() is the live call site; the legacy simulator tracker has a parallel finalization path. netPnL > 0 counts
    // as a win, < 0 a loss, == 0 a scratch (matches OutcomeStats'
    // win/loss/scratch convention exactly, so this stays consistent with
    // the dashboard's headline win rate).
