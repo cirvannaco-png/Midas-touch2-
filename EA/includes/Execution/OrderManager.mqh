@@ -87,19 +87,6 @@ int COrderManager::FindByTicket(ulong ticket)
          m_trades[i].positionIdentifier==ticket) return i;
    return -1;
   }
-//+------------------------------------------------------------------+
-bool COrderManager::PositionIdentifierIsOpen(ulong identifier)
-  {
-   if(identifier==0)return false;
-   for(int i=0;i<PositionsTotal();i++)
-     {
-      ulong currentTicket=PositionGetTicket(i);
-      if(currentTicket==0)continue;
-      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==identifier)return true;
-     }
-   return false;
-  }
-//+------------------------------------------------------------------+
 ulong COrderManager::PositionTicketAt(int idx)
   {
    if(idx<0 || idx>=ArraySize(m_trades))return 0;
@@ -239,6 +226,7 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    m_trades[idx].decision=decision;
    m_trades[idx].volume=volume;
    m_trades[idx].fillPrice=0.0;
+   m_trades[idx].positionIdentifier=0;
    m_trades[idx].legIndex=legIndex;
    m_trades[idx].fsm.Start(decision.decision_id);
    m_trades[idx].fsm.BindMonitor(m_monitor);
