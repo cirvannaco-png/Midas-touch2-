@@ -47,6 +47,7 @@ These are experiment defaults, not live recommendations. Gaps, liquidity and exe
 11. Active pending orders reserve portfolio risk and count against symbol/group concurrency limits. Missing or invalid protection on a pending order is unknown exposure and blocks new entries.
 12. A market request without a confirmed deal must remain pending until the transaction event reconciles order to position; a request-method boolean alone is not fill confirmation.
 13. Stop modification, pending-order cancellation, and close operations must check the trade-server retcode; a successful local request call is not sufficient evidence that the broker accepted the operation.
+14. Market-entry deviation must be enforced by the broker request in `SYMBOL_POINT` units, not only by a preflight quote check. Convert only the remaining distance to the worst-case sized fill into broker points and round down; when the ATR band is disabled, size against the configured fixed-point fallback.
 
 ## Test design
 
