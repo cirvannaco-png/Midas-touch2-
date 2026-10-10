@@ -32,7 +32,7 @@ private:
 
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
-   bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0,int defaultDeviationPoints=20);
+   bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0);
    bool              RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice=0.0,int legIndex=0);
    int               OpenCount();
    int               Total() { return ArraySize(m_trades); }
@@ -198,7 +198,7 @@ int COrderManager::LegIndexForTicket(ulong ticket)
    return idx<0 ? 0 : m_trades[idx].legIndex;
   }
 //+------------------------------------------------------------------+
-bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex,int defaultDeviationPoints)
+bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex)
   {
    ticketOut=0;
    if(decision.action!=POLICY_EXECUTE_ONLY && decision.action!=POLICY_EXECUTE_AND_SIGNAL) return false;
@@ -208,7 +208,7 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    if(FindByDecisionAndLeg(decision.decision_id,legIndex)>=0) return false;
 
    double entry=ResolveExecutionEntry(decision.setup);
-   int brokerDeviationPoints=(int)MathMax(0,defaultDeviationPoints);
+   int brokerDeviationPoints=20; // Fixed fallback when the ATR band is disabled.
    if(useMarket && maxEntryDeviation>0.0)
      {
       MqlTick tick;
