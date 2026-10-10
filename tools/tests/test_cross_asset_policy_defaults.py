@@ -115,3 +115,22 @@ def test_market_request_without_fill_remains_pending_for_reconciliation():
     assert "accepted without a confirmed live-position ticket" in orders
     assert "if(fillPrice>0.0)" in orders
     assert "MarkFilledFromPending" in orders
+
+
+def test_market_order_slippage_is_bounded_by_the_sized_entry_band():
+    broker = BROKER.read_text(encoding="utf-8")
+    orders = ORDERS.read_text(encoding="utf-8")
+    ea = EA.read_text(encoding="utf-8")
+    assert "int deviationPoints = 20" in broker
+    assert "m_trade.SetDeviationInPoints((ulong)MathMax(0,deviationPoints))" in broker
+    assert "brokerDeviationPoints=(int)MathMax(0.0,MathFloor(maxPriceSlippage/point));" in orders
+    assert "comment,brokerDeviationPoints" in orders
+    assert "input int InpBrokerDeviationPoints=20;" in ea
+    assert "double fallbackSlip=MathMax(0,InpBrokerDeviationPoints)*point;" in ea
+
+
+def test_atr_entry_band_never_rounds_broker_deviation_outward():
+    orders = ORDERS.read_text(encoding="utf-8")
+    assert "worstAllowedFill=(decision.setup.type==ORDER_TYPE_BUY)?entry+maxEntryDeviation:entry-maxEntryDeviation;" in orders
+    assert "maxPriceSlippage=(decision.setup.type==ORDER_TYPE_BUY)?worstAllowedFill-marketPrice:marketPrice-worstAllowedFill;" in orders
+    assert "MathFloor(maxPriceSlippage/point)" in orders
