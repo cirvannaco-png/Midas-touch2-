@@ -267,6 +267,22 @@ A complete, positive OOS evaluation may move a registered candidate from `OPTIMI
 
 The accepted schema is implemented in `app/api/backtest_evidence.py`; regression coverage lives in `tests/test_backtest_evidence_api.py`.
 
+### Submitter CLI
+
+Once a trusted exporter has assembled the normalized evidence bundle, validate it locally without network access:
+
+```bash
+python tools/submit_tester_evidence.py --file /path/to/tester-evidence.json --dry-run
+```
+
+To submit, set `BRIDGE_BASE_URL` to the HTTPS Render base URL and `BRIDGE_API_KEY` to the same secret as the bridge's `SECRET_KEY`, then run:
+
+```bash
+python tools/submit_tester_evidence.py --file /path/to/tester-evidence.json
+```
+
+The client prints only the run/configuration identifiers, evidence version, decision, lifecycle, and payload digest. Do not commit evidence bundles containing confidential broker/data information or store the API key in the repository. This CLI transports normalized JSON; it does not parse raw MT5 HTML/XML/CSV output or create missing fold, counterfactual, feature-importance, clustered-MDA, or neighboring-configuration evidence.
+
 ## Payments & copy trading
 
 **Payments are Telegram-native, not a third-party webhook gateway.** `/subscribe` opens a Telegram
