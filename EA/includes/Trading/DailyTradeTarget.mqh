@@ -16,6 +16,7 @@ private:
    double   m_minQualifiedR;
    string   m_storageKey;
    string   m_lockKey;
+   double   m_lockValue;
 
    int DateKey(datetime at)
      {
@@ -53,9 +54,23 @@ private:
       bool created=GlobalVariableTemp(m_lockKey);
       // GlobalVariableTemp returns false when another EA already created the lock.
       if(!created && !GlobalVariableCheck(m_lockKey))return false;
-      for(int attempt=0;attempt<100;attempt++)
+      for(int attempt=0;attempt<250;attempt++)
         {
-         if(GlobalVariableSetOnCondition(m_lockKey,1.0,0.0))return true;
+         double token=(double)GetTickCount64()+1.0;
+         if(GlobalVariableSetOnCondition(m_lockKey,token,0.0))
+           {
+            m_lockValue=token;
+            return true;
+           }
+         double held=GlobalVariableGet(m_lockKey);
+         double now=(double)GetTickCount64();
+         // Recover a lease left behind by an interrupted EA event. CAS ensures
+         // an old owner cannot release a lock already acquired by another owner.
+         if(held>0.0 && (now-held>30000.0 || (held==1.0 && now>30000.0)))
+           {
+            GlobalVariableSetOnCondition(m_lockKey,0.0,held);
+            continue;
+           }
          Sleep(1);
         }
       Print("Midas Touch daily target: timed out acquiring shared counter lock.");
@@ -64,8 +79,9 @@ private:
 
    void ReleaseLock()
      {
-      if(StringLen(m_lockKey)>0)
-         GlobalVariableSetOnCondition(m_lockKey,0.0,1.0);
+      if(StringLen(m_lockKey)>0 && m_lockValue>0.0)
+         GlobalVariableSetOnCondition(m_lockKey,0.0,m_lockValue);
+      m_lockValue=0.0;
      }
 
    // Migrate the previous single-day counter once, then keep a stable baseline.
@@ -192,7 +208,7 @@ private:
 
 public:
    CDailyTradeTarget():m_target(3),m_count(0),m_dateKey(0),m_weekday(false),
-      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""){}
+      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""),m_lockValue(0.0){}
 
    void Init(int target,double minQualifiedR,ulong magic)
      {
