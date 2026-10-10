@@ -15,7 +15,7 @@ private:
    ulong             m_lastLatencyUs;
 
    bool              LastRequestOk(string action);
-   ulong             ResolvePositionTicket();
+   ulong             ResolvePositionTicket(bool &fillConfirmedOut);
    bool              IsRetryable(uint retcode);
    int               DelayForRetcode(uint retcode);
    bool              IsConnected();
@@ -25,8 +25,8 @@ private:
 public:
    void              Init(ulong magic, int maxRetries = 3, int retryDelayMs = 300);
    double            LastLatencyMs() { return (double)m_lastLatencyUs / 1000.0; }
-   bool              MarketBuy(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "");
-   bool              MarketSell(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "");
+   bool              MarketBuy(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, bool &fillConfirmedOut, string comment = "");
+   bool              MarketSell(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, bool &fillConfirmedOut, string comment = "");
    bool              PlaceLimit(string symbol, ENUM_ORDER_TYPE type, double volume, double price,
                                 double sl, double tp, ulong &ticketOut, string comment = "");
    bool              CancelOrder(ulong ticket);
@@ -167,27 +167,30 @@ bool CBrokerAdapter::LastRequestOk(string action)
    return false;
   }
 //+------------------------------------------------------------------+
-ulong CBrokerAdapter::ResolvePositionTicket()
+ulong CBrokerAdapter::ResolvePositionTicket(bool &fillConfirmedOut)
   {
+   // Never interpret an order ticket as a filled position identifier. If the
+   // server accepted the request but the deal/position identity is not yet
+   // visible, return the order ticket and let TRADE_TRANSACTION_DEAL_ADD
+   // promote the managed trade from Pending to Filled.
+   fillConfirmedOut=false;
    ulong dealTicket=m_trade.ResultDeal();
-   if(dealTicket==0) return m_trade.ResultOrder();
-   if(!HistoryDealSelect(dealTicket))
+   if(dealTicket>0 && HistoryDealSelect(dealTicket))
      {
-      PrintFormat("MedisTouch BrokerAdapter: could not select deal #%d; falling back to order ticket.",dealTicket);
-      return m_trade.ResultOrder();
+      ulong positionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
+      uint code=m_trade.ResultRetcode();
+      if(positionId>0 && code==TRADE_RETCODE_DONE)
+        {
+         fillConfirmedOut=true;
+         return positionId;
+        }
      }
-   ulong positionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
-   if(positionId==0)
-     {
-      PrintFormat("MedisTouch BrokerAdapter: deal #%d has no DEAL_POSITION_ID; falling back to order ticket.",dealTicket);
-      return m_trade.ResultOrder();
-     }
-   return positionId;
+   return m_trade.ResultOrder();
   }
 //+------------------------------------------------------------------+
-bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
+bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,bool &fillConfirmedOut,string comment)
   {
-   ticketOut=0; fillPriceOut=0.0;
+   ticketOut=0; fillPriceOut=0.0; fillConfirmedOut=false;
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,true)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,true,"MarketBuy")) { m_lastLatencyUs=0; return false; }
@@ -196,9 +199,13 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
      {
       if(m_trade.Buy(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketBuy"))
         {
-         ticketOut=ResolvePositionTicket();
-         fillPriceOut=m_trade.ResultPrice();
+         ticketOut=ResolvePositionTicket(fillConfirmedOut);
+         fillPriceOut=fillConfirmedOut?m_trade.ResultPrice():0.0;
          m_lastLatencyUs=GetMicrosecondCount()-t0;
+         if(ticketOut==0)
+            Print("CRITICAL: MarketBuy accepted by trade API but neither a position identifier nor order ticket was available; inspect broker history before retrying.");
+         else if(!fillConfirmedOut)
+            PrintFormat("MedisTouch BrokerAdapter: MarketBuy accepted as order #%I64u; waiting for confirmed fill event.",ticketOut);
          return ticketOut>0;
         }
       uint code=m_trade.ResultRetcode();
@@ -209,9 +216,9 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
    return false;
   }
 //+------------------------------------------------------------------+
-bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
+bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,bool &fillConfirmedOut,string comment)
   {
-   ticketOut=0; fillPriceOut=0.0;
+   ticketOut=0; fillPriceOut=0.0; fillConfirmedOut=false;
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,false)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_BID);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,false,"MarketSell")) { m_lastLatencyUs=0; return false; }
@@ -220,9 +227,13 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
      {
       if(m_trade.Sell(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketSell"))
         {
-         ticketOut=ResolvePositionTicket();
-         fillPriceOut=m_trade.ResultPrice();
+         ticketOut=ResolvePositionTicket(fillConfirmedOut);
+         fillPriceOut=fillConfirmedOut?m_trade.ResultPrice():0.0;
          m_lastLatencyUs=GetMicrosecondCount()-t0;
+         if(ticketOut==0)
+            Print("CRITICAL: MarketSell accepted by trade API but neither a position identifier nor order ticket was available; inspect broker history before retrying.");
+         else if(!fillConfirmedOut)
+            PrintFormat("MedisTouch BrokerAdapter: MarketSell accepted as order #%I64u; waiting for confirmed fill event.",ticketOut);
          return ticketOut>0;
         }
       uint code=m_trade.ResultRetcode();
@@ -275,24 +286,88 @@ bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
    bool isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
    double refPrice=isBuy ? SymbolInfoDouble(symbol,SYMBOL_BID) : SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,isBuy,"ModifySLTP")) return false;
-   if(m_trade.PositionModify(ticket,sl,tp)) return true;
-   LastRequestOk("ModifySLTP"); return false;
+   bool submitted=m_trade.PositionModify(ticket,sl,tp);
+   if(submitted && m_trade.ResultRetcode()==TRADE_RETCODE_DONE) return true;
+   uint code=m_trade.ResultRetcode();
+   PrintFormat("MedisTouch BrokerAdapter: ModifySLTP was not confirmed by the trade server (submitted=%s, retcode=%u, %s).",
+               submitted?"true":"false",code,m_trade.ResultRetcodeDescription());
+   return false;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::ClosePartial(ulong ticket,double volume)
   {
    if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
-   if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   if(m_trade.PositionClosePartial(ticket,volume)) return true;
-   LastRequestOk("ClosePartial"); return false;
+   string symbol=PositionGetString(POSITION_SYMBOL);
+   if(!IsMarketOpenForTrading(symbol,false,true)) return false;
+
+   // CTrade::PositionClosePartial is a hedging-account operation only. In
+   // netting mode, an opposite deal could close/reverse the aggregated symbol
+   // position, so this method deliberately refuses to emulate a partial close.
+   if(AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+     {
+      Print("MedisTouch BrokerAdapter: partial close is unsupported on netting/exchange accounts; preserve the existing SL/TP instead of risking a reversal.");
+      return false;
+     }
+
+   double currentVolume=PositionGetDouble(POSITION_VOLUME);
+   double minVolume=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+   double step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+   if(currentVolume<=0.0 || minVolume<=0.0 || step<=0.0 || volume<=0.0)
+     {
+      PrintFormat("MedisTouch BrokerAdapter: ClosePartial refused due to invalid volume metadata (current=%.8f, requested=%.8f, min=%.8f, step=%.8f).",
+                  currentVolume,volume,minVolume,step);
+      return false;
+     }
+
+   // Round down to the broker's volume grid, and never leave a remainder below
+   // minimum volume. This avoids  invalid-volume requests for fractional lots.
+   double maxPartial=currentVolume-minVolume;
+   if(maxPartial<minVolume-1e-10)
+     {
+      PrintFormat("MedisTouch BrokerAdapter: position volume %.8f is too small for a legal partial close; retaining the runner.",currentVolume);
+      return false;
+     }
+   double bounded=MathMin(volume,maxPartial);
+   double steps=MathFloor((bounded/step)+1e-9);
+   double normalized=steps*step;
+   int volumeDigits=0;
+   for(int digits=0;digits<=8;digits++)
+     {
+      double scaled=step*MathPow(10.0,digits);
+      if(MathAbs(scaled-MathRound(scaled))<1e-8)
+        {
+         volumeDigits=digits;
+         break;
+        }
+      volumeDigits=digits;
+     }
+   normalized=NormalizeDouble(normalized,volumeDigits);
+   double remainder=NormalizeDouble(currentVolume-normalized,volumeDigits);
+   if(normalized<minVolume-1e-10 || remainder<minVolume-1e-10)
+     {
+      PrintFormat("MedisTouch BrokerAdapter: normalized partial volume %.8f would leave illegal remainder %.8f; keeping the position unchanged.",
+                  normalized,remainder);
+      return false;
+     }
+
+   bool submitted=m_trade.PositionClosePartial(ticket,normalized);
+   uint code=m_trade.ResultRetcode();
+   if(submitted && (code==TRADE_RETCODE_DONE || code==TRADE_RETCODE_DONE_PARTIAL)) return true;
+   PrintFormat("MedisTouch BrokerAdapter: ClosePartial was not confirmed by the trade server (submitted=%s, requested=%.8f, retcode=%u, %s).",
+               submitted?"true":"false",normalized,code,m_trade.ResultRetcodeDescription());
+   return false;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::CloseFull(ulong ticket)
   {
    if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
    if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   if(m_trade.PositionClose(ticket)) return true;
-   LastRequestOk("CloseFull"); return false;
+   bool submitted=m_trade.PositionClose(ticket);
+   uint code=m_trade.ResultRetcode();
+   if(submitted && code==TRADE_RETCODE_DONE) return true;
+   PrintFormat("MedisTouch BrokerAdapter: CloseFull was not confirmed by the trade server (submitted=%s, retcode=%u, %s).",
+               submitted?"true":"false",code,m_trade.ResultRetcodeDescription());
+   return false;
   }
 #endif
 //+------------------------------------------------------------------+

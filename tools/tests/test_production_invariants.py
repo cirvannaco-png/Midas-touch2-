@@ -132,3 +132,123 @@ def test_outcome_tracker_aggregates_risk_across_child_fills():
     assert "p.weightedRiskDistLots=p.riskDist*volume" in t
     assert "p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume" in t
     assert "p.weightedRiskDistLots>0.0?p.weightedRiskDistLots" in t
+
+def test_position_modify_requires_trade_server_confirmation():
+    """CTrade's bool return is a request-check result, not proof the server applied SLTP."""
+    broker=(ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh").read_text()
+    assert "submitted && m_trade.ResultRetcode()==TRADE_RETCODE_DONE" in broker
+    assert "ModifySLTP was not confirmed by the trade server" in broker
+
+
+def test_partial_and_full_closes_require_confirmed_server_result():
+    broker=(ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh").read_text()
+    assert "submitted && (code==TRADE_RETCODE_DONE || code==TRADE_RETCODE_DONE_PARTIAL)" in broker
+    assert "submitted && code==TRADE_RETCODE_DONE" in broker
+    assert "ClosePartial was not confirmed by the trade server" in broker
+    assert "CloseFull was not confirmed by the trade server" in broker
+
+def test_position_manager_resolves_mutable_ticket_from_stable_position_identifier():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    manager=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
+    assert "ulong                positionIdentifier;" in orders
+    assert "PositionTicketAt(int idx)" in orders
+    assert "POSITION_IDENTIFIER)==identifier" in orders
+    assert "ArchiveClosedPosition(ulong positionIdentifier)" in orders
+    assert "ulong ticket=m_orders.PositionTicketAt(i);" in manager
+    assert "m_orders.ArchiveClosedPosition(positionIdentifier);" in manager
+    assert "COrderManager::PositionIdentifierIsOpen" not in orders
+
+
+def test_market_order_submission_does_not_assume_accepted_means_filled():
+    broker=(ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh").read_text()
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    ea=EA.read_text()
+    assert "bool &fillConfirmedOut" in broker
+    assert "fillConfirmedOut=false;" in broker
+    assert "if(fillConfirmed)" in orders
+    assert "awaiting confirmed deal event" in orders
+    assert "MarkFilledFromPending(orderTicket,position,price,volume)" in ea
+
+
+def test_partial_fills_refresh_live_position_volume_and_average_entry():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    assert "Additional partial fills for the same broker order" in orders
+    assert "m_trades[i].volume=PositionGetDouble(POSITION_VOLUME);" in orders
+    assert "double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);" in orders
+    assert "if(actualEntry>0.0)m_trades[i].fillPrice=actualEntry;" in orders
+
+def test_unfilled_accepted_orders_release_capacity_when_cancelled_or_expired():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    ea=EA.read_text()
+    assert "MarkCancelledOrder(ulong orderTicket)" in orders
+    assert "g_orders.MarkCancelledOrder(trans.order)" in ea
+    assert "ORDER_STATE_CANCELED" in ea
+    assert "ORDER_STATE_EXPIRED" in ea
+    assert "ORDER_STATE_REJECTED" in ea
+
+
+def test_mql5_position_identity_methods_are_part_of_architecture_contract():
+    validator=(ROOT/"tools"/"validate_mql5_architecture.py").read_text()
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    assert '"MarkFilledFromPending": 4' in validator
+    assert '"MarkCancelledOrder": 1' in validator
+    assert "PositionTicketAt(int idx)" in orders
+    assert "PositionIdentifierAt(int idx)" in orders
+
+def test_partial_exit_obeys_hedging_mode_and_broker_volume_grid():
+    broker=(ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh").read_text()
+    manager=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
+    assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in broker
+    assert "SYMBOL_VOLUME_STEP" in broker
+    assert "MathFloor((bounded/step)+1e-9)" in broker
+    assert "remainder<minVolume-1e-10" in broker
+    assert "m_partialCloseSupported=(AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)" in manager
+    assert "m_partialCloseSupported && stateAfterStop==TS_PROTECTED" in manager
+
+
+def test_metaeditor_preflight_stages_and_compiles_all_mql5_entry_points():
+    script=(ROOT/"tools"/"compile_mt5.ps1").read_text()
+    stager=(ROOT/"tools"/"stage_mt5_package.py").read_text()
+    assert "tools/stage_mt5_package.py" in script
+    assert "MedisTouch_v2.8.mq5" in script
+    assert "MedisTouch_Indicator_v2.8.mq5" in script
+    assert "ConfigSyncContract.mq5" in script
+    assert "DecisionEngineGeometry.mq5" in script
+    assert "DynamicStopEngine.mq5" in script
+    assert "--test-destination $testRoot" in script
+    assert 'parser.add_argument("--test-destination"' in stager
+    assert "test_entry_points = sorted(test_source_dir.glob(\"*.mq5\"))" in stager
+    assert "/compile:" in script and '"/log"' in script and "/include:" in script
+    assert '$metaLogPath = [System.IO.Path]::ChangeExtension($SourcePath, ".log")' in script
+    assert "Copy-Item -LiteralPath $metaLogPath -Destination $LogPath -Force" in script
+    assert "zero compile errors" in script
+    assert "Remove-Item -LiteralPath $binaryPath" in script
+
+
+def test_active_live_guards_and_dynamic_stop_defaults_are_explicit():
+    ea=EA.read_text()
+    dynamic=(ROOT/"EA"/"includes"/"Execution"/"DynamicStopInputs.mqh").read_text()
+    assert "InpEnableExecution=true" in ea
+    assert "InpTrackOutcomes=true" in ea
+    assert "InpMaxDailyLossPercent=3.0" in ea
+    assert "InpMaxDrawdownPercent=10.0" in ea
+    assert "InpMaxPortfolioRiskPercent=3.0" in ea
+    assert "InpMaxCorrelationGroupRiskPercent=2.5" in ea
+    assert "InpEnableDynamicStop = true" in dynamic
+    assert "InpDynamicStopActivateAtR = 0.75" in dynamic
+    assert "InpDynamicStopBreakevenAtR = 1.00" in dynamic
+
+def test_netting_accounts_cannot_overlap_same_symbol_decisions():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in orders
+    assert "if(OpenCount()>0)" in orders
+    assert "PositionGetString(POSITION_SYMBOL)==decision.symbol" in orders
+    assert "OrderGetString(ORDER_SYMBOL)==decision.symbol" in orders
+    assert "one managed decision at a time is required on netting/exchange accounts" in orders
+
+
+def test_terminal_trade_identity_is_retained_for_delayed_close_events():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    assert "Retain terminal identity records briefly" in orders
+    assert "now-terminalAt<300" in orders
+    assert "fsm.LastChange()" in orders

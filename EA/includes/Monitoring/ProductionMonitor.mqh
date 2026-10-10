@@ -27,6 +27,12 @@ private:
    double            m_peakEquity;
    double            m_maxDrawdownAlertPercent;
    bool              m_drawdownAlertFired;
+   int               m_healthWindowSec;
+   int               m_recentBrokerRejects;
+   int               m_maxRecentBrokerRejects;
+   datetime          m_healthWindowStart;
+   double            m_maxCapacityFillLatencyMs;
+   bool              m_capacityLatencyFault;
 
    // LATENCY: running stats over every TS_DETECTED->TS_FILLED trade this
    // session. Running sum/count instead of storing every sample — this
@@ -43,7 +49,7 @@ private:
    double            m_latencyLastBrokerMs;
 
 public:
-   void              Init(string symbol, int heartbeatIntervalSec, double maxDrawdownAlertPercent);
+   void              Init(string symbol, int heartbeatIntervalSec, double maxDrawdownAlertPercent,int capacityHealthWindowMin=15,int maxRecentBrokerRejects=2,double maxCapacityFillLatencyMs=5000.0);
    void              OnTickCheck();             // call once per OnTick — cheap, cadence-gated internally
    void              NotifyBrokerReject();       // call when Submit()/BrokerAdapter reports a failed order
    void              NotifyIllegalTransition();  // hook for CTradeStateMachine's illegal-transition log — see note below
@@ -53,10 +59,11 @@ public:
    // slice of totalMs that was actually the broker round-trip, as
    // opposed to our own code between DETECTED and the order being sent).
    void              NotifyTradeLatency(double totalMs, double brokerMs);
+   bool              CapacityExpansionHealthy();
    string            StatusSummary();
   };
 //+------------------------------------------------------------------+
-void CProductionMonitor::Init(string symbol, int heartbeatIntervalSec, double maxDrawdownAlertPercent)
+void CProductionMonitor::Init(string symbol, int heartbeatIntervalSec, double maxDrawdownAlertPercent,int capacityHealthWindowMin,int maxRecentBrokerRejects,double maxCapacityFillLatencyMs)
   {
    m_symbol = symbol;
    m_heartbeatFile = "MedisTouch_Heartbeat_" + symbol + ".txt";
@@ -68,6 +75,12 @@ void CProductionMonitor::Init(string symbol, int heartbeatIntervalSec, double ma
    m_peakEquity = AccountInfoDouble(ACCOUNT_EQUITY);
    m_maxDrawdownAlertPercent = maxDrawdownAlertPercent;
    m_drawdownAlertFired = false;
+   m_healthWindowSec=MathMax(60,capacityHealthWindowMin*60);
+   m_recentBrokerRejects=0;
+   m_maxRecentBrokerRejects=MathMax(0,maxRecentBrokerRejects);
+   m_healthWindowStart=m_startTime;
+   m_maxCapacityFillLatencyMs=MathMax(0.0,maxCapacityFillLatencyMs);
+   m_capacityLatencyFault=false;
    m_latencySamples = 0;
    m_latencyTotalSumMs = 0.0;
    m_latencyTotalMaxMs = 0.0;
@@ -77,7 +90,13 @@ void CProductionMonitor::Init(string symbol, int heartbeatIntervalSec, double ma
    m_latencyLastBrokerMs = -1.0;
   }
 //+------------------------------------------------------------------+
-void CProductionMonitor::NotifyBrokerReject() { m_brokerRejectCount++; }
+void CProductionMonitor::NotifyBrokerReject()
+  {
+   m_brokerRejectCount++;
+   datetime now=TimeCurrent();
+   if(now-m_healthWindowStart>=m_healthWindowSec){m_healthWindowStart=now;m_recentBrokerRejects=0;m_capacityLatencyFault=false;}
+   m_recentBrokerRejects++;
+  }
 //+------------------------------------------------------------------+
 void CProductionMonitor::NotifyTradeLatency(double totalMs, double brokerMs)
   {
@@ -89,6 +108,8 @@ void CProductionMonitor::NotifyTradeLatency(double totalMs, double brokerMs)
    m_latencyLastBrokerMs = brokerMs;
    m_latencyBrokerSumMs += brokerMs;
    if(brokerMs > m_latencyBrokerMaxMs) m_latencyBrokerMaxMs = brokerMs;
+
+   if(m_maxCapacityFillLatencyMs>0.0 && totalMs>m_maxCapacityFillLatencyMs)m_capacityLatencyFault=true;
 
    // Flag it immediately rather than waiting for the next heartbeat tick
    // — a single outlier fill is worth knowing about the moment it
@@ -113,6 +134,14 @@ void CProductionMonitor::NotifyIllegalTransition() { m_illegalTransitionCount++;
 //+------------------------------------------------------------------+
 void CProductionMonitor::OnTickCheck()
   {
+   datetime healthNow=TimeCurrent();
+   if(healthNow-m_healthWindowStart>=m_healthWindowSec)
+     {
+      m_healthWindowStart=healthNow;
+      m_recentBrokerRejects=0;
+      m_capacityLatencyFault=false;
+     }
+
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    if(equity > m_peakEquity) m_peakEquity = equity;
 
@@ -145,6 +174,18 @@ void CProductionMonitor::OnTickCheck()
       m_latencySamples, m_latencyLastTotalMs, avgTotalMs, m_latencyTotalMaxMs,
       m_latencyLastBrokerMs, avgBrokerMs, m_latencyBrokerMaxMs));
    FileClose(handle);
+  }
+//+------------------------------------------------------------------+
+bool CProductionMonitor::CapacityExpansionHealthy()
+  {
+   datetime now=TimeCurrent();
+   if(now-m_healthWindowStart>=m_healthWindowSec)
+     {
+      m_healthWindowStart=now;
+      m_recentBrokerRejects=0;
+      m_capacityLatencyFault=false;
+     }
+   return m_recentBrokerRejects<=m_maxRecentBrokerRejects && !m_capacityLatencyFault;
   }
 //+------------------------------------------------------------------+
 string CProductionMonitor::StatusSummary()

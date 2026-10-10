@@ -89,6 +89,7 @@ def main() -> int:
     parser.add_argument("--source-root", default="EA")
     parser.add_argument("--destination", required=True)
     parser.add_argument("--indicator-destination")
+    parser.add_argument("--test-destination", help="Optional MQL5/Scripts subdirectory for compile-test harnesses")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -111,9 +112,15 @@ def main() -> int:
         print(f"error: missing indicator entry point: {indicator}", file=sys.stderr)
         return 1
 
+    test_source_dir = source_root / "tests"
+    test_entry_points = sorted(test_source_dir.glob("*.mq5")) if args.test_destination else []
+    if args.test_destination and not test_entry_points:
+        print(f"error: requested test staging but no test entry points found under {test_source_dir}", file=sys.stderr)
+        return 1
+
     validate_local_includes(
         source_root,
-        [expert] + ([indicator] if args.indicator_destination else []),
+        [expert] + ([indicator] if args.indicator_destination else []) + test_entry_points,
     )
 
     expert_destination = Path(args.destination).expanduser().resolve()
@@ -127,10 +134,20 @@ def main() -> int:
         shutil.copy2(indicator, indicator_destination / indicator.name)
         copy_tree(includes, indicator_destination / "includes")
 
+    if args.test_destination:
+        test_destination = Path(args.test_destination).expanduser().resolve()
+        staged_test_dir = test_destination / "tests"
+        staged_test_dir.mkdir(parents=True, exist_ok=True)
+        copy_tree(includes, test_destination / "includes")
+        for test_entry in test_entry_points:
+            shutil.copy2(test_entry, staged_test_dir / test_entry.name)
+
     print(f"Staged {expert.name} + {copied} include source file(s).")
     print(f"Expert location: {expert_destination}")
     if args.indicator_destination:
         print(f"Indicator location: {Path(args.indicator_destination).expanduser().resolve()}")
+    if args.test_destination:
+        print(f"Test harnesses staged: {len(test_entry_points)} under {Path(args.test_destination).expanduser().resolve() / 'tests'}")
     print("Include validation: passed.")
     return 0
 

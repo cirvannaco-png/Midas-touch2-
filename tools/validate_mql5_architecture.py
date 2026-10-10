@@ -145,7 +145,8 @@ INTERFACE_CONTRACTS = {
     ("includes/Execution/OrderManager.mqh", "COrderManager"): {
         "Init": 3,
         "Submit": 6,
-        "MarkFilledFromPending": 3,
+        "MarkFilledFromPending": 4,
+        "MarkCancelledOrder": 1,
         "DecisionIdForTicket": 1,
         "HasLiveTradeForDecision": 2,
     },

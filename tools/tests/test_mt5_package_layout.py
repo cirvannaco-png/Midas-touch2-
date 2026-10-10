@@ -73,3 +73,42 @@ def test_no_compiled_mql_binaries_in_source_tree():
         if p.is_file() and p.suffix.lower() in {".ex4", ".ex5"}
     ]
     assert binaries == []
+
+def test_stage_script_preserves_all_five_relative_include_trees(tmp_path):
+    import subprocess
+    import sys
+
+    expert_dir = tmp_path / "MQL5" / "Experts" / "MedisTouch"
+    indicator_dir = tmp_path / "MQL5" / "Indicators" / "MedisTouch"
+    test_root = tmp_path / "MQL5" / "Scripts" / "MedisTouchTests"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "stage_mt5_package.py"),
+            "--destination", str(expert_dir),
+            "--indicator-destination", str(indicator_dir),
+            "--test-destination", str(test_root),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    staged_entries = [
+        expert_dir / "MedisTouch_v2.8.mq5",
+        indicator_dir / "MedisTouch_Indicator_v2.8.mq5",
+        test_root / "tests" / "ConfigSyncContract.mq5",
+        test_root / "tests" / "DecisionEngineGeometry.mq5",
+        test_root / "tests" / "DynamicStopEngine.mq5",
+    ]
+    for entry in staged_entries:
+        assert entry.is_file(), f"staged entry point missing: {entry}"
+        for include in INCLUDE_RE.findall(_read(entry)):
+            assert (entry.parent / include).is_file(), (
+                f"{entry} has unresolved relative include {include}"
+            )
+
+    assert (test_root / "includes" / "Execution" / "DynamicStopEngine.mqh").is_file()
+    assert (expert_dir / "includes" / "Trading" / "OutcomeTrackerLive.mqh").is_file()
+    assert (indicator_dir / "includes" / "Monitoring" / "ProductionMonitor.mqh").is_file()
