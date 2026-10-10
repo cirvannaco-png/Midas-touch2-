@@ -110,7 +110,7 @@ def _valid_payload():
 
 
 def test_backtest_evidence_ingestion_requires_api_key(client):
-    response = client.post("/research/backtest-evidence", json=_valid_payload())
+    response = client.post("/research/backtest-evidence", headers={"X-API-Key": "wrong-key"}, json=_valid_payload())
     assert response.status_code in (401, 403)
 
 
@@ -186,8 +186,9 @@ def test_backtest_evidence_requires_three_walk_forward_folds(client, auth_header
 def test_trade_schema_rejects_inconsistent_outcome_contract(
     partition, outcome, realized_r, filled
 ):
-    from app.api.backtest_evidence import TesterTrade
     from pydantic import ValidationError
+
+    from app.api.backtest_evidence import TesterTrade
 
     data = {
         "trade_id": "bad-row",
