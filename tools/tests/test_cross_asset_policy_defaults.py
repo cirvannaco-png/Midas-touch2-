@@ -125,8 +125,8 @@ def test_market_order_slippage_is_bounded_by_the_sized_entry_band():
     assert "m_trade.SetDeviationInPoints((ulong)MathMax(0,deviationPoints))" in broker
     assert "brokerDeviationPoints=(int)MathMax(0.0,MathFloor(maxPriceSlippage/point));" in orders
     assert "comment,brokerDeviationPoints" in orders
-    assert "input int InpBrokerDeviationPoints=20;" in ea
-    assert "double fallbackSlip=MathMax(0,InpBrokerDeviationPoints)*point;" in ea
+    assert "double fallbackSlip=20.0*point;" in ea
+    assert "Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0)" in orders
 
 
 def test_atr_entry_band_never_rounds_broker_deviation_outward():
