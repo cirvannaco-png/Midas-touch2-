@@ -193,3 +193,37 @@ def test_mql5_position_identity_methods_are_part_of_architecture_contract():
     assert '"MarkCancelledOrder": 1' in validator
     assert "PositionTicketAt(int idx)" in orders
     assert "PositionIdentifierAt(int idx)" in orders
+
+def test_partial_exit_obeys_hedging_mode_and_broker_volume_grid():
+    broker=(ROOT/"EA"/"includes"/"Execution"/"BrokerAdapter.mqh").read_text()
+    manager=(ROOT/"EA"/"includes"/"Execution"/"PositionManager.mqh").read_text()
+    assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in broker
+    assert "SYMBOL_VOLUME_STEP" in broker
+    assert "MathFloor((bounded/step)+1e-9)" in broker
+    assert "remainder<minVolume-1e-10" in broker
+    assert "m_partialCloseSupported=(AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)" in manager
+    assert "m_partialCloseSupported && stateAfterStop==TS_PROTECTED" in manager
+
+
+def test_metaeditor_preflight_stages_and_compiles_both_entry_points():
+    script=(ROOT/"tools"/"compile_mt5.ps1").read_text()
+    assert "tools/stage_mt5_package.py" in script
+    assert "MedisTouch_v2.8.mq5" in script
+    assert "MedisTouch_Indicator_v2.8.mq5" in script
+    assert "/compile:" in script and "/log:" in script
+    assert "zero compile errors" in script
+    assert "Remove-Item -LiteralPath $binaryPath" in script
+
+
+def test_active_live_guards_and_dynamic_stop_defaults_are_explicit():
+    ea=EA.read_text()
+    dynamic=(ROOT/"EA"/"includes"/"Execution"/"DynamicStopInputs.mqh").read_text()
+    assert "InpEnableExecution=true" in ea
+    assert "InpTrackOutcomes=true" in ea
+    assert "InpMaxDailyLossPercent=3.0" in ea
+    assert "InpMaxDrawdownPercent=10.0" in ea
+    assert "InpMaxPortfolioRiskPercent=3.0" in ea
+    assert "InpMaxCorrelationGroupRiskPercent=2.5" in ea
+    assert "InpEnableDynamicStop = true" in dynamic
+    assert "InpDynamicStopActivateAtR = 0.75" in dynamic
+    assert "InpDynamicStopBreakevenAtR = 1.00" in dynamic
