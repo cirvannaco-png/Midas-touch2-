@@ -41,7 +41,8 @@ public:
    void              Init(string symbol, int gmtOffsetOverrideHours = 999);
    bool              LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF, string trendLabel);
    bool              LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES entryTF, string outcome,
-                                double exitPrice, ENUM_FILL_POLICY fillPolicy = FILL_CONSERVATIVE);
+                                double exitPrice, ENUM_FILL_POLICY fillPolicy = FILL_CONSERVATIVE,
+                                datetime outcomeTime = 0);
   };
 //+------------------------------------------------------------------+
 CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(false), m_gmtOffsetOverrideHours(999) {}
@@ -49,7 +50,9 @@ CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(
 void CSignalLogger::Init(string symbol, int gmtOffsetOverrideHours)
   {
    m_filename = "MedisTouch_Signals_" + symbol + ".csv";
-   m_outcomeFilename = "MedisTouch_Outcomes_" + symbol + ".csv";
+   // Version the outcome stream because the new OutcomeEpoch column is required by the
+   // chronological evidence builder. Never append new-schema rows to a legacy header.
+   m_outcomeFilename = "MedisTouch_Outcomes_v2_" + symbol + ".csv";
    m_headerWritten = FileIsExist(m_filename);
    m_outcomeHeaderWritten = FileIsExist(m_outcomeFilename);
    m_gmtOffsetOverrideHours = gmtOffsetOverrideHours;
@@ -341,7 +344,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
   }
 //+------------------------------------------------------------------+
 bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES entryTF, string outcome,
-                               double exitPrice, ENUM_FILL_POLICY fillPolicy)
+                               double exitPrice, ENUM_FILL_POLICY fillPolicy, datetime outcomeTime)
   {
    int flags = FILE_CSV | FILE_READ | FILE_WRITE | FILE_SHARE_READ | FILE_ANSI;
    int handle = FileOpen(m_outcomeFilename, flags, ',');
@@ -353,7 +356,7 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
 
    if(!m_outcomeHeaderWritten)
      {
-      FileWrite(handle, "SignalID", "Symbol", "EntryTF", "Direction", "Outcome", "ExitPrice",
+      FileWrite(handle, "SignalID", "OutcomeEpoch", "Symbol", "EntryTF", "Direction", "Outcome", "ExitPrice",
                "EntryRef", "RiskDistance", "Filled", "FillTime", "BarsToFill", "MFE_Price", "MAE_Price",
                "MFE_R", "MAE_R", "TP1_Hit", "TP2_Hit", "BarsHeld", "SameBarSLTPCollision", "FillPolicy",
                "Lots", "EntryFillPrice", "BreakEvenDone", "PartialDone", "RealizedNetPnL", "RealizedR",
@@ -407,7 +410,11 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
         }
      }
 
-   FileWrite(handle, signalId, symbol, EnumToString(entryTF), dir, outcome,
+   datetime resolvedAt = outcomeTime;
+   if(resolvedAt <= 0) resolvedAt = p.lastBarTime;
+   // Leave zero if neither an actual event time nor tracker event time exists; the
+   // strict evidence builder will reject that row rather than invent its chronology.
+   FileWrite(handle, signalId, (long)resolvedAt, symbol, EnumToString(entryTF), dir, outcome,
             DoubleToString(exitPrice, _Digits), DoubleToString(p.entryRef, _Digits),
             DoubleToString(p.riskDist, _Digits), p.filled ? "Yes" : "No",
             p.filled ? TimeToString(p.fillTime, TIME_DATE | TIME_MINUTES) : "",
