@@ -135,16 +135,26 @@ void COrderManager::Prune()
   {
    ManagedTrade kept[];
    int n=0;
+   datetime now=TimeCurrent();
    ArrayResize(kept,ArraySize(m_trades));
    for(int i=0;i<ArraySize(m_trades);i++)
      {
       ENUM_TRADE_STATE s=m_trades[i].fsm.State();
-      if(s==TS_ARCHIVED || s==TS_CANCELLED || s==TS_REJECTED) continue;
+      bool terminal=(s==TS_ARCHIVED || s==TS_CANCELLED || s==TS_REJECTED);
+      if(terminal)
+        {
+         // Retain terminal identity records briefly so a delayed DEAL_ADD
+         // callback can still map the broker's stable position ID to its decision.
+         datetime terminalAt=m_trades[i].fsm.LastChange();
+         if(terminalAt>0 && now>=terminalAt && now-terminalAt<300)
+            kept[n++]=m_trades[i];
+         continue;
+        }
       kept[n++]=m_trades[i];
      }
    ArrayResize(kept,n);
    ArrayResize(m_trades,n);
-   for(int i=0;i<n;i++) m_trades[i]=kept[i];
+   for(int i=0;i<n;i++)m_trades[i]=kept[i];
   }
 //+------------------------------------------------------------------+
 bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionIdentifier,double fillPrice,double fillVolume)
@@ -256,6 +266,38 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    if(OpenCount()>=m_maxOpen) return false;
    if(legIndex<0) return false;
    if(FindByDecisionAndLeg(decision.decision_id,legIndex)>=0) return false;
+
+   // This order manager models one decision per position. Netting/exchange
+   // accounts aggregate same-symbol deals into a single position identifier,
+   // so simultaneous decisions would fight over one SL/TP and corrupt attribution.
+   if(AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+     {
+      if(OpenCount()>0)
+        {
+         PrintFormat("MedisTouch OrderManager: new %s exposure blocked; one managed decision at a time is required on netting/exchange accounts.",decision.symbol);
+         return false;
+        }
+      for(int p=0;p<PositionsTotal();p++)
+        {
+         ulong existingTicket=PositionGetTicket(p);
+         if(existingTicket==0 || !PositionSelectByTicket(existingTicket))continue;
+         if(PositionGetString(POSITION_SYMBOL)==decision.symbol)
+           {
+            PrintFormat("MedisTouch OrderManager: new %s exposure blocked because a netting position already exists for that symbol.",decision.symbol);
+            return false;
+           }
+        }
+      for(int o=0;o<OrdersTotal();o++)
+        {
+         ulong existingOrder=OrderGetTicket(o);
+         if(existingOrder==0)continue;
+         if(OrderGetString(ORDER_SYMBOL)==decision.symbol)
+           {
+            PrintFormat("MedisTouch OrderManager: new %s exposure blocked because an active order already exists for that symbol on a netting/exchange account.",decision.symbol);
+            return false;
+           }
+        }
+     }
 
    double entry=ResolveExecutionEntry(decision.setup);
    if(useMarket && maxEntryDeviation>0.0)
