@@ -164,20 +164,42 @@ class NeighborTrade(StrictModel):
 class NeighborRun(StrictModel):
     parameters: dict[str, Any]
     report_sha256: str = Field(min_length=64, max_length=64)
+    dataset_sha256: str = Field(min_length=64, max_length=64)
+    ea_source_commit: str = Field(min_length=40, max_length=64)
+    ea_build: str = Field(min_length=1, max_length=120)
+    terminal_build: str = Field(min_length=1, max_length=120)
+    period_start: datetime
+    period_end: datetime
     trades: list[NeighborTrade] = Field(min_length=1, max_length=15000)
 
-    @model_validator(mode="after")
-    def _require_parameters(self):
-        if not self.parameters:
-            raise ValueError("neighbor parameters must not be empty")
-        return self
-
-    @field_validator("report_sha256")
+    @field_validator("report_sha256", "dataset_sha256")
     @classmethod
     def _validate_sha256(cls, value: str) -> str:
         if not SHA256_RE.fullmatch(value):
             raise ValueError("must be a 64-character SHA-256 hex digest")
         return value.lower()
+
+    @field_validator("ea_source_commit")
+    @classmethod
+    def _validate_commit(cls, value: str) -> str:
+        if not COMMIT_RE.fullmatch(value):
+            raise ValueError("ea_source_commit must be a 40- or 64-character Git commit hash")
+        return value.lower()
+
+    @field_validator("period_start", "period_end")
+    @classmethod
+    def _require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("neighbor period timestamps must include a timezone")
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def _require_parameters_and_period(self):
+        if not self.parameters:
+            raise ValueError("neighbor parameters must not be empty")
+        if self.period_start >= self.period_end:
+            raise ValueError("neighbor period_start must be earlier than period_end")
+        return self
 
 
 class FeatureImportanceEvidence(StrictModel):
@@ -473,6 +495,18 @@ async def ingest_backtest_evidence(
         if neighbor_hash in seen_neighbor_hashes:
             raise HTTPException(status_code=422, detail="parameter-neighbor configurations must be unique")
         seen_neighbor_hashes.add(neighbor_hash)
+        if (
+            neighbor.dataset_sha256 != payload.provenance.dataset_sha256
+            or neighbor.ea_source_commit != payload.provenance.ea_source_commit
+            or neighbor.ea_build != payload.provenance.ea_build
+            or neighbor.terminal_build != payload.provenance.terminal_build
+            or neighbor.period_start != payload.provenance.period_start
+            or neighbor.period_end != payload.provenance.period_end
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="parameter-neighbor evidence must use the same data digest, EA/terminal build, and historical period",
+            )
         if any(row.timestamp < payload.provenance.period_start or row.timestamp > payload.provenance.period_end for row in neighbor.trades):
             raise HTTPException(status_code=422, detail="parameter-neighbor trade is outside the declared backtest period")
         neighbor_ids = [row.trade_id for row in neighbor.trades]
