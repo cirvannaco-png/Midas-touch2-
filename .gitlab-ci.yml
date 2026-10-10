@@ -136,14 +136,14 @@ biweekly-recalibration:
 
       response_file="$(mktemp)"
       trap 'rm -f "$response_file"' EXIT
+      # This POST is intentionally not retried automatically: replaying it can
+      # create duplicate calibration cycles from the same outcome window. On a
+      # transport failure, inspect bridge logs before manually rerunning the job.
       http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
         --request POST \
         --header "X-API-Key: ${BRIDGE_API_KEY}" \
         --header "Content-Type: application/json" \
         --connect-timeout 10 --max-time 120 \
-        # This POST is intentionally not retried automatically: replaying it can
-        # create duplicate calibration cycles from the same outcome window. On a
-        # transport failure, inspect bridge logs before manually rerunning the job.
         "${BRIDGE_BASE_URL%/}/admin/run-cycle")"
       cat "$response_file"
       printf '\nRecalibration endpoint HTTP status: %s\n' "$http_code"
