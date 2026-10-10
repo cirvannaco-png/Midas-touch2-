@@ -82,6 +82,19 @@ private:
       return GlobalVariableSet(baselineKey,baseline)>0;
      }
 
+   void MigrateLegacyLastPositionLocked()
+     {
+      // The previous version persisted only the last position ID as a double.
+      // Preserve that one deduplication record during upgrade when it is exact.
+      string legacyKey=m_storageKey+".P";
+      if(!GlobalVariableCheck(legacyKey))return;
+      double raw=GlobalVariableGet(legacyKey);
+      if(raw<=0.0 || raw>=9007199254740992.0)return; // Beyond exact IEEE-754 integer range.
+      ulong positionId=(ulong)raw;
+      string marker=PositionMarker(positionId);
+      if(!GlobalVariableCheck(marker))GlobalVariableSet(marker,1.0);
+     }
+
    int CountMarkersForDateLocked(int dateKey)
      {
       int count=0;
@@ -119,6 +132,7 @@ private:
      {
       if(dateKey<=0 || !AcquireLock())return false;
       bool baselineReady=EnsureBaselineLocked(dateKey);
+      if(baselineReady)MigrateLegacyLastPositionLocked();
       if(!baselineReady)
         {
          ReleaseLock();
