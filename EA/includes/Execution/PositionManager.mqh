@@ -22,6 +22,7 @@ private:
    double                m_partialAtR;
    double                m_partialFraction;
    int                   m_minModifyIntervalSec;
+   bool                  m_partialCloseSupported;
    ulong                 m_lastModifyTickets[];
    datetime              m_lastModifyTimes[];
 
@@ -48,7 +49,10 @@ void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
    m_broker=broker;
    m_structureSwings=structureSwings;
    m_partialAtR=partialAtR;
-   m_partialFraction=partialFraction;
+   m_partialFraction=MathMax(0.0,MathMin(1.0,partialFraction));
+   m_partialCloseSupported=(AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
+   if(!m_partialCloseSupported && m_partialFraction>0.0)
+      Print("MedisTouch PositionManager: scale-out disabled on netting/exchange account; Dynamic Stop Engine and broker SL/TP remain active.");
    m_minModifyIntervalSec=MathMax(0,minModifyIntervalSec);
    ArrayResize(m_lastModifyTickets,0);
    ArrayResize(m_lastModifyTimes,0);
@@ -187,7 +191,7 @@ void CPositionManager::OnTick(double currentAtr)
         }
 
       ENUM_TRADE_STATE stateAfterStop=m_orders.StateAt(i);
-      if(stateAfterStop==TS_PROTECTED && r>=m_partialAtR)
+      if(m_partialCloseSupported && stateAfterStop==TS_PROTECTED && r>=m_partialAtR)
         {
          double vol=m_orders.VolumeAt(i)*m_partialFraction;
          double minVol=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_MIN);
