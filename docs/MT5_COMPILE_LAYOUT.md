@@ -103,7 +103,7 @@ The staging test closes the folder-placement/include-path gap. Only an actual Me
 
 ## Repeatable compile preflight (Windows / local MT5 installation)
 
-The repository now includes `tools/compile_mt5.ps1`. It first runs structural include validation, stages the complete expert and indicator into the selected terminal data folder, removes stale output binaries/logs, invokes MetaEditor independently for both entry points, and fails unless each log explicitly reports zero errors and a fresh `.ex5` exists.
+The repository now includes `tools/compile_mt5.ps1`. It first runs structural include validation, stages the expert, indicator, and three MQL5 policy-test scripts into the selected terminal data folder, removes stale output binaries/logs, invokes MetaEditor independently for all five entry points, and fails unless each log explicitly reports zero errors and a fresh `.ex5` exists.
 
 From a PowerShell session at the repository root:
 
@@ -111,7 +111,7 @@ From a PowerShell session at the repository root:
 .\tools\compile_mt5.ps1 -MetaEditorPath "C:\Program Files\MetaTrader 5\metaeditor64.exe" -TerminalDataPath "$env:APPDATA\MetaQuotes\Terminal\<YOUR_TERMINAL_ID>"
 ~~~
 
-Replace `<YOUR_TERMINAL_ID>` with the folder that contains the selected terminal's `MQL5` directory. If MetaTrader was installed elsewhere, supply the actual `metaeditor64.exe` path. The script writes compile logs under `%TEMP%\MidasTouch-MetaEditor-Logs` by default. Treat compiler warnings as review items; the script prints a warning if any are reported. Do not use an old `.ex5` as evidence of a successful build—the script deletes it before compiling.
+Replace `<YOUR_TERMINAL_ID>` with the folder that contains the selected terminal's `MQL5` directory. If MetaTrader was installed elsewhere, supply the actual `metaeditor64.exe` path. The script writes compile logs under `%TEMP%\MidasTouch-MetaEditor-Logs` by default. The three policy test harnesses are staged under `MQL5/Scripts/MedisTouchTests/tests`; compile is automated, but their runtime assertion tests must be run from the MT5 Navigator Scripts tree and checked in the Journal. Treat compiler warnings as review items; the script prints a warning if any are reported. Do not use an old `.ex5` as evidence of a successful build—the script deletes it before compiling.
 
 ## Activation and dependency audit
 
