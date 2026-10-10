@@ -17,7 +17,7 @@ def _timestamp(day):
 
 def _write_outcomes(path, days):
     fields = [
-        "SignalID", "Symbol", "EntryTF", "Direction", "Outcome", "Filled",
+        "SignalID", "OutcomeEpoch", "Symbol", "EntryTF", "Direction", "Outcome", "Filled",
         "SameBarSLTPCollision", "RealizedR", "Commission", "SpreadCost", "SlippageCost",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -28,6 +28,7 @@ def _write_outcomes(path, days):
             is_win = index % 4 != 0
             writer.writerow({
                 "SignalID": f"XAUUSD_BUY_{stamp}",
+                "OutcomeEpoch": int((BASE + timedelta(days=day, minutes=10)).timestamp()),
                 "Symbol": "XAUUSD",
                 "EntryTF": "PERIOD_M15",
                 "Direction": "BUY",
@@ -39,6 +40,26 @@ def _write_outcomes(path, days):
                 "SpreadCost": "0.03",
                 "SlippageCost": "0.02",
             })
+
+
+def _set_outcome_epoch(csv_path, entry_day, outcome_day):
+    rows = []
+    with csv_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    target_epoch = int((BASE + timedelta(days=entry_day)).timestamp())
+    updated = False
+    for row in rows:
+        if row["SignalID"].rsplit("_", 1)[-1] == str(target_epoch):
+            row["OutcomeEpoch"] = str(int((BASE + timedelta(days=outcome_day)).timestamp()))
+            updated = True
+    if not updated:
+        raise AssertionError(f"no signal row found for entry day {entry_day}")
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _manifest(tmp_path, *, include_embargo_trade=False):
@@ -127,6 +148,38 @@ def test_normalizer_builds_chronological_evidence_bundle(tmp_path):
     assert summary["excluded_warmup_or_embargo_rows"] == 0
     assert summary["destination_file_not_sent"] is True
     assert "feature_importance" in summary["evidence_gaps_to_check"]
+    assert "resolved_at" in payload["trades"][0]
+    assert summary["outcomes_censored_at_partition_boundary"] == 0
+
+
+def test_normalizer_censors_oos_outcome_resolved_after_oos_end(tmp_path):
+    manifest_path = _manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["provenance"]["period_end"] = _timestamp(92)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    _set_outcome_epoch(tmp_path / "outcomes.csv", 89, 91)
+
+    payload, summary = build_evidence(manifest_path)
+
+    assert sum(row["partition"] == "locked_oos" for row in payload["trades"]) == 29
+    assert not any(row["trade_id"].endswith(f"_{int((BASE + timedelta(days=89)).timestamp())}") for row in payload["trades"])
+    assert summary["outcomes_censored_at_partition_boundary"] == 1
+
+
+def test_normalizer_censors_outcomes_that_mature_after_fold_boundaries(tmp_path):
+    manifest_path = _manifest(tmp_path)
+    _set_outcome_epoch(tmp_path / "outcomes.csv", 19, 21)
+    _set_outcome_epoch(tmp_path / "outcomes.csv", 30, 32)
+
+    payload, summary = build_evidence(manifest_path)
+
+    day19_id = f"XAUUSD_BUY_{int((BASE + timedelta(days=19)).timestamp())}"
+    day30_id = f"XAUUSD_BUY_{int((BASE + timedelta(days=30)).timestamp())}"
+    assert not any(row["trade_id"] == day19_id and row["partition"] == "train" and row["fold_id"] == 1 for row in payload["trades"])
+    assert any(row["trade_id"] == day19_id and row["partition"] == "train" and row["fold_id"] == 2 for row in payload["trades"])
+    assert not any(row["trade_id"] == day30_id and row["partition"] == "validation" and row["fold_id"] == 1 for row in payload["trades"])
+    assert any(row["trade_id"] == day30_id and row["partition"] == "train" and row["fold_id"] == 3 for row in payload["trades"])
+    assert summary["censored_partition_assignments"] >= 2
 
 
 def test_normalizer_requires_explicit_signal_id_time_basis(tmp_path):
