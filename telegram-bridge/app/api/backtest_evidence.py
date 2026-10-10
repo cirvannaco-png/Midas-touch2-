@@ -20,9 +20,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config_evaluation_model import ConfigurationEvaluation
 from app.config_registry import ConfigurationIdentity
 from app.config_registry_model import ConfigurationRegistry
-from app.config_evaluation_model import ConfigurationEvaluation
 from app.database import get_session
 from app.routes import verify_api_key
 
@@ -558,7 +558,6 @@ async def ingest_backtest_evidence(
     train_resolved_count = len(_resolved(train_all))
     validation_resolved_count = len(_resolved(validation_all))
     oos_verified = len(oos_rows) >= MIN_OOS_TRADES and max(row.timestamp for row in validation_all) < min(row.timestamp for row in holdout)
-    walk_forward_verdicts = tuple(fold_verdicts)
     research_reasons: list[str] = []
     if not oos_verified:
         research_reasons.append("locked OOS chronology/sample verification failed")
