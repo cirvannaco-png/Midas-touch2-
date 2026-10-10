@@ -173,8 +173,22 @@ async def run_cycle() -> dict:
 
     rows = await _fetch_window_rows(since)
     if not rows:
-        logger.info("app.calibration.run_cycle: no signal_outcomes rows in the current window — nothing to do.")
-        return {"status": "no_data", "since": since.isoformat()}
+        # Challenger evaluations are independent of recent live outcomes:
+        # a candidate can already have immutable backtest/OOS evidence stored
+        # while the live-trading window is quiet. Do not skip that lifecycle
+        # simply because no new live outcome arrived in the last two weeks.
+        async with async_session() as session:
+            config_lifecycle = await evaluate_registered_challengers(session)
+        await _send_config_promotion_cards(config_lifecycle.get("promotion_ids", []))
+        logger.info(
+            "app.calibration.run_cycle: no signal_outcomes rows in the current "
+            f"window; candidate lifecycle result={config_lifecycle.get('status', 'unknown')}."
+        )
+        return {
+            "status": "no_data",
+            "since": since.isoformat(),
+            "config_lifecycle": config_lifecycle,
+        }
 
     report = compute_report(rows)
     report["environment_strategy_memory"] = build_environment_memory(
