@@ -174,7 +174,8 @@ def test_partial_fills_refresh_live_position_volume_and_average_entry():
     orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
     assert "Additional partial fills for the same broker order" in orders
     assert "m_trades[i].volume=PositionGetDouble(POSITION_VOLUME);" in orders
-    assert "m_trades[i].fillPrice=PositionGetDouble(POSITION_PRICE_OPEN);" in orders
+    assert "double actualEntry=PositionGetDouble(POSITION_PRICE_OPEN);" in orders
+    assert "if(actualEntry>0.0)m_trades[i].fillPrice=actualEntry;" in orders
 
 def test_unfilled_accepted_orders_release_capacity_when_cancelled_or_expired():
     orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
