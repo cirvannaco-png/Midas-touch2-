@@ -101,6 +101,7 @@ class TesterTrade(StrictModel):
 
     trade_id: str = Field(min_length=1, max_length=160)
     timestamp: datetime
+    resolved_at: datetime
     partition: Literal["train", "validation", "locked_oos"]
     fold_id: int | None = Field(default=None, ge=1, le=1000)
     outcome: Literal["win", "loss", "scratch", "no_fill", "ambiguous"]
@@ -110,7 +111,7 @@ class TesterTrade(StrictModel):
     spread_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     slippage_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
-    @field_validator("timestamp")
+    @field_validator("timestamp", "resolved_at")
     @classmethod
     def _require_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
@@ -119,6 +120,8 @@ class TesterTrade(StrictModel):
 
     @model_validator(mode="after")
     def _validate_trade(self):
+        if self.resolved_at < self.timestamp:
+            raise ValueError("resolved_at cannot precede signal/entry timestamp")
         if self.partition == "locked_oos" and self.fold_id is not None:
             raise ValueError("locked_oos rows must not have a fold_id")
         if self.partition != "locked_oos" and self.fold_id is None:
@@ -149,10 +152,11 @@ class TesterTrade(StrictModel):
 class NeighborTrade(StrictModel):
     trade_id: str = Field(min_length=1, max_length=160)
     timestamp: datetime
+    resolved_at: datetime
     outcome: Literal["win", "loss", "scratch"]
     realized_r: float = Field(allow_inf_nan=False)
 
-    @field_validator("timestamp")
+    @field_validator("timestamp", "resolved_at")
     @classmethod
     def _require_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
@@ -161,6 +165,8 @@ class NeighborTrade(StrictModel):
 
     @model_validator(mode="after")
     def _validate_sign(self):
+        if self.resolved_at < self.timestamp:
+            raise ValueError("neighbor resolved_at cannot precede its signal/entry timestamp")
         if self.outcome == "win" and self.realized_r <= 0:
             raise ValueError("neighbor win requires positive realized_r")
         if self.outcome == "loss" and self.realized_r >= 0:
@@ -314,7 +320,7 @@ def _summarize(rows: list[Any]) -> dict[str, Any]:
         else (1000.0 if gross_profit > 0 else 0.0)
     )
     cumulative = peak = max_drawdown = 0.0
-    for row in sorted(done, key=lambda item: item.timestamp):
+    for row in sorted(done, key=lambda item: item.resolved_at):
         cumulative += float(row.realized_r)
         peak = max(peak, cumulative)
         max_drawdown = max(max_drawdown, peak - cumulative)
@@ -443,6 +449,24 @@ async def ingest_backtest_evidence(
     holdout = [row for row in payload.trades if row.partition == "locked_oos"]
     train_all = [row for row in payload.trades if row.partition == "train"]
     validation_all = [row for row in payload.trades if row.partition == "validation"]
+    for row in payload.trades:
+        if row.resolved_at > payload.provenance.period_end:
+            raise HTTPException(
+                status_code=422,
+                detail=f"trade {row.trade_id} resolves after the declared Tester period",
+            )
+        if row.partition == "locked_oos":
+            if row.resolved_at >= payload.provenance.locked_oos_end:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"locked_oos trade {row.trade_id} resolves at or after locked_oos_end",
+                )
+        elif row.resolved_at >= payload.provenance.locked_oos_start:
+            raise HTTPException(
+                status_code=422,
+                detail=f"pre-OOS trade {row.trade_id} resolves on or after locked_oos_start",
+            )
+
     keys = [(row.fold_id, row.partition, row.trade_id) for row in payload.trades]
     if len(keys) != len(set(keys)):
         raise HTTPException(status_code=422, detail="duplicate trade_id within the same fold/partition")
@@ -559,9 +583,13 @@ async def ingest_backtest_evidence(
             )
         if any(
             not payload.provenance.locked_oos_start <= row.timestamp < payload.provenance.locked_oos_end
+            or row.resolved_at >= payload.provenance.locked_oos_end
             for row in neighbor.trades
         ):
-            raise HTTPException(status_code=422, detail="parameter-neighbor trade is outside the common locked OOS window")
+            raise HTTPException(
+                status_code=422,
+                detail="parameter-neighbor trade entry/resolution is outside the common locked OOS window",
+            )
         neighbor_ids = [row.trade_id for row in neighbor.trades]
         if len(neighbor_ids) != len(set(neighbor_ids)):
             raise HTTPException(status_code=422, detail=f"duplicate trade_id in neighbor configuration {neighbor_hash}")
