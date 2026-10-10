@@ -46,6 +46,7 @@ def test_counter_serializes_updates_and_deduplicates_closes():
     assert "GlobalVariableSetOnCondition(m_lockKey,token,0.0)" in target
     assert "GetTickCount64()" in target
     assert "now-held>30000.0" in target
+    assert "now-m_legacyLockSeenAt>30000.0" in target
     assert "GlobalVariableSetOnCondition(m_lockKey,0.0,m_lockValue)" in target
     assert "if(GlobalVariableCheck(marker))" in target
     assert "GlobalVariableSet(marker,(double)at)" in target
