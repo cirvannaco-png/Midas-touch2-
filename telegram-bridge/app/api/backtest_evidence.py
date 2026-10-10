@@ -45,6 +45,7 @@ class TesterProvenance(StrictModel):
     source: Literal["MT5_STRATEGY_TESTER"]
     run_id: str = Field(min_length=1, max_length=160)
     report_sha256: str = Field(min_length=64, max_length=64)
+    outcome_csv_sha256: str | None = Field(default=None, min_length=64, max_length=64)
     dataset_sha256: str = Field(min_length=64, max_length=64)
     ea_source_commit: str = Field(min_length=40, max_length=64)
     ea_build: str = Field(min_length=1, max_length=120)
@@ -61,9 +62,11 @@ class TesterProvenance(StrictModel):
     slippage_points: float = Field(ge=0)
     fill_policy: str = Field(min_length=1, max_length=80)
 
-    @field_validator("report_sha256", "dataset_sha256")
+    @field_validator("report_sha256", "outcome_csv_sha256", "dataset_sha256")
     @classmethod
-    def _validate_sha256(cls, value: str) -> str:
+    def _validate_sha256(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not SHA256_RE.fullmatch(value):
             raise ValueError("must be a 64-character SHA-256 hex digest")
         return value.lower()
@@ -168,6 +171,7 @@ class NeighborTrade(StrictModel):
 class NeighborRun(StrictModel):
     parameters: dict[str, Any]
     report_sha256: str = Field(min_length=64, max_length=64)
+    outcome_csv_sha256: str | None = Field(default=None, min_length=64, max_length=64)
     dataset_sha256: str = Field(min_length=64, max_length=64)
     ea_source_commit: str = Field(min_length=40, max_length=64)
     ea_build: str = Field(min_length=1, max_length=120)
@@ -176,9 +180,11 @@ class NeighborRun(StrictModel):
     period_end: datetime
     trades: list[NeighborTrade] = Field(min_length=1, max_length=15000)
 
-    @field_validator("report_sha256", "dataset_sha256")
+    @field_validator("report_sha256", "outcome_csv_sha256", "dataset_sha256")
     @classmethod
-    def _validate_sha256(cls, value: str) -> str:
+    def _validate_sha256(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not SHA256_RE.fullmatch(value):
             raise ValueError("must be a 64-character SHA-256 hex digest")
         return value.lower()
@@ -562,6 +568,7 @@ async def ingest_backtest_evidence(
         neighbor_record = {
             "config_hash": neighbor_hash,
             "report_sha256": neighbor.report_sha256,
+            "outcome_csv_sha256": neighbor.outcome_csv_sha256,
             "metrics": neighbor_summary,
         }
         neighbors.append(neighbor_record)
@@ -649,6 +656,7 @@ async def ingest_backtest_evidence(
         "source": payload.provenance.source,
         "run_id": payload.provenance.run_id,
         "report_sha256": payload.provenance.report_sha256,
+        "outcome_csv_sha256": payload.provenance.outcome_csv_sha256,
         "dataset_sha256": payload.provenance.dataset_sha256,
         "ingest_payload_sha256": payload_sha256,
         "ea_source_commit": payload.provenance.ea_source_commit,
