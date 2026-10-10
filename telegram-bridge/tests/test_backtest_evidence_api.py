@@ -174,7 +174,7 @@ def test_backtest_evidence_requires_three_walk_forward_folds(client, auth_header
     [
         ("train", "win", -0.5, True),
         ("train", "no_fill", 0.0, False),
-        ("locked_oos", "win", 0.5, True),
+        ("locked_oos", "win", -0.5, True),
     ],
 )
 def test_trade_schema_rejects_inconsistent_outcome_contract(
