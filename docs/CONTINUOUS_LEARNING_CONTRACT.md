@@ -35,8 +35,12 @@ The Strategy Tester must be run against the actual EA and its versioned inputs. 
 
 A favorable in-sample backtest alone is not promotion evidence. A candidate must pass locked-OOS and stability validation, then proceed through the registered configuration lifecycle, human approval, and exact configuration-hash acknowledgement by the EA. No research result may bypass risk controls or silently modify live parameters.
 
-### Important current boundary
+### Current implementation boundary
 
-`tools/walk_forward.py --tester-csv` can parse a real outcome CSV, but that CLI path currently reports the parsed row count; it does **not** register those rows as a candidate evaluation in the backend database. The online learner within the EA's chronological Strategy Tester run is active, and the scheduled backend cycle evaluates persisted production outcomes and already-registered challengers. An automated import that turns each exported Tester result into immutable registered backtest/OOS evidence is a separate integration step and must not be represented as already active until implemented and tested.
+The authenticated `POST /research/backtest-evidence` endpoint now provides the backend evidence-ingestion path. It validates a normalized MT5 Tester evidence bundle, computes key train/validation/locked-OOS metrics on the server, checks chronological walk-forward folds and a parameter-neighborhood plateau, and appends an immutable `ConfigurationEvaluation` with report/dataset provenance references. An adequately supported, positive candidate can reach `VALIDATED`; incomplete or weak evidence remains `BACKTESTED` with a hold/insufficient-evidence decision.
 
-This separation is deliberate: it avoids treating backtest rows as live trades, mixing live and synthetic evidence, or promoting a configuration merely because it won an in-sample optimization.
+The next integration requirement is the **trusted exporter and scheduled caller** that reads genuine Strategy Tester outputs, adds the run/configuration manifest and research artifacts, and sends the normalized evidence bundle to that endpoint. The endpoint intentionally does not claim to authenticate an MT5 desktop or independently read local report files. Keep the original report and market-data file, and compare their digests to the registered provenance.
+
+The ordinary biweekly `POST /admin/run-cycle` still analyzes recent production outcomes and already-registered `CHALLENGER` configurations. It does not silently transform backtest observations into live `signal_outcomes`. Backtest evidence also does not skip `QUARANTINE`, `SHADOW`, or `CHALLENGER`, create an approval, or activate the EA. Candidate promotion remains gated by the existing configuration lifecycle, human approval, and exact EA configuration-hash acknowledgement.
+
+This separation prevents live and synthetic evidence from being mixed and prevents a candidate from winning merely because it performed well in-sample.
