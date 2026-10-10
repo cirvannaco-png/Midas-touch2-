@@ -14,6 +14,8 @@ def test_adaptive_capacity_governor_is_wired_into_ea():
     assert '#include "includes/Portfolio/AdaptiveCapacityGovernor.mqh"' in t
     assert "CAdaptiveCapacityGovernor g_capacity" in t
     assert "g_capacity.Init(" in t
+    assert "g_capacity.Init(InpAdaptiveCapacityEnabled && g_outcomeAttributionSupported," in t
+    assert "bool regimeEligible=g_outcomeAttributionSupported;" in t
     assert "g_capacity.Refresh(" in t
     assert "g_capacity.SetContext(" in t
 
