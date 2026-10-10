@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 
 from tools.recalibration_guard import PromotionPolicy
-from app.config_promotion_gate import evaluate_challenger
 
+from app.config_promotion_gate import evaluate_challenger
 
 COMPONENTS = {
     "risk_adjusted_return": 0.8,
