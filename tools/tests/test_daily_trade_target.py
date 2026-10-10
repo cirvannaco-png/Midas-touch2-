@@ -57,7 +57,7 @@ def test_restart_reconciliation_and_marker_retention_are_bounded():
     target = TARGET.read_text()
 
     assert "DateKey((datetime)storedAt)==dateKey" in target
-    assert "if(storedAt>=1000000000.0 && storedAt<cutoff)" in target
+    assert "if(storedAt<1000000000.0 || storedAt<cutoff)" in target
     assert "90*86400" in target
     assert "GlobalVariableDel(name)" in target
     assert "The marker is the durable idempotency record" in target
