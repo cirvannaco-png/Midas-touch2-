@@ -211,7 +211,7 @@ def test_metaeditor_preflight_stages_and_compiles_both_entry_points():
     assert "tools/stage_mt5_package.py" in script
     assert "MedisTouch_v2.8.mq5" in script
     assert "MedisTouch_Indicator_v2.8.mq5" in script
-    assert "/compile:" in script and "/log:" in script
+    assert "/compile:" in script and "/log:" in script and "/inc:" in script
     assert "zero compile errors" in script
     assert "Remove-Item -LiteralPath $binaryPath" in script
 
