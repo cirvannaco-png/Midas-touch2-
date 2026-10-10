@@ -18,6 +18,7 @@ private:
    string   m_lockKey;
    double   m_lockValue;
    double   m_legacyLockSeenAt;
+   bool     m_reconcilePending;
 
    int DateKey(datetime at)
      {
@@ -124,6 +125,7 @@ private:
       ulong positionId=(ulong)raw;
       string marker=PositionMarker(positionId);
       if(!GlobalVariableCheck(marker))GlobalVariableSet(marker,1.0);
+      GlobalVariableDel(legacyKey); // prevent recreating the migrated marker on later restarts
      }
 
    int CountMarkersForDateLocked(int dateKey)
@@ -189,9 +191,10 @@ private:
    void SyncStoredState()
      {
       string key=CountKey(m_dateKey);
-      if(!GlobalVariableCheck(key))
+      if(m_reconcilePending || !GlobalVariableCheck(key))
         {
-         ReconcileDate(m_dateKey,false);
+         if(ReconcileDate(m_dateKey,false))m_reconcilePending=false;
+         else m_reconcilePending=true;
         }
       if(GlobalVariableCheck(key))
          m_count=MathMax(0,(int)GlobalVariableGet(key));
@@ -223,7 +226,7 @@ private:
 
 public:
    CDailyTradeTarget():m_target(3),m_count(0),m_dateKey(0),m_weekday(false),
-      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""),m_lockValue(0.0),m_legacyLockSeenAt(0.0){}
+      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""),m_lockValue(0.0),m_legacyLockSeenAt(0.0),m_reconcilePending(false){}
 
    void Init(int target,double minQualifiedR,ulong magic)
      {
@@ -281,6 +284,9 @@ public:
          Print("Midas Touch daily target: failed to persist qualified-position marker.");
          return;
         }
+      // Persist idempotency before the count write so startup reconciliation can recover
+      // if the terminal stops immediately afterwards.
+      GlobalVariablesFlush();
 
       if(!EnsureBaselineLocked(closeDateKey))
         {
