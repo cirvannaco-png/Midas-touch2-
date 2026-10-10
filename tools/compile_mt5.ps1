@@ -66,8 +66,10 @@ function Invoke-MetaEditorCompile {
 
     $compileArg = '/compile:"{0}"' -f $SourcePath
     $logArg = '/log:"{0}"' -f $LogPath
+    $includeArg = '/inc:"{0}"' -f (Join-Path $TerminalDataPath "MQL5")
     Write-Host "Compiling: $SourcePath"
-    $process = Start-Process -FilePath $MetaEditorPath -ArgumentList @($compileArg, $logArg) -Wait -PassThru
+    Write-Host "Include root: $(Join-Path $TerminalDataPath 'MQL5')"
+    $process = Start-Process -FilePath $MetaEditorPath -ArgumentList @($compileArg, $logArg, $includeArg) -Wait -PassThru
 
     if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
         throw "MetaEditor did not create a compile log for $SourcePath (process exit $($process.ExitCode))."
