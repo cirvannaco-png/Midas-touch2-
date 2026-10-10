@@ -297,12 +297,64 @@ bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
 bool CBrokerAdapter::ClosePartial(ulong ticket,double volume)
   {
    if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
-   if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   bool submitted=m_trade.PositionClosePartial(ticket,volume);
+   string symbol=PositionGetString(POSITION_SYMBOL);
+   if(!IsMarketOpenForTrading(symbol,false,true)) return false;
+
+   // CTrade::PositionClosePartial is a hedging-account operation only. In
+   // netting mode, an opposite deal could close/reverse the aggregated symbol
+   // position, so this method deliberately refuses to emulate a partial close.
+   if(AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+     {
+      Print("MedisTouch BrokerAdapter: partial close is unsupported on netting/exchange accounts; preserve the existing SL/TP instead of risking a reversal.");
+      return false;
+     }
+
+   double currentVolume=PositionGetDouble(POSITION_VOLUME);
+   double minVolume=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+   double step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+   if(currentVolume<=0.0 || minVolume<=0.0 || step<=0.0 || volume<=0.0)
+     {
+      PrintFormat("MedisTouch BrokerAdapter: ClosePartial refused due to invalid volume metadata (current=%.8f, requested=%.8f, min=%.8f, step=%.8f).",
+                  currentVolume,volume,minVolume,step);
+      return false;
+     }
+
+   // Round down to the broker's volume grid, and never leave a remainder below
+   // minimum volume. This avoids  invalid-volume requests for fractional lots.
+   double maxPartial=currentVolume-minVolume;
+   if(maxPartial<minVolume-1e-10)
+     {
+      PrintFormat("MedisTouch BrokerAdapter: position volume %.8f is too small for a legal partial close; retaining the runner.",currentVolume);
+      return false;
+     }
+   double bounded=MathMin(volume,maxPartial);
+   double steps=MathFloor((bounded/step)+1e-9);
+   double normalized=steps*step;
+   int volumeDigits=0;
+   for(int digits=0;digits<=8;digits++)
+     {
+      double scaled=step*MathPow(10.0,digits);
+      if(MathAbs(scaled-MathRound(scaled))<1e-8)
+        {
+         volumeDigits=digits;
+         break;
+        }
+      volumeDigits=digits;
+     }
+   normalized=NormalizeDouble(normalized,volumeDigits);
+   double remainder=NormalizeDouble(currentVolume-normalized,volumeDigits);
+   if(normalized<minVolume-1e-10 || remainder<minVolume-1e-10)
+     {
+      PrintFormat("MedisTouch BrokerAdapter: normalized partial volume %.8f would leave illegal remainder %.8f; keeping the position unchanged.",
+                  normalized,remainder);
+      return false;
+     }
+
+   bool submitted=m_trade.PositionClosePartial(ticket,normalized);
    uint code=m_trade.ResultRetcode();
    if(submitted && (code==TRADE_RETCODE_DONE || code==TRADE_RETCODE_DONE_PARTIAL)) return true;
-   PrintFormat("MedisTouch BrokerAdapter: ClosePartial was not confirmed by the trade server (submitted=%s, retcode=%u, %s).",
-               submitted?"true":"false",code,m_trade.ResultRetcodeDescription());
+   PrintFormat("MedisTouch BrokerAdapter: ClosePartial was not confirmed by the trade server (submitted=%s, requested=%.8f, retcode=%u, %s).",
+               submitted?"true":"false",normalized,code,m_trade.ResultRetcodeDescription());
    return false;
   }
 //+------------------------------------------------------------------+
