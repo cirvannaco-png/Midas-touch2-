@@ -35,6 +35,8 @@ MIN_FOLD_TRAIN_TRADES = 20
 MIN_FOLD_VALIDATION_TRADES = 10
 MIN_WALK_FORWARD_FOLDS = 3
 MIN_PAIRED_SCENARIOS = 30
+MIN_PARAMETER_NEIGHBORS = 5
+MAX_PARAMETER_NEIGHBOR_DEGRADATION = 0.10
 
 
 class StrictModel(BaseModel):
@@ -579,19 +581,33 @@ async def ingest_backtest_evidence(
             and oos_expectancy is not None
             and oos_expectancy > 0
             and neighbor_expectancy > 0
-            and abs(float(neighbor_expectancy) - float(oos_expectancy)) / abs(float(oos_expectancy)) <= 0.10
+            and abs(float(neighbor_expectancy) - float(oos_expectancy)) / abs(float(oos_expectancy)) <= MAX_PARAMETER_NEIGHBOR_DEGRADATION
         ):
             stable_neighbors.append(neighbor_record)
 
     parameter_stability = len(stable_neighbors) / len(neighbors) if neighbors else 0.0
-    parameter_degradation = (
-        min(
-            abs(float(item["metrics"]["expectancy_r"]) - float(oos_expectancy)) / abs(float(oos_expectancy))
-            for item in stable_neighbors
-        )
-        if stable_neighbors and oos_expectancy and float(oos_expectancy) != 0
-        else 1.0
-    )
+    neighbor_degradations: list[float] = []
+    for item in neighbors:
+        metrics = item["metrics"]
+        neighbor_expectancy = metrics["expectancy_r"]
+        if (
+            metrics["resolved_trades"] >= MIN_OOS_TRADES
+            and metrics["profit_factor"] >= 1.0
+            and neighbor_expectancy is not None
+            and float(neighbor_expectancy) > 0.0
+            and oos_expectancy is not None
+            and float(oos_expectancy) > 0.0
+        ):
+            neighbor_degradations.append(
+                abs(float(neighbor_expectancy) - float(oos_expectancy)) / abs(float(oos_expectancy))
+            )
+        else:
+            # An under-sampled, non-profitable, or non-positive neighbor is
+            # evidence against a robust local plateau, not a zero degradation.
+            neighbor_degradations.append(1.0)
+    # Robustness is the worst local-neighbor deviation. Taking the best
+    # neighbor would make a single lucky point look like a stable plateau.
+    parameter_degradation = max(neighbor_degradations) if neighbor_degradations else 1.0
 
     features_complete = bool(payload.feature_importance) and all(
         row.feature.strip() for row in payload.feature_importance
@@ -626,6 +642,10 @@ async def ingest_backtest_evidence(
         research_reasons.append("one or more walk-forward folds diverged")
     if any(verdict == "insufficient_data" for verdict in fold_verdicts):
         research_reasons.append("one or more walk-forward folds lack minimum sample")
+    if len(neighbors) < MIN_PARAMETER_NEIGHBORS:
+        research_reasons.append(
+            f"parameter-neighborhood evidence requires at least {MIN_PARAMETER_NEIGHBORS} unique local perturbations"
+        )
     if not features_complete:
         research_reasons.append("feature-importance evidence is incomplete")
     if not clustered_complete:
@@ -641,7 +661,9 @@ async def ingest_backtest_evidence(
         and float(oos_expectancy) > 0.0
         and float(oos_summary["profit_factor"]) >= 1.0
         and oos_degradation <= 0.35
-        and bool(stable_neighbors)
+        and len(neighbors) >= MIN_PARAMETER_NEIGHBORS
+        and len(stable_neighbors) == len(neighbors)
+        and parameter_degradation <= MAX_PARAMETER_NEIGHBOR_DEGRADATION
     )
     components = _objective_components(oos_summary, fold_verdicts, parameter_stability)
     score = _objective_score(components)
