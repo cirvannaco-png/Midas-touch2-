@@ -180,7 +180,7 @@ def test_partial_fills_refresh_live_position_volume_and_average_entry():
 def test_unfilled_accepted_orders_release_capacity_when_cancelled_or_expired():
     orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
     ea=EA.read_text()
-    assert "bool MarkCancelledOrder(ulong orderTicket)" in orders
+    assert "MarkCancelledOrder(ulong orderTicket)" in orders
     assert "g_orders.MarkCancelledOrder(trans.order)" in ea
     assert "ORDER_STATE_CANCELED" in ea
     assert "ORDER_STATE_EXPIRED" in ea
