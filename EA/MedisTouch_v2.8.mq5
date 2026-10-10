@@ -317,7 +317,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    if(entry==DEAL_ENTRY_IN)
      {
       ulong orderTicket=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
-      g_orders.MarkFilledFromPending(orderTicket,position,price);
+      g_orders.MarkFilledFromPending(orderTicket,position,price,volume);
       decisionId=g_orders.DecisionIdForTicket(position);
       if(g_tradeOutcomeTrackingEnabled && decisionId>0 && g_tracker.MarkExecuted(decisionId,price,dealTime,volume))
         {
