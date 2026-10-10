@@ -17,6 +17,7 @@ private:
    string   m_storageKey;
    string   m_lockKey;
    double   m_lockValue;
+   double   m_legacyLockSeenAt;
 
    int DateKey(datetime at)
      {
@@ -60,15 +61,26 @@ private:
          if(GlobalVariableSetOnCondition(m_lockKey,token,0.0))
            {
             m_lockValue=token;
+            m_legacyLockSeenAt=0.0;
             return true;
            }
          double held=GlobalVariableGet(m_lockKey);
          double now=(double)GetTickCount64();
          // Recover a lease left behind by an interrupted EA event. CAS ensures
          // an old owner cannot release a lock already acquired by another owner.
-         if(held>0.0 && (now-held>30000.0 || (held==1.0 && now>30000.0)))
+         bool stale=false;
+         if(held==1.0)
            {
-            GlobalVariableSetOnCondition(m_lockKey,0.0,held);
+            // Older builds used the constant 1.0 lock token, which has no age.
+            // Observe it for 30 seconds before recovery to avoid stealing an active old lock.
+            if(m_legacyLockSeenAt<=0.0)m_legacyLockSeenAt=now;
+            else if(now-m_legacyLockSeenAt>30000.0)stale=true;
+           }
+         else if(held>0.0 && now-held>30000.0)
+            stale=true;
+         if(stale && GlobalVariableSetOnCondition(m_lockKey,0.0,held))
+           {
+            m_legacyLockSeenAt=0.0;
             continue;
            }
          Sleep(1);
@@ -211,7 +223,7 @@ private:
 
 public:
    CDailyTradeTarget():m_target(3),m_count(0),m_dateKey(0),m_weekday(false),
-      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""),m_lockValue(0.0){}
+      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""),m_lockValue(0.0),m_legacyLockSeenAt(0.0){}
 
    void Init(int target,double minQualifiedR,ulong magic)
      {
