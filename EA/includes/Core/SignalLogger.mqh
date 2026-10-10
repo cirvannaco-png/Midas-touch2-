@@ -293,7 +293,7 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
                // v2.14 diagnostics — same append-only discipline.
                "KeyLevelSource", "KeyLevelReaction", "KeyLevelScore",
                // v2.15 diagnostics — same append-only discipline.
-               "SelectedStrategy", "SelectedStrategyScore", "OutcomeEpoch");
+               "SelectedStrategy", "SelectedStrategyScore");
       m_headerWritten = true;
      }
 
@@ -376,8 +376,9 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
                "ReversionScore", "ReversionClass",
                // v2.14 — same rationale.
                "KeyLevelSource", "KeyLevelReaction", "KeyLevelScore",
-               // v2.15 — same rationale.
-               "SelectedStrategy", "SelectedStrategyScore");
+               // v2.15 — same rationale. OutcomeEpoch is appended so legacy
+               // positional columns remain stable in this versioned outcome file.
+               "SelectedStrategy", "SelectedStrategyScore", "OutcomeEpoch");
       m_outcomeHeaderWritten = true;
      }
 
