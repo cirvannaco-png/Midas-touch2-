@@ -8,6 +8,7 @@ def _outcome(trade_id, timestamp, partition, index, fold_id=None):
     return {
         "trade_id": trade_id,
         "timestamp": timestamp.isoformat(),
+        "resolved_at": (timestamp + timedelta(minutes=1)).isoformat(),
         "partition": partition,
         "fold_id": fold_id,
         "outcome": "win" if is_win else "loss",
@@ -89,6 +90,7 @@ def _valid_payload():
                 "trades": [{
                     "trade_id": f"neighbor-holdout-{i}",
                     "timestamp": (start + timedelta(days=60 + i)).isoformat(),
+                    "resolved_at": (start + timedelta(days=60 + i, minutes=1)).isoformat(),
                     "outcome": "win" if i % 5 != 0 else "loss",
                     "realized_r": 0.5 if i % 5 != 0 else -0.5,
                 } for i in range(30)],
@@ -169,6 +171,30 @@ def test_backtest_evidence_holds_when_any_neighbor_breaks_the_plateau(client, au
     assert "not activated" in body["promotion_boundary"]
 
 
+def test_backtest_evidence_rejects_resolution_at_or_after_locked_oos_end(client, auth_headers):
+    payload = _valid_payload()
+    payload["trades"][-1]["resolved_at"] = payload["provenance"]["locked_oos_end"]
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 422
+    assert "resolves at or after locked_oos_end" in response.json()["detail"]
+
+
+def test_backtest_evidence_rejects_pre_oos_trade_resolving_during_oos(client, auth_headers):
+    payload = _valid_payload()
+    validation_trade = next(row for row in payload["trades"] if row["partition"] == "validation")
+    validation_trade["resolved_at"] = (
+        datetime.fromisoformat(payload["provenance"]["locked_oos_start"]) + timedelta(minutes=1)
+    ).isoformat()
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 422
+    assert "pre-OOS trade" in response.json()["detail"]
+    assert "locked_oos_start" in response.json()["detail"]
+
+
 def test_backtest_evidence_ingestion_rejects_duplicate_run_id(client, auth_headers):
     payload = _valid_payload()
     first = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
@@ -226,6 +252,7 @@ def test_trade_schema_rejects_inconsistent_outcome_contract(
     data = {
         "trade_id": "bad-row",
         "timestamp": datetime(2024, 1, 1, tzinfo=timezone.utc),
+        "resolved_at": datetime(2024, 1, 1, 0, 1, tzinfo=timezone.utc),
         "partition": partition,
         "fold_id": 1 if partition == "train" else None,
         "outcome": outcome,
