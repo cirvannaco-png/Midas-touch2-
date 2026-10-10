@@ -42,8 +42,10 @@ def test_counter_serializes_updates_and_deduplicates_closes():
     assert 'm_storageKey+".X."+StringFormat("%I64u",positionId)' in target
     assert "GlobalVariableTemp(m_lockKey)" in target
     assert "!created && !GlobalVariableCheck(m_lockKey)" in target
-    assert "GlobalVariableSetOnCondition(m_lockKey,1.0,0.0)" in target
-    assert "GlobalVariableSetOnCondition(m_lockKey,0.0,1.0)" in target
+    assert "GlobalVariableSetOnCondition(m_lockKey,token,0.0)" in target
+    assert "GetTickCount64()" in target
+    assert "now-held>30000.0" in target
+    assert "GlobalVariableSetOnCondition(m_lockKey,0.0,m_lockValue)" in target
     assert "if(GlobalVariableCheck(marker))" in target
     assert "GlobalVariableSet(marker,(double)at)" in target
     assert "CountMarkersForDateLocked(closeDateKey)" in target
