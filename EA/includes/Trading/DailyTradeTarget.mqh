@@ -239,6 +239,9 @@ public:
       m_dateKey=0;
       m_weekday=false;
       m_reported=false;
+      m_lockValue=0.0;
+      m_legacyLockSeenAt=0.0;
+      m_reconcilePending=false;
 
       datetime now=TimeCurrent();
       MqlDateTime t;
