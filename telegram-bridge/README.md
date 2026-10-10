@@ -230,6 +230,8 @@ the variable `SCHEDULE_TASK=biweekly-recalibration`. The job's UTC parity guard 
 recalibration request run only every *other* Saturday. The bridge request also wakes a sleeping
 Render service, because wake-up and trigger are the same HTTPS request.
 
+The scheduled job requires a successful HTTP response with JSON `status: "ok"`; it fails closed on a malformed response or `status: "no_data"`. The latter means there were no recent live `signal_outcomes` to persist a calibration cycle (although registered challengers are still evaluated), so check the bridge logs and outcome ingestion rather than treating the green HTTP response as a completed calibration.
+
 The schedule itself is a GitLab project setting and is **not created by this YAML change**. In
 GitLab, open **Build → Pipeline schedules**, create the schedule on the default branch, set the
 cron above, add `SCHEDULE_TASK=biweekly-recalibration`, and save it. Then add these protected/masked
