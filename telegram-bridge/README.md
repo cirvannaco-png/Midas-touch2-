@@ -39,7 +39,7 @@ directly with commands like `/positions` or `/performance`.
 | POST   | `/trade/retry-failed` | Yes         | Resend up to 5 transiently-failed trade events             |
 | POST   | `/outcome`          | Yes           | Receive a resolved (or no-fill) setup outcome from the EA's OutcomeTracker — see [Trade tagging & recalibration](#trade-tagging--recalibration) |
 | GET    | `/config/{symbol}`  | Yes           | Polled by `ConfigSync.mqh` — reports the most recently approved weight_version, if any. Dormant: null until a real promotion happens |
-| POST   | `/admin/run-cycle`  | Yes           | Trigger one recalibration cycle (metrics → gating decision → Telegram card / auto-rollback). Meant to be called by a scheduler, not a person — see [Scheduling](#scheduling-the-recalibration-cycle) |
+| POST   | `/admin/run-cycle`  | Yes           | Trigger one recalibration cycle (metrics → gating decision → Telegram card / auto-rollback). Meant to be called by a scheduler, not a person — see [Scheduling](#scheduling-the-recalibration-cycle) |\n| POST   | `/research/backtest-evidence` | Yes | Ingest immutable MT5 Strategy Tester evidence, compute metrics, and register a candidate without activating it — see [Backtest evidence ingestion](#backtest-evidence-ingestion) |
 | GET    | `/copy/feed`        | Per-subscriber `X-Copy-Key` | Polled by a paying subscriber's own copier script — see [Payments & copy trading](#payments--copy-trading) |
 | POST   | `/admin/check-subscriptions` | Yes    | Trigger one subscription-enforcement sweep (warn / expire / remove) — see [Payments & copy trading](#payments--copy-trading) |
 | POST   | `/telegram/webhook` | Telegram only | Inbound updates from Telegram (verified via secret token) |
@@ -244,6 +244,28 @@ Because `app/calibration.py` imports `tools/gating.py` and `tools/metrics_engine
 hand against production data), `telegram-bridge/Dockerfile` copies `tools/` into the image
 alongside `app/` — if you ever restructure the Dockerfile, keep that `COPY tools/ ./tools/`
 line, or `/admin/run-cycle` will 500 on every call in production while working fine locally.
+
+## Backtest evidence ingestion
+
+`POST /research/backtest-evidence` accepts a normalized MT5 Strategy Tester evidence bundle under the same `X-API-Key` authorization as the admin routes. This endpoint stores immutable, append-only configuration-evaluation evidence; it does not treat a backtest as a live trade, and it cannot by itself activate a new configuration.
+
+### Required evidence contract
+
+The JSON payload must include the exact strategy/instrument/timeframe/parameter identity, `data_version`, `optimizer_version`, a tester provenance manifest (EA commit/build, terminal build, dataset and report SHA-256 digests, period, fill policy, and spread/commission/slippage assumptions), and normalized trade outcomes.
+
+Trade rows are assigned to chronological `train`, fold-specific `validation`, or `locked_oos` partitions. Each fold must have non-overlapping trade IDs between its train and validation sets and respect time ordering. At least three folds are required; each fold needs 20 resolved training outcomes and 10 resolved validation outcomes. Locked OOS must occur after all validation windows and contain at least 30 resolved outcomes. Filled trade rows must carry transaction-cost fields; no-fill/ambiguous rows must not invent a realized-R result.
+
+A robust parameter plateau must include at least one separately identified neighboring parameter configuration, replayed over the same declared historical period, with at least 30 resolved OOS outcomes and expectancy within 10% of the submitted candidate. Feature-importance, clustered-MDA, paired counterfactual, and (for exit changes) scale-out replay artifacts are retained with the evidence. The server computes the primary trade metrics and composite objective from the submitted trade rows; missing research artifacts or failing OOS quality leaves the candidate at `BACKTESTED` rather than promoting it.
+
+The endpoint has a separate bounded upload-size limit controlled by `MAX_BACKTEST_EVIDENCE_BODY_SIZE` (default 5 MiB); regular signal endpoints keep their smaller request-body limit.
+
+### Lifecycle boundary
+
+A complete, positive OOS evaluation may move a registered candidate from `OPTIMIZED` through `BACKTESTED` to `VALIDATED`. It deliberately does **not** skip `QUARANTINE`, `SHADOW`, or `CHALLENGER`, create a promotion approval, change the Champion, or activate the EA. Those stages must be backed by their own governance/evidence workflow, followed by human approval and an exact configuration-hash ACK from the EA.
+
+`report_sha256` and `dataset_sha256` are preserved as provenance references and `ingest_payload_sha256` is computed by the server. The service cannot independently read an MT5 terminal's local report file, so the declared source report/data hashes are not proof of authorship by themselves. Use a trusted exporter and retain the original reports alongside the returned `config_hash`, `evidence_version`, and `ingest_payload_sha256`.
+
+The accepted schema is implemented in `app/api/backtest_evidence.py`; regression coverage lives in `tests/test_backtest_evidence_api.py`.
 
 ## Payments & copy trading
 
