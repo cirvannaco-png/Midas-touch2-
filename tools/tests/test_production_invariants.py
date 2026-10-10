@@ -175,3 +175,21 @@ def test_partial_fills_refresh_live_position_volume_and_average_entry():
     assert "Additional partial fills for the same broker order" in orders
     assert "m_trades[i].volume=PositionGetDouble(POSITION_VOLUME);" in orders
     assert "m_trades[i].fillPrice=PositionGetDouble(POSITION_PRICE_OPEN);" in orders
+
+def test_unfilled_accepted_orders_release_capacity_when_cancelled_or_expired():
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    ea=EA.read_text()
+    assert "bool MarkCancelledOrder(ulong orderTicket)" in orders
+    assert "g_orders.MarkCancelledOrder(trans.order)" in ea
+    assert "ORDER_STATE_CANCELED" in ea
+    assert "ORDER_STATE_EXPIRED" in ea
+    assert "ORDER_STATE_REJECTED" in ea
+
+
+def test_mql5_position_identity_methods_are_part_of_architecture_contract():
+    validator=(ROOT/"tools"/"validate_mql5_architecture.py").read_text()
+    orders=(ROOT/"EA"/"includes"/"Execution"/"OrderManager.mqh").read_text()
+    assert '"MarkFilledFromPending": 4' in validator
+    assert '"MarkCancelledOrder": 1' in validator
+    assert "PositionTicketAt(int idx)" in orders
+    assert "PositionIdentifierAt(int idx)" in orders
