@@ -218,7 +218,7 @@ def test_metaeditor_preflight_stages_and_compiles_all_mql5_entry_points():
     assert "--test-destination $testRoot" in script
     assert 'parser.add_argument("--test-destination"' in stager
     assert "test_entry_points = sorted(test_source_dir.glob(\"*.mq5\"))" in stager
-    assert "/compile:" in script and '"/log"' in script and "/inc:" in script
+    assert "/compile:" in script and '"/log"' in script and "/include:" in script
     assert '$metaLogPath = [System.IO.Path]::ChangeExtension($SourcePath, ".log")' in script
     assert "Copy-Item -LiteralPath $metaLogPath -Destination $LogPath -Force" in script
     assert "zero compile errors" in script
