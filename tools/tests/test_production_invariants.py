@@ -206,11 +206,18 @@ def test_partial_exit_obeys_hedging_mode_and_broker_volume_grid():
     assert "m_partialCloseSupported && stateAfterStop==TS_PROTECTED" in manager
 
 
-def test_metaeditor_preflight_stages_and_compiles_both_entry_points():
+def test_metaeditor_preflight_stages_and_compiles_all_mql5_entry_points():
     script=(ROOT/"tools"/"compile_mt5.ps1").read_text()
+    stager=(ROOT/"tools"/"stage_mt5_package.py").read_text()
     assert "tools/stage_mt5_package.py" in script
     assert "MedisTouch_v2.8.mq5" in script
     assert "MedisTouch_Indicator_v2.8.mq5" in script
+    assert "ConfigSyncContract.mq5" in script
+    assert "DecisionEngineGeometry.mq5" in script
+    assert "DynamicStopEngine.mq5" in script
+    assert "--test-destination $testRoot" in script
+    assert 'parser.add_argument("--test-destination"' in stager
+    assert "test_entry_points = sorted(test_source_dir.glob(\"*.mq5\"))" in stager
     assert "/compile:" in script and '"/log"' in script and "/inc:" in script
     assert '$metaLogPath = [System.IO.Path]::ChangeExtension($SourcePath, ".log")' in script
     assert "Copy-Item -LiteralPath $metaLogPath -Destination $LogPath -Force" in script
