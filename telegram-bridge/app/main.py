@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, Response
 
-from app.api.config_sync import router as config_sync_router
 from app.api.backtest_evidence import router as backtest_evidence_router
+from app.api.config_sync import router as config_sync_router
 from app.api.environment_outcomes import router as environment_outcome_router
 from app.bot import init_bot, shutdown_bot
 from app.config import APP_VERSION, settings
