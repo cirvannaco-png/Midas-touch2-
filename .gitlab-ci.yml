@@ -151,7 +151,30 @@ biweekly-recalibration:
       cat "$response_file"
       printf '\nRecalibration endpoint HTTP status: %s\n' "$http_code"
       case "$http_code" in
-        2*) ;;
+        2*)
+          # A 2xx response can still mean no live outcomes were found. Fail
+          # closed so a green schedule job means an actual cycle was persisted.
+          python3 - "$response_file" <<'PY'
+      import json
+      import sys
+
+      try:
+          with open(sys.argv[1], encoding="utf-8") as response_file:
+              result = json.load(response_file)
+      except (OSError, json.JSONDecodeError) as error:
+          print(f"Invalid recalibration response JSON: {error}", file=sys.stderr)
+          raise SystemExit(1)
+
+      if result.get("status") != "ok":
+          print(
+              "Recalibration did not complete a live outcome cycle "
+              f"(status={result.get('status')!r}); investigate missing outcome data "
+              "and bridge logs.",
+              file=sys.stderr,
+          )
+          raise SystemExit(1)
+      PY
+          ;;
         *) echo "Recalibration cycle failed; inspect the bridge logs and CI response above."; exit 1 ;;
       esac
   rules:
