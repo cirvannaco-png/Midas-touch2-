@@ -20,6 +20,7 @@ from typing import Any
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 REQUIRED_CSV_COLUMNS = {
     "signalid",
+    "outcomeepoch",
     "symbol",
     "entrytf",
     "direction",
@@ -171,6 +172,13 @@ def _load_csv(path: Path, manifest: dict[str, Any]) -> list[dict[str, str]]:
                 if row["direction"].upper() not in {"BUY", "SELL"}:
                     raise BuildEvidenceError(f"{path.name}:{line_number}: invalid Direction")
                 timestamp = _timestamp_from_signal_id(signal_id, manifest, path.name, line_number)
+                resolved_at = _timestamp_from_epoch_value(
+                    row["outcomeepoch"], manifest, path.name, line_number, "OutcomeEpoch"
+                )
+                if resolved_at < timestamp:
+                    raise BuildEvidenceError(
+                        f"{path.name}:{line_number}: OutcomeEpoch cannot precede the signal/entry timestamp"
+                    )
                 is_filled = _parse_bool(row["filled"], path.name, line_number, "Filled")
                 ambiguous = _parse_bool(
                     row["samebarsltpcollision"], path.name, line_number, "SameBarSLTPCollision"
@@ -210,6 +218,7 @@ def _load_csv(path: Path, manifest: dict[str, Any]) -> list[dict[str, str]]:
                 rows.append({
                     "trade_id": signal_id,
                     "timestamp": timestamp,
+                    "resolved_at": resolved_at,
                     "outcome": outcome,
                     "realized_r": realized_r,
                     "filled": is_filled,
@@ -246,23 +255,33 @@ def _parse_finite_float(value: str, filename: str, line: int, field: str) -> flo
     return result
 
 
+def _timestamp_from_epoch_value(
+    raw_value: str, manifest: dict[str, Any], filename: str, line: int, field: str
+) -> datetime:
+    try:
+        epoch = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise BuildEvidenceError(f"{filename}:{line}: {field} must be an integer epoch in seconds") from exc
+    if epoch <= 0:
+        raise BuildEvidenceError(f"{filename}:{line}: {field} must be a positive event timestamp")
+    try:
+        timestamp = datetime.fromtimestamp(epoch, timezone.utc)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise BuildEvidenceError(f"{filename}:{line}: {field} epoch is out of range") from exc
+    if manifest["signal_id_epoch_basis"] == "broker_wall_clock":
+        timestamp -= timedelta(minutes=manifest["server_utc_offset_minutes"])
+    return timestamp
+
+
 def _timestamp_from_signal_id(
     signal_id: str, manifest: dict[str, Any], filename: str, line: int
 ) -> datetime:
     suffix = signal_id.rpartition("_")[2]
-    try:
-        epoch = int(suffix)
-    except ValueError as exc:
+    if not suffix:
         raise BuildEvidenceError(
             f"{filename}:{line}: SignalID must end in the numeric epoch suffix written by SignalLogger"
-        ) from exc
-    try:
-        timestamp = datetime.fromtimestamp(epoch, timezone.utc)
-    except (OverflowError, OSError, ValueError) as exc:
-        raise BuildEvidenceError(f"{filename}:{line}: SignalID epoch suffix is out of range") from exc
-    if manifest["signal_id_epoch_basis"] == "broker_wall_clock":
-        timestamp -= timedelta(minutes=manifest["server_utc_offset_minutes"])
-    return timestamp
+        )
+    return _timestamp_from_epoch_value(suffix, manifest, filename, line, "SignalID epoch suffix")
 
 
 def _validate_folds(manifest: dict[str, Any], period_start: datetime, oos_start: datetime) -> list[dict[str, Any]]:
@@ -308,32 +327,70 @@ def _normalize_candidate_trades(
     oos_start: datetime,
     oos_end: datetime,
     excluded_windows: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int, int, int]:
     output = []
     excluded_count = 0
+    censored_rows = 0
+    censored_partition_assignments = 0
     for row in rows:
         timestamp = row["timestamp"]
+        resolved_at = row["resolved_at"]
         if not period_start <= timestamp <= period_end:
             raise BuildEvidenceError(f"trade {row['trade_id']} lies outside the declared backtest period")
-        matched = False
+        if resolved_at > period_end:
+            raise BuildEvidenceError(
+                f"trade {row['trade_id']} resolves after the declared Tester period; "
+                "extend the tested data window or exclude it from evidence"
+            )
+        base = {key: value for key, value in row.items() if key not in {"timestamp", "resolved_at"}}
+        matched_entry_window = False
+        assigned = False
+        row_censored = False
         if _contains(timestamp, oos_start, oos_end):
-            output.append({**row, "timestamp": _iso(timestamp), "partition": "locked_oos", "fold_id": None})
-            matched = True
+            matched_entry_window = True
+            if resolved_at < oos_end:
+                output.append({
+                    **base,
+                    "timestamp": _iso(timestamp),
+                    "resolved_at": _iso(resolved_at),
+                    "partition": "locked_oos",
+                    "fold_id": None,
+                })
+                assigned = True
+            else:
+                censored_partition_assignments += 1
+                row_censored = True
         else:
             for fold in folds:
                 if _contains(timestamp, fold["train_start"], fold["train_end"]):
-                    output.append({
-                        **row, "timestamp": _iso(timestamp),
-                        "partition": "train", "fold_id": fold["fold_id"],
-                    })
-                    matched = True
+                    matched_entry_window = True
+                    if resolved_at < fold["train_end"]:
+                        output.append({
+                            **base,
+                            "timestamp": _iso(timestamp),
+                            "resolved_at": _iso(resolved_at),
+                            "partition": "train",
+                            "fold_id": fold["fold_id"],
+                        })
+                        assigned = True
+                    else:
+                        censored_partition_assignments += 1
+                        row_censored = True
                 if _contains(timestamp, fold["validation_start"], fold["validation_end"]):
-                    output.append({
-                        **row, "timestamp": _iso(timestamp),
-                        "partition": "validation", "fold_id": fold["fold_id"],
-                    })
-                    matched = True
-        if not matched:
+                    matched_entry_window = True
+                    if resolved_at < fold["validation_end"]:
+                        output.append({
+                            **base,
+                            "timestamp": _iso(timestamp),
+                            "resolved_at": _iso(resolved_at),
+                            "partition": "validation",
+                            "fold_id": fold["fold_id"],
+                        })
+                        assigned = True
+                    else:
+                        censored_partition_assignments += 1
+                        row_censored = True
+        if not matched_entry_window:
             if not any(
                 _contains(
                     timestamp,
@@ -347,7 +404,11 @@ def _normalize_candidate_trades(
                     "add an explicit excluded warm-up/embargo window if intentional"
                 )
             excluded_count += 1
-    return output, excluded_count
+        elif row_censored and not assigned:
+            # The signal belongs to a declared partition but its result matured
+            # after every matching partition's scoring boundary.
+            censored_rows += 1
+    return output, excluded_count, censored_rows, censored_partition_assignments
 
 
 def _normalize_neighbors(
@@ -378,13 +439,17 @@ def _normalize_neighbors(
         neighbor_trades = []
         for row in rows:
             timestamp = row["timestamp"]
+            resolved_at = row["resolved_at"]
             if not _contains(timestamp, oos_start, oos_end):
+                continue
+            if resolved_at >= oos_end:
                 continue
             if row["outcome"] not in {"win", "loss", "scratch"}:
                 continue
             neighbor_trades.append({
                 "trade_id": row["trade_id"],
                 "timestamp": _iso(timestamp),
+                "resolved_at": _iso(resolved_at),
                 "outcome": row["outcome"],
                 "realized_r": row["realized_r"],
             })
@@ -450,7 +515,7 @@ def build_evidence(manifest_path: str | Path) -> tuple[dict[str, Any], dict[str,
     if not isinstance(excluded_windows, list):
         raise BuildEvidenceError("excluded_windows must be a JSON array")
     raw_rows = _load_csv(candidate_csv, manifest)
-    trades, excluded_count = _normalize_candidate_trades(
+    trades, excluded_count, censored_rows, censored_partition_assignments = _normalize_candidate_trades(
         raw_rows, folds, period_start=period_start, period_end=period_end,
         oos_start=oos_start, oos_end=oos_end, excluded_windows=excluded_windows,
     )
@@ -506,6 +571,8 @@ def build_evidence(manifest_path: str | Path) -> tuple[dict[str, Any], dict[str,
             if not payload[key]
         ],
         "scale_out_rows": len(payload["scale_out"]),
+        "outcomes_censored_at_partition_boundary": censored_rows,
+        "censored_partition_assignments": censored_partition_assignments,
     }
     return payload, summary
 
