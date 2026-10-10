@@ -70,7 +70,7 @@ function Invoke-MetaEditorCompile {
     $compileArg = '/compile:"{0}"' -f $SourcePath
     # MetaEditor documents /log as a switch that writes <source>.log beside the source.
     # Copy that authoritative log to the central log directory only after compilation.
-    $includeArg = '/inc:"{0}"' -f (Join-Path $TerminalDataPath "MQL5")
+    $includeArg = '/include:"{0}"' -f (Join-Path $TerminalDataPath "MQL5")
     Write-Host "Compiling: $SourcePath"
     Write-Host "Include root: $(Join-Path $TerminalDataPath 'MQL5')"
     $process = Start-Process -FilePath $MetaEditorPath -ArgumentList @($compileArg, "/log", $includeArg) -Wait -PassThru
