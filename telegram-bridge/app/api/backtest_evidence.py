@@ -52,6 +52,8 @@ class TesterProvenance(StrictModel):
     data_vendor: str = Field(min_length=1, max_length=120)
     period_start: datetime
     period_end: datetime
+    locked_oos_start: datetime
+    locked_oos_end: datetime
     generated_at: datetime
     spread_model: str = Field(min_length=1, max_length=120)
     spread_points: float = Field(ge=0)
@@ -73,7 +75,7 @@ class TesterProvenance(StrictModel):
             raise ValueError("ea_source_commit must be a 40- or 64-character Git commit hash")
         return value.lower()
 
-    @field_validator("period_start", "period_end", "generated_at")
+    @field_validator("period_start", "period_end", "locked_oos_start", "locked_oos_end", "generated_at")
     @classmethod
     def _require_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
@@ -84,6 +86,8 @@ class TesterProvenance(StrictModel):
     def _validate_period(self):
         if self.period_start >= self.period_end:
             raise ValueError("period_start must be earlier than period_end")
+        if not self.period_start <= self.locked_oos_start < self.locked_oos_end <= self.period_end:
+            raise ValueError("locked OOS period must be inside the overall backtest period")
         return self
 
 
@@ -259,6 +263,12 @@ class BacktestEvidenceRequest(StrictModel):
         for trade in self.trades:
             if not self.provenance.period_start <= trade.timestamp <= self.provenance.period_end:
                 raise ValueError(f"trade {trade.trade_id} is outside the declared backtest period")
+            if trade.partition == "locked_oos" and not (
+                self.provenance.locked_oos_start <= trade.timestamp < self.provenance.locked_oos_end
+            ):
+                raise ValueError(f"locked_oos trade {trade.trade_id} is outside the locked OOS window")
+            if trade.partition != "locked_oos" and trade.timestamp >= self.provenance.locked_oos_start:
+                raise ValueError(f"train/validation trade {trade.trade_id} overlaps the locked OOS window")
         if len(self.counterfactual) > 0:
             ids = [row.scenario_id for row in self.counterfactual]
             if len(ids) != len(set(ids)):
@@ -507,8 +517,11 @@ async def ingest_backtest_evidence(
                 status_code=422,
                 detail="parameter-neighbor evidence must use the same data digest, EA/terminal build, and historical period",
             )
-        if any(row.timestamp < payload.provenance.period_start or row.timestamp > payload.provenance.period_end for row in neighbor.trades):
-            raise HTTPException(status_code=422, detail="parameter-neighbor trade is outside the declared backtest period")
+        if any(
+            not payload.provenance.locked_oos_start <= row.timestamp < payload.provenance.locked_oos_end
+            for row in neighbor.trades
+        ):
+            raise HTTPException(status_code=422, detail="parameter-neighbor trade is outside the common locked OOS window")
         neighbor_ids = [row.trade_id for row in neighbor.trades]
         if len(neighbor_ids) != len(set(neighbor_ids)):
             raise HTTPException(status_code=422, detail=f"duplicate trade_id in neighbor configuration {neighbor_hash}")
@@ -557,7 +570,14 @@ async def ingest_backtest_evidence(
     # independently fetch a terminal's local file to authenticate its producer.
     train_resolved_count = len(_resolved(train_all))
     validation_resolved_count = len(_resolved(validation_all))
-    oos_verified = len(oos_rows) >= MIN_OOS_TRADES and max(row.timestamp for row in validation_all) < min(row.timestamp for row in holdout)
+    oos_verified = (
+        len(oos_rows) >= MIN_OOS_TRADES
+        and max(row.timestamp for row in validation_all) < payload.provenance.locked_oos_start
+        and all(
+            payload.provenance.locked_oos_start <= row.timestamp < payload.provenance.locked_oos_end
+            for row in holdout
+        )
+    )
     research_reasons: list[str] = []
     if not oos_verified:
         research_reasons.append("locked OOS chronology/sample verification failed")
