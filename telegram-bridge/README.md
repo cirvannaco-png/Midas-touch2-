@@ -39,7 +39,8 @@ directly with commands like `/positions` or `/performance`.
 | POST   | `/trade/retry-failed` | Yes         | Resend up to 5 transiently-failed trade events             |
 | POST   | `/outcome`          | Yes           | Receive a resolved (or no-fill) setup outcome from the EA's OutcomeTracker — see [Trade tagging & recalibration](#trade-tagging--recalibration) |
 | GET    | `/config/{symbol}`  | Yes           | Polled by `ConfigSync.mqh` — reports the most recently approved weight_version, if any. Dormant: null until a real promotion happens |
-| POST   | `/admin/run-cycle`  | Yes           | Trigger one recalibration cycle (metrics → gating decision → Telegram card / auto-rollback). Meant to be called by a scheduler, not a person — see [Scheduling](#scheduling-the-recalibration-cycle) |\n| POST   | `/research/backtest-evidence` | Yes | Ingest immutable MT5 Strategy Tester evidence, compute metrics, and register a candidate without activating it — see [Backtest evidence ingestion](#backtest-evidence-ingestion) |
+| POST   | `/admin/run-cycle`  | Yes           | Trigger one recalibration cycle (metrics → gating decision → Telegram card / auto-rollback). Meant to be called by a scheduler, not a person — see [Scheduling](#scheduling-the-recalibration-cycle) |
+| POST   | `/research/backtest-evidence` | Yes | Ingest immutable MT5 Strategy Tester evidence, compute metrics, and register a candidate without activating it — see [Backtest evidence ingestion](#backtest-evidence-ingestion) |
 | GET    | `/copy/feed`        | Per-subscriber `X-Copy-Key` | Polled by a paying subscriber's own copier script — see [Payments & copy trading](#payments--copy-trading) |
 | POST   | `/admin/check-subscriptions` | Yes    | Trigger one subscription-enforcement sweep (warn / expire / remove) — see [Payments & copy trading](#payments--copy-trading) |
 | POST   | `/telegram/webhook` | Telegram only | Inbound updates from Telegram (verified via secret token) |
