@@ -301,6 +301,20 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
                         const MqlTradeRequest &request,
                         const MqlTradeResult &result)
   {
+   // A market request can be accepted before its fill arrives. Release its
+   // pending slot only when history confirms the order ended unfilled.
+   if(trans.type==TRADE_TRANSACTION_ORDER_DELETE && trans.order>0)
+     {
+      if(HistoryOrderSelect(trans.order))
+        {
+         ENUM_ORDER_STATE orderState=(ENUM_ORDER_STATE)HistoryOrderGetInteger(trans.order,ORDER_STATE);
+         if(orderState==ORDER_STATE_CANCELED || orderState==ORDER_STATE_EXPIRED ||
+            orderState==ORDER_STATE_REJECTED)
+            g_orders.MarkCancelledOrder(trans.order);
+        }
+      return;
+     }
+
    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD || trans.deal==0)return;
    if(!HistoryDealSelect(trans.deal))return;
    if(HistoryDealGetString(trans.deal,DEAL_SYMBOL)!=_Symbol)return;
