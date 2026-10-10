@@ -142,7 +142,9 @@ private:
          string name=GlobalVariableName(i);
          if(StringFind(name,prefix)!=0)continue;
          double storedAt=GlobalVariableGet(name);
-         if(storedAt>=1000000000.0 && storedAt<cutoff)
+         // Previous versions stored 1.0 as a marker flag without a timestamp.
+         // Retire those legacy flags after rollover, as well as expired timestamp markers.
+         if(storedAt<1000000000.0 || storedAt<cutoff)
             GlobalVariableDel(name);
         }
      }
