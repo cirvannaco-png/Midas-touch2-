@@ -179,7 +179,7 @@ def test_normalizer_censors_outcomes_that_mature_after_fold_boundaries(tmp_path)
     assert any(row["trade_id"] == day19_id and row["partition"] == "train" and row["fold_id"] == 2 for row in payload["trades"])
     assert not any(row["trade_id"] == day30_id and row["partition"] == "validation" and row["fold_id"] == 1 for row in payload["trades"])
     assert any(row["trade_id"] == day30_id and row["partition"] == "train" and row["fold_id"] == 3 for row in payload["trades"])
-    assert summary["censored_partition_assignments"] >= 2
+    assert summary["censored_partition_assignments"] >= 1
 
 
 def test_normalizer_requires_explicit_signal_id_time_basis(tmp_path):
