@@ -275,24 +275,36 @@ bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
    bool isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
    double refPrice=isBuy ? SymbolInfoDouble(symbol,SYMBOL_BID) : SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,isBuy,"ModifySLTP")) return false;
-   if(m_trade.PositionModify(ticket,sl,tp)) return true;
-   LastRequestOk("ModifySLTP"); return false;
+   bool submitted=m_trade.PositionModify(ticket,sl,tp);
+   if(submitted && m_trade.ResultRetcode()==TRADE_RETCODE_DONE) return true;
+   uint code=m_trade.ResultRetcode();
+   PrintFormat("MedisTouch BrokerAdapter: ModifySLTP was not confirmed by the trade server (submitted=%s, retcode=%u, %s).",
+               submitted?"true":"false",code,m_trade.ResultRetcodeDescription());
+   return false;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::ClosePartial(ulong ticket,double volume)
   {
    if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
    if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   if(m_trade.PositionClosePartial(ticket,volume)) return true;
-   LastRequestOk("ClosePartial"); return false;
+   bool submitted=m_trade.PositionClosePartial(ticket,volume);
+   uint code=m_trade.ResultRetcode();
+   if(submitted && (code==TRADE_RETCODE_DONE || code==TRADE_RETCODE_DONE_PARTIAL)) return true;
+   PrintFormat("MedisTouch BrokerAdapter: ClosePartial was not confirmed by the trade server (submitted=%s, retcode=%u, %s).",
+               submitted?"true":"false",code,m_trade.ResultRetcodeDescription());
+   return false;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::CloseFull(ulong ticket)
   {
    if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
    if(!IsMarketOpenForTrading(PositionGetString(POSITION_SYMBOL),false,true)) return false;
-   if(m_trade.PositionClose(ticket)) return true;
-   LastRequestOk("CloseFull"); return false;
+   bool submitted=m_trade.PositionClose(ticket);
+   uint code=m_trade.ResultRetcode();
+   if(submitted && code==TRADE_RETCODE_DONE) return true;
+   PrintFormat("MedisTouch BrokerAdapter: CloseFull was not confirmed by the trade server (submitted=%s, retcode=%u, %s).",
+               submitted?"true":"false",code,m_trade.ResultRetcodeDescription());
+   return false;
   }
 #endif
 //+------------------------------------------------------------------+
