@@ -1,38 +1,35 @@
-# GitLab Production Release Surface
+# GitHub Canonical Source and Production Release Surface
 
 ## Purpose
-The `production` branch is the controlled Midas Touch release surface.
+
+GitHub `main` is the canonical source-control branch for Midas Touch. GitHub Actions owns repository CI and the version-controlled production-maintenance schedules. Repository authority, deployment configuration, and proven live-trading readiness are separate claims and must be verified separately.
 
 ## Current topology
-- Development/validation: GitHub `cirvannaco-png/Midas-touch2-`
-- Canonical GitLab repository: `midas-touch-group1/midas-touch2`
-- Current GitLab development branch: `main`
-- Release surface: GitLab `production`
-- Runtime service documented by the production surface: `medis-touch-telegram`
+
+- Canonical repository: GitHub `cirvannaco-png/Midas-touch2-`, branch `main`.
+- CI and production-maintenance workflow definitions: `.github/workflows/`.
+- Optional mirror: GitLab `midas-touch-group1/midas-touch2`; it does not govern canonical source or production maintenance.
+- GitLab `production` branch and the prior GitLab release-surface procedure are legacy migration artifacts, not an active release authority.
+- Runtime: the deployed bridge and MT5/VPS must be verified independently in their respective service/terminal control planes. This source-control migration does not repoint or redeploy those services by itself.
 
 ## Promotion controls
 
-1. No direct trading-logic development occurs on `production`.
-2. Release candidates originate from validated development states.
-3. Cross-provider synchronization uses a dedicated non-release branch before any release promotion.
-4. Synchronization identity is based on tree/content parity rather than provider-specific commit object format.
-5. Production promotion is represented by an explicit GitLab merge request.
-6. The synchronization controller never mutates `main` or `production`.
-7. Repository governance does not replace MetaEditor/MQL5 compilation, demo-broker validation, forward testing, or capital-readiness evidence.
+1. Develop on a branch and merge to GitHub `main` only through a reviewed pull request with required checks passing.
+2. Treat GitHub `main` as the only canonical source tree. Do not make GitLab-only source changes; reconcile the source from GitHub.
+3. The GitHub-to-GitLab sync workflow is optional mirror automation. Count a sync as successful only when it reports `SYNC_VERIFIED` for the current GitHub SHA and the resulting GitLab tree is verified.
+4. Never use provider-specific commit IDs as cross-provider content identity; verify file/tree parity.
+5. Production maintenance runs only through `.github/workflows/production-maintenance.yml`. Do not schedule the same bridge endpoints in GitLab.
+6. Production deployment still requires separate review and runtime verification; merging source code is not proof of a healthy deployment.
+7. Repository governance does not replace authoritative MetaEditor compilation, MT5 Strategy Tester validation, demo-broker testing, forward testing, or capital-readiness evidence.
 
-## Current release baseline
+## Current release baseline and operational caveats
 
-- GitLab `main`: use the live branch ref; verify the exact commit SHA at release time.
-- GitLab `production`: `b5d715bd`
-- Production protection: currently not enabled; this remains an external GitLab governance action.
-- Automatic GitLab CI: intentionally paused.
-
-## Synchronization evidence
-
-- Test ID: `SYNC-2026-09-18-001`
-- GitHub test branch: `sync-test/github-to-gitlab-20260918`
-- GitLab test branch: `sync-test/github-to-gitlab-20260918`
+- Resolve the exact GitHub `main` commit SHA at release time; do not rely on a remembered SHA.
+- GitHub branch-protection/ruleset settings have not been independently verified by this document.
+- The `production` GitHub Actions environment, its main-branch deployment restriction, and the `BRIDGE_BASE_URL` / `BRIDGE_API_KEY` environment secrets require configuration in GitHub settings. Their presence and values are not verified by repository YAML.
+- The last documented GitHub-to-GitLab sync failure was an authentication rejection (`HTTP Basic: Access denied`). Do not claim mirror parity until a later run reports `SYNC_VERIFIED`; repair the GitLab token/username in GitHub Actions settings without exposing credentials.
+- The previous GitLab production baseline `b5d715bd` and test ID `SYNC-2026-09-18-001` are historical references only, not the current canonical release baseline.
 
 ## Final validation boundary
 
-Software release status and trading readiness are separate. The remaining empirical gates are authoritative MQL5 compilation, runtime integration/recovery tests, demo-broker validation, long-horizon forward evidence, and production-grade infrastructure validation.
+A green CI run validates only the jobs it actually executed. A successful maintenance cycle requires an `ok` response with a persisted cycle ID and database evidence. EA activation additionally requires valid evidence, lifecycle gates, explicit approval where required, and acknowledgement of the exact approved configuration hash. Live trading readiness requires independent MT5/VPS/broker and forward-performance validation.
