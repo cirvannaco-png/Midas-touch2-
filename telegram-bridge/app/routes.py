@@ -679,7 +679,7 @@ def _apply_outcome_fields(
 ) -> None:
     """Persist the complete EA outcome contract using one canonical handler."""
     if source_signal is not None:
-        row.signal_time = source_signal.signal_time or payload.signal_time or source_signal.received_at
+        row.signal_time = source_signal.signal_time or source_signal.received_at
         row.decision_time = source_signal.decision_time or payload.decision_time
         row.original_decision_fingerprint = source_signal.decision_fingerprint
         row.canonical_decision = source_signal.canonical_decision
