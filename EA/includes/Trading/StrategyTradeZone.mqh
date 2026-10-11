@@ -90,7 +90,26 @@ TradeSetup CTradeDecision::BuildSMC(bool forBuy,double confidence,const SetupRea
   {TradeSetup setup;ZeroMemory(setup);if(m_priceRef==NULL||m_fvgCtx==NULL)return setup;FVGZone entryFVG;if(!FindEntryFVG(forBuy?FVG_BULL:FVG_BEAR,entryFVG))return setup;double atr=m_fvgCtx.candles.GetATR(0);if(atr<=0)return setup;setup.type=forBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL;setup.entry_top=entryFVG.top;setup.entry_bottom=entryFVG.bottom;setup.invalidation=forBuy?(entryFVG.bottom-0.05*atr):(entryFVG.top+0.05*atr);setup.stop_loss=forBuy?(entryFVG.bottom-m_slBufferATR*atr):(entryFVG.top+m_slBufferATR*atr);setup.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),forBuy?setup.entry_top:setup.entry_bottom,setup.stop_loss,forBuy);if((forBuy&&setup.stop_loss>=setup.invalidation)||(!forBuy&&setup.stop_loss<=setup.invalidation))return setup;CTargetSelector::AssignTargets(setup,m_liqCtx,m_priceRef.Symbol(),atr,forBuy?setup.entry_bottom:setup.entry_top);setup.confidence=MathMax(0.0,MathMin(confidence,100.0));setup.creation_time=TimeCurrent();setup.active=true;setup.reasons=reasons;return setup;}
 
 bool CTradeDecision::BuildNonSMC(bool forBuy,ENUM_SELECTED_STRATEGY selected,double confidence,const SetupReasons &reasons,TradeSetup &out)
-  {ZeroMemory(out);bool built=false;if(selected==STRATEGY_MOMENTUM_BREAKOUT)built=CStrategySetupBuilders::BuildMomentum(forBuy,confidence,reasons,m_priceRef,m_bosCtx,m_liqCtx,out);else if(selected==STRATEGY_MEAN_REVERSION)built=CStrategySetupBuilders::BuildMeanReversion(forBuy,confidence,reasons,m_priceRef,m_srCtx,m_liqCtx,out);else if(selected==STRATEGY_KEY_LEVEL)built=CStrategySetupBuilders::BuildKeyLevel(forBuy,confidence,reasons,m_priceRef,m_srCtx,m_liqCtx,out);if(!built)return false;out.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),ResolveExecutionEntry(out),out.stop_loss,forBuy);if((forBuy&&out.stop_loss>=out.invalidation)||(!forBuy&&out.stop_loss<=out.invalidation)){ZeroMemory(out);return false;}out.reasons.selected_strategy=selected;out.reasons.selected_strategy_score=confidence;return true;}
+  {
+   ZeroMemory(out);
+   if(m_priceRef==NULL || g_chartCtx==NULL) return false;
+   bool built=false;
+   // Strategy builders require the full timeframe context (candles + structure),
+   // not the raw CCandleData pointer used by CTradeDecision's price helpers.
+   if(selected==STRATEGY_MOMENTUM_BREAKOUT)
+      built=CStrategySetupBuilders::BuildMomentum(forBuy,confidence,reasons,g_chartCtx,m_bosCtx,m_liqCtx,out);
+   else if(selected==STRATEGY_MEAN_REVERSION)
+      built=CStrategySetupBuilders::BuildMeanReversion(forBuy,confidence,reasons,g_chartCtx,m_srCtx,m_liqCtx,out);
+   else if(selected==STRATEGY_KEY_LEVEL)
+      built=CStrategySetupBuilders::BuildKeyLevel(forBuy,confidence,reasons,g_chartCtx,m_srCtx,m_liqCtx,out);
+   if(!built) return false;
+   out.stop_loss=EnforceSpreadFloor(m_priceRef.Symbol(),ResolveExecutionEntry(out),out.stop_loss,forBuy);
+   if((forBuy&&out.stop_loss>=out.invalidation)||(!forBuy&&out.stop_loss<=out.invalidation))
+     { ZeroMemory(out); return false; }
+   out.reasons.selected_strategy=selected;
+   out.reasons.selected_strategy_score=confidence;
+   return true;
+  }
 
 TradeSetup CTradeDecision::Generate(bool forBuy)
   {TradeSetup out;ZeroMemory(out);if(m_scoring==NULL||m_priceRef==NULL)return out;SetupReasons reasons;PopulateStrategyReads(forBuy,reasons);ENUM_SELECTED_STRATEGY selected=STRATEGY_NONE;double selectedScore=0.0;SelectPeerStrategy(forBuy,reasons,selected,selectedScore);if(selected==STRATEGY_NONE||selectedScore<m_minSelectionScore){m_lastSetup=out;return out;}reasons.selected_strategy=selected;reasons.selected_strategy_score=selectedScore;if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons);else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out)){ZeroMemory(out);m_lastSetup=out;return out;}if(!out.active){ZeroMemory(out);m_lastSetup=out;return out;}out.reasons.selected_strategy=selected;out.reasons.selected_strategy_score=selectedScore;m_lastSetup=out;return out;}

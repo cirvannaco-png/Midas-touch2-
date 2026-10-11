@@ -80,6 +80,7 @@ bool CFibonacciEngine::FindLeg(bool forBuy, FibLeg &out) const
       SwingPoint hi = m_swings.GetHigh(0);
       bool found = false;
       SwingPoint bestLow;
+       ZeroMemory(bestLow);
       for(int i = 0; i < m_swings.LowCount(); i++)
         {
          SwingPoint lo = m_swings.GetLow(i);
@@ -104,6 +105,7 @@ bool CFibonacciEngine::FindLeg(bool forBuy, FibLeg &out) const
       SwingPoint lo = m_swings.GetLow(0);
       bool found = false;
       SwingPoint bestHigh;
+       ZeroMemory(bestHigh);
       for(int i = 0; i < m_swings.HighCount(); i++)
         {
          SwingPoint hi2 = m_swings.GetHigh(i);

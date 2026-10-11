@@ -82,7 +82,7 @@ void CExtendedKeyLevels::RefreshPrevWeekIfStale()
    int daysSinceMonday = (dow == 0) ? 6 : (dow - 1);
    MqlDateTime mon = t;
    mon.hour = 0; mon.min = 0; mon.sec = 0;
-   datetime mondayThisWeek = StructToTime(mon) - (long)daysSinceMonday * 86400;
+   datetime mondayThisWeek = (datetime)(StructToTime(mon) - daysSinceMonday * 86400);
 
    if(m_prevWeekValid && mondayThisWeek == m_prevWeekCachedForMonday)
       return; // still the same trading week as last time this was refreshed — cache holds
