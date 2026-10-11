@@ -28,8 +28,9 @@ concurrency:
 jobs:
   biweekly-recalibration:
     name: Guarded calibration cycle
-    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 6') || (github.event_name == 'workflow_dispatch' && inputs.task == 'biweekly-recalibration') }}
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 6') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.task == 'biweekly-recalibration') }}
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 5
     concurrency:
       group: midas-production-recalibration
@@ -141,8 +142,9 @@ jobs:
 
   daily-subscriptions:
     name: Daily subscription enforcement
-    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') || (github.event_name == 'workflow_dispatch' && inputs.task == 'daily-subscriptions') }}
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.task == 'daily-subscriptions') }}
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 5
     concurrency:
       group: midas-daily-subscription-enforcement
