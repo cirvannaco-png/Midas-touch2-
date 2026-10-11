@@ -65,11 +65,11 @@ The eventual decomposition must preserve:
 
 No model definitions should be moved until their import and migration dependencies are mapped.
 
-## Deployment track — VPS + dual-source Render
+## Deployment and source-control track — GitHub + Render/VPS
 
-The VPS is the persistent MT5/EA execution layer. Existing GitHub-backed Render services remain untouched while a GitLab-backed Render path is established independently.
+GitHub `cirvannaco-png/Midas-touch2-` on `main` is the canonical source tree and GitHub Actions is the canonical CI and production-maintenance system. GitLab is an optional one-way source-tree mirror. The migration does not itself repoint or redeploy any Render service; verify the provider, deployed commit, database and health in the service control plane.
 
-A VPS deployment is not considered live until MT5, EA health, backend authentication, broker connectivity, recovery, and reconciliation are externally verified.
+The VPS is the persistent MT5/EA execution layer. A VPS deployment is not considered live until MT5, EA health, backend authentication, broker connectivity, recovery, and reconciliation are externally verified.
 
 ## Merge gate
 
@@ -79,7 +79,7 @@ A phase may be promoted only after:
 2. invariant statement
 3. minimal change
 4. targeted regression tests
-5. GitLab CI success
+5. Applicable GitHub Actions checks passing on the exact candidate commit (GitLab mirror CI is secondary).
 6. diff/source-drift review
 7. deployment verification where applicable
 
