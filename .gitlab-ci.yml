@@ -1,9 +1,10 @@
+# GitHub Actions on canonical GitHub main owns production maintenance schedules.
+# GitLab is a mirror only: schedule pipelines are intentionally not admitted.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
 
 stages:
@@ -177,9 +178,8 @@ biweekly-recalibration:
           ;;
         *) echo "Recalibration cycle failed; inspect the bridge logs and CI response above."; exit 1 ;;
       esac
+  # Disabled intentionally: production maintenance runs from GitHub Actions only.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SCHEDULE_TASK == "biweekly-recalibration"'
-    - if: '$CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SCHEDULE_TASK == "biweekly-recalibration"'
     - when: never
 
 # Daily housekeeping uses the same bridge-authenticated admin API.
@@ -225,7 +225,6 @@ daily-subscriptions:
           print(f"Subscription sweep request failed: {error.reason}", file=sys.stderr)
           raise SystemExit(1)
       PY
+  # Disabled intentionally: production maintenance runs from GitHub Actions only.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SCHEDULE_TASK == "daily-subscriptions"'
-      when: on_success
     - when: never
