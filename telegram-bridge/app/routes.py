@@ -172,6 +172,10 @@ class OutcomeRequest(BaseModel):
     commission_cost: float | None = Field(default=None, ge=0)
     spread_cost: float | None = Field(default=None, ge=0)
     slippage_cost: float | None = Field(default=None, ge=0)
+    # Signed broker cashflows are tracked separately from positive cost magnitudes.
+    commission_cashflow: float | None = Field(default=None)
+    swap_cashflow: float | None = Field(default=None)
+    broker_fee_cashflow: float | None = Field(default=None)
     weight_version: str | None = Field(default=None, max_length=64)
     strategy_version: str | None = Field(default=None, max_length=64)
     model_version: str | None = Field(default=None, max_length=64)
@@ -179,8 +183,13 @@ class OutcomeRequest(BaseModel):
     feature_schema_version: str | None = Field(default=None, max_length=64)
     environment_schema_version: str | None = Field(default=None, max_length=64)
     decision_fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
+    signal_time: datetime | None = None
+    decision_time: datetime | None = None
     execution_time: datetime | None = None
     outcome_time: datetime | None = None
+    environment_key: str | None = Field(default=None, max_length=512)
+    environment: dict | None = Field(default=None)
+    exit_reason: str | None = Field(default=None, max_length=64)
     confidence_at_signal: float | None = Field(default=None)
     confidence_decayed: float | None = Field(default=None)
     decay_bars: int | None = Field(default=None, ge=0)
@@ -682,12 +691,12 @@ async def receive_outcome(
         select(Signal).where(Signal.signal_id == payload.signal_id)
     )
     if source_signal is not None:
-        row.signal_time = source_signal.signal_time or source_signal.received_at
-        row.decision_time = source_signal.decision_time
+        row.signal_time = source_signal.signal_time or payload.signal_time or source_signal.received_at
+        row.decision_time = source_signal.decision_time or payload.decision_time
         row.original_decision_fingerprint = source_signal.decision_fingerprint
         row.canonical_decision = source_signal.canonical_decision
         row.decision_fingerprint = payload.decision_fingerprint or source_signal.decision_fingerprint
-        row.environment_key = source_signal.environment_key
+        row.environment_key = payload.environment_key or source_signal.environment_key
         row.parity_status = (
             "PARITY_MISMATCH"
             if payload.decision_fingerprint
@@ -704,6 +713,8 @@ async def receive_outcome(
         row.weight_version = payload.weight_version or source_signal.weight_version
         row.data_received_time = received_at
     else:
+        row.signal_time = payload.signal_time
+        row.decision_time = payload.decision_time
         row.decision_fingerprint = payload.decision_fingerprint
         row.parity_status = "ORPHAN_SIGNAL"
         row.data_received_time = received_at
@@ -714,6 +725,7 @@ async def receive_outcome(
         row.feature_schema_version = payload.feature_schema_version
         row.environment_schema_version = payload.environment_schema_version
         row.weight_version = payload.weight_version
+        row.environment_key = payload.environment_key
 
     row.symbol = payload.symbol
     row.direction = payload.direction
@@ -735,6 +747,13 @@ async def receive_outcome(
     row.commission_cost = payload.commission_cost
     row.spread_cost = payload.spread_cost
     row.slippage_cost = payload.slippage_cost
+    row.commission_cashflow = payload.commission_cashflow
+    row.swap_cashflow = payload.swap_cashflow
+    row.broker_fee_cashflow = payload.broker_fee_cashflow
+    row.environment_key = payload.environment_key or row.environment_key
+    row.environment = payload.environment
+    row.exit_reason = payload.exit_reason or payload.resolution
+    row.resolution = payload.resolution or payload.exit_reason
     row.confidence_at_signal = payload.confidence_at_signal
     row.confidence_decayed = payload.confidence_decayed
     row.decay_bars = payload.decay_bars
