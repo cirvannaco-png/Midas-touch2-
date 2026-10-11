@@ -137,6 +137,6 @@ Any mismatch is a failed parity result; it is not averaged away.
 
 ## Important validation boundary
 
-The repository's GitLab CI workflow remains deliberately paused. Static/source checks can be prepared, but only MetaEditor provides authoritative MQL5 compilation and the MT5 Strategy Tester provides actual MQL5 historical backtest results.
+GitHub Actions on the canonical GitHub `main` branch is the authoritative CI surface. Its current workflows include automated source/tests and an MT5/MetaEditor compile job; inspect the current run and its exact commit before relying on a compile result. GitLab is an optional mirror and its CI status is not authoritative for GitHub `main`.
 
-No compile, profitability, OOS, parameter-stability, or forward-test result is considered proven until the corresponding external test has actually run.
+A successful compile does not establish profitability. No historical Strategy Tester result, locked-OOS result, parameter-stability result, or forward-test result is considered proven until the corresponding test has actually run against the intended EA build, inputs, instrument, data range, and realistic transaction costs.
