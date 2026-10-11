@@ -19,8 +19,8 @@ variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
-# Keep scheduled maintenance pipelines lean: they should run the maintenance
-# task only, not the full validation/test suite before reaching the API call.
+# GitHub Actions handles production maintenance. The GitLab maintenance jobs at
+# the bottom remain disabled to avoid duplicate requests.
 mql5-structure:
   stage: validate
   image: python:3.11-slim
