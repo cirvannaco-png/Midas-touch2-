@@ -46,40 +46,57 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
-          $installDir = Join-Path $env:RUNNER_TEMP 'MetaTrader5'
-          $arguments = "/auto /path:`"$installDir`""
-          $process = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru
-          $metaEditor = Join-Path $installDir 'metaeditor64.exe'
-          $deadline = (Get-Date).AddMinutes(3)
-          while (!(Test-Path $metaEditor) -and (Get-Date) -lt $deadline) {
-            Start-Sleep -Seconds 5
-          }
-          if (!(Test-Path $metaEditor)) {
-            Write-Host "Installer exit code: $($process.ExitCode)"
-            Get-ChildItem $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object -First 80 FullName
-            throw "MetaEditor was not installed. Installer exit code: $($process.ExitCode)."
-          }
+          $process = Start-Process -FilePath $installer -ArgumentList '/auto' -Wait -PassThru
           if ($process.ExitCode -ne 0) {
-            Write-Warning "Installer returned exit code $($process.ExitCode), but MetaEditor is present; continuing to verify installation files."
+            Write-Warning "Installer returned exit code $($process.ExitCode); validating installed files before deciding success."
+          }
+          $programRoots = @(
+            (Join-Path $env:ProgramFiles 'MetaTrader 5'),
+            (Join-Path "${env:ProgramFiles(x86)}" 'MetaTrader 5'),
+            (Join-Path $env:LOCALAPPDATA 'Programs/MetaTrader 5')
+          )
+          $metaEditor = $null
+          $deadline = (Get-Date).AddMinutes(3)
+          while (!$metaEditor -and (Get-Date) -lt $deadline) {
+            foreach ($root in $programRoots) {
+              $candidate = Join-Path $root 'metaeditor64.exe'
+              if (Test-Path $candidate) { $metaEditor = $candidate; break }
+            }
+            if (!$metaEditor) { Start-Sleep -Seconds 5 }
+          }
+          if (!$metaEditor) {
+            Write-Host "Known install roots:"
+            foreach ($root in $programRoots) {
+              Write-Host "$root exists: $(Test-Path $root)"
+              Get-ChildItem $root -ErrorAction SilentlyContinue | Select-Object -First 30 FullName
+            }
+            throw "MetaEditor was not installed in a standard path. Installer exit code: $($process.ExitCode)."
           }
           $terminalDataRoot = Join-Path $env:APPDATA 'MetaQuotes/Terminal'
-          $tradeInclude = $null
-          $includeDeadline = (Get-Date).AddMinutes(4)
-          while (!$tradeInclude -and (Get-Date) -lt $includeDeadline) {
-            $tradeInclude = Get-ChildItem -Path @($installDir, $terminalDataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -like '*\MQL5\Include\Trade\Trade.mqh' } |
-              Select-Object -First 1
-            if (!$tradeInclude) { Start-Sleep -Seconds 10 }
+          $mql5Root = $null
+          $includeDeadline = (Get-Date).AddMinutes(3)
+          while (!$mql5Root -and (Get-Date) -lt $includeDeadline) {
+            foreach ($root in $programRoots) {
+              $candidate = Join-Path $root 'MQL5'
+              if (Test-Path (Join-Path $candidate 'Include/Trade/Trade.mqh')) { $mql5Root = $candidate; break }
+            }
+            if (!$mql5Root -and (Test-Path $terminalDataRoot)) {
+              foreach ($terminalDir in (Get-ChildItem $terminalDataRoot -Directory -ErrorAction SilentlyContinue)) {
+                $candidate = Join-Path $terminalDir.FullName 'MQL5'
+                if (Test-Path (Join-Path $candidate 'Include/Trade/Trade.mqh')) { $mql5Root = $candidate; break }
+              }
+            }
+            if (!$mql5Root) { Start-Sleep -Seconds 5 }
           }
-          if (!$tradeInclude) {
-            Write-Host "Expected standard library file Include/Trade/Trade.mqh was not found after waiting for installer completion."
-            Get-ChildItem $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object -First 100 FullName
-            throw 'MetaTrader installation is incomplete: standard MQL5 Trade.mqh include is missing.'
+          if (!$mql5Root) {
+            Write-Host "No standard MQL5 Include/Trade/Trade.mqh was found under the installation or terminal data roots."
+            foreach ($root in $programRoots) {
+              Get-ChildItem $root -ErrorAction SilentlyContinue | Select-Object -First 40 FullName
+            }
+            throw 'MetaTrader standard library is missing; refusing to run a misleading compile.'
           }
-          $mql5Root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $tradeInclude.FullName))
           "METAEDITOR_PATH=$metaEditor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MT5_MQL5_ROOT=$mql5Root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "MT5_INSTALL_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "MetaEditor: $metaEditor"
           Write-Host "MQL5 data root: $mql5Root"
 
