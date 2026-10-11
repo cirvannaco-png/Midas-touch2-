@@ -28,10 +28,17 @@ public:
    void ConfigureExecutionMode(bool live){m_liveExecution=live;}void ConfigureSimulation(double risk,bool allow,double be,double partial,double frac,double trail,double comm,double spread,double slip){m_riskPercent=risk;m_allowMinLotOverride=allow;m_breakEvenAtR=be;m_partialAtR=partial;m_partialFraction=MathMax(0.0,MathMin(1.0,frac));m_trailATRMult=trail;m_commissionPerLot=MathMax(0.0,comm);m_spreadPoints=MathMax(0.0,spread);m_slippagePoints=MathMax(0.0,slip);}void ConfigureCalibration(bool enabled,int minSample=30){m_calibrationEnabled=enabled;m_calibration.Init(m_symbol,minSample);}void ConfigureConfidenceDecay(double halfLife=12.0){m_decayHalfLifeBars=halfLife;}void ConfigurePublishing(CSignalPublisher* p,string version){m_publisher=p;m_weightVersion=version;}void ConfigureEnvironmentMemory(CEnvironmentStrategyMemory* memory){m_environmentMemory=memory;}
    int ActiveCount()const{return m_count;}OutcomeStats GetStats()const{return m_stats;}double GetCalibratedProbability(double confidence,int &sample,bool &enough)const{return m_calibration.GetCalibratedProbability(confidence,sample,enough);}
    void AddSetup(TradeSetup &setup,long decisionId=-1,string decisionFingerprint=""){if(!setup.active||decisionId<=0||Find(decisionId)>=0)return;PendingSetup p;ZeroMemory(p);p.setup=setup;p.decisionId=decisionId;p.decision_fingerprint=decisionFingerprint;p.entryRef=ResolveExecutionEntry(setup);p.riskDist=MathAbs(p.entryRef-setup.stop_loss);p.sizingEntryPrice=p.entryRef;p.mgmtRiskDist=p.riskDist;p.weightedRiskDistLots=0.0;p.mfePrice=p.entryRef;p.maePrice=p.entryRef;p.currentSL=setup.stop_loss;p.confidenceAtSignal=setup.confidence;p.confidenceDecayed=setup.confidence;int n=m_count++;ArrayResize(m_pending,m_count);m_pending[n]=p;}
-   bool MarkExecuted(long id,double fill,datetime t,double volume)
+   bool MarkExecuted(long id,double fill,datetime t,double volume,double commission=0.0,double swap=0.0,double fee=0.0)
      {
       int i=Find(id);if(i<0||fill<=0.0||volume<=0.0)return false;
       PendingSetup p=m_pending[i];
+      // Entry-side deal costs must be retained; net outcome PnL uses signed
+      // cashflows, while *_cost fields contain only known non-negative costs.
+      p.realizedPnL+=commission+swap+fee;
+      p.totalCommission+=MathMax(0.0,-commission);
+      p.totalCommissionCashflow+=commission;
+      p.totalSwapCashflow+=swap;
+      p.totalBrokerFeeCashflow+=fee;
       if(p.filled)
         {
          // Multi-trade: multiple execution legs belong to one parent
