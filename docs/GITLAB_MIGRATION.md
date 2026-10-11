@@ -124,3 +124,16 @@ This repository file **does not create project-level pipeline schedules or CI/CD
 6. Verify the job's latest successful timestamp and the matching production bridge logs after every deployment or secret rotation.
 
 If the project schedules or variables are absent, the production recalibration engine is **not autonomously active**, even though the API endpoint and cycle implementation exist.
+
+## GitHub-to-GitLab source-of-truth synchronization
+
+GitHub `main` is the canonical source tree. The GitHub Actions workflow `.github/workflows/github-to-gitlab-sync.yml` reconciles the GitLab `main` source tree only after the GitHub CI workflow succeeds. Do not treat GitLab as synchronized unless the job reports `SYNC_VERIFIED` for the current GitHub commit and the GitLab main tree is verified.
+
+Required GitHub Actions repository secrets/configuration:
+
+- `GITLAB_SYNC_TOKEN`: an unexpired GitLab token with `write_repository` scope and access to project `86337573`.
+- `GITLAB_SYNC_USER`: for a personal access token, the workflow may use `oauth2`; for a project/group access token or deploy token, set the exact GitLab token username required by that token type.
+
+**Current operational blocker (2026-10-11):** the GitHub-to-GitLab sync workflow failed during GitLab clone with `HTTP Basic: Access denied`. The secret is present but GitLab rejected the credentials. This usually means an expired/incorrect token, insufficient scope/project access, or a token-type/username mismatch. The workflow cannot repair or inspect secret values itself. Rotate/recreate the token in GitLab, update the GitHub Actions secret(s), then rerun the sync workflow and verify the resulting GitLab commit and file parity. Never paste the token into code, logs, or this conversation.
+
+A successful GitHub CI run alone is not proof that the GitLab mirror was updated. The latest GitHub main includes EA version 2.81 and the operator panel; the observed GitLab main EA source was still version 2.80 when checked, so source-tree parity remains unconfirmed until the authenticated sync succeeds.
