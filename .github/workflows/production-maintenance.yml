@@ -1,0 +1,213 @@
+name: Midas Touch Production Maintenance
+
+on:
+  schedule:
+    # Recalibration is checked weekly but the UTC parity guard executes every other Saturday.
+    - cron: "0 6 * * 6"
+    # Subscription enforcement is a separate daily maintenance task.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Maintenance task to run now (may call the production bridge)
+        required: true
+        type: choice
+        options:
+          - biweekly-recalibration
+          - daily-subscriptions
+        default: biweekly-recalibration
+
+permissions:
+  contents: read
+
+# Prevent two maintenance runs in this workflow from overlapping.
+concurrency:
+  group: midas-production-maintenance
+  cancel-in-progress: false
+
+jobs:
+  biweekly-recalibration:
+    name: Guarded calibration cycle
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 6') || (github.event_name == 'workflow_dispatch' && inputs.task == 'biweekly-recalibration') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: midas-production-recalibration
+      cancel-in-progress: false
+    steps:
+      - name: Check alternate-Saturday schedule
+        id: parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from datetime import date, datetime, timezone
+          import os
+
+          scheduled = os.environ.get("GITHUB_EVENT_NAME") == "schedule"
+          if not scheduled:
+              due = True  # Explicit workflow_dispatch is an operator-authorized run.
+              reason = "manual dispatch"
+          else:
+              anchor = date(2026, 1, 3)  # Saturday parity anchor, UTC.
+              today = datetime.now(timezone.utc).date()
+              days = (today - anchor).days
+              due = today.weekday() == 5 and days >= 0 and ((days // 7) % 2 == 0)
+              reason = "eligible alternate Saturday" if due else "off-week Saturday"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"due={'true' if due else 'false'}\\n")
+          if due:
+              print(f"Recalibration window is eligible ({reason}).")
+          else:
+              print(f"::notice::Recalibration skipped: {reason}; no production endpoint was called.")
+          PY
+
+      - name: Validate production bridge secrets
+        if: ${{ steps.parity.outputs.due == 'true' }}
+        env:
+          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
+          : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
+          case "$BRIDGE_BASE_URL" in
+            https://*) ;;
+            *) echo "::error::BRIDGE_BASE_URL must use HTTPS."; exit 2 ;;
+          esac
+
+      - name: Run and verify recalibration cycle
+        if: ${{ steps.parity.outputs.due == 'true' }}
+        env:
+          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          # Do not retry this POST automatically. A replay may create a duplicate
+          # calibration cycle for the same live outcome window.
+          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \\
+            --request POST \\
+            --header "X-API-Key: ${BRIDGE_API_KEY}" \\
+            --header "Accept: application/json" \\
+            --connect-timeout 10 --max-time 120 --retry 0 \\
+            "${BRIDGE_BASE_URL%/}/admin/run-cycle")"; then
+            echo "::error::Unable to reach the calibration endpoint. Inspect bridge logs before manually rerunning; no automatic retry was attempted."
+            exit 1
+          fi
+
+          case "$http_code" in
+            2*) ;;
+            *) echo "::error::Calibration endpoint returned HTTP $http_code."; exit 1 ;;
+          esac
+
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as response_file:
+                  result = json.load(response_file)
+          except (OSError, json.JSONDecodeError) as error:
+              print(f"::error::Invalid calibration JSON response: {error}")
+              raise SystemExit(1)
+
+          status = result.get("status")
+          if status != "ok":
+              print(
+                  "::error::No completed live CalibrationCycle was confirmed "
+                  f"(status={status!r}). Investigate recent outcome ingestion and "
+                  "registered challenger evaluation; an HTTP 2xx alone is not success."
+              )
+              raise SystemExit(1)
+
+          cycle_id = result.get("cycle_id")
+          if not isinstance(cycle_id, str) or not cycle_id:
+              print("::error::Response status was ok but cycle_id was missing.")
+              raise SystemExit(1)
+
+          resolved_count = result.get("resolved_count")
+          cells = result.get("environment_strategy_memory_cells")
+          print("Calibration endpoint verified: status=ok")
+          print(f"Persisted cycle id: {cycle_id}")
+          print(f"Resolved outcomes: {resolved_count!r}")
+          print(f"Environment/strategy memory cells reported: {cells!r}")
+          print("This confirms a cycle response, not candidate approval or EA activation.")
+          PY
+
+  daily-subscriptions:
+    name: Daily subscription enforcement
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') || (github.event_name == 'workflow_dispatch' && inputs.task == 'daily-subscriptions') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: midas-daily-subscription-enforcement
+      cancel-in-progress: false
+    steps:
+      - name: Validate production bridge secrets
+        env:
+          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
+          : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
+          case "$BRIDGE_BASE_URL" in
+            https://*) ;;
+            *) echo "::error::BRIDGE_BASE_URL must use HTTPS."; exit 2 ;;
+          esac
+
+      - name: Run and verify subscription sweep
+        env:
+          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \\
+            --request POST \\
+            --header "X-API-Key: ${BRIDGE_API_KEY}" \\
+            --header "Accept: application/json" \\
+            --connect-timeout 10 --max-time 120 --retry 0 \\
+            "${BRIDGE_BASE_URL%/}/admin/check-subscriptions")"; then
+            echo "::error::Unable to reach the subscription endpoint; no automatic retry was attempted."
+            exit 1
+          fi
+
+          case "$http_code" in
+            2*) ;;
+            *) echo "::error::Subscription endpoint returned HTTP $http_code."; exit 1 ;;
+          esac
+
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as response_file:
+                  result = json.load(response_file)
+          except (OSError, json.JSONDecodeError) as error:
+              print(f"::error::Invalid subscription response JSON: {error}")
+              raise SystemExit(1)
+
+          counts = {}
+          for key in ("warned", "expired", "removed"):
+              value = result.get(key)
+              if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                  print(f"::error::Subscription response missing valid non-negative integer {key!r}.")
+                  raise SystemExit(1)
+              counts[key] = value
+
+          print(
+              "Subscription sweep verified: "
+              f"warned={counts['warned']}, expired={counts['expired']}, removed={counts['removed']}."
+          )
+          PY
