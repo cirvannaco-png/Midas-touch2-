@@ -28,6 +28,7 @@
 #include "includes/Signals/SignalPublisher.mqh"
 #include "includes/Signals/ConfigSync.mqh"
 #include "includes/Monitoring/ProductionMonitor.mqh"
+#include "includes/Execution/ExecutionAudit.mqh"
 #include "includes/UI/TradeControlPanel.mqh"
 
 input group "General"

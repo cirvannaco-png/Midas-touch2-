@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 EA = ROOT / "EA" / "MedisTouch_v2.8.mq5"
 PANEL = ROOT / "EA" / "includes" / "UI" / "TradeControlPanel.mqh"
+AUDIT = ROOT / "EA" / "includes" / "Execution" / "ExecutionAudit.mqh"
 STOP_INPUTS = ROOT / "EA" / "includes" / "Execution" / "DynamicStopInputs.mqh"
 
 
@@ -65,7 +66,7 @@ def test_trailing_profit_is_enabled_by_default_and_visible_on_panel():
 
 
 def test_execution_audit_records_orders_fills_and_closes_to_csv_and_terminal():
-    audit = read(PANEL)
+    audit = read(AUDIT)
     ea = read(EA)
     assert "MidasTouch_ExecutionAudit_" in audit
     assert "FileWrite(handle" in audit
@@ -160,3 +161,13 @@ def test_automated_entries_fail_closed_on_netting_symbol_exposure():
     automated_path = ea[tick_start:tick_end]
     assert "if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure())" in automated_path
     assert '"AUTOMATED_BLOCKED_NETTING_EXPOSURE"' in automated_path
+
+
+def test_execution_audit_is_separated_from_chart_presentation():
+    panel = read(PANEL)
+    audit = read(AUDIT)
+    ea = read(EA)
+    assert "class CTradeControlPanel" in panel
+    assert "class CExecutionAudit" not in panel
+    assert "class CExecutionAudit" in audit
+    assert '#include "includes/Execution/ExecutionAudit.mqh"' in ea
