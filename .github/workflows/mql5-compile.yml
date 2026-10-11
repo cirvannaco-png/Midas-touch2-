@@ -47,18 +47,23 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
           $installDir = Join-Path $env:RUNNER_TEMP 'MetaTrader5'
-          $process = Start-Process -FilePath $installer -ArgumentList @('/auto', "/path:$installDir") -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            throw "MetaTrader 5 installer failed with exit code $($process.ExitCode)."
-          }
+          $arguments = "/auto /path:`"$installDir`""
+          $process = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru
           $metaEditor = Join-Path $installDir 'metaeditor64.exe'
           $deadline = (Get-Date).AddMinutes(3)
           while (!(Test-Path $metaEditor) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Seconds 5
           }
           if (!(Test-Path $metaEditor)) {
-            Get-ChildItem $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object -First 40 FullName
-            throw "MetaEditor was not found at expected path: $metaEditor"
+            Write-Host "Installer exit code: $($process.ExitCode)"
+            Write-Host "Contents of requested install directory:"
+            Get-ChildItem $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object -First 80 FullName
+            Write-Host "Searching standard install roots for MetaEditor:"
+            Get-ChildItem @("$env:ProgramFiles", "${env:ProgramFiles(x86)}", "$env:APPDATA") -Filter 'metaeditor64.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 FullName
+            throw "MetaEditor was not installed. Installer exit code: $($process.ExitCode)."
+          }
+          if ($process.ExitCode -ne 0) {
+            Write-Warning "Installer returned exit code $($process.ExitCode), but MetaEditor is present; proceeding to compiler validation."
           }
           "MT5_INSTALL_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "METAEDITOR_PATH=$metaEditor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
