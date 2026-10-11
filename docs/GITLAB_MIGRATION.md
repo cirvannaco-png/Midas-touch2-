@@ -125,6 +125,8 @@ This repository file **does not create project-level pipeline schedules or CI/CD
 
 If the project schedules or variables are absent, the production recalibration engine is **not autonomously active**, even though the API endpoint and cycle implementation exist.
 
+**Observed state (2026-10-11):** the GitLab API returned no pipelines with source `schedule` on `main`; the most recent visible `main` pipelines were push-triggered. Treat the production schedule as unverified until the project-level schedules are inspected and the first scheduled run is observed.
+
 ## GitHub-to-GitLab source-of-truth synchronization
 
 GitHub `main` is the canonical source tree. The GitHub Actions workflow `.github/workflows/github-to-gitlab-sync.yml` reconciles the GitLab `main` source tree only after the GitHub CI workflow succeeds. Do not treat GitLab as synchronized unless the job reports `SYNC_VERIFIED` for the current GitHub commit and the GitLab main tree is verified.
