@@ -374,17 +374,3 @@ class ExecutionRecoveryJournal:
             )
             db.commit()
         return self.get(order_id)
-
-self, order_id: str, state: str, *, venue_order_id: str | None = None, last_error: str | None = None, now: float | None = None) -> RecoveryRecord:
-        timestamp = time() if now is None else now
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            if db.execute("SELECT 1 FROM execution_recovery WHERE order_id=?", (order_id,)).fetchone() is None:
-                db.rollback()
-                raise KeyError(order_id)
-            if venue_order_id is None:
-                db.execute("UPDATE execution_recovery SET state=?,last_error=?,updated_at=? WHERE order_id=?", (state, last_error, timestamp, order_id))
-            else:
-                db.execute("UPDATE execution_recovery SET state=?,venue_order_id=?,last_error=?,updated_at=? WHERE order_id=?", (state, venue_order_id, last_error, timestamp, order_id))
-            db.commit()
-        return self.get(order_id)
