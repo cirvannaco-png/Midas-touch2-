@@ -6,6 +6,8 @@ This repository was reconstructed from the supplied Medis Touch recovery ZIP aft
 
 **Trading logic was not changed.**
 
+> **Current authority (supersedes intermediate migration notes below):** GitHub `cirvannaco-png/Midas-touch2-` on `main` is the canonical source tree and GitHub Actions is the canonical CI and production-maintenance scheduler. GitLab is an optional source-tree mirror only. Earlier statements in this historical audit describing removal of GitHub Actions, GitLab as canonical, or a GitLab release surface describe an intermediate migration stage and are not active instructions. Do not repoint/deploy runtime services based on this documentation; verify deployment changes independently.
+
 ## Recovery source
 
 Authoritative source used:
