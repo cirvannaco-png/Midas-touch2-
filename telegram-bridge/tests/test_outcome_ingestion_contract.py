@@ -102,11 +102,33 @@ def test_ea_outcome_contract_persists_environment_lineage_and_costs(client, auth
 
 
 def test_signed_cashflows_are_accepted_but_negative_cost_magnitudes_are_rejected(client, auth_headers):
-    response = client.post(
+    accepted = client.post(
         "/outcome",
         headers=auth_headers,
         json={
-            "signal_id": "outcome-negative-cost-1",
+            "signal_id": "outcome-signed-cashflows-accepted",
+            "symbol": "EURUSD",
+            "direction": "SELL",
+            "outcome": "loss",
+            "filled": True,
+            "commission_cost": 1.25,
+            "commission_cashflow": -1.25,
+            "swap_cashflow": -0.4,
+            "broker_fee_cashflow": -0.1,
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    row = _read_outcome(client, "outcome-signed-cashflows-accepted")
+    assert row is not None
+    assert row.commission_cashflow == -1.25
+    assert row.swap_cashflow == -0.4
+    assert row.broker_fee_cashflow == -0.1
+
+    rejected = client.post(
+        "/outcome",
+        headers=auth_headers,
+        json={
+            "signal_id": "outcome-negative-cost-rejected",
             "symbol": "EURUSD",
             "direction": "SELL",
             "outcome": "loss",
@@ -117,7 +139,7 @@ def test_signed_cashflows_are_accepted_but_negative_cost_magnitudes_are_rejected
             "broker_fee_cashflow": -0.1,
         },
     )
-    assert response.status_code == 422
+    assert rejected.status_code == 422
 
 
 def test_only_one_post_outcome_route_is_registered():
