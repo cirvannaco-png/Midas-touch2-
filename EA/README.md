@@ -123,7 +123,7 @@ The existing DST-aware Tokyo/London/New York session filter remains independent.
 
 ### Execution audit and trade identification
 
-The EA writes detailed, append-only event rows to MQL5/Files/MidasTouch_ExecutionAudit_<SYMBOL>.csv and mirrors them to the terminal Experts log. Events include decisions, automated/manual submissions, rejected orders, fills, exits with net costs, pending-order cancellations, close-all summaries, and emergency-stop/resume actions. Every managed trade carries InpMagicNumber and an MT#<decision_id> comment; manual panel trades use the same decision store, order manager, and execution persistence path, but are deliberately excluded from automated strategy calibration and environment-memory learning so operator discretion cannot bias the model's training evidence.
+The EA writes detailed, append-only event rows to MQL5/Files/MidasTouch_ExecutionAudit_<SYMBOL>.csv and mirrors them to the terminal Experts log. Events include decisions, automated/manual submissions, rejected orders, fills, exits with net costs, pending-order cancellations, close-all summaries, and emergency-stop/resume actions. The audit writer is isolated in `includes/Execution/ExecutionAudit.mqh`; `includes/UI/TradeControlPanel.mqh` owns chart presentation and operator events only. Every managed trade carries InpMagicNumber and an MT#<decision_id> comment; manual panel trades use the same decision store, order manager, and execution persistence path, but are deliberately excluded from automated strategy calibration and environment-memory learning so operator discretion cannot bias the model's training evidence.
 
 ### Backtesting and optimization
 
@@ -133,11 +133,8 @@ All panel, custom-session, risk/reward, stop, execution, and strategy controls a
 
 The repository contains EA-side outcome/calibration and environment-memory telemetry plus the backend's evidence-ingestion and guarded recalibration lifecycle. That does **not** by itself prove the live engine is autonomously running or that new weights are approved. Production activation still requires the GitLab schedules and protected/masked BRIDGE_BASE_URL / BRIDGE_API_KEY variables, a successful scheduled cycle, persisted calibration-cycle evidence, and a separately satisfied approval/configuration-hash gate. A CI-green source branch is not proof of a live recalibration or validated trading performance.
 
-## CI
+## CI and build validation
 
-`.gitlab-ci.yml` runs `tools/validate_mql5.py` on every
-change under `EA/`: it resolves every `#include` in the tree, fails on a
-missing or case-mismatched header, on unbalanced include guards, and on
-any compiled binary (`*.ex5`/`*.ex4`) that slipped into the repository.
-MetaEditor is Windows-only and not available in the Linux CI runner, so this is
-a static structural check, not a compile.
+- `.gitlab-ci.yml` runs `tools/validate_mql5.py` on changes under `EA/`: it resolves every `#include`, rejects missing or case-mismatched headers and unbalanced include guards, and prevents compiled binaries (`*.ex5`/`*.ex4`) from entering the repository.
+- `.github/workflows/mql5-compile.yml` installs the official MetaTrader 5 terminal on a Windows runner and compiles `MedisTouch_v2.8.mq5` with MetaEditor. The job requires a parseable compiler summary, zero compile errors, and a generated EX5; the log is retained as a CI artifact, while the EX5 stays on the ephemeral runner.
+- A successful MetaEditor compile is not a Strategy Tester run and does not establish profitability, broker execution correctness, or live-trading readiness. Run realistic visual and non-visual backtests and demo/forward tests before live deployment.
