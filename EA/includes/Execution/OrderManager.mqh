@@ -93,7 +93,7 @@ bool COrderManager::CancelPendingAt(int idx)
    ENUM_TRADE_STATE state=m_trades[idx].fsm.State();
    if(state!=TS_PENDING && state!=TS_WAITING) return false;
    ulong ticket=m_trades[idx].fsm.Ticket();
-   if(ticket==0 || !m_broker->CancelOrder(ticket)) return false;
+   if(ticket==0 || !m_broker.CancelOrder(ticket)) return false;
    bool transitioned=m_trades[idx].fsm.Transition(TS_CANCELLED);
    if(transitioned) PrintFormat("MedisTouch OrderManager: pending order %I64u cancelled by chart control.",ticket);
    return transitioned;
