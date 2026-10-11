@@ -68,3 +68,14 @@ def test_state_event_sequence_cannot_move_backwards_or_change_identity(tmp_path)
         journal.record_state_event(ExecutionStateEvent("EA", "order-x", "decision-x", "setup-x", "WORKING", 0, None, 3, 3.0))
     with pytest.raises(ValueError, match="identity/fingerprint"):
         journal.record_state_event(ExecutionStateEvent("EA", "order-x", "decision-x", "setup-y", "WORKING", 0, None, 5, 5.0))
+
+
+def test_state_event_sequence_cannot_move_backwards_or_change_identity(tmp_path) -> None:
+    import pytest
+
+    journal = ExecutionRecoveryJournal(str(tmp_path / "parity.db"))
+    journal.record_state_event(ExecutionStateEvent("EA", "order-x", "decision-x", "setup-x", "WORKING", 0, None, 4, 4.0))
+    with pytest.raises(ValueError, match="sequence must increase"):
+        journal.record_state_event(ExecutionStateEvent("EA", "order-x", "decision-x", "setup-x", "WORKING", 0, None, 3, 3.0))
+    with pytest.raises(ValueError, match="identity/fingerprint"):
+        journal.record_state_event(ExecutionStateEvent("EA", "order-x", "decision-x", "setup-y", "WORKING", 0, None, 5, 5.0))
