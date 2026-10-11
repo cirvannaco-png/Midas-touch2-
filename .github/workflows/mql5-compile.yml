@@ -41,56 +41,51 @@ jobs:
             throw 'MetaTrader 5 installer download is unexpectedly small.'
           }
 
-      - name: Install MetaTrader 5 and locate standard library
+      - name: Install and initialize portable MetaTrader 5
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
-          $process = Start-Process -FilePath $installer -ArgumentList '/auto' -PassThru
-          $programRoots = @(
-            (Join-Path $env:ProgramFiles 'MetaTrader 5'),
-            (Join-Path "${env:ProgramFiles(x86)}" 'MetaTrader 5'),
-            (Join-Path $env:LOCALAPPDATA 'Programs/MetaTrader 5')
-          )
-          $terminalDataRoot = Join-Path $env:APPDATA 'MetaQuotes/Terminal'
-          $metaEditor = $null
-          $mql5Root = $null
+          $installDir = Join-Path $env:RUNNER_TEMP 'MetaTrader5'
+          $arguments = "/auto /path:`"$installDir`""
+          $installerProcess = Start-Process -FilePath $installer -ArgumentList $arguments -PassThru
+          $metaEditor = Join-Path $installDir 'metaeditor64.exe'
+          $terminal = Join-Path $installDir 'terminal64.exe'
           $deadline = (Get-Date).AddMinutes(5)
-          while ((!$metaEditor -or !$mql5Root) -and (Get-Date) -lt $deadline) {
-            foreach ($root in $programRoots) {
-              $editorCandidate = Join-Path $root 'metaeditor64.exe'
-              if (!$metaEditor -and (Test-Path $editorCandidate)) { $metaEditor = $editorCandidate }
-              $mqlCandidate = Join-Path $root 'MQL5'
-              if (!$mql5Root -and (Test-Path (Join-Path $mqlCandidate 'Include/Trade/Trade.mqh'))) { $mql5Root = $mqlCandidate }
-            }
-            if (Test-Path $terminalDataRoot) {
-              foreach ($terminalDir in (Get-ChildItem $terminalDataRoot -Directory -ErrorAction SilentlyContinue)) {
-                $editorCandidate = Join-Path $terminalDir.FullName 'metaeditor64.exe'
-                if (!$metaEditor -and (Test-Path $editorCandidate)) { $metaEditor = $editorCandidate }
-                $mqlCandidate = Join-Path $terminalDir.FullName 'MQL5'
-                if (!$mql5Root -and (Test-Path (Join-Path $mqlCandidate 'Include/Trade/Trade.mqh'))) { $mql5Root = $mqlCandidate }
-              }
-            }
-            if (!$metaEditor -or !$mql5Root) { Start-Sleep -Seconds 5 }
+          while ((!(Test-Path $metaEditor) -or !(Test-Path $terminal)) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 5
           }
-          if (!$metaEditor -or !$mql5Root) {
-            Write-Host "Installer still running: $(!$process.HasExited)"
-            if ($process.HasExited) { Write-Host "Installer exit code: $($process.ExitCode)" }
-            foreach ($root in $programRoots) {
-              Write-Host "$root exists: $(Test-Path $root)"
-              Get-ChildItem $root -ErrorAction SilentlyContinue | Select-Object -First 30 FullName
-            }
-            throw 'MetaTrader installation did not provide both MetaEditor and the standard MQL5 Include/Trade/Trade.mqh library within five minutes.'
+          if (!(Test-Path $metaEditor) -or !(Test-Path $terminal)) {
+            Write-Host "Installer process exited: $($installerProcess.HasExited)"
+            if ($installerProcess.HasExited) { Write-Host "Installer exit code: $($installerProcess.ExitCode)" }
+            Get-ChildItem $installDir -ErrorAction SilentlyContinue | Select-Object -First 80 FullName
+            throw 'MetaTrader installation did not provide both terminal64.exe and metaeditor64.exe.'
           }
-          if (!$process.HasExited) {
-            Write-Warning 'Installer process is still running, but MetaEditor and the standard library are available; continuing with compile validation.'
+          $includeFile = Join-Path $installDir 'MQL5/Include/Trade/Trade.mqh'
+          if (!(Test-Path $includeFile)) {
+            Write-Host 'Starting terminal once in portable mode to initialize its MQL5 data directory.'
+            $terminalProcess = Start-Process -FilePath $terminal -ArgumentList '/portable' -PassThru
+            Start-Sleep -Seconds 30
+            if (!$terminalProcess.HasExited) {
+              Stop-Process -Id $terminalProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+          $mql5Root = $null
+          $candidateRoot = Join-Path $installDir 'MQL5'
+          if (Test-Path (Join-Path $candidateRoot 'Include/Trade/Trade.mqh')) {
+            $mql5Root = $candidateRoot
+          }
+          $terminalDataRoot = Join-Path $env:APPDATA 'MetaQuotes/Terminal'
+          if (!$mql5Root -and (Test-Path $terminalDataRoot)) {
+            foreach ($terminalDir in (Get-ChildItem $terminalDataRoot -Directory -ErrorAction SilentlyContinue)) {
+              $candidate = Join-Path $terminalDir.FullName 'MQL5'
+              if (Test-Path (Join-Path $candidate 'Include/Trade/Trade.mqh')) { $mql5Root = $candidate; break }
+            }
           }
           if (!$mql5Root) {
-            Write-Host "No standard MQL5 Include/Trade/Trade.mqh was found under the installation or terminal data roots."
-            foreach ($root in $programRoots) {
-              Get-ChildItem $root -ErrorAction SilentlyContinue | Select-Object -First 40 FullName
-            }
-            throw 'MetaTrader standard library is missing; refusing to run a misleading compile.'
+            Write-Host "Install root contents:"
+            Get-ChildItem $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object -First 100 FullName
+            throw 'Standard MQL5 Include/Trade/Trade.mqh is missing after portable initialization.'
           }
           "METAEDITOR_PATH=$metaEditor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MT5_MQL5_ROOT=$mql5Root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
