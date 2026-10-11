@@ -76,10 +76,51 @@ jobs:
           set -euo pipefail
           : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
           : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
-          case "$BRIDGE_BASE_URL" in
-            https://*) ;;
-            *) echo "::error::BRIDGE_BASE_URL must use HTTPS."; exit 2 ;;
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+
+          raw = os.environ["BRIDGE_BASE_URL"].strip()
+          parsed = urlsplit(raw)
+          if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                  or parsed.password or parsed.query or parsed.fragment
+                  or any(char.isspace() for char in raw)):
+              raise SystemExit("BRIDGE_BASE_URL must be an HTTPS URL without credentials, whitespace, query, or fragment.")
+          if not os.environ["BRIDGE_API_KEY"].strip():
+              raise SystemExit("BRIDGE_API_KEY must be non-empty.")
+          PY
+
+      - name: Preflight bridge and database health
+        if: ${{ steps.parity.outputs.due == 'true' }}
+        env:
+          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --request GET --connect-timeout 8 --max-time 15 --retry 0 \
+            "${BRIDGE_BASE_URL%/}/health/db")"; then
+            echo "::error::Bridge health preflight failed; no maintenance POST was attempted."
+            exit 1
+          fi
+          case "$http_code" in
+            2*) ;;
+            *) echo "::error::Health endpoint returned HTTP $http_code."; exit 1 ;;
           esac
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+          try:
+              with open(sys.argv[1], encoding="utf-8") as source:
+                  result = json.load(source)
+          except (OSError, json.JSONDecodeError) as exc:
+              raise SystemExit(f"Invalid bridge health JSON: {exc}")
+          if result.get("status") != "online" or result.get("database") != "connected":
+              raise SystemExit("Bridge/database health is degraded; no maintenance POST was attempted.")
+          print(f"Bridge health verified; version={result.get('version', 'unknown')}, database=connected")
+          PY
 
       - name: Run and verify recalibration cycle
         if: ${{ steps.parity.outputs.due == 'true' }}
