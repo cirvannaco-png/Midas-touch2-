@@ -20,7 +20,8 @@ jobs:
   sync:
     name: Sync GitHub main to private GitLab main
     if: >
-      ${{ github.event_name == 'workflow_dispatch' ||
+      ${{ (github.event_name == 'workflow_dispatch' &&
+           github.ref == 'refs/heads/main') ||
           (github.event_name == 'workflow_run' &&
            github.event.workflow_run.conclusion == 'success' &&
            github.event.workflow_run.head_branch == github.event.repository.default_branch) }}
@@ -90,7 +91,7 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "SYNC_OK: GitLab main source tree already matches GitHub source within the provider boundary."
+            echo "SYNC_VERIFIED: GitLab main source tree already matches GitHub SHA ${GITHUB_SYNC_SHA}; no content commit was needed."
             exit 0
           fi
 
