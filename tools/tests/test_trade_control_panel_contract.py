@@ -1,0 +1,75 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+EA = ROOT / "EA" / "MedisTouch_v2.8.mq5"
+PANEL = ROOT / "EA" / "includes" / "UI" / "TradeControlPanel.mqh"
+STOP_INPUTS = ROOT / "EA" / "includes" / "Execution" / "DynamicStopInputs.mqh"
+
+
+def read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def test_chart_panel_exposes_required_operator_controls():
+    panel = read(PANEL)
+    for action in ("BUY", "SELL", "CLOSE ALL", "EMERGENCY STOP", "RESUME"):
+        assert action in panel
+
+
+def test_emergency_stop_is_persisted_and_blocks_new_entries():
+    ea = read(EA)
+    assert "GlobalVariableSet(EmergencyStopGlobalKey(),1.0)" in ea
+    assert "if(g_emergencyStop)return;" in ea
+    assert "GlobalVariableDel(EmergencyStopGlobalKey())" in ea
+
+
+def test_manual_orders_use_risk_controls_and_normal_order_manager():
+    ea = read(EA)
+    assert "g_risk.ValidateSetup(setup,InpMinRiskReward,InpMaxSLDistanceATR,atr)" in ea
+    assert "g_risk.CalculateLotSize(_Symbol,InpRiskPercentPerTrade" in ea
+    assert "g_portfolio.AllowNewTradeBatch(_Symbol,proposedRisk,1,portfolioReason)" in ea
+    assert "g_orders.Submit(decision,lots,true,maxDeviation,ticket,0)" in ea
+    assert "g_store.SaveExecution(decision.decision_id,lots,ticket,0,setup.final_tp)" in ea
+
+
+def test_close_controls_are_scoped_to_symbol_and_magic():
+    ea = read(EA)
+    assert "PositionGetString(POSITION_SYMBOL)!=_Symbol" in ea
+    assert "(ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber" in ea
+    assert "g_orders.CancelPendingAt(i)" in ea
+
+
+def test_custom_sessions_are_configurable_and_applied_to_new_entries():
+    ea = read(EA)
+    for name in (
+        "InpUseCustomTradingSessions",
+        "InpSession1Start",
+        "InpSession1End",
+        "InpSession2Start",
+        "InpSession2End",
+        "InpSession3Start",
+        "InpSession3End",
+    ):
+        assert name in ea
+    assert "if(!IsConfiguredSessionAllowed())" in ea
+    assert "SessionWindowContains" in ea
+
+
+def test_trailing_profit_is_enabled_by_default_and_visible_on_panel():
+    stop_inputs = read(STOP_INPUTS)
+    panel = read(PANEL)
+    assert "input bool   InpEnableDynamicStop = true" in stop_inputs
+    assert "Trailing profit: %s" in panel
+    assert "InpEnableDynamicStop" in read(EA)
+
+
+def test_execution_audit_records_orders_fills_and_closes_to_csv_and_terminal():
+    audit = read(PANEL)
+    ea = read(EA)
+    assert "MidasTouch_ExecutionAudit_" in audit
+    assert "FileWrite(handle" in audit
+    assert 'g_execAudit.Log("ORDER_SUBMITTED"' in ea
+    assert 'g_execAudit.Log("FILL_IN"' in ea
+    assert 'g_execAudit.Log("FILL_OUT"' in ea
+    assert "PrintFormat(\"MidasTouch AUDIT" in audit
