@@ -40,7 +40,7 @@ public:
          return;
         }
       FileSeek(h,0,SEEK_END);
-      FileWrite(h,TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),LongToString((long)ticket),symbol,
+      FileWrite(h,TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),IntegerToString((long)ticket),symbol,
                 isBuy?"BUY":"SELL",stage,DoubleToString(oldSL,8),DoubleToString(newSL,8),
                 DoubleToString(price,8),DoubleToString(rMultiple,4),reason);
       FileFlush(h);
