@@ -1,5 +1,6 @@
-from sqlalchemy import select
 from unittest.mock import AsyncMock, patch
+
+from sqlalchemy import select
 
 from app.database import async_session
 from app.models import SignalOutcome
