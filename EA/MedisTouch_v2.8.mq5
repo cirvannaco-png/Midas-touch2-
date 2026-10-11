@@ -430,11 +430,32 @@ void ResumeTrading()
    RefreshTradeControlPanel();
   }
 
+// Netting/exchange accounts aggregate all activity for a symbol into one position.
+// Manual BUY/SELL must not accidentally net, reverse, or inherit another trade's identity.
+bool HasAnyChartSymbolExposure()
+  {
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL)==_Symbol) return true;
+     }
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0) continue;
+      if(OrderGetString(ORDER_SYMBOL)==_Symbol) return true;
+     }
+   return false;
+  }
+
 void ManualMarketEntry(bool isBuy)
   {
    string side=isBuy ? "BUY" : "SELL";
    if(g_emergencyStop) { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: emergency stop is latched"); return; }
    if(!InpEnableExecution) { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: InpEnableExecution=false"); return; }
+   if((ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING && HasAnyChartSymbolExposure())
+     { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: netting/exchange account already has same-symbol position or pending order; resolve it before another manual entry"); return; }
    if(!g_operatorSessionFilter.IsAllowed()) { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: outside DST-aware trading sessions"); return; }
    if(!IsConfiguredSessionAllowed()) { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: outside configured server-time sessions"); return; }
    string haltReason;
