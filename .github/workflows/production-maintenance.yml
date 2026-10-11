@@ -55,7 +55,7 @@ jobs:
               due = today.weekday() == 5 and days >= 0 and ((days // 7) % 2 == 0)
               reason = "eligible alternate Saturday" if due else "off-week Saturday"
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"due={'true' if due else 'false'}\\n")
+              output.write(f"due={'true' if due else 'false'}\n")
           if due:
               print(f"Recalibration window is eligible ({reason}).")
           else:
@@ -90,11 +90,11 @@ jobs:
 
           # Do not retry this POST automatically. A replay may create a duplicate
           # calibration cycle for the same live outcome window.
-          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \\
-            --request POST \\
-            --header "X-API-Key: ${BRIDGE_API_KEY}" \\
-            --header "Accept: application/json" \\
-            --connect-timeout 10 --max-time 120 --retry 0 \\
+          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --request POST \
+            --header "X-API-Key: ${BRIDGE_API_KEY}" \
+            --header "Accept: application/json" \
+            --connect-timeout 10 --max-time 120 --retry 0 \
             "${BRIDGE_BASE_URL%/}/admin/run-cycle")"; then
             echo "::error::Unable to reach the calibration endpoint. Inspect bridge logs before manually rerunning; no automatic retry was attempted."
             exit 1
@@ -172,11 +172,11 @@ jobs:
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
 
-          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \\
-            --request POST \\
-            --header "X-API-Key: ${BRIDGE_API_KEY}" \\
-            --header "Accept: application/json" \\
-            --connect-timeout 10 --max-time 120 --retry 0 \\
+          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --request POST \
+            --header "X-API-Key: ${BRIDGE_API_KEY}" \
+            --header "Accept: application/json" \
+            --connect-timeout 10 --max-time 120 --retry 0 \
             "${BRIDGE_BASE_URL%/}/admin/check-subscriptions")"; then
             echo "::error::Unable to reach the subscription endpoint; no automatic retry was attempted."
             exit 1
