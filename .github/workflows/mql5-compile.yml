@@ -63,11 +63,16 @@ jobs:
             Write-Warning "Installer returned exit code $($process.ExitCode), but MetaEditor is present; continuing to verify installation files."
           }
           $terminalDataRoot = Join-Path $env:APPDATA 'MetaQuotes/Terminal'
-          $tradeInclude = Get-ChildItem -Path @($installDir, $terminalDataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -like '*\MQL5\Include\Trade\Trade.mqh' } |
-            Select-Object -First 1
+          $tradeInclude = $null
+          $includeDeadline = (Get-Date).AddMinutes(4)
+          while (!$tradeInclude -and (Get-Date) -lt $includeDeadline) {
+            $tradeInclude = Get-ChildItem -Path @($installDir, $terminalDataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -like '*\MQL5\Include\Trade\Trade.mqh' } |
+              Select-Object -First 1
+            if (!$tradeInclude) { Start-Sleep -Seconds 10 }
+          }
           if (!$tradeInclude) {
-            Write-Host "Expected standard library file Include/Trade/Trade.mqh was not found."
+            Write-Host "Expected standard library file Include/Trade/Trade.mqh was not found after waiting for installer completion."
             Get-ChildItem $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object -First 100 FullName
             throw 'MetaTrader installation is incomplete: standard MQL5 Trade.mqh include is missing.'
           }
