@@ -127,13 +127,18 @@ def test_manual_buttons_fail_closed_on_netting_symbol_exposure():
     ea = read(EA)
     assert "bool HasAnyChartSymbolExposure()" in ea
     assert "OrderGetString(ORDER_SYMBOL)==_Symbol" in ea
-    assert "if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure())" in ea
-    assert "if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure())" in ea[ea.index("void ManualMarketEntry(bool isBuy)"):]
-    assert "netting/exchange account already has same-symbol position or pending order" in ea
+    manual_start = ea.index("void ManualMarketEntry(bool isBuy)")
+    manual_end = ea.index("void OnChartEvent(", manual_start)
+    manual_path = ea[manual_start:manual_end]
+    assert "if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure())" in manual_path
+    assert "netting/exchange account already has same-symbol position or pending order" in manual_path
 
 
 def test_automated_entries_fail_closed_on_netting_symbol_exposure():
     ea = read(EA)
     assert "bool IsNettingOrExchangeAccount()" in ea
-    assert "if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure())" in ea
-    assert '"AUTOMATED_BLOCKED_NETTING_EXPOSURE"' in ea
+    tick_start = ea.index("void OnTick()")
+    tick_end = ea.index("// Persistent per-symbol/per-magic emergency latch", tick_start)
+    automated_path = ea[tick_start:tick_end]
+    assert "if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure())" in automated_path
+    assert '"AUTOMATED_BLOCKED_NETTING_EXPOSURE"' in automated_path
