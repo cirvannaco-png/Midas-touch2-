@@ -31,12 +31,12 @@ def test_unknown_recovery_cannot_be_replayed(tmp_path) -> None:
 def test_partial_cancel_late_fill_is_durable(tmp_path) -> None:
     path = str(tmp_path / "recovery.db")
     journal = ExecutionRecoveryJournal(path)
-    journal.begin_submission("order-3")
+    journal.begin_submission("order-3", requested_quantity=5.0)
     journal.mark_working("order-3", "venue-3")
-    journal.mark_fill("order-3", 3, 100)
+    journal.mark_fill("order-3", 3, 100, fill_id="order-3-fill-1")
     journal.mark_cancel_requested("order-3")
     journal.mark_cancelled("order-3")
-    journal.mark_fill("order-3", 2, 101)
+    journal.mark_fill("order-3", 2, 101, fill_id="order-3-fill-2")
     restarted = ExecutionRecoveryJournal(path)
     record = restarted.get("order-3")
     assert record.state == "FILLED"
@@ -58,3 +58,13 @@ def test_parity_rejects_identity_or_state_divergence(tmp_path) -> None:
     journal.record_state_event(ExecutionStateEvent("EA", "order-5", "decision-5", "setup-a", "FILLED", 1, 100, 0, 0))
     journal.record_state_event(ExecutionStateEvent("BACKEND", "order-5", "decision-5", "setup-b", "FILLED", 1, 100, 0, 0))
     assert not journal.parity("order-5")
+
+
+def test_state_event_sequence_cannot_move_backwards_or_change_identity(tmp_path) -> None:
+    journal = ExecutionRecoveryJournal(str(tmp_path / "parity.db"))
+    journal.record_state_event(ExecutionStateEvent("EA", "order-x", "decision-x", "setup-x", "WORKING", 0, None, 4, 4.0))
+    import pytest
+    with pytest.raises(ValueError, match="sequence must increase"):
+        journal.record_state_event(ExecutionStateEvent("EA", "order-x", "decision-x", "setup-x", "WORKING", 0, None, 3, 3.0))
+    with pytest.raises(ValueError, match="identity/fingerprint"):
+        journal.record_state_event(ExecutionStateEvent("EA", "order-x", "decision-x", "setup-y", "WORKING", 0, None, 5, 5.0))
