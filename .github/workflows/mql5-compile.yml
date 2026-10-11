@@ -65,7 +65,66 @@ jobs:
           if ($process.ExitCode -ne 0) {
             Write-Warning "Installer returned exit code $($process.ExitCode), but MetaEditor is present; proceeding to compiler validation."
           }
+          $terminalDataRoot = Join-Path $env:APPDATA 'MetaQuotes/Terminal'
+          $tradeInclude = Get-ChildItem -Path @($installDir, $terminalDataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\MQL5\\Include\\Trade\\Trade\.mqh
+
+      - name: Stage EA and compile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expertDir = Join-Path $env:MT5_MQL5_ROOT 'Experts/MidasTouch'
+          New-Item -ItemType Directory -Path $expertDir -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'EA/*') -Destination $expertDir -Recurse -Force
+          $source = Join-Path $expertDir 'MedisTouch_v2.8.mq5'
+          if (!(Test-Path $source)) {
+            throw "EA source was not staged: $source"
+          }
+          $process = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList "/compile:`"$source`" /log" -Wait -PassThru
+          Start-Sleep -Seconds 2
+          $logPath = Join-Path $expertDir 'MedisTouch_v2.8.log'
+          if (!(Test-Path $logPath)) {
+            Get-ChildItem $expertDir -Recurse | Select-Object FullName
+            throw 'MetaEditor did not produce its expected compile log.'
+          }
+          Copy-Item -Path $logPath -Destination (Join-Path $env:RUNNER_TEMP 'MedisTouch_v2.8.log') -Force
+          $log = Get-Content -Path $logPath -Raw
+          Write-Host $log
+          $result = [regex]::Match($log, '(?im)(\d+)\s+errors?,\s*(\d+)\s+warnings?')
+          if (!$result.Success) {
+            throw 'Could not parse MetaEditor compile summary; refusing to treat an unknown result as success.'
+          }
+          $errors = [int]$result.Groups[1].Value
+          $warnings = [int]$result.Groups[2].Value
+          if ($errors -gt 0) {
+            throw "MetaEditor reported $errors compile errors and $warnings warnings."
+          }
+          if (!(Test-Path (Join-Path $expertDir 'MedisTouch_v2.8.ex5'))) {
+            throw 'MetaEditor reported no compile errors but did not produce the expected EX5 artifact.'
+          }
+          "MetaEditor compile succeeded: errors=$errors warnings=$warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($warnings -gt 0) {
+            Write-Warning "Compilation succeeded with $warnings warning(s); review the uploaded compiler log."
+          }
+
+      - name: Upload MetaEditor compile log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metatrader5-compile-log
+          path: ${{ runner.temp }}/MedisTouch_v2.8.log
+          if-no-files-found: warn
+          retention-days: 14
+ } |
+            Select-Object -First 1
+          if (!$tradeInclude) {
+            Write-Host "Expected standard library file Include/Trade/Trade.mqh was not found."
+            Get-ChildItem $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object -First 100 FullName
+            throw 'MetaTrader installation is incomplete: standard MQL5 Trade.mqh include is missing.'
+          }
+          $mql5Root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $tradeInclude.FullName))
           "MT5_INSTALL_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MT5_MQL5_ROOT=$mql5Root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "METAEDITOR_PATH=$metaEditor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Stage EA and compile
