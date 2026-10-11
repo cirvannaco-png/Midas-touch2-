@@ -86,6 +86,27 @@ def test_emergency_stop_remains_recoverable_and_resume_requires_flat_exposure():
 
 
 
+def test_manual_target_levels_satisfy_the_configured_minimum_rr():
+    ea = read(EA)
+    manual_start = ea.index("void ManualMarketEntry(bool isBuy)")
+    manual_end = ea.index("void OnChartEvent(", manual_start)
+    manual_path = ea[manual_start:manual_end]
+    # ValidateSetup compares the stop distance to TP1, so TP1 must itself
+    # clear the configured minimum R multiple before the order is submitted.
+    assert "double tp1R=InpMinRiskReward+0.1;" in manual_path
+    assert "double tp2R=(tp1R+InpManualRiskReward)*0.5;" in manual_path
+    assert "InpManualRiskReward<InpMinRiskReward+0.3" in manual_path
+
+
+def test_manual_orders_obey_the_same_dst_aware_session_gate():
+    ea = read(EA)
+    assert "CSessionFilter g_operatorSessionFilter;" in ea
+    assert "g_operatorSessionFilter.Configure(InpUseSessionFilter,InpAllowTokyoSession" in ea
+    manual_start = ea.index("void ManualMarketEntry(bool isBuy)")
+    manual_end = ea.index("void OnChartEvent(", manual_start)
+    assert "if(!g_operatorSessionFilter.IsAllowed())" in ea[manual_start:manual_end]
+
+
 def test_operator_trades_do_not_pollute_strategy_learning():
     ea = read(EA)
     manual_start = ea.index("void ManualMarketEntry(bool isBuy)")
