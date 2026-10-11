@@ -95,8 +95,10 @@ void CBOS::Detect()
    int highPtr = 0, lowPtr = 0;
    bool havePrevHigh = false, havePrevLow = false;
    SwingPoint prevHigh, prevLow;
+   ZeroMemory(prevHigh); ZeroMemory(prevLow);
    bool haveActiveLowerHigh = false, haveActiveHigherLow = false;
    SwingPoint activeLowerHigh, activeHigherLow;
+   ZeroMemory(activeLowerHigh); ZeroMemory(activeHigherLow);
 
    BOSEvent chrono[]; // built oldest -> newest, reversed into m_bosList at the end
    ArrayResize(chrono, total);
@@ -147,7 +149,7 @@ void CBOS::Detect()
             ev.is_bullish = true;
             ev.strength = BreakoutStrength(shift, atr, cd, activeLowerHigh.price);
             ev.bar_index = shift;
-            ev.label = "BOS \u2191";
+            ev.label = "BOS UP";
             chrono[chronoCount++] = ev;
             haveActiveLowerHigh = false; // consumed — next lower high (if any) becomes the new candidate
            }
@@ -163,7 +165,7 @@ void CBOS::Detect()
             ev.is_bullish = false;
             ev.strength = BreakoutStrength(shift, atr, cd, activeHigherLow.price);
             ev.bar_index = shift;
-            ev.label = "BOS \u2193";
+            ev.label = "BOS DOWN";
             chrono[chronoCount++] = ev;
             haveActiveHigherLow = false;
            }
