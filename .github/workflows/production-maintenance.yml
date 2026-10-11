@@ -184,11 +184,11 @@ jobs:
           print("This confirms a cycle response, not candidate approval or EA activation.")
           import os
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("\\n### Recalibration evidence\\n\\n")
-              summary.write(f"- Cycle ID: `{cycle_id}`\\n")
-              summary.write(f"- Resolved outcomes: {resolved_count!r}\\n")
-              summary.write(f"- Environment/strategy memory cells: {cells!r}\\n")
-              summary.write("- Candidate promotion or EA activation is not implied.\\n")
+              summary.write("\n### Recalibration evidence\n\n")
+              summary.write(f"- Cycle ID: `{cycle_id}`\n")
+              summary.write(f"- Resolved outcomes: {resolved_count!r}\n")
+              summary.write(f"- Environment/strategy memory cells: {cells!r}\n")
+              summary.write("- Candidate promotion or EA activation is not implied.\n")
           PY
 
   daily-subscriptions:
@@ -210,10 +210,19 @@ jobs:
           set -euo pipefail
           : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
           : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
-          case "$BRIDGE_BASE_URL" in
-            https://*) ;;
-            *) echo "::error::BRIDGE_BASE_URL must use HTTPS."; exit 2 ;;
-          esac
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+
+          raw = os.environ["BRIDGE_BASE_URL"].strip()
+          parsed = urlsplit(raw)
+          if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                  or parsed.password or parsed.query or parsed.fragment
+                  or any(char.isspace() for char in raw)):
+              raise SystemExit("BRIDGE_BASE_URL must be an HTTPS URL without credentials, whitespace, query, or fragment.")
+          if not os.environ["BRIDGE_API_KEY"].strip():
+              raise SystemExit("BRIDGE_API_KEY must be non-empty.")
+          PY
 
       - name: Preflight bridge and database health
         env:
@@ -297,7 +306,7 @@ jobs:
           print(message)
           import os
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write(f"\\n### Subscription maintenance\\n\\n- {message}\\n")
+              summary.write(f"\n### Subscription maintenance\n\n- {message}\n")
           PY
 
   daily-delivery-recovery:
@@ -407,7 +416,7 @@ jobs:
               raise SystemExit(f"Recovery endpoint {route} reported retried > processed")
           print(f"{route}: processed={processed}, retried={retried}, remaining_failed={remaining}")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write(f"- `{route}`: processed={processed}, retried={retried}, remaining failed/stale={remaining}\\n")
+              summary.write(f"- `{route}`: processed={processed}, retried={retried}, remaining failed/stale={remaining}\n")
           if remaining > 0:
               print(f"::error::Recovery backlog remains on {route}; investigate bridge logs and retry policy.")
               raise SystemExit(1)
