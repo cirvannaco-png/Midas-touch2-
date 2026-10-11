@@ -24,47 +24,30 @@ The two nested ZIP archives under `attached_assets/` were not selected as the so
 
 ## Added
 
-- `.gitlab-ci.yml` — native GitLab CI/CD replacement for:
-  - MQL5 structural validation
-  - `medis_touch` lint/security/tests
-  - Telegram bridge lint/security/dependency/tests
-  - tools tests
-  - daily subscription maintenance
-  - biweekly recalibration maintenance
-  - manual Render secret synchronization
+- `.gitlab-ci.yml` — migration-era GitLab pipeline definition for repository checks. Production maintenance jobs are now disabled there; GitHub Actions is canonical for validation and production schedules.
 
-## Scheduled jobs
+## Production maintenance scheduler
 
-Create two GitLab pipeline schedules:
+GitHub Actions on GitHub main is the only production maintenance scheduler. The workflow is .github/workflows/production-maintenance.yml.
 
-1. **Daily subscription sweep**
-   - Cron: `0 7 * * *`
-   - CI/CD variable: `SCHEDULE_TASK=daily-subscriptions`
+1. **Biweekly recalibration check**
+   - Cron: 0 6 * * 6 (weekly workflow tick, Saturday 06:00 UTC)
+   - Runs the actual cycle only on alternate Saturdays using the UTC parity anchor 2026-01-03.
+2. **Daily subscription sweep**
+   - Cron: 0 7 * * * (daily at 07:00 UTC)
 
-2. **Biweekly recalibration**
-   - Cron: `0 6 * * 6`
-   - CI/CD variable: `SCHEDULE_TASK=biweekly-recalibration`
+GitLab is an optional source-tree mirror, not the production control plane. The mirrored .gitlab-ci.yml rejects scheduled pipelines and disables the maintenance jobs to prevent duplicate requests. Delete/disable any old GitLab schedules; do not add new schedules there.
 
-The recalibration job preserves the existing Saturday-parity behavior anchored to `2026-01-03`.
+## Required GitHub Actions repository secrets
 
-## Required protected/masked GitLab CI/CD variables
+In GitHub, create an environment named production under Settings → Environments and restrict deployments to the main branch. Add these environment secrets:
 
-For scheduled maintenance:
+- BRIDGE_BASE_URL: the actual HTTPS base URL for the deployed bridge service (no trailing slash required).
+- BRIDGE_API_KEY: the same secret value as the deployed bridge's SECRET_KEY setting.
 
-- `BRIDGE_BASE_URL`
-- `BRIDGE_API_KEY`
+These secrets must not be committed or exposed in logs/chat. The scheduled workflow uses the production environment, restricts manual dispatch jobs to main, validates HTTPS, applies bounded network timeouts, avoids automatic POST retries, and validates response JSON. To manually execute a production job, use Actions → Midas Touch Production Maintenance → Run workflow on main and choose the intended task. Manual recalibration immediately calls the production bridge; do not use it as a casual dry run.
 
-For the optional Render secret-sync job:
-
-- `RENDER_API_KEY`
-- `RENDER_SERVICE_ID`
-- `BOT_TOKEN`
-- `CHAT_ID`
-- `ADMIN_CHAT_ID`
-- `SECRET_KEY`
-- optional `WEBHOOK_SECRET_TOKEN`
-
-These values must be stored in GitLab CI/CD variables, never committed.
+GITLAB_SYNC_TOKEN and optional GITLAB_SYNC_USER are separate credentials used only by the optional GitHub-to-GitLab mirror workflow. They are not used for production maintenance.
 
 ## Validation performed on the supplied recovery copy
 
@@ -112,20 +95,21 @@ The EA source remains the recovered source of truth.
 
 ## Scheduling status and activation gate
 
-The repository schedules are implemented as dedicated GitLab CI jobs in `.gitlab-ci.yml`. Scheduled pipelines are admitted by `workflow: rules`; ordinary validation jobs are intentionally skipped for schedule-triggered pipelines. Only the job whose `SCHEDULE_TASK` exactly matches the schedule variable is allowed to call the corresponding admin endpoint.
+The scheduler is implemented in GitHub Actions on the canonical GitHub main branch; schedule definitions are version-controlled in .github/workflows/production-maintenance.yml. Secret values are not defined by YAML and must be set as GitHub Actions environment secrets in the production environment, restricted to the main branch.
 
-This repository file **does not create project-level pipeline schedules or CI/CD variables**. Before calling recalibration "active in production", verify all of the following in the target GitLab project:
+Before calling the production engine autonomously active, confirm:
 
-1. Create a schedule on the protected default branch with cron `0 6 * * 6` and variable `SCHEDULE_TASK=biweekly-recalibration`. The endpoint is called weekly; the existing server-side Saturday-parity rule anchored to `2026-01-03` determines which cycle dates are eligible.
-2. Create a second schedule with cron `0 7 * * *` and variable `SCHEDULE_TASK=daily-subscriptions`.
-3. Configure `BRIDGE_BASE_URL` as the HTTPS base URL of the production bridge and `BRIDGE_API_KEY` to match that service's `SECRET_KEY`. Mark both **masked** and **protected**, and keep them out of the repository. Ensure the schedule runs on a protected branch so protected variables are available.
-4. Trigger or wait for a scheduled pipeline. Confirm the correct maintenance job ran and returned a successful HTTP status. A successful request with response `status=no_data` means no recalibration was applied; investigate missing/resolved `signal_outcomes` records rather than declaring recalibration complete.
-5. Verify that a `CalibrationCycle` row was persisted for the cycle and inspect the gating decision. Promotion remains gated and may require the configured recalibration thresholds and explicit Telegram approval. A stored cycle is not proof that new EA weights were approved or activated.
-6. Verify the job's latest successful timestamp and the matching production bridge logs after every deployment or secret rotation.
+1. BRIDGE_BASE_URL points to the actual deployed bridge and uses HTTPS.
+2. BRIDGE_API_KEY matches the deployed bridge's SECRET_KEY; the workflow never logs this value.
+3. GitHub Actions shows the maintenance workflow enabled on the default branch, with both cron schedules present.
+4. The latest due recalibration run returned status "ok" and a non-empty cycle_id; a no_data response is not a completed persisted cycle.
+5. A CalibrationCycle record and registered-challenger evaluation can be verified in the production database/logs. Promotions remain gated and may require explicit Telegram approval.
+6. Backtest-based candidates were built from genuine MT5 Tester reports/data, passed the chronological walk-forward and locked-OOS gates, and were submitted through tools/submit_tester_evidence.py. Scheduled recalibration does not run MT5 Strategy Tester and does not fabricate backtest evidence.
+7. The EA has separately acknowledged the exact approved configuration hash. A cycle or a VALIDATED evidence record is not proof of live EA activation or profitable forward performance.
 
-If the project schedules or variables are absent, the production recalibration engine is **not autonomously active**, even though the API endpoint and cycle implementation exist.
+The GitLab mirror's maintenance jobs are disabled in repository CI configuration. Any legacy GitLab project schedules should also be deleted/disabled. Do not interpret a GitLab pipeline's status as evidence that the GitHub production scheduler ran.
 
-**Observed state (2026-10-11):** the GitLab API returned no pipelines with source `schedule` on `main`; the most recent visible `main` pipelines were push-triggered. Treat the production schedule as unverified until the project-level schedules are inspected and the first scheduled run is observed.
+If GitHub Actions secrets are not yet configured, the workflow can exist and pass repository CI while production maintenance remains unactivated. Treat activation as unverified until a due run and its persisted evidence are observed.
 
 ## GitHub-to-GitLab source-of-truth synchronization
 
