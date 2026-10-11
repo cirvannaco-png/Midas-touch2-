@@ -25,7 +25,7 @@ The backend cycle at POST /admin/run-cycle analyzes persisted production signal_
 - Manual workflow_dispatch for either task, which can call the production bridge and must be used intentionally.
 - HTTPS-only bridge requests with bounded timeouts, no automatic POST retries, strict response validation, and no API key in logs.
 
-Store BRIDGE_BASE_URL (the actual production bridge HTTPS base URL) and BRIDGE_API_KEY (the same secret as the bridge service's SECRET_KEY) as GitHub Actions repository secrets in Settings → Secrets and variables → Actions. Never commit or paste them into logs or chat. The workflow file is version-controlled, but these secret values remain repository settings and cannot be created by a code commit.
+Store BRIDGE_BASE_URL (the actual production bridge HTTPS base URL) and BRIDGE_API_KEY (the same secret as the bridge service's SECRET_KEY) as secrets in the GitHub Actions environment named production. In Settings → Environments → production, limit deployments to the main branch; define BRIDGE_BASE_URL and BRIDGE_API_KEY as environment secrets there. Never commit or paste them into logs or chat. The workflow declares the production environment, but the environment, its main-branch deployment rule, and secret values must be configured in GitHub settings; code cannot create those settings.
 
 GitLab is only an optional source-tree mirror. Its .gitlab-ci.yml deliberately rejects schedule pipelines and disables the maintenance jobs so an old GitLab schedule cannot double-trigger the production endpoints. Delete or disable any pre-existing GitLab pipeline schedules as additional defense in depth; do not configure production schedules or bridge secrets in GitLab.
 
