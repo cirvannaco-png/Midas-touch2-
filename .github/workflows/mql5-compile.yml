@@ -46,47 +46,44 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
-          $process = Start-Process -FilePath $installer -ArgumentList '/auto' -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            Write-Warning "Installer returned exit code $($process.ExitCode); validating installed files before deciding success."
-          }
+          $process = Start-Process -FilePath $installer -ArgumentList '/auto' -PassThru
           $programRoots = @(
             (Join-Path $env:ProgramFiles 'MetaTrader 5'),
             (Join-Path "${env:ProgramFiles(x86)}" 'MetaTrader 5'),
             (Join-Path $env:LOCALAPPDATA 'Programs/MetaTrader 5')
           )
+          $terminalDataRoot = Join-Path $env:APPDATA 'MetaQuotes/Terminal'
           $metaEditor = $null
-          $deadline = (Get-Date).AddMinutes(3)
-          while (!$metaEditor -and (Get-Date) -lt $deadline) {
+          $mql5Root = $null
+          $deadline = (Get-Date).AddMinutes(5)
+          while ((!$metaEditor -or !$mql5Root) -and (Get-Date) -lt $deadline) {
             foreach ($root in $programRoots) {
-              $candidate = Join-Path $root 'metaeditor64.exe'
-              if (Test-Path $candidate) { $metaEditor = $candidate; break }
+              $editorCandidate = Join-Path $root 'metaeditor64.exe'
+              if (!$metaEditor -and (Test-Path $editorCandidate)) { $metaEditor = $editorCandidate }
+              $mqlCandidate = Join-Path $root 'MQL5'
+              if (!$mql5Root -and (Test-Path (Join-Path $mqlCandidate 'Include/Trade/Trade.mqh'))) { $mql5Root = $mqlCandidate }
             }
-            if (!$metaEditor) { Start-Sleep -Seconds 5 }
+            if (Test-Path $terminalDataRoot) {
+              foreach ($terminalDir in (Get-ChildItem $terminalDataRoot -Directory -ErrorAction SilentlyContinue)) {
+                $editorCandidate = Join-Path $terminalDir.FullName 'metaeditor64.exe'
+                if (!$metaEditor -and (Test-Path $editorCandidate)) { $metaEditor = $editorCandidate }
+                $mqlCandidate = Join-Path $terminalDir.FullName 'MQL5'
+                if (!$mql5Root -and (Test-Path (Join-Path $mqlCandidate 'Include/Trade/Trade.mqh'))) { $mql5Root = $mqlCandidate }
+              }
+            }
+            if (!$metaEditor -or !$mql5Root) { Start-Sleep -Seconds 5 }
           }
-          if (!$metaEditor) {
-            Write-Host "Known install roots:"
+          if (!$metaEditor -or !$mql5Root) {
+            Write-Host "Installer still running: $(!$process.HasExited)"
+            if ($process.HasExited) { Write-Host "Installer exit code: $($process.ExitCode)" }
             foreach ($root in $programRoots) {
               Write-Host "$root exists: $(Test-Path $root)"
               Get-ChildItem $root -ErrorAction SilentlyContinue | Select-Object -First 30 FullName
             }
-            throw "MetaEditor was not installed in a standard path. Installer exit code: $($process.ExitCode)."
+            throw 'MetaTrader installation did not provide both MetaEditor and the standard MQL5 Include/Trade/Trade.mqh library within five minutes.'
           }
-          $terminalDataRoot = Join-Path $env:APPDATA 'MetaQuotes/Terminal'
-          $mql5Root = $null
-          $includeDeadline = (Get-Date).AddMinutes(3)
-          while (!$mql5Root -and (Get-Date) -lt $includeDeadline) {
-            foreach ($root in $programRoots) {
-              $candidate = Join-Path $root 'MQL5'
-              if (Test-Path (Join-Path $candidate 'Include/Trade/Trade.mqh')) { $mql5Root = $candidate; break }
-            }
-            if (!$mql5Root -and (Test-Path $terminalDataRoot)) {
-              foreach ($terminalDir in (Get-ChildItem $terminalDataRoot -Directory -ErrorAction SilentlyContinue)) {
-                $candidate = Join-Path $terminalDir.FullName 'MQL5'
-                if (Test-Path (Join-Path $candidate 'Include/Trade/Trade.mqh')) { $mql5Root = $candidate; break }
-              }
-            }
-            if (!$mql5Root) { Start-Sleep -Seconds 5 }
+          if (!$process.HasExited) {
+            Write-Warning 'Installer process is still running, but MetaEditor and the standard library are available; continuing with compile validation.'
           }
           if (!$mql5Root) {
             Write-Host "No standard MQL5 Include/Trade/Trade.mqh was found under the installation or terminal data roots."
