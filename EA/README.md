@@ -131,7 +131,7 @@ All panel, custom-session, risk/reward, stop, execution, and strategy controls a
 
 ### Self-improvement activation is a separate production gate
 
-The repository contains EA-side outcome/calibration and environment-memory telemetry plus the backend's evidence-ingestion and guarded recalibration lifecycle. That does **not** by itself prove the live engine is autonomously running or that new weights are approved. Production activation still requires the GitLab schedules and protected/masked BRIDGE_BASE_URL / BRIDGE_API_KEY variables, a successful scheduled cycle, persisted calibration-cycle evidence, and a separately satisfied approval/configuration-hash gate. A CI-green source branch is not proof of a live recalibration or validated trading performance.
+The repository contains EA-side outcome/calibration and environment-memory telemetry plus the backend's evidence-ingestion and guarded recalibration lifecycle. That does **not** by itself prove the live engine is autonomously running or that new weights are approved. Production scheduling is owned by GitHub Actions via .github/workflows/production-maintenance.yml; configure GitHub Actions repository secrets BRIDGE_BASE_URL and BRIDGE_API_KEY, then verify a due run returned status=ok with a persisted cycle ID. Genuine MT5 backtest evidence must separately pass chronological walk-forward and locked-OOS gates before a candidate is evaluated. Promotion still requires the explicit approval/configuration-hash gate. GitLab is a mirror only and its maintenance jobs are disabled. A CI-green source branch is not proof of a live recalibration or validated trading performance.
 
 ## CI and build validation
 
