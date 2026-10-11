@@ -16,7 +16,7 @@ CI=ROOT/".gitlab-ci.yml"
 
 
 def test_live_tracker_has_decision_identity_and_broker_fill():
-    t=TRACKER.read_text();assert 'void AddSetup(TradeSetup &setup,long decisionId=-1,string decisionFingerprint="")' in t;assert "bool MarkExecuted(long id,double fill,datetime t,double volume,double commission=0.0,double swap=0.0,double fee=0.0)" in t;assert "p.entryFillPrice=fill" in t;assert "p.fillTime=t" in t
+    t=TRACKER.read_text();assert 'void AddSetup(TradeSetup &setup,long decisionId=-1,string decisionFingerprint="")' in t;assert "bool MarkExecuted(long id,double fill,datetime t,double volume,double commission=0.0,double swap=0.0,double fee=0.0,bool cashflowsKnown=false)" in t;assert "p.entryFillPrice=fill" in t;assert "p.fillTime=t" in t
 
 def test_live_tracker_uses_closed_execution_bars_and_excludes_fill_bar():
     t=TRACKER.read_text();assert "ctx.candles.GetCandle(1)" in t;assert "ctx.candles.Timeframe()!=m_entryTF" in t;assert "if(bar.time<=fillBar)continue" in t
@@ -37,7 +37,18 @@ def test_outcomes_advance_before_entry_gates():
     t=EA.read_text();assert t.index("g_tracker.Update(g_chartCtx);")<t.index("g_riskGuard.IsHardHalted")
 
 def test_ea_uses_broker_deal_fill_and_close_events():
-    t=EA.read_text();assert "g_tracker.MarkExecuted(decisionId,price,dealTime,volume,entryCommission,entrySwap,entryFee)" in t;assert "g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome)" in t
+    t=EA.read_text();assert "g_tracker.MarkExecuted(decisionId,price,dealTime,volume,entryCommission,entrySwap,entryFee,true)" in t;assert "g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome)" in t
+
+def test_recovered_outcomes_with_incomplete_deal_history_are_censored():
+    tracker=TRACKER.read_text()
+    publisher=(ROOT/"EA"/"includes"/"Signals"/"SignalPublisher.mqh").read_text()
+    config=(ROOT/"EA"/"includes"/"Core"/"Config.mqh").read_text()
+    assert "p.cashflowsKnown=false;p.outcomeHistoryComplete=false" in tracker
+    assert 'if(!p.outcomeHistoryComplete&&p.filled)coarseOutcome="ambiguous"' in tracker
+    assert "p.totalBrokerFeeCashflow,p.cashflowsKnown,p.spreadCostKnown" in tracker
+    assert 'string commissionStr=(filled&&cashflowsKnown)?StringFormat("%.4f",commissionCost):"null";' in publisher
+    assert "bool cashflowsKnown;" in config and "bool outcomeHistoryComplete;" in config
+
 
 def test_partial_close_keeps_current_position_live_for_tracker():
     t=EA.read_text()
