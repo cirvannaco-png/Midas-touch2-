@@ -48,7 +48,7 @@ string CSignalPublisher::BuildOutcomeJsonPayloadProvenance(string signalId,strin
    string realizedRStr=hasR?StringFormat("%.4f",realizedR):"null";
    string mfeRStr=hasR?StringFormat("%.4f",mfeR):"null";
    string maeRStr=hasR?StringFormat("%.4f",maeR):"null";
-   string commissionStr=filled?StringFormat("%.4f",commissionCost):"null";
+   string commissionStr=(filled&&cashflowsKnown)?StringFormat("%.4f",commissionCost):"null";
    string spreadStr=(filled&&spreadCostKnown)?StringFormat("%.4f",spreadCost):"null";
    string slippageStr=(filled&&slippageCostKnown)?StringFormat("%.4f",slippageCost):"null";
    string commissionCashflowStr=(filled&&cashflowsKnown)?StringFormat("%.4f",commissionCashflow):"null";
