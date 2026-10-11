@@ -6,7 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from tools.decision_fingerprint import canonical_serialize, fingerprint
@@ -616,7 +616,7 @@ async def retry_failed_trade_events_core(session: AsyncSession) -> dict:
     )
     failed_events = result.scalars().all()
     if not failed_events:
-        return {"message": "No failed trade events to retry."}
+        return {"message": "No failed trade events to retry.", "processed": 0, "retried": 0, "remaining_failed": 0}
 
     retried_count = 0
     for db_event in failed_events:
@@ -656,9 +656,17 @@ async def retry_failed_trade_events_core(session: AsyncSession) -> dict:
         await session.commit()
         await asyncio.sleep(0.5)
 
+    remaining = await session.scalar(
+        select(func.count()).select_from(TradeEvent).where(
+            (TradeEvent.status == TradeEventStatus.FAILED)
+            | ((TradeEvent.status == TradeEventStatus.PENDING) & (TradeEvent.received_at < stale_before))
+        )
+    )
     return {
         "message": f"Processed {len(failed_events)} failed trade events. Retried {retried_count} successfully.",
-        "remaining_failed": len(failed_events) - retried_count
+        "processed": len(failed_events),
+        "retried": retried_count,
+        "remaining_failed": int(remaining or 0),
     }
 
 
@@ -808,7 +816,7 @@ async def retry_failed_signals_core(session: AsyncSession) -> dict:
     )
     failed_signals = result.scalars().all()
     if not failed_signals:
-        return {"message": "No failed signals to retry."}
+        return {"message": "No failed signals to retry.", "processed": 0, "retried": 0, "remaining_failed": 0}
 
     retried_count = 0
     for db_signal in failed_signals:
@@ -846,9 +854,17 @@ async def retry_failed_signals_core(session: AsyncSession) -> dict:
         await session.commit()
         await asyncio.sleep(0.5)
 
+    remaining = await session.scalar(
+        select(func.count()).select_from(Signal).where(
+            (Signal.status == SignalStatus.FAILED)
+            | ((Signal.status == SignalStatus.PENDING) & (Signal.received_at < stale_before))
+        )
+    )
     return {
         "message": f"Processed {len(failed_signals)} failed signals. Retried {retried_count} successfully.",
-        "remaining_failed": len(failed_signals) - retried_count
+        "processed": len(failed_signals),
+        "retried": retried_count,
+        "remaining_failed": int(remaining or 0),
     }
 
 
