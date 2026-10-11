@@ -4,6 +4,7 @@
 
 #include "includes/Core/Config.mqh"
 #include "includes/Core/CandleData.mqh"
+#include "includes/Core/SessionFilter.mqh" // direct dependency for operator-initiated session gating
 #include "includes/Core/SignalLogger.mqh"
 #include "includes/Analysis/TFContext.mqh"
 #include "includes/Analysis/Scoring.mqh"
