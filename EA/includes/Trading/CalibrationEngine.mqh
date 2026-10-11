@@ -4,6 +4,8 @@
 #ifndef CALIBRATIONENGINE_MQH
 #define CALIBRATIONENGINE_MQH
 
+#define MEDIS_CALIBRATION_MEDIS_CALIBRATION_NUM_BUCKETS 20
+
 // v2.9 addition — review item #1 / #9: "a confidence score isn't a
 // probability until it's been checked against real outcomes." This
 // bucket-tracks CScoringEngine::CalculateConfidence()'s output against
@@ -42,17 +44,16 @@
 class CCalibrationEngine
   {
 private:
-   static const int  NUM_BUCKETS = 20; // 0-5, 5-10, ..., 95-100
-   int               m_wins[NUM_BUCKETS];
-   int               m_losses[NUM_BUCKETS];
-   int               m_scratches[NUM_BUCKETS];
+   int               m_wins[MEDIS_CALIBRATION_NUM_BUCKETS];
+   int               m_losses[MEDIS_CALIBRATION_NUM_BUCKETS];
+   int               m_scratches[MEDIS_CALIBRATION_NUM_BUCKETS];
    string            m_filename;
    int               m_minSample;
 
    int               BucketIndex(double confidence) const
      {
       int idx = (int)MathFloor(confidence / 5.0);
-      return (int)MathMax(0, MathMin(idx, NUM_BUCKETS - 1));
+      return (int)MathMax(0, MathMin(idx, MEDIS_CALIBRATION_NUM_BUCKETS - 1));
      }
 
 public:
@@ -104,7 +105,7 @@ public:
    // rather than building a UI dependency into this file.
    string            BucketSummary(int bucketIdx) const
      {
-      if(bucketIdx < 0 || bucketIdx >= NUM_BUCKETS) return "";
+      if(bucketIdx < 0 || bucketIdx >= MEDIS_CALIBRATION_NUM_BUCKETS) return "";
       int lo = bucketIdx * 5, hi = lo + 5;
       int w = m_wins[bucketIdx], l = m_losses[bucketIdx], s = m_scratches[bucketIdx];
       int total = w + l;
@@ -112,7 +113,7 @@ public:
       return StringFormat("%d-%d: %d trades, %.1f%% win rate%s", lo, hi, total, wr,
                            (total < m_minSample) ? " (low sample)" : "");
      }
-   int               NumBuckets() const { return NUM_BUCKETS; }
+   int               NumBuckets() const { return MEDIS_CALIBRATION_NUM_BUCKETS; }
 
    // v2.9 note #4 above — call this after any scoring-formula change so
    // stale-definition data doesn't masquerade as current calibration.
@@ -132,7 +133,7 @@ public:
       int h = FileOpen(m_filename, flags, ',');
       if(h == INVALID_HANDLE) return;
       FileWrite(h, "BucketLow", "BucketHigh", "Wins", "Losses", "Scratches");
-      for(int i = 0; i < NUM_BUCKETS; i++)
+      for(int i = 0; i < MEDIS_CALIBRATION_NUM_BUCKETS; i++)
          FileWrite(h, i * 5, i * 5 + 5, m_wins[i], m_losses[i], m_scratches[i]);
       FileClose(h);
      }
@@ -149,7 +150,7 @@ public:
       for(int c = 0; c < 5 && !FileIsEnding(h); c++) FileReadString(h);
 
       int i = 0;
-      while(!FileIsEnding(h) && i < NUM_BUCKETS)
+      while(!FileIsEnding(h) && i < MEDIS_CALIBRATION_NUM_BUCKETS)
         {
          string loS = FileReadString(h);
          if(FileIsEnding(h)) break;
