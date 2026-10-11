@@ -83,3 +83,15 @@ def test_emergency_stop_remains_recoverable_and_resume_requires_flat_exposure():
     assert "if(HasManagedExposure())" in ea
     assert '"EMERGENCY_RESUME_BLOCKED"' in ea
     assert "g_controlPanel.Destroy();\n      g_panelInitialized=false;" in ea
+
+
+
+def test_operator_trades_do_not_pollute_strategy_learning():
+    ea = read(EA)
+    manual_start = ea.index("void ManualMarketEntry(bool isBuy)")
+    manual_end = ea.index("void OnChartEvent(", manual_start)
+    manual_path = ea[manual_start:manual_end]
+    assert "manual_operator" in manual_path
+    assert "g_execAudit.Log(\"MANUAL_ORDER_SUBMITTED\"" in manual_path
+    assert "g_tracker.AddSetup(" not in manual_path
+    assert "ACCOUNT_MODE_WARNING" in ea
