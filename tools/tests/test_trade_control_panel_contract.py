@@ -129,3 +129,10 @@ def test_manual_buttons_fail_closed_on_netting_symbol_exposure():
     assert "OrderGetString(ORDER_SYMBOL)==_Symbol" in ea
     assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING && HasAnyChartSymbolExposure()" in ea
     assert "netting/exchange account already has same-symbol position or pending order" in ea
+
+
+def test_automated_entries_fail_closed_on_netting_symbol_exposure():
+    ea = read(EA)
+    assert "bool IsNettingOrExchangeAccount()" in ea
+    assert "if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure())" in ea
+    assert '"AUTOMATED_BLOCKED_NETTING_EXPOSURE"' in ea
