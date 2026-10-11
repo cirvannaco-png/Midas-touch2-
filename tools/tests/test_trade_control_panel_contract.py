@@ -98,6 +98,11 @@ def test_manual_target_levels_satisfy_the_configured_minimum_rr():
     assert "InpManualRiskReward<InpMinRiskReward+0.3" in manual_path
 
 
+def test_operator_session_filter_is_an_explicit_header_dependency():
+    ea = read(EA)
+    assert '#include "includes/Core/SessionFilter.mqh"' in ea
+
+
 def test_manual_orders_obey_the_same_dst_aware_session_gate():
     ea = read(EA)
     assert "CSessionFilter g_operatorSessionFilter;" in ea
