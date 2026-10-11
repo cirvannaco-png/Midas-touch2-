@@ -121,3 +121,11 @@ def test_operator_trades_do_not_pollute_strategy_learning():
     assert "g_execAudit.Log(\"MANUAL_ORDER_SUBMITTED\"" in manual_path
     assert "g_tracker.AddSetup(" not in manual_path
     assert "ACCOUNT_MODE_WARNING" in ea
+
+
+def test_manual_buttons_fail_closed_on_netting_symbol_exposure():
+    ea = read(EA)
+    assert "bool HasAnyChartSymbolExposure()" in ea
+    assert "OrderGetString(ORDER_SYMBOL)==_Symbol" in ea
+    assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING && HasAnyChartSymbolExposure()" in ea
+    assert "netting/exchange account already has same-symbol position or pending order" in ea
