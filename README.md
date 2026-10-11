@@ -25,13 +25,14 @@ MT5 Terminal
                                               └─ PostgreSQL (signals, signal_outcomes,
                                                  calibration_cycles, promotion_requests)
 
-Operational/admin trigger (scheduler is external to this repository)
-  └─ POST /admin/run-cycle  ──►  telegram-bridge
-                                   ├─ tools/metrics_engine.py + tools/gating.py
-                                   └─ PROMOTE  ──► Telegram tap-to-approve card
-                                      ROLLBACK ──► auto-executed + Telegram notice
+GitHub Actions on canonical GitHub main
+  ├─ Saturday 06:00 UTC (alternate-week guard) ──► POST /admin/run-cycle
+  │                                                   ├─ metrics + gating + challenger evaluation
+  │                                                   └─ PROMOTE ──► Telegram tap-to-approve card
+  │                                                      ROLLBACK ──► auto-executed + Telegram notice
+  └─ Daily 07:00 UTC ──► POST /admin/check-subscriptions
 
-GitLab CI is currently paused by repository policy to conserve runner minutes; GitHub Actions is the active validation path.
+GitHub Actions is the active CI and production-maintenance scheduler. GitLab is an optional source-tree mirror only; its schedule-driven maintenance jobs are disabled.
 ```
 
 1. The EA calls the bridge's `/signal` endpoint with an `X-API-Key` header and a JSON body describing the trade signal.
