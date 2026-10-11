@@ -24,14 +24,7 @@ The two nested ZIP archives under `attached_assets/` were not selected as the so
 
 ## Added
 
-- `.gitlab-ci.yml` — native GitLab CI/CD replacement for:
-  - MQL5 structural validation
-  - `medis_touch` lint/security/tests
-  - Telegram bridge lint/security/dependency/tests
-  - tools tests
-  - daily subscription maintenance
-  - biweekly recalibration maintenance
-  - manual Render secret synchronization
+- `.gitlab-ci.yml` — migration-era GitLab pipeline definition for repository checks. Production maintenance jobs are now disabled there; GitHub Actions is canonical for validation and production schedules.
 
 ## Production maintenance scheduler
 
@@ -47,12 +40,12 @@ GitLab is an optional source-tree mirror, not the production control plane. The 
 
 ## Required GitHub Actions repository secrets
 
-In GitHub, open Settings → Secrets and variables → Actions and create repository secrets:
+In GitHub, create an environment named production under Settings → Environments and restrict deployments to the main branch. Add these environment secrets:
 
 - BRIDGE_BASE_URL: the actual HTTPS base URL for the deployed bridge service (no trailing slash required).
 - BRIDGE_API_KEY: the same secret value as the deployed bridge's SECRET_KEY setting.
 
-These secrets must not be committed or exposed in logs/chat. The scheduled workflow validates HTTPS, applies bounded network timeouts, avoids automatic POST retries, and validates response JSON. To manually execute a production job, use Actions → Midas Touch Production Maintenance → Run workflow and choose the intended task. Manual recalibration immediately calls the production bridge; do not use it as a casual dry run.
+These secrets must not be committed or exposed in logs/chat. The scheduled workflow uses the production environment, restricts manual dispatch jobs to main, validates HTTPS, applies bounded network timeouts, avoids automatic POST retries, and validates response JSON. To manually execute a production job, use Actions → Midas Touch Production Maintenance → Run workflow on main and choose the intended task. Manual recalibration immediately calls the production bridge; do not use it as a casual dry run.
 
 GITLAB_SYNC_TOKEN and optional GITLAB_SYNC_USER are separate credentials used only by the optional GitHub-to-GitLab mirror workflow. They are not used for production maintenance.
 
@@ -102,7 +95,7 @@ The EA source remains the recovered source of truth.
 
 ## Scheduling status and activation gate
 
-The scheduler is implemented in GitHub Actions on the canonical GitHub main branch; schedule definitions are version-controlled in .github/workflows/production-maintenance.yml. Secret values are not defined by YAML and must be set as GitHub Actions repository secrets.
+The scheduler is implemented in GitHub Actions on the canonical GitHub main branch; schedule definitions are version-controlled in .github/workflows/production-maintenance.yml. Secret values are not defined by YAML and must be set as GitHub Actions environment secrets in the production environment, restricted to the main branch.
 
 Before calling the production engine autonomously active, confirm:
 
