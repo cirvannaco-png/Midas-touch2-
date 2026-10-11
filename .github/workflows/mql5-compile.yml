@@ -103,7 +103,7 @@ jobs:
           if (!(Test-Path $source)) {
             throw "EA source was not staged: $source"
           }
-          $arguments = "/compile:`"$source`" /log"
+          $arguments = "/compile:`"$source`" /include:`"$env:MT5_MQL5_ROOT`" /log"
           $process = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList $arguments -Wait -PassThru
           Start-Sleep -Seconds 2
           $logPath = Join-Path $expertDir 'MedisTouch_v2.8.log'
