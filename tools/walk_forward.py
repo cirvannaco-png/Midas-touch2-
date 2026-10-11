@@ -39,7 +39,7 @@ def _oos_record(row) -> dict:
         "weight_version", "calibration_version", "feature_schema_version",
         "environment_schema_version", "decision_fingerprint", "original_decision_fingerprint",
         "strategy", "symbol", "asset_class", "filled", "commission_cost", "spread_cost",
-        "slippage_cost", "source_type",
+        "slippage_cost", "commission_cashflow", "swap_cashflow", "broker_fee_cashflow", "source_type",
     )
     out = {}
     for field in fields:
