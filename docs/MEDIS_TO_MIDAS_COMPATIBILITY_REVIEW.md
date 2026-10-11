@@ -322,3 +322,8 @@ A separate draft implementation PR now addresses the first confirmed live integr
 At the current PR head, all six applicable hosted checks passed: bridge/Python tests, bridge quality/security, research-tools tests, handbook-reference tests, MQL5 structural validation, and the hosted MetaEditor EA compile. The new bridge tests cover one registered outcome contract, preservation of timestamps/environment/fingerprint fields, signed cashflows, non-negative cost magnitudes, and parity mismatch handling.
 
 This is validation of the PR's code/build checks, not end-to-end trading validation. The migration has not been applied against a real target database or backup, and there is no fresh MT5 Strategy Tester result or demo-forward run for this change. PR #49 remains draft and has not been merged.
+
+
+## Additional recovery caveat surfaced while fixing outcome costs
+
+The Midas restart path in `EA/includes/Recovery/RecoveryEngine.mqh` restores an open position into `COutcomeTrackerLive` through `RestoreExecuted(..., currentVolume)`, but it does not replay historical deals or rehydrate accumulated realized partial-close PnL and execution cashflows into the fresh tracker. Therefore PR #49 corrects accounting for entry/exit deals observed by an active tracker, but does **not** claim that an open trade restored after an EA restart has its pre-restart commission/swap/fee and partial-close history reconstructed. A durable recovery fix must replay or ledger-rehydrate deals using position identifiers, de-duplicate multi-leg history, and preserve parent-decision aggregation without double-counting. This is a separate high-priority follow-up; do not mark complete merely because PR #49's compile and Python checks pass.
