@@ -1,28 +1,25 @@
-# Medis Touch VPS Deployment Standard
+# Midas Touch VPS Deployment Standard
 
 ## Purpose
 
-The VPS is the persistent execution runtime for the Medis Touch MT5 Expert Advisor. It is not a replacement for the backend, payment system, authorization layer, or Render services.
+The VPS is the persistent execution runtime for the Midas Touch MT5 Expert Advisor. It is not a replacement for the backend, payment system, authorization layer, or Render services.
 
 ## Production topology
 
 ```text
-GitLab -> Render backend/API -> PostgreSQL
-                  |
-                  v
-        authenticated signal path
-                  |
-                  v
-             VPS / Windows
-                  |
-              MT5 Terminal
-                  |
-          Medis Touch EA
-                  |
-               Broker
+GitHub main (canonical source; deployment connection must be verified)
+        |
+        v
+Render bridge/API -> PostgreSQL
+        |
+        v
+authenticated signal/outcome path
+        |
+        v
+VPS / Windows -> MT5 Terminal -> Midas Touch EA -> Broker
 ```
 
-Existing GitHub-backed Render services remain available as a fallback during migration. The GitLab-backed deployment must be independently validated before it is considered a production path.
+The diagram shows the intended architecture, not verified live deployment state. Confirm the actual Render-connected repository/provider, deployed commit, environment and database in the service control plane. Do not assume a service was repointed merely because GitHub is the canonical repository. GitLab is an optional source-tree mirror only.
 
 ## Execution boundary
 
@@ -39,10 +36,10 @@ A caller-provided `portfolio_admitted=true` value is never authoritative proof o
 - Windows VPS capable of running the required MT5 terminal continuously.
 - Stable network connectivity and synchronized system clock.
 - MT5 terminal configured for the intended broker account.
-- Medis Touch EA attached only to approved symbols/timeframes/configurations.
+- Midas Touch EA attached only to approved symbols/timeframes/configurations.
 - Automatic terminal/EA recovery after restart or network interruption.
 - Health/watchdog monitoring for terminal, EA, broker connection, and backend connectivity.
-- Secure machine-level storage for runtime secrets; never commit secrets to GitLab.
+- Secure machine-level storage for runtime secrets; never commit secrets to GitHub or GitLab.
 - No broker credentials in the Telegram bridge.
 - Structured execution/audit telemetry without credentials, copy keys, or payment secrets.
 - Restart reconciliation before accepting new execution after an outage.
@@ -71,6 +68,6 @@ Required latency fields include transport, eligibility, authorization, risk, por
 
 ## VPS deployment policy
 
-The VPS deployment is a separate runtime concern from GitLab CI. GitLab remains the canonical source-control and validation system. MQL5 structural validation in CI does not replace MetaEditor compilation; MetaEditor remains authoritative for final EA compilation.
+GitHub Actions is the canonical source/CI system; its repository checks and maintenance workflow do not configure the VPS or prove that the Render bridge is currently connected to GitHub. MQL5 structural validation does not replace authoritative MetaEditor compilation or Strategy Tester evaluation.
 
-No VPS deployment is considered production-ready merely because a GitLab pipeline passes. The VPS must additionally pass terminal startup, broker connectivity, EA initialization, signal receipt, authorization gates, order-check, execution acknowledgement, and reconciliation tests.
+No VPS deployment is considered production-ready merely because a GitHub or GitLab pipeline passes. The VPS must additionally pass terminal startup, broker connectivity, EA initialization, signal receipt, authorization gates, order-check, execution acknowledgement, and reconciliation tests, followed by controlled demo/forward validation.
