@@ -6,6 +6,8 @@ on:
     - cron: "0 6 * * 6"
     # Subscription enforcement is a separate daily maintenance task.
     - cron: "0 7 * * *"
+    # Bounded retry sweep for stale/failed delivery-notification queues.
+    - cron: "0 8 * * *"
   workflow_dispatch:
     inputs:
       task:
@@ -15,6 +17,7 @@ on:
         options:
           - biweekly-recalibration
           - daily-subscriptions
+          - daily-delivery-recovery
         default: biweekly-recalibration
 
 permissions:
