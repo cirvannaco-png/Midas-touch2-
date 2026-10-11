@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from sqlalchemy import select
 
 from app.database import async_session
@@ -84,7 +82,8 @@ def test_ea_outcome_contract_persists_environment_lineage_and_costs(client, auth
     row = _read_outcome(client, signal_id)
     assert row is not None
     assert row.decision_fingerprint == fingerprint
-    assert row.original_decision_fingerprint == fingerprint
+    assert row.original_decision_fingerprint is None
+    assert row.parity_status == "FINGERPRINT_MISSING"
     assert row.signal_time is not None
     assert row.decision_time is not None
     assert row.execution_time is not None
@@ -144,24 +143,27 @@ def test_signed_cashflows_are_accepted_but_negative_cost_magnitudes_are_rejected
 
 def test_only_one_post_outcome_route_is_registered():
     from app.main import app
+    from app.routes import router
 
     matching = [
         route
-        for route in app.routes
+        for route in router.routes
         if getattr(route, "path", None) == "/outcome"
         and "POST" in getattr(route, "methods", set())
     ]
     assert len(matching) == 1
+    assert app.openapi()["paths"]["/outcome"]["post"]
 
 
 def test_outcome_fingerprint_mismatch_remains_visible_and_rejected(client, auth_headers):
     signal_id = "outcome-parity-mismatch-1"
     signal_response = client.post(
         "/signal",
-        json={**VALID_BUY_SIGNAL, "signal_id": signal_id},
+        json={**VALID_BUY_SIGNAL, "signal_id": signal_id, "decision_fingerprint": "B" * 64},
         headers=auth_headers,
     )
-    assert signal_response.status_code == 200
+    # The deliberately false claimed fingerprint is retained as a parity audit row.
+    assert signal_response.status_code == 409
 
     response = client.post(
         "/outcome",
