@@ -28,7 +28,7 @@ def test_pretrade_oms_router_child_tca_reconciliation_flow() -> None:
     assert len(children) == 2
     assert sum(child.quantity for child in children) == order.quantity
     oms.transition(order.order_id, OrderStatus.WORKING)
-    result = reconcile(oms.get(order.order_id), OrderStatus.WORKING)
+    result = reconcile(oms.get(order.order_id), OrderStatus.WORKING, observed_filled=0.0)
     assert result.matched and result.action == "RESUME"
     tca = calculate_tca(
         order_id=order.order_id, side=order.side, quantity=order.quantity, decision_price=100.0,
@@ -43,3 +43,28 @@ def test_unknown_broker_state_never_resumes_exposure() -> None:
     result = reconcile(order, OrderStatus.UNKNOWN)
     assert not result.matched
     assert result.action == "FREEZE_AND_QUERY"
+
+
+def test_missing_broker_fill_quantity_never_resumes() -> None:
+    order = ExecutionOrder("flow-no-fill", "decision-3", "XAUUSD", "BUY", 2.0, status=OrderStatus.WORKING)
+    result = reconcile(order, OrderStatus.WORKING)
+    assert not result.matched
+    assert result.action == "FREEZE_AND_QUERY"
+    assert "fill quantity unavailable" in result.reason
+
+
+def test_broker_fill_over_requested_quantity_freezes_reconciliation() -> None:
+    order = ExecutionOrder(
+        "flow-overfill", "decision-4", "XAUUSD", "BUY", 2.0,
+        status=OrderStatus.PARTIALLY_FILLED, filled_quantity=1.0,
+    )
+    result = reconcile(order, OrderStatus.PARTIALLY_FILLED, observed_filled=2.5)
+    assert not result.matched
+    assert result.action == "FREEZE_AND_RECONCILE"
+
+
+def test_invalid_broker_fill_quantity_fails_closed() -> None:
+    order = ExecutionOrder("flow-nan", "decision-5", "XAUUSD", "BUY", 2.0, status=OrderStatus.WORKING)
+    result = reconcile(order, OrderStatus.WORKING, observed_filled=float("nan"))
+    assert not result.matched
+    assert result.action == "FREEZE_AND_RECONCILE"
