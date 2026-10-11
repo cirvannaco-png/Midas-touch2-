@@ -73,3 +73,13 @@ def test_execution_audit_records_orders_fills_and_closes_to_csv_and_terminal():
     assert 'g_execAudit.Log("FILL_IN"' in ea
     assert 'g_execAudit.Log("FILL_OUT"' in ea
     assert "PrintFormat(\"MidasTouch AUDIT" in audit
+
+
+
+def test_emergency_stop_remains_recoverable_and_resume_requires_flat_exposure():
+    ea = read(EA)
+    assert "InpShowTradeControlPanel || g_emergencyStop" in ea
+    assert "bool HasManagedExposure()" in ea
+    assert "if(HasManagedExposure())" in ea
+    assert '"EMERGENCY_RESUME_BLOCKED"' in ea
+    assert "g_controlPanel.Destroy();\n      g_panelInitialized=false;" in ea
