@@ -1,116 +1,68 @@
 # MIDAS TOUCH — Repository Operating Model
 
-## Repositories
+## Repositories and authority
 
-- Active GitHub: `cirvannaco-png/Midas-touch2-`
-- Active GitLab engineering/release repository: `midas-touch-group1/midas-touch2` (SHA-256)
-- GitLab transport sync repository: `midas-touch-group1/midas-touch2-sync` (SHA-1; transport only, not a release authority)
-- Historical archive: original SHA-256 `midas-touch2` — immutable reference only.
+- **Canonical source:** GitHub `cirvannaco-png/Midas-touch2-`, branch `main`.
+- **Canonical automation:** GitHub Actions in `.github/workflows/` for CI, guarded production maintenance, and optional mirror sync.
+- **Optional mirror:** GitLab `midas-touch-group1/midas-touch2`, project ID `86337573`. Its source tree is subordinate to GitHub `main`.
+- **Legacy sync artifact:** `midas-touch-group1/midas-touch2-sync` and its prior manual transport runbook belonged to an earlier operating model; they are not the destination of the current direct source-tree mirror.
+- **Runtime:** Render bridge/backend, PostgreSQL, VPS, MT5 and broker environments are separate operational surfaces. Their actual connected repository, deployed commit, secrets, database and health must be checked in the respective control planes.
 
-GitHub currently uses SHA-1 repository objects. The active GitLab repository currently uses SHA-256 repository objects. Cross-provider parity therefore must never depend on literal SHA equality; it is established by provider-specific commit IDs plus verified source-tree/ref identity and release evidence.
+GitHub and the active GitLab project may use different Git object formats. Never compare cross-provider commit hashes as though they were interchangeable; mirror parity is a source-tree/content question.
 
-## Authority and safety
+## Source, CI and mirror policy
 
-Neither provider is an automatic winner when branches diverge.
+GitHub `main` is the source of truth for development and reviewed integration.
 
-For ordinary branches:
-- Equal tips: no action.
-- One side is a strict ancestor of the other: fast-forward the lagging side only when the ref is unprotected.
-- Both sides diverged: stop and resolve through a normal PR/MR.
-- Never automatically force-push, choose "ours/theirs", or overwrite a divergent branch.
+For code changes:
+- Use a scoped branch and pull request.
+- Run targeted tests and applicable GitHub Actions checks against the exact candidate commit.
+- Do not merge merely because a file exists or an earlier commit was green.
+- If checks are not run or are skipped, report that explicitly and treat validation as a pre-merge requirement.
+- Do not change MQL5 trading behavior under a documentation, repository or CI migration.
 
-For protected refs (`main`, `production`):
-- No automatic force-push.
-- No automatic deletion.
-- No automatic divergence resolution.
-- Changes enter through the promotion workflow.
+The GitHub-to-GitLab workflow is a one-way mirror operation, not a second release process. It may synchronize GitHub `main` to GitLab `main` after successful CI or via intentional dispatch from GitHub `main`. It must not be run from a feature branch against GitLab `main`. Do not make GitLab-only changes, reverse-sync GitLab to GitHub, force-push, or automatically resolve divergent histories.
 
-## Development branches
+The source mirror excludes provider-specific `.github/` configuration. A mirror is current only when its workflow reports `SYNC_VERIFIED` for the exact GitHub source SHA and the resulting GitLab tree is verified. A clone/authentication failure or any unverified state means mirror parity is unknown.
 
-Use:
-- `feature/*` for new capabilities.
-- `fix/*` for defects.
-- `audit/*` for correctness/security/reliability audits.
-- `chore/*` for tooling and maintenance.
-- `ops/*` for repository/infrastructure operations.
+## Main and release boundary
 
-Every meaningful branch should identify its purpose and be disposable after integration.
+GitHub `main` is the integration branch, not the live-trading authorization boundary. The prior GitLab `production` branch procedure is legacy and is not an active source-of-truth release mechanism.
 
-## Main
+A source merge does not automatically authorize production deployment. Verify the actual hosting provider/repository/commit, required environment settings and secrets, database/migrations, application health, signal/outcome ingestion, and rollback path before any deployment change. Do not repoint or duplicate Render services as a side effect of source-control work.
 
-`main` is the integration branch, not the live-trading authorization boundary.
+## Production-maintenance workflow
 
-Required path:
-`feature/fix/audit → PR/MR → main → validation`
+GitHub Actions workflow `.github/workflows/production-maintenance.yml` owns:
+- alternate-Saturday recalibration checks at 06:00 UTC, with its documented parity guard;
+- daily subscription enforcement at 07:00 UTC;
+- explicit manual dispatch from GitHub `main` only.
 
-Validation must cover, as applicable:
-- MQL5 compilation
-- static/audit checks
-- backend/EA contract parity
-- unit/integration tests
-- deterministic backtest
-- risk-control invariants
-- news lock, spread and volatility constraints
-- broker minimum/freeze constraints
-- DynamicStopEngine invariants
-- recalibration/config version integrity
-- audit logging and rollback safety
+It uses the GitHub Actions `production` environment and requires environment secrets `BRIDGE_BASE_URL` and `BRIDGE_API_KEY`. The environment's main-branch deployment restriction and secret configuration must be verified in GitHub settings. Remove old GitLab schedules separately; repository YAML alone cannot delete settings already stored in GitLab.
 
-## Production
+A successful scheduler run must prove a persisted cycle ID, not just an HTTP 2xx. A cycle does not itself demonstrate candidate approval, EA hash acknowledgement, profitable backtesting or live-trading readiness.
 
-`production` is the release boundary.
+## Trading-system safeguards
 
-A production commit must already exist on `main` and have passed the release gates. Promotion must move the exact validated `main` commit; it must not create an unrelated production-only fix.
+Preserve the canonical fail-closed order:
 
-Production promotion:
-`validated main → production → controlled forward test → demo/live rollout`
+`SIGNAL -> Freshness/Stale Protection -> Eligibility -> Paid Subscription -> Entitlement -> Explicit Copy Authorization -> Broker Capability/Symbol Mapping -> User Risk Validation -> Risk Gate -> Portfolio Gate -> Persistent Portfolio Admission -> Execution Ledger -> OrderCheck -> OrderSendAsync -> Broker Acknowledgement -> OnTradeTransaction -> Position Observation -> Reconciliation -> Outcome/Accuracy Telemetry`
 
-A production branch is a software-release boundary, not permission to trade real money.
+Never use repository/CI success as a substitute for authoritative MetaEditor compilation, genuine MT5 Strategy Tester results with realistic costs and locked-OOS validation, controlled demo forward testing, restart recovery, broker reconciliation, and explicit configuration-hash acknowledgement.
 
-## Synchronization
+## Historical provider-state audit — 2026-09-18
 
-Cross-provider synchronization must be transport-only, not policy-changing.
+The following facts are a historical snapshot from 2026-09-18, not verified current settings:
 
-The current manual GitHub → GitLab transport workflow targets the dedicated SHA-1 `midas-touch2-sync` repository because the active GitLab engineering repository uses SHA-256. The sync repository is a transport staging surface only; it must never be treated as the production/release source or as a substitute for the active GitLab engineering repository.
+- GitHub `main` was reported as unprotected at that audit.
+- GitHub `production` was reported as unprotected and behind `main`.
+- GitLab `main` was reported as protected, with direct push/merge permissions still possible for developers.
+- GitLab `production` was reported as absent in the active SHA-256 engineering repository.
+- The dedicated GitLab SHA-1 sync repository was reported empty.
+- GitLab CI was described as paused at that time.
 
-The controller may:
-- fetch both providers
-- compare branch tips
-- report equality
-- fast-forward an unprotected branch when one side is strictly ahead
-
-The controller must not:
-- force-push protected branches
-- merge conflicts automatically
-- overwrite a branch because one provider is considered authoritative
-- auto-resolve divergence
-- create webhook loops
-
-## CI policy
-
-Broad push-triggered CI remains disabled/paused while compute minutes are constrained.
-
-Future validation should be scoped to:
-- release validation
-- merge/promotion gates
-- explicit manual runs
-- synchronization integrity checks
-
-Do not reintroduce blanket CI for every branch push.
-
-## Current provider-state audit — 2026-09-18
-
-The final pre-protection sweep found these provider-state facts:
-
-- GitHub `main` is currently unprotected.
-- GitHub `production` exists but is currently unprotected and is 18 commits behind GitHub `main`.
-- GitLab `main` is protected, but the current project settings still allow developers to push and merge directly.
-- GitLab `production` does not currently exist in the active SHA-256 engineering repository.
-- The dedicated GitLab SHA-1 sync repository exists but is empty at the audit timestamp; it is transport-only.
-- GitLab CI is intentionally paused at the repository configuration level to conserve runner minutes.
-
-These are provider configuration facts, not application behavior. Do not treat the production branch as an active cross-provider release boundary until the missing GitLab `production` ref and both providers' protection/release controls are explicitly established and verified.
+Verify live branch-protection/ruleset, environment, and token settings directly before relying on them; this historical record is not evidence of their current state.
 
 ## Emergency rule
 
-Any uncertainty in ancestry, commit identity, validation evidence, or provider parity is a STOP condition. Preserve the branches and investigate before mutating either provider.
+Any uncertainty in commit identity, source-tree parity, validation evidence, deployment state or provider configuration is a STOP condition. Preserve current branches and runtime state, investigate, and make a reviewed change rather than guessing.
