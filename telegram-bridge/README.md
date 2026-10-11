@@ -219,37 +219,39 @@ to be written against a real Tester CSV export's actual column layout rather tha
 
 ## Scheduling the recalibration cycle
 
-`POST /admin/run-cycle` (same `X-API-Key` auth as `/signal` and `/trade`) triggers one cycle.
-It is **not** run by an in-process scheduler: this service is on Render's free web tier, which
-spins down after 15 minutes idle (see `/render.yaml`), so nothing running inside the process
-could reliably wake itself up on a biweekly schedule.
+POST /admin/run-cycle (same X-API-Key auth as /signal and /trade) triggers one cycle. It is
+not run in-process: Render's free web service may spin down after 15 minutes idle, so an external
+scheduler must wake the service and trigger the request.
 
-Instead, configure a GitLab **pipeline schedule** on the repository's default branch with
-cron `0 6 * * 6` (every Saturday at 06:00 UTC, inside the weekend market-closed window) and
-the variable `SCHEDULE_TASK=biweekly-recalibration`. The job's UTC parity guard makes the
-recalibration request run only every *other* Saturday. The bridge request also wakes a sleeping
-Render service, because wake-up and trigger are the same HTTPS request.
+**GitHub Actions on the canonical GitHub main branch owns production scheduling.** See
+.github/workflows/production-maintenance.yml in the repository root:
 
-The scheduled job requires a successful HTTP response with JSON `status: "ok"`; it fails closed on a malformed response or `status: "no_data"`. The latter means there were no recent live `signal_outcomes` to persist a calibration cycle (although registered challengers are still evaluated), so check the bridge logs and outcome ingestion rather than treating the green HTTP response as a completed calibration.
+- Recalibration schedule: 0 6 * * 6 (Saturday 06:00 UTC), with an alternate-Saturday parity
+  guard anchored to 2026-01-03.
+- Subscription enforcement: 0 7 * * * (daily at 07:00 UTC).
+- Manual dispatch is available for either task, but it calls production endpoints and is not a
+  dry run. Use it only when an immediate production operation is intended.
 
-The schedule itself is a GitLab project setting and is **not created by this YAML change**. In
-GitLab, open **Build → Pipeline schedules**, create the schedule on the default branch, set the
-cron above, add `SCHEDULE_TASK=biweekly-recalibration`, and save it. Then add these protected/masked
-GitLab CI/CD variables:
+In GitHub, open Settings → Secrets and variables → Actions and set repository secrets
+BRIDGE_BASE_URL (the actual HTTPS URL of the deployed bridge) and BRIDGE_API_KEY (exactly
+the same value as this service's SECRET_KEY). Never commit or print either value. The workflow
+enforces HTTPS, bounded timeouts, no automatic POST retries, and response validation.
 
-| Secret            | Value                                                        |
-|--------------------|--------------------------------------------------------------|
-| `BRIDGE_BASE_URL`  | e.g. `https://medis-touch-telegram.onrender.com`             |
-| `BRIDGE_API_KEY`   | Same value as this service's `SECRET_KEY` env var            |
+The recalibration job requires HTTP success plus JSON status "ok" and a non-empty cycle_id.
+A status "no_data" response means no live CalibrationCycle was persisted for the two-week
+production-outcome window. Registered challengers are still evaluated in that path, but the
+workflow fails closed so an HTTP 2xx cannot masquerade as a completed cycle. Inspect the bridge
+logs, recent signal_outcomes, and stored candidate evaluations. A cycle/evaluation does not
+auto-approve a candidate or activate new EA weights.
 
-No new bridge-side environment variables are needed — `/admin/run-cycle` reuses `SECRET_KEY`
-and `ADMIN_CHAT_ID`, both already required above.
+GitLab is a mirror only. Its production maintenance jobs are disabled in .gitlab-ci.yml; remove
+any old GitLab project schedules to prevent confusion or possible duplicate requests.
 
-Because `app/calibration.py` imports `tools/gating.py` and `tools/metrics_engine.py` directly
-(one source of truth for the stats/decision logic, shared with the scripts you can also run by
-hand against production data), `telegram-bridge/Dockerfile` copies `tools/` into the image
-alongside `app/` — if you ever restructure the Dockerfile, keep that `COPY tools/ ./tools/`
-line, or `/admin/run-cycle` will 500 on every call in production while working fine locally.
+No new bridge-side environment variables are needed — both endpoints reuse SECRET_KEY and
+the existing bot/database configuration. Because app/calibration.py imports
+tools/gating.py and tools/metrics_engine.py directly, telegram-bridge/Dockerfile must copy
+tools/ into the image along with app/; otherwise POST /admin/run-cycle will fail in production
+even if local tests pass.
 
 ## Backtest evidence ingestion
 
