@@ -257,3 +257,21 @@ These exact-path deltas were identified by blob SHA. The list does not imply eve
 ## Merge decision
 
 Do not merge a functional migration yet. Keep this review PR open as an audit record. Recommended implementation order: (1) Midas-native correlation/factor risk controls with explicit fail-closed data-quality behavior; (2) adapted durable bridge research/execution control-plane with a new migration; (3) bounded parameter-proposal integration only after actual EA replay and EA-side activation/rollback are wired and tested. Preserve Midas-specific execution, lifecycle, evidence, risk and fail-closed config behavior throughout.
+
+## Additional shared-path findings from payment, copy-trading and order-validation review
+
+### I. Ammer Pay adapter: Midas intentionally disables an unverified payment protocol
+
+The source `medis_touch/app/payments/ammer_pay.py` is a longer direct-REST scaffold, but its own comments state that endpoint paths, field names and webhook signature scheme are placeholders and must not be used for real payments. Midas' same-path adapter fails closed in its constructor and payment methods until the production API/webhook contract is verified. This is a safety improvement, not a missing capability to restore. Do not port the source adapter into Midas; only enable a provider integration after authoritative merchant docs and sandbox signature/checkout tests exist.
+
+### J. Copy-trading idempotency: preserve the Midas enhancement
+
+Midas' `medis_touch/app/copy_trading.py` adds `account_scoped_idempotency_key(signal_id, account_id)`, which is absent in the source version. That is important when one signal is legitimately claimed/executed across more than one subscriber account: idempotency must prevent duplicates per account without accidentally conflating separate accounts. Preserve this target behavior and verify it through duplicate/retry tests if the module's production callers change.
+
+### K. Execution validation: target adds finite-number protection
+
+Midas' `medis_touch/app/execution_validation.py` imports `math.isfinite`, unlike the source file, and its interface retains keyword-only market-price/stop inputs. This is a meaningful defensive validation improvement against NaN/Infinity values entering a risk decision. Preserve the target checks and extend them only with tests for non-finite price, volume, margin and metadata values; do not replace the file with the source version.
+
+### L. Boundary across all reviewed overlaps
+
+The strongest migration rule remains: source-only path count is an inventory, not a list of proven gaps; shared-path SHA differences are candidate review targets, not proof that the source is newer or better. The current draft does not port any functional code. Any first implementation PR should be narrowly scoped and carry negative-path tests, call-site compatibility review, a fresh MetaEditor compile when MQL5 is changed, and a real MT5 Strategy Tester/demo test plan before activation.
