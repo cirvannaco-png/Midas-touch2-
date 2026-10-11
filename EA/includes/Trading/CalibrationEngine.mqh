@@ -4,7 +4,7 @@
 #ifndef CALIBRATIONENGINE_MQH
 #define CALIBRATIONENGINE_MQH
 
-#define MEDIS_CALIBRATION_MEDIS_CALIBRATION_NUM_BUCKETS 20
+#define MEDIS_CALIBRATION_NUM_BUCKETS 20
 
 // v2.9 addition — review item #1 / #9: "a confidence score isn't a
 // probability until it's been checked against real outcomes." This
