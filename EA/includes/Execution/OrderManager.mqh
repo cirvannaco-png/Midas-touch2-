@@ -35,6 +35,7 @@ public:
    int               OpenCount();
    int               Total() { return ArraySize(m_trades); }
    void              Prune();
+   bool              CancelPendingAt(int idx);
    bool              MarkFilledFromPending(ulong orderTicket,ulong positionTicket,double fillPrice=0.0);
    long              DecisionIdForTicket(ulong ticket);
    double            FillPriceForDecision(long decisionId);
@@ -84,6 +85,18 @@ int COrderManager::OpenCount()
       if(s==TS_PENDING || s==TS_FILLED || s==TS_PROTECTED || s==TS_PARTIAL || s==TS_RUNNER) c++;
      }
    return c;
+  }
+//+------------------------------------------------------------------+
+bool COrderManager::CancelPendingAt(int idx)
+  {
+   if(idx<0 || idx>=ArraySize(m_trades)) return false;
+   ENUM_TRADE_STATE state=m_trades[idx].fsm.State();
+   if(state!=TS_PENDING && state!=TS_WAITING) return false;
+   ulong ticket=m_trades[idx].fsm.Ticket();
+   if(ticket==0 || !m_broker->CancelOrder(ticket)) return false;
+   bool transitioned=m_trades[idx].fsm.Transition(TS_CANCELLED);
+   if(transitioned) PrintFormat("MedisTouch OrderManager: pending order %I64u cancelled by chart control.",ticket);
+   return transitioned;
   }
 //+------------------------------------------------------------------+
 void COrderManager::Prune()
