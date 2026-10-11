@@ -105,6 +105,34 @@ tickets back to the setup that created them via the `MT#<decision_id>`
 order comment. Deleting those files means a restarted terminal can no
 longer manage trades opened by a previous session.
 
+
+## On-chart operator panel, trailing protection, and sessions
+
+The EA exposes an optional on-chart control panel (InpShowTradeControlPanel=true):
+
+- **BUY / SELL** submit a market entry through the normal order manager. They use ATR-based stops, broker lot sizing, spread/news checks, both the existing DST-aware session gate and the optional custom session gate, daily/equity risk guards, and the portfolio-risk budget. TP1 itself clears the setup validator's minimum R:R requirement; final TP uses InpManualRiskReward, which must be at least InpMinRiskReward + 0.3R. They do not bypass the EA's execution-risk controls.
+- **CLOSE ALL** cancels this EA's managed pending orders and closes positions for the current chart symbol and InpMagicNumber only. It does not close positions belonging to another symbol, manual trading, or another EA magic number. On netting/exchange accounts, BUY/SELL also refuse to add same-symbol exposure while any position or pending order for that symbol exists, because MT5 aggregates trade identity at symbol level; resolve existing exposure first.
+- **EMERGENCY STOP** persists a per-symbol/per-magic halt in terminal global variables, blocks new EA entries, and attempts to cancel/close matching exposure. It stays latched after a terminal restart until the operator presses **RESUME**. Check the execution audit and broker state if a close is rejected; a button click is not proof that every broker position closed. RESUME is refused while matching positions or pending orders remain. If the panel is hidden while the emergency latch is set, the panel is temporarily shown so the operator can recover the EA.
+- The panel shows managed position count, floating PnL, magic number, session status, and whether dynamic trailing protection is enabled. On MT5 **netting** accounts, all activity for one symbol is consolidated into a single net position. Manual BUY/SELL and automated execution therefore fail closed whenever any position or pending order already exists for that symbol; close/manage existing exposure before opening another trade on that symbol. Do not mix this EA with external manual or other-EA orders on the same symbol when you need isolated close-all semantics; use a dedicated symbol/account or a hedging account. The EA also emits an account-mode warning at initialization when it detects a netting/exchange account.
+
+Dynamic trailing protection is already enabled by default through InpEnableDynamicStop=true. It begins protecting trades after the configured favourable-R threshold, uses breakeven protection and an ATR/confirmed-structure trail, and never intentionally widens an existing stop. Broker stop/freeze levels and connectivity can delay or reject a modification, so monitor the Experts log and existing SL-modification audit output rather than assuming every stop update succeeded.
+
+### Configurable sessions
+
+The existing DST-aware Tokyo/London/New York session filter remains independent. When InpUseSessionFilter is enabled, it governs both automated and button-initiated entries. The additional optional custom gate uses **broker-server time** and is disabled by default to preserve existing behaviour. Enable InpUseCustomTradingSessions, then configure up to three enable/start/end windows (HH:MM). Windows crossing midnight are supported; equal start/end times do not create an all-day window. When the custom gate is enabled but no valid window matches, new automated and button-initiated entries are denied. If both gates are enabled, both must allow the entry. Open-position management and outcome tracking continue outside the configured windows.
+
+### Execution audit and trade identification
+
+The EA writes detailed, append-only event rows to MQL5/Files/MidasTouch_ExecutionAudit_<SYMBOL>.csv and mirrors them to the terminal Experts log. Events include decisions, automated/manual submissions, rejected orders, fills, exits with net costs, pending-order cancellations, close-all summaries, and emergency-stop/resume actions. Every managed trade carries InpMagicNumber and an MT#<decision_id> comment; manual panel trades use the same decision store, order manager, and execution persistence path, but are deliberately excluded from automated strategy calibration and environment-memory learning so operator discretion cannot bias the model's training evidence.
+
+### Backtesting and optimization
+
+All panel, custom-session, risk/reward, stop, execution, and strategy controls are standard MQL5 input parameters, so they can be selected in Strategy Tester optimization. Run visual backtests when validating the buttons/panel; use non-visual tests for parameter sweeps. Keep spread, commission, slippage, broker symbol specifications, and account margin mode realistic. Chart-button actions are operator events and are not generated automatically during ordinary parameter optimization; evaluate the automated strategy separately from manual control-path testing.
+
+### Self-improvement activation is a separate production gate
+
+The repository contains EA-side outcome/calibration and environment-memory telemetry plus the backend's evidence-ingestion and guarded recalibration lifecycle. That does **not** by itself prove the live engine is autonomously running or that new weights are approved. Production activation still requires the GitLab schedules and protected/masked BRIDGE_BASE_URL / BRIDGE_API_KEY variables, a successful scheduled cycle, persisted calibration-cycle evidence, and a separately satisfied approval/configuration-hash gate. A CI-green source branch is not proof of a live recalibration or validated trading performance.
+
 ## CI
 
 `.gitlab-ci.yml` runs `tools/validate_mql5.py` on every
