@@ -149,7 +149,7 @@ class GovernedExecutionCoordinator:
         try:
             if self.recovery_journal is not None:
                 parent_identity = governed.idempotency_key or governed.order_id
-                existing = self.recovery_journal.begin_submission(governed.order_id, parent_order_id=None, client_order_id=parent_identity)
+                existing = self.recovery_journal.begin_submission(governed.order_id, parent_order_id=None, client_order_id=parent_identity, requested_quantity=governed.quantity)
                 if existing.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
                     raise RuntimeError(f"invalid durable recovery state: {existing.state}")
             try:
@@ -176,7 +176,7 @@ class GovernedExecutionCoordinator:
                 child = replace(child, venue=route.venue, status=OrderStatus.WORKING)
                 if self.recovery_journal is not None:
                     child_client_id = child.idempotency_key or f"{stored.order_id}:{child.order_id}"
-                    child_record = self.recovery_journal.begin_submission(child.order_id, parent_order_id=stored.order_id, client_order_id=child_client_id)
+                    child_record = self.recovery_journal.begin_submission(child.order_id, parent_order_id=stored.order_id, client_order_id=child_client_id, requested_quantity=child.quantity)
                     if child_record.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
                         raise RuntimeError(f"invalid durable child recovery state: {child_record.state}")
                 broker_call_started = True
@@ -191,7 +191,7 @@ class GovernedExecutionCoordinator:
                 fill_price = quote.ask if child.side.upper() == "BUY" else quote.bid
                 fill = self.venue.fill(child, venue_order_id, fill_price)
                 if self.recovery_journal is not None:
-                    self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price)
+                    self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price, fill_id=fill.fill_id)
                 stored = self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
                 self._record_backend_state(stored, status=stored.status, sequence=4 + child_index, setup_fingerprint=lineage_fingerprint)
                 expected_child = replace(child, status=OrderStatus.FILLED, filled_quantity=child.quantity, average_fill_price=fill.price)
