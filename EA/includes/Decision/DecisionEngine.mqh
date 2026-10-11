@@ -32,6 +32,7 @@ public:
                           double minConfidenceExecute, double minConfidenceSignal,
                           double fullRiskConfidence, int maxSpreadPoints);
    void              SeedNextId(long nextId);
+   long              AllocateId() { return m_nextId++; } // unique monotonic ID for operator-initiated entries
    long              PeekNextId() const { return m_nextId; }
    TradeDecisionRecord Decide(const TradeSetup &setup);
   };
