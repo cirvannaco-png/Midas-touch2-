@@ -134,6 +134,24 @@ def test_manual_buttons_fail_closed_on_netting_symbol_exposure():
     assert "netting/exchange account already has same-symbol position or pending order" in manual_path
 
 
+def test_close_cancel_and_trailing_operations_check_server_retcode():
+    broker = read(ROOT / "EA" / "includes" / "Execution" / "BrokerAdapter.mqh")
+    assert "bool CBrokerAdapter::LastExecutionCompleted(" in broker
+    assert "return LastExecutionCompleted(\"CancelOrder\",false,false);" in broker
+    assert "return LastExecutionCompleted(\"ModifySLTP\",false,true);" in broker
+    assert "if(!LastExecutionCompleted(\"CloseFull\",true,false)) return false;" in broker
+    assert "if(!LastExecutionCompleted(\"ClosePartial\",true,false)) return false;" in broker
+
+
+def test_netting_partial_close_uses_opposite_deal_with_volume_guard():
+    broker = read(ROOT / "EA" / "includes" / "Execution" / "BrokerAdapter.mqh")
+    assert "if(mode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)" in broker
+    assert 'm_trade.Sell(closeVolume,symbol,0.0,0.0,0.0,"MidasTouch partial reduction")' in broker
+    assert 'm_trade.Buy(closeVolume,symbol,0.0,0.0,0.0,"MidasTouch partial reduction")' in broker
+    assert "closeVolume>=initialVolume-step*0.25" in broker
+    assert "remainingVolume>=initialVolume-step*0.25" in broker
+
+
 def test_automated_entries_fail_closed_on_netting_symbol_exposure():
     ea = read(EA)
     assert "bool IsNettingOrExchangeAccount()" in ea
