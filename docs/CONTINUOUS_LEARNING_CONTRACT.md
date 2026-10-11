@@ -16,18 +16,22 @@ Resolved outcomes update the in-run memory after they resolve; only earlier outc
 
 ## 2. External recalibration cycle
 
-The backend cycle at `POST /admin/run-cycle` analyses persisted `signal_outcomes`, calculates coverage/expectancy and confidence intervals, stores a cycle report, and evaluates registered configuration challengers. Its ordinary metrics input is the recent production outcome database, not an arbitrary in-sample backtest.
+The backend cycle at POST /admin/run-cycle analyzes persisted production signal_outcomes, computes coverage/expectancy and confidence intervals, persists a CalibrationCycle report, and evaluates registered configuration challengers. The ordinary live-cycle metrics still come from production outcomes; backtest evidence is stored separately and must never be injected into the live-outcome table.
 
-The Render web service does not schedule itself. GitLab must trigger the endpoint. The `.gitlab-ci.yml` maintenance job added by the recalibration fix:
+**GitHub Actions on GitHub main is the canonical production scheduler.** The versioned workflow .github/workflows/production-maintenance.yml defines:
 
-- supports scheduled pipelines with `SCHEDULE_TASK=biweekly-recalibration`;
-- runs only on the default branch;
-- applies the existing alternate-Saturday parity rule anchored to 2026-01-03 UTC;
-- permits an explicitly started web pipeline to request an immediate cycle;
-- requires protected/masked `BRIDGE_BASE_URL` and `BRIDGE_API_KEY` variables;
-- does not print the API key, and fails on non-2xx endpoint responses.
+- Biweekly recalibration: cron 0 6 * * 6 (Saturday 06:00 UTC), with the alternate-Saturday parity guard anchored to 2026-01-03.
+- Daily subscription enforcement: cron 0 7 * * *.
+- Manual workflow_dispatch for either task, which can call the production bridge and must be used intentionally.
+- HTTPS-only bridge requests with bounded timeouts, no automatic POST retries, strict response validation, and no API key in logs.
 
-A GitLab project schedule and those CI/CD variables remain external project settings; code cannot create them through this repository file alone.
+Store BRIDGE_BASE_URL (the actual production bridge HTTPS base URL) and BRIDGE_API_KEY (the same secret as the bridge service's SECRET_KEY) as GitHub Actions repository secrets in Settings → Secrets and variables → Actions. Never commit or paste them into logs or chat. The workflow file is version-controlled, but these secret values remain repository settings and cannot be created by a code commit.
+
+GitLab is only an optional source-tree mirror. Its .gitlab-ci.yml deliberately rejects schedule pipelines and disables the maintenance jobs so an old GitLab schedule cannot double-trigger the production endpoints. Delete or disable any pre-existing GitLab pipeline schedules as additional defense in depth; do not configure production schedules or bridge secrets in GitLab.
+
+A recalibration HTTP 2xx is not enough: the workflow accepts only a JSON status of "ok" with a non-empty persisted cycle_id. status="no_data" means no live CalibrationCycle was persisted for the two-week live-outcome window; the API still attempts registered-challenger evaluation in that path, but the job fails closed so a green job cannot be mistaken for a completed live cycle. Investigate outcome ingestion, the immutable challenger-evaluation records, and bridge logs.
+
+A successful cycle is not proof of improved profitability, approval, or EA activation. Verify the persisted cycle, candidate evaluation, current gating decision, any explicit human approval, and the EA's acknowledgement of the exact approved configuration hash.
 
 ## 3. Backtest-to-live promotion boundary
 
