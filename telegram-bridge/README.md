@@ -327,7 +327,7 @@ yes
 `/copytrading status` reports the current state.
 
 **Non-payment removal.** `POST /admin/check-subscriptions` (same `X-API-Key` auth as `/admin/run-cycle`,
-meant to be hit by the external GitLab scheduled pipeline) or the
+meant to be hit by the GitHub Actions production-maintenance workflow) or the
 manual `/checkpayments` command runs one sweep (`app/group_enforcement.py`):
 
 1. Subscribers within `SUBSCRIPTION_WARNING_HOURS_BEFORE_EXPIRY` of expiry, not yet warned this period → DM warning.
