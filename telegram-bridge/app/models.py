@@ -189,6 +189,11 @@ class SignalOutcome(Base):
     commission_cost = Column(Float, nullable=True)
     spread_cost = Column(Float, nullable=True)
     slippage_cost = Column(Float, nullable=True)
+    # Cost fields are non-negative magnitudes; cashflow fields preserve the
+    # broker's signed values so rebates/credits are not silently reclassified.
+    commission_cashflow = Column(Float, nullable=True)
+    swap_cashflow = Column(Float, nullable=True)
+    broker_fee_cashflow = Column(Float, nullable=True)
     weight_version = Column(String, nullable=True, index=True)
     confidence_at_signal = Column(Float, nullable=True)
     confidence_decayed = Column(Float, nullable=True)
