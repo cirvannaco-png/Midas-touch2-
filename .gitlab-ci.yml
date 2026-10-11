@@ -181,3 +181,51 @@ biweekly-recalibration:
     - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SCHEDULE_TASK == "biweekly-recalibration"'
     - if: '$CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SCHEDULE_TASK == "biweekly-recalibration"'
     - when: never
+
+# Daily housekeeping uses the same bridge-authenticated admin API.
+daily-subscriptions:
+  stage: maintenance
+  image: python:3.11-slim
+  interruptible: false
+  timeout: 3m
+  script:
+    - |
+      python - <<'PY'
+      import os
+      import sys
+      import urllib.error
+      import urllib.request
+
+      base = os.environ.get("BRIDGE_BASE_URL", "").strip().rstrip("/")
+      api_key = os.environ.get("BRIDGE_API_KEY", "")
+      if not base or not api_key:
+          print("Required protected/masked variables BRIDGE_BASE_URL and BRIDGE_API_KEY are missing.", file=sys.stderr)
+          raise SystemExit(2)
+      if not base.startswith("https://"):
+          print("BRIDGE_BASE_URL must use HTTPS.", file=sys.stderr)
+          raise SystemExit(2)
+
+      request = urllib.request.Request(
+          base + "/admin/check-subscriptions",
+          data=b"",
+          headers={"X-API-Key": api_key, "Accept": "application/json"},
+          method="POST",
+      )
+      try:
+          with urllib.request.urlopen(request, timeout=60) as response:
+              body = response.read(16384).decode("utf-8", errors="replace")
+              print(f"Subscription sweep endpoint returned HTTP {response.status}: {body}")
+              if response.status < 200 or response.status >= 300:
+                  raise SystemExit(1)
+      except urllib.error.HTTPError as error:
+          detail = error.read(16384).decode("utf-8", errors="replace")
+          print(f"Subscription sweep endpoint returned HTTP {error.code}: {detail}", file=sys.stderr)
+          raise SystemExit(1)
+      except urllib.error.URLError as error:
+          print(f"Subscription sweep request failed: {error.reason}", file=sys.stderr)
+          raise SystemExit(1)
+      PY
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SCHEDULE_TASK == "daily-subscriptions"'
+      when: on_success
+    - when: never
