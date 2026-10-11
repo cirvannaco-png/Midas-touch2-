@@ -106,7 +106,15 @@ def client():
 
         main_module.init_bot = _offline_init_bot
         main_module.shutdown_bot = _offline_shutdown_bot
-        from app.models import BotSetting, Payment, Signal, SignalDeliveryOutbox, SignalOutcome, Subscriber, TradeEvent
+        from app.models import (
+            BotSetting,
+            Payment,
+            Signal,
+            SignalDeliveryOutbox,
+            SignalOutcome,
+            Subscriber,
+            TradeEvent,
+        )
 
         with TestClient(app) as c:
             yield c
