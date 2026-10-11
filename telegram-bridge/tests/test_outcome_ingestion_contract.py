@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from unittest.mock import AsyncMock, patch
 
 from app.database import async_session
 from app.models import SignalOutcome
@@ -23,17 +24,24 @@ def test_ea_outcome_contract_persists_environment_lineage_and_costs(client, auth
     execution_time = "2026-10-11T10:00:02+00:00"
     outcome_time = "2026-10-11T10:15:00+00:00"
 
-    signal_response = client.post(
-        "/signal",
-        json={
-            **VALID_BUY_SIGNAL,
-            "signal_id": signal_id,
-            "signal_time": signal_time,
-            "decision_time": decision_time,
-            "environment_key": "TRENDING|NORMAL|L2|LONDON",
-        },
-        headers=auth_headers,
-    )
+    # This contract test needs the persisted source signal, not asynchronous
+    # Telegram delivery. Suppress broadcast so the outbox worker cannot race
+    # SQLite cleanup during fixture teardown.
+    with patch(
+        "app.routes.get_signal_broadcast_controls",
+        new=AsyncMock(return_value=(True, set())),
+    ):
+        signal_response = client.post(
+            "/signal",
+            json={
+                **VALID_BUY_SIGNAL,
+                "signal_id": signal_id,
+                "signal_time": signal_time,
+                "decision_time": decision_time,
+                "environment_key": "TRENDING|NORMAL|L2|LONDON",
+            },
+            headers=auth_headers,
+        )
     assert signal_response.status_code == 200
     fingerprint = signal_response.json()["decision_fingerprint"]
 
