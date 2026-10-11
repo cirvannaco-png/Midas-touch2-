@@ -15,7 +15,7 @@ Preserve the Medis Touch architecture, trading behavior, security boundaries, an
 - Never log secrets, API keys, copy keys, payment credentials, or broker credentials.
 - Preserve backward compatibility for existing `app.models` imports and database metadata during model decomposition.
 - Do not rewrite large files merely to perform a narrow extraction. Prefer small, reviewable commits.
-- Every implementation change requires targeted tests and a green GitLab pipeline before merge, unless CI is deliberately paused to conserve runner minutes; in that case, skipped CI must be reported and validation remains an explicit pre-merge gate.
+- Every implementation change requires targeted tests and applicable green GitHub Actions checks on the exact candidate commit before merge. If checks are absent, skipped, or unavailable, report that explicitly and keep validation as a pre-merge gate. GitLab mirror CI is secondary and never the canonical merge signal.
 - If evidence is insufficient, stop and report the uncertainty rather than guessing.
 
 ## Change protocol
@@ -25,7 +25,7 @@ Preserve the Medis Touch architecture, trading behavior, security boundaries, an
 4. Add or update regression tests.
 5. Run relevant validation where available.
 6. Review the diff for source/spec drift.
-7. Run GitLab CI when the CI gate is enabled.
+7. Verify GitHub Actions checks on the exact candidate SHA; treat any GitLab mirror result as secondary.
 8. Only then propose merge/deployment.
 
 ## Branch policy

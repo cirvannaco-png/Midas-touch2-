@@ -1,42 +1,42 @@
-# Medis Touch Dual-Source Deployment Standard
+# Midas Touch Canonical Source and Deployment Standard
 
 ## Objective
 
-Medis Touch supports both the existing GitHub-backed Render deployment and a new GitLab-backed Render deployment. The GitLab path is additive; it does not replace or repoint the existing GitHub services during validation.
+GitHub `main` is the single canonical source tree. GitLab is an optional mirror, not a second development or production authority. Repository synchronization must not be confused with deployment: this policy change does not repoint, create, or redeploy Render services.
 
-## Source paths
+## Current topology
 
 ```text
-                    +--> GitHub -> existing Render services
-                    |
-Medis Touch source -+
-                    |
-                    +--> GitLab -> new Render service
-                    |
-                    +--> VPS -> MT5 / Medis Touch EA
+GitHub main (canonical source)
+  ├── GitHub Actions CI and production-maintenance workflow
+  ├── optional authenticated source-tree mirror ──► GitLab main
+  └── existing runtime (verify actual provider/commit in Render settings)
+          └── authenticated bridge/API ──► PostgreSQL
+                       ▲
+                       │ authenticated signal/outcome path
+                  VPS / Windows
+                       └── MT5 Terminal ── EA ── Broker
 ```
+
+The diagram describes intended control boundaries, not proof that any hosted service is currently connected, healthy, or executing live trades.
 
 ## Rules
 
-1. GitLab is the canonical repository for the migrated source and CI validation.
-2. Existing GitHub-backed Render services remain untouched until the GitLab deployment is independently healthy.
-3. Do not create a second production database merely because a second Render service is created.
-4. Production data, subscriptions, entitlements, payments, signal state, and execution state must have one explicitly authoritative persistence boundary.
-5. The GitLab Render service must be connected to the private GitLab repository through Render's GitLab integration or an approved container-registry path.
-6. Docker configuration must remain aligned with the repository's existing `telegram-bridge/Dockerfile` unless a separately reviewed deployment change is approved.
-7. Render deployment must not contain broker credentials or payment secrets in source control.
-8. GitLab CI must pass before enabling an automated production deployment path.
+1. GitHub `main` is canonical for source, review, CI and production-maintenance workflow definitions.
+2. GitLab is an optional mirror only. Its contents are not considered current unless a sync run reports `SYNC_VERIFIED` for the current GitHub source and parity is independently checked.
+3. Existing Render services must not be deleted, repointed, duplicated, or migrated on the basis of documentation changes alone. Verify the connected provider, deployed commit, health checks, environment and database directly.
+4. Do not create a second production database merely because another service or environment is being tested.
+5. Production data, subscriptions, entitlements, payments, signal state, and execution state must have one explicitly authoritative persistence boundary.
+6. No production-maintenance endpoints should be scheduled simultaneously from GitHub and GitLab. GitHub Actions is canonical; GitLab maintenance jobs are disabled in `.gitlab-ci.yml`. Remove any pre-existing GitLab project schedules separately in its UI.
+7. Docker configuration must remain aligned with `telegram-bridge/Dockerfile` unless a separately reviewed deployment change is approved.
+8. Runtime secrets must remain in the appropriate service/CI secret store, never in source control or logs.
 9. The VPS is the MT5 execution runtime and must authenticate to the backend through the approved secure signal path.
-10. GitHub fallback and GitLab deployment must never independently process the same production execution event in a way that can create duplicate broker orders.
+10. The deployment must never create two active bridge runtimes that independently process the same production execution event or produce duplicate broker orders.
 
-## GitLab -> Render onboarding
+## Deployment change procedure
 
-Render supports GitLab as a connected Git provider. For a private GitLab project, the Render account must be authorized against the project with the required GitLab permissions. The Render service should then be configured against the intended branch and Dockerfile path.
+For any deliberate runtime-provider change, open a separate reviewed change and verify the actual Render/VPS configuration. The release sequence is:
 
-The first GitLab-backed deployment is a validation environment until health checks, database connectivity, Telegram integration, entitlement checks, copy authorization, signal ingestion, and EA/VPS connectivity are proven.
+`GitHub PR reviewed -> relevant GitHub CI green -> deployment source/commit confirmed -> database and migrations verified -> API health and authentication verified -> Telegram/payment/entitlement smoke tests -> signal/outcome ingestion verified -> VPS/EA connectivity -> demo-broker execution test -> reconciliation -> separately approved production cutover`
 
-## Promotion sequence
-
-`GitLab CI green -> Render GitLab service healthy -> database/migrations verified -> API health verified -> Telegram/payment verification -> signal ingestion -> copy authorization -> VPS/EA connectivity -> broker execution test -> reconciliation -> production promotion`
-
-No step should be skipped merely because an earlier GitHub-backed service is already running.
+Do not infer a deployment provider from repository configuration alone. Do not use GitLab as an alternate active production path without a separate explicit migration decision and duplicate-processing safeguards.

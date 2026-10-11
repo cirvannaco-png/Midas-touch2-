@@ -79,7 +79,13 @@ def test_adaptive_router_uses_historical_evidence_but_keeps_raw_score_authoritat
     assert "selectedScore=smcScore" in router
 
 
-def test_ci_remains_explicitly_paused():
+def test_gitlab_pipeline_allows_validation_but_disables_production_maintenance():
     ci = _read(".gitlab-ci.yml")
     assert "workflow:" in ci
-    assert "- when: never" in ci
+    assert '$CI_PIPELINE_SOURCE == "push"' in ci
+    assert '$CI_PIPELINE_SOURCE == "merge_request_event"' in ci
+    assert "GitHub Actions on canonical GitHub main owns production maintenance schedules." in ci
+    assert "GitLab is a mirror only: schedule pipelines are intentionally not admitted." in ci
+    assert ci.count(
+        "# Disabled intentionally: production maintenance runs from GitHub Actions only."
+    ) == 2

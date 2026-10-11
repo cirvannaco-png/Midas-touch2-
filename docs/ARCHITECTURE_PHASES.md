@@ -4,13 +4,13 @@
 
 Midas Touch is **not yet certified production-ready**. The architecture is fail-closed, but certification requires current green CI evidence plus external MetaEditor/MT5 validation and controlled forward-test evidence.
 
-This integration branch consolidates production-hardening changes before they are merged to `main`.
+Changes are reviewed on pull requests and integrated into canonical GitHub `main`; this document does not itself establish merge or deployment status.
 
 ### Mandatory evidence gates
 
 1. Repository structural validation.
 2. Python, Telegram bridge, dependency, and invariant tests.
-3. GitLab CI green on the exact candidate commit.
+3. Applicable GitHub Actions checks green on the exact candidate commit.
 4. MetaEditor compilation of every production EA entry point with **0 errors**; warnings must be reviewed rather than ignored.
 5. MT5 Strategy Tester backtest using the production EA/inputs, with no-lookahead and execution/indicator parity verification.
 6. Walk-forward/holdout validation on actual persisted EA outcomes or an actual exported Strategy Tester OutcomeTracker dataset.
