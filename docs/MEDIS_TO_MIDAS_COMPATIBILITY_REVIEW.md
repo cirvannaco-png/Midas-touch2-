@@ -275,3 +275,26 @@ Midas' `medis_touch/app/execution_validation.py` imports `math.isfinite`, unlike
 ### L. Boundary across all reviewed overlaps
 
 The strongest migration rule remains: source-only path count is an inventory, not a list of proven gaps; shared-path SHA differences are candidate review targets, not proof that the source is newer or better. The current draft does not port any functional code. Any first implementation PR should be narrowly scoped and carry negative-path tests, call-site compatibility review, a fresh MetaEditor compile when MQL5 is changed, and a real MT5 Strategy Tester/demo test plan before activation.
+
+
+## Additional file-level review of MQL5 execution and lifecycle seams
+
+### M. BrokerAdapter: preserve stricter broker-response confirmation
+
+The Midas `EA/includes/Execution/BrokerAdapter.mqh` adds `LastExecutionCompleted(...)` beyond the shared source API and uses it for cancellation, stop/target modification and closing. This distinguishes a method call being submitted from the broker returning a completed/allowed result; it also handles partial/no-change outcomes explicitly. The Midas market-hours check accepts direction so trade-mode restrictions can be evaluated for buy versus sell. Preserve these checks. Any source-only broker convenience or retry behavior should be ported only after mapping retcodes and proving it cannot turn an ambiguous broker response into a successful fill.
+
+### N. OrderManager: leg-aware identity is required for Midas multi-trade execution
+
+Midas `EA/includes/Execution/OrderManager.mqh` tracks a `legIndex`, finds trades by decision-plus-leg or ticket, exposes `DecisionIdForTicket`, `LegIndexForTicket`, `HasLiveTradeForDecision`, and has pending-order cancellation support. Its Submit/Restore APIs accept a leg index and encode that leg in broker comments. These interfaces are coupled to Midas' MultiTradeEngine and recovery/outcome accounting. The source version has a simpler one-row-per-decision shape, so replacing the Midas file would risk merging separate legs of one decision, incorrect close accounting, or recovery aliasing. Keep target and test duplicate leg submission, partial fill, cancel/retry, restart recovery and position-ticket versus order-ticket mapping.
+
+### O. DecisionEngine: Midas adds geometry invariants and environment-aware decisions
+
+The Midas `EA/includes/Decision/DecisionEngine.mqh` includes `EnvironmentPolicy.mqh` and validates complete setup geometry—entry zone, thesis invalidation, stop-loss and monotonic targets—before a decision can be accepted. The source version shown in the tree has no corresponding geometry validator. Preserve the Midas validation rather than porting the source class over it. `EA/tests/DecisionEngineGeometry.mq5` provides a deterministic compile/run harness for valid BUY geometry and invalid stop/invalidation/target/confidence cases; note that the normal CI's production-EA compile is not proof that this separate harness was run.
+
+### P. PositionManager: dynamic stop progression and audit are target features
+
+Midas `EA/includes/Execution/PositionManager.mqh` composes `DynamicStopEngine.mqh`, `DynamicStopInputs.mqh`, `SLModificationAudit.mqh`, and structural swing detection. `EA/tests/DynamicStopEngine.mq5` covers activation thresholds, BUY/SELL symmetry, no-widening, structural-anchor fallback, spread/ATR guards and minimum-improvement suppression. The source version does not contain this same integrated set of components. Preserve it. The test file is a separate MQL5 harness; do not imply it was run merely because CI structural validation and the production EA compile passed.
+
+### Q. Changed files with retained public behavior should be checked at the seam, not copied wholesale
+
+The source and target versions of `EA/includes/Trading/RiskEngine.mqh` expose the same core signatures for setup validation, lot sizing and risk amount. Their blob SHAs differ, but a useful compatibility test is to compare formulas, broker symbol metadata assumptions and callers rather than infer a regression from a changed hash. Likewise `EA/includes/Execution/OrderManager.mqh`, `BrokerAdapter.mqh`, and `DecisionEngine.mqh` share class names but intentionally differ in target-side contracts; any shared-path port should first prove all Midas caller signatures and lifecycle assumptions remain intact.
