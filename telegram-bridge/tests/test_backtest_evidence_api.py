@@ -264,3 +264,34 @@ def test_trade_schema_rejects_inconsistent_outcome_contract(
     }
     with pytest.raises(ValidationError):
         TesterTrade.model_validate(data)
+
+def test_backtest_evidence_accepts_null_spread_points_for_real_tick_model(client, auth_headers):
+    payload = _valid_payload()
+    payload["provenance"]["run_id"] = "tester-run-real-ticks-null-spread"
+    payload["provenance"]["spread_model"] = "real_ticks"
+    payload["provenance"]["spread_points"] = None
+
+    response = client.post(
+        "/research/backtest-evidence",
+        headers=auth_headers,
+        json=payload,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "stored"
+
+
+def test_backtest_evidence_rejects_null_spread_points_for_fixed_spread(client, auth_headers):
+    payload = _valid_payload()
+    payload["provenance"]["run_id"] = "tester-run-fixed-spread-null"
+    payload["provenance"]["spread_model"] = "fixed-spread"
+    payload["provenance"]["spread_points"] = None
+
+    response = client.post(
+        "/research/backtest-evidence",
+        headers=auth_headers,
+        json=payload,
+    )
+
+    assert response.status_code == 422
+    assert "spread_points may be null" in response.text
