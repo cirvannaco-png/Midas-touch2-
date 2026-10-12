@@ -83,6 +83,10 @@ double ResolveExecutionEntry(const TradeSetup &setup) { return setup.type==ORDER
 struct PendingSetup {
    TradeSetup setup; double entryRef; double riskDist; double mfePrice; double maePrice; bool tp1Hit; bool tp2Hit; int barsElapsed; datetime lastBarTime; bool filled; datetime fillTime; int barsToFill; bool sameBarCollision;
    double sizingEntryPrice; double mgmtRiskDist; double weightedRiskDistLots; double lots; double entryFillPrice; double currentSL; bool beDone; bool partialDone; double remainingLots; double realizedPnL; double totalCommission; double totalSpreadCost; double totalSlippageCost;
+   // Signed broker cashflows stay distinct from positive cost magnitudes. Restored
+   // snapshots are not history-complete unless their deals are replayed from broker history.
+   double totalCommissionCashflow; double totalSwapCashflow; double totalBrokerFeeCashflow;
+   bool cashflowsKnown; bool outcomeHistoryComplete; bool excursionHistoryComplete;
    double confidenceAtSignal; double confidenceDecayed; int decayBars; long decisionId; string decision_fingerprint;
 };
 
