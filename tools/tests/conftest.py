@@ -65,7 +65,19 @@ class FakeOutcome:
     htf_ob_aligned: bool | None = None
     weight_version: str | None = "v2.11-baseline"
     confidence_at_signal: float | None = None
-    filled: bool = False
+    # Metric fixtures represent fully verified fills by default. Tests for
+    # fail-closed provenance explicitly override these fields with None/False.
+    filled: bool = True
+    outcome_history_complete: bool | None = True
+    cashflows_known: bool | None = True
+    commission_cashflow: float | None = 0.0
+    swap_cashflow: float | None = 0.0
+    broker_fee_cashflow: float | None = 0.0
+    parity_status: str | None = "PARITY_OK"
+    decision_fingerprint: str | None = "fixture-fingerprint"
+    original_decision_fingerprint: str | None = "fixture-fingerprint"
+    execution_time: datetime | None = field(default_factory=lambda: datetime.now(timezone.utc))
+    outcome_time: datetime | None = field(default_factory=lambda: datetime.now(timezone.utc))
     received_at: datetime | None = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):

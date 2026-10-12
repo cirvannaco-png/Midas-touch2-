@@ -78,13 +78,13 @@ def test_migration_is_additive_and_follows_current_head():
         assert f'"{table}"' in source
 
 
-def test_alembic_graph_has_one_head_at_0017():
+def test_alembic_graph_has_one_head_at_0018():
     bridge_root = Path(__file__).parents[1]
     config = Config(str(bridge_root / "alembic.ini"))
     config.set_main_option("script_location", str(bridge_root / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_current_head() == "0017"
-    assert scripts.get_heads() == ["0017"]
+    assert scripts.get_current_head() == "0018"
+    assert scripts.get_heads() == ["0018"]
 
 
 
