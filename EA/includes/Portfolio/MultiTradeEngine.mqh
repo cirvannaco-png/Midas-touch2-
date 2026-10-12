@@ -91,8 +91,17 @@ bool CMultiTradeEngine::Build(const TradeSetup &setup,int availableSlots,MultiTr
      { out.reason="raw confidence below multi-trade floor"; return true; }
    if(setup.calibrated_probability<m_dualProbability)
      { out.reason="calibrated probability below dual-trade threshold"; return true; }
-   if(m_requireHedging && !IsHedgingAccount())
-     { out.reason="multi-trade requires MT5 hedging account semantics"; return true; }
+   // Several TP legs cannot be independently protected on a netting account:
+   // MT5 collapses same-symbol child fills into account-level position exposure.
+   // Keep the one-leg fallback even when the legacy opt-in flag is disabled.
+   if(!IsHedgingAccount())
+     {
+      if(m_requireHedging)
+         out.reason="multi-trade requires MT5 hedging account semantics";
+      else
+         out.reason="multi-trade disabled on netting/exchange account; child TP legs cannot be managed independently";
+      return true;
+     }
 
    int legs=2;
    if(availableSlots>=3 && setup.calibrated_probability>=m_tripleProbability)
