@@ -19,6 +19,14 @@
 | `tools/gating.py` and `tools/metrics_engine.py` | Same paths differ. Midas gating is fail-closed on missing evidence and has explicit persistence requirements; metrics keep signal coverage separate from realized expectancy. | Do not wholesale replace. Any future change must be a small semantic patch with matched tests and evidence provenance. |
 | `telegram-bridge/app/research/*` and `telegram-bridge/app/research_routes.py` | Source contains a broker-neutral research package and authenticated research/execution routes; these source paths are absent in target. Midas already has separate adaptive research, pre-trade risk, execution-recovery and research tooling, so a direct copy risks duplicate control paths. | This PR restores the missing durable schema only. The API/service layer remains an explicit follow-up, requiring an integration design and tests before enabling broker-facing calls. |
 
+
+| `telegram-bridge/app/config_routes.py` | Midas has a split configuration lifecycle: immutable registry/evaluation/sync-state models and `app/api/config_sync.py`; same-path route copy would collide with target API boundaries. | Do not copy wholesale. Audit endpoint-by-endpoint against the target config contract before proposing any missing endpoint. |
+| `telegram-bridge/app/control_plane.py` | No same-path target file. Midas has separate fail-closed service boundaries and research/strategy controls; the source control plane is a different module boundary. | No direct file copy; map each externally reachable endpoint and gate to current Midas services first. |
+| `telegram-bridge/app/copy_routes.py`, `copy_settings.py` | Midas's copy-feed and subscriber behavior is split across current routes, copy-trading/admin modules, subscriptions, and settings store. | Preserve target route contracts; compare behavior and authorization tests rather than restoring duplicate routers. |
+| `telegram-bridge/app/payment_models.py` | Subscriber/payment ORM models and the matching migration already exist in Midas under `app/models.py` and migration `0007_subscribers_and_payments.py`. | Functionally represented; no transfer needed. |
+| `telegram-bridge/app/deployment.py` | No same-path target module. Midas has config lifecycle/sync and deployment/maintenance workflows with distinct operational contracts. | Do not copy without a requirement-by-requirement endpoint and workflow comparison. |
+| `telegram-bridge/tests/test_imports.py` | Source-only import smoke test; target's CI already compiles Python sources and runs bridge tests, and the target module graph is intentionally different. | Do not port as a substitute for behavior tests. Add a focused regression test only if it detects a target-specific import-cycle risk. |
+
 ## Validation in this PR
 
 - ORM metadata tests assert all seven restored tables and critical idempotency, lease, broker-reference, holdout, and outcome fields.
