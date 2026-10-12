@@ -214,7 +214,7 @@ def _read_header(path: Path) -> list[str]:
 
 
 def _lane_header_exists(header: list[str]) -> bool:
-    aliases = {"lane", "risk_lane", "entry_lane"}
+    aliases = {"lane", "risklane", "entrylane"}
     canonical = {re.sub(r"[^a-z0-9]", "", name.lower()) for name in header}
     return bool(canonical & aliases)
 
