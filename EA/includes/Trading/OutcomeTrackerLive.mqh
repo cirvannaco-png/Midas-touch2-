@@ -49,23 +49,45 @@ private:
       m_rebuiltDecisionIds[n]=decisionId;
       return true;
      }
+   bool HistoryIdentityDigits(const string value)
+     {
+      int length=StringLen(value);
+      if(length<=0) return false;
+      for(int i=0;i<length;i++)
+        {
+         ushort ch=StringGetCharacter(value,i);
+         if(ch<'0' || ch>'9') return false;
+        }
+      return true;
+     }
    bool ParseHistoryDecisionComment(string comment,long &decisionId)
      {
       decisionId=0;
       int marker=StringFind(comment,"MT#");
       if(marker<0) return false;
+
       string payload=StringSubstr(comment,marker+3);
-      int separator=StringFind(payload,":");
-      if(separator>=0) payload=StringSubstr(payload,0,separator);
-      int length=StringLen(payload);
-      if(length<=0) return false;
-      for(int i=0;i<length;i++)
+      int separator=StringFind(payload,":L");
+      if(separator>=0)
         {
-         ushort ch=StringGetCharacter(payload,i);
-         if(ch<48 || ch>57) return false;
+         string legPart=StringSubstr(payload,separator+2);
+         payload=StringSubstr(payload,0,separator);
+         if(!HistoryIdentityDigits(legPart)) return false;
+         long leg=StringToInteger(legPart);
+         // A valid broker comment must match the EA's canonical identity format.
+         if(leg<0 || leg>2147483647 || IntegerToString(leg)!=legPart) return false;
         }
+      else if(StringFind(payload,":")>=0)
+        {
+         // Reject malformed suffixes such as :Lx or :legacy instead of
+         // truncating at the colon and attributing the deal to another setup.
+         return false;
+        }
+
+      if(!HistoryIdentityDigits(payload)) return false;
       decisionId=(long)StringToInteger(payload);
-      return decisionId>0;
+      if(decisionId<=0 || IntegerToString(decisionId)!=payload) return false;
+      return true;
      }
    bool HistoryDealDecisionId(ulong dealTicket,long &decisionId)
      {
