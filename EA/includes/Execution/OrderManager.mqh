@@ -28,6 +28,7 @@ private:
    CProductionMonitor* m_monitor;
    int                 FindByDecisionAndLeg(long id,int legIndex);
    int                 FindByTicket(ulong ticket);
+   bool                IsBrokerVolumeValid(string symbol,double volume);
 
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
@@ -231,11 +232,40 @@ int COrderManager::LegIndexForTicket(ulong ticket)
    return idx<0 ? 0 : m_trades[idx].legIndex;
   }
 //+------------------------------------------------------------------+
+bool COrderManager::IsBrokerVolumeValid(string symbol,double volume)
+  {
+   if(symbol=="" || !MathIsValidNumber(volume) || volume<=0.0) return false;
+
+   double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+   double maxLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
+   double lotStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+   if(!MathIsValidNumber(minLot) || !MathIsValidNumber(maxLot) ||
+      !MathIsValidNumber(lotStep) || minLot<=0.0 || maxLot<minLot || lotStep<=0.0)
+      return false;
+   if(volume<minLot || volume>maxLot) return false;
+
+   // Validate against the broker's minimum-anchored step grid. Reject rather
+   // than silently round a caller's requested volume and change its risk.
+   double steps=(volume-minLot)/lotStep;
+   if(!MathIsValidNumber(steps) || steps<0.0) return false;
+   double alignedVolume=minLot+MathRound(steps)*lotStep;
+   double tolerance=MathMax(1e-8,lotStep*1e-6);
+   if(MathAbs(volume-alignedVolume)>tolerance) return false;
+   return true;
+  }
+//+------------------------------------------------------------------+
 bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex)
   {
    ticketOut=0;
    if(decision.action!=POLICY_EXECUTE_ONLY && decision.action!=POLICY_EXECUTE_AND_SIGNAL) return false;
-   if(volume<=0) return false;
+   if(decision.decision_id<=0 ||
+      (decision.setup.type!=ORDER_TYPE_BUY && decision.setup.type!=ORDER_TYPE_SELL)) return false;
+   if(!IsBrokerVolumeValid(decision.symbol,volume))
+     {
+      PrintFormat("MedisTouch OrderManager: reject decision #%I64d — volume %.8f violates broker min/max/step for %s.",
+                  decision.decision_id,volume,decision.symbol);
+      return false;
+     }
    if(OpenCount()>=m_maxOpen) return false;
    if(legIndex<0) return false;
    if(FindByDecisionAndLeg(decision.decision_id,legIndex)>=0) return false;
