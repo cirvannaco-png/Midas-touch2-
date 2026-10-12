@@ -1,6 +1,9 @@
 from pathlib import Path
 
-import app.models as models
+import app.models as models  # noqa: F401 - register core models
+import app.config_registry_model  # noqa: F401 - register immutable configuration registry
+import app.config_evaluation_model  # noqa: F401 - register configuration evaluations
+import app.config_sync_state_model  # noqa: F401 - register configuration sync state
 from app.database import Base
 
 
