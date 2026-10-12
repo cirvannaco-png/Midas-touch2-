@@ -67,3 +67,25 @@ def test_recovered_deal_ledger_does_not_fabricate_excursion_metrics():
     assert "state.excursionHistoryComplete=false;" in tracker
     assert "m_environmentMemory!=NULL&&p.excursionHistoryComplete" in tracker
     assert "if(!p.excursionHistoryComplete){mfeR=0.0;maeR=0.0;}" in tracker
+
+
+def test_incremental_entry_fills_keep_authoritative_vwap_and_disable_inexact_excursions():
+    tracker = TRACKER.read_text(encoding="utf-8")
+    start = tracker.index("bool MarkExecuted(")
+    end = tracker.index("bool RestoreExecuted(", start)
+    method = tracker[start:end]
+
+    # Invalid deal data must be rejected before it can mutate outcome accounting.
+    assert "!MathIsValidNumber(fill)" in method
+    assert "!MathIsValidNumber(volume)" in method
+    assert "t<=0" in method
+
+    # Each incremental fill contributes its actual price * volume and its own
+    # stop exposure; the parent entry price is not left at the first fill.
+    assert "p.entryFillPrice*p.lots+fill*volume" in method
+    assert "p.entryFillPrice=nextEntryNotional/nextLots" in method
+    assert "p.weightedRiskDistLots=nextRiskDistanceLots" in method
+    assert "p.mgmtRiskDist=p.weightedRiskDistLots/p.lots" in method
+
+    # Aggregate MFE/MAE does not prove slice-level excursions for later fills.
+    assert "p.excursionHistoryComplete=false;" in method
