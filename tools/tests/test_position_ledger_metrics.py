@@ -72,3 +72,52 @@ class PositionLedgerMetricsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+def test_expectancy_and_maximum_consecutive_losses_are_position_level() -> None:
+    pnl_sequence = [10.0, -1.0, -2.0, -3.0, 0.0, -4.0, -5.0, 6.0]
+    rows = []
+    for index, pnl in enumerate(pnl_sequence, start=1):
+        day = f"2026-01-{index:02d}"
+        rows.append(
+            deal(index, f"{day}T09:00:00", "in", 1.0, risk_cash=100.0, lane="STRICT", row=2 * index)
+        )
+        rows.append(
+            deal(index, f"{day}T10:00:00", "out", 1.0, profit=pnl, risk_cash=100.0, lane="STRICT", row=2 * index + 1)
+        )
+
+    positions, ignored = reconstruct_positions(rows)
+    report = calculate_metrics(positions, 10000.0, ignored)
+
+    assert report["completed_positions"] == 8
+    assert report["net_pnl"] == 1.0
+    assert report["net_expectancy_per_completed_position"] == 0.125
+    assert report["average_win"] == 8.0
+    assert report["average_loss"] == -3.0
+    assert report["profit_factor"] == 1.0667
+    assert report["max_consecutive_losses"] == 3
+    assert report["by_lane"]["STRICT"]["expectancy_per_position"] == 0.125
+    assert report["by_lane"]["STRICT"]["max_consecutive_losses"] == 3
+
+
+def test_losing_streak_is_scoped_to_lane_and_flats_break_a_streak() -> None:
+    pnl_lanes = [
+        (1, 10.0, "STRICT"),
+        (2, -1.0, "STRICT"),
+        (3, -2.0, "STRICT"),
+        (4, 5.0, "SINGLE"),
+        (5, -4.0, "SINGLE"),
+        (6, 0.0, "SINGLE"),
+        (7, -3.0, "SINGLE"),
+        (8, -2.0, "SINGLE"),
+    ]
+    rows = []
+    for index, pnl, lane in pnl_lanes:
+        day = f"2026-02-{index:02d}"
+        rows.append(deal(index, f"{day}T09:00:00", "in", 1.0, risk_cash=100.0, lane=lane, row=2 * index))
+        rows.append(deal(index, f"{day}T10:00:00", "out", 1.0, profit=pnl, risk_cash=100.0, lane=lane, row=2 * index + 1))
+    positions, ignored = reconstruct_positions(rows)
+    report = calculate_metrics(positions, 10000.0, ignored)
+    assert report["by_lane"]["STRICT"]["max_consecutive_losses"] == 2
+    assert report["by_lane"]["SINGLE"]["max_consecutive_losses"] == 2
