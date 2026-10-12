@@ -48,8 +48,23 @@ class PositionLedgerMetricsTests(unittest.TestCase):
         self.assertEqual(report["profit_factor"], 2.0)
         self.assertEqual(report["average_win"], 50)
         self.assertEqual(report["average_loss"], -25)
+        self.assertEqual(report["average_win_R"], 0.5)
+        self.assertEqual(report["average_loss_R_abs"], 0.25)
+        self.assertEqual(report["payoff_ratio_R"], 2.0)
+        self.assertAlmostEqual(report["break_even_win_rate_pct_from_avg_R"], 33.33, places=2)
         self.assertEqual(report["max_closed_position_drawdown_cash"], 25)
         self.assertIsNone(report["target_reached"])
+
+    def test_missing_risk_amount_does_not_fabricate_r_metrics(self):
+        rows = [
+            deal(9, "2026-01-01T09:00:00", "in", 1, row=2),
+            deal(9, "2026-01-01T10:00:00", "out", 1, profit=10, row=3),
+        ]
+        positions, ignored = reconstruct_positions(rows)
+        report = calculate_metrics(positions, 1000, ignored)
+        self.assertIsNone(report["average_win_R"])
+        self.assertIsNone(report["payoff_ratio_R"])
+        self.assertEqual(report["positions_with_risk_cash"], 0)
 
     def test_currently_open_ids_are_excluded(self):
         rows = [
