@@ -158,34 +158,31 @@ bool COrderManager::BindPositionIdentity(ulong knownTicket,ulong positionIdentif
 ulong COrderManager::PositionTicketAt(int idx)
   {
    if(idx<0 || idx>=ArraySize(m_trades)) return 0;
+   // Until a stable deal/position identity is bound, do not guess that a
+   // broker order ticket or history identifier is a selectable position.
+   ulong identifier=m_trades[idx].positionIdentifier;
+   if(identifier==0) return 0;
+
    ulong ticket=m_trades[idx].fsm.Ticket();
    if(ticket>0 && PositionSelectByTicket(ticket))
      {
-      if(PositionGetString(POSITION_SYMBOL)!=m_trades[idx].decision.symbol) return 0;
-      ulong identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
-      if(identifier>0 && (m_trades[idx].positionIdentifier==0 ||
-                          m_trades[idx].positionIdentifier==identifier))
-         m_trades[idx].positionIdentifier=identifier;
-      return ticket;
+      if(PositionGetString(POSITION_SYMBOL)==m_trades[idx].decision.symbol &&
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)==identifier)
+         return ticket;
      }
 
-   // Older EA states may have stored POSITION_IDENTIFIER where the terminal
-   // API requires POSITION_TICKET. Resolve by the stable identifier and repair
-   // the in-memory ticket before management resumes.
-   ulong identifier=m_trades[idx].positionIdentifier;
-   if(identifier==0) identifier=ticket;
-   if(identifier==0) return 0;
+   // POSITION_TICKET may change over the lifetime of a live position. Resolve
+   // the current ticket via the stable POSITION_IDENTIFIER and repair the FSM.
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       ulong actualTicket=PositionGetTicket(i);
       if(actualTicket==0 || !PositionSelectByTicket(actualTicket)) continue;
       if(PositionGetString(POSITION_SYMBOL)!=m_trades[idx].decision.symbol) continue;
       if((ulong)PositionGetInteger(POSITION_IDENTIFIER)!=identifier) continue;
-      m_trades[idx].positionIdentifier=identifier;
       m_trades[idx].fsm.SetTicket(actualTicket);
       return actualTicket;
      }
-   return ticket;
+   return 0;
   }
 //+------------------------------------------------------------------+
 long COrderManager::DecisionIdForPositionIdentifier(ulong positionIdentifier)
@@ -222,7 +219,7 @@ bool COrderManager::HasLiveTradeForDecision(long decisionId,ulong excludeTicket)
       if(s==TS_PENDING || s==TS_WAITING) return true;
       if(s==TS_FILLED || s==TS_PROTECTED || s==TS_PARTIAL || s==TS_RUNNER)
         {
-         ulong ticket=m_trades[i].fsm.Ticket();
+         ulong ticket=PositionTicketAt(i);
          if(ticket!=0 && PositionSelectByTicket(ticket)) return true;
         }
      }
