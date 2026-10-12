@@ -93,10 +93,15 @@ double CRiskEngine::CalculateLotSize(string symbol,double riskPercent,double ent
    if(!MathIsValidNumber(lots) || lots<=0.0)
       return 0.0;
 
-   // Round down before applying the broker maximum to avoid exceeding
-   // the risk budget because of volume-step rounding.
+   // Reject a raw size below the broker minimum before rounding. Valid
+   // broker sizes are anchored at minLot + N*lotStep, not necessarily N*lotStep.
+   // Rounding down relative to zero can reject valid minimum-sized positions
+   // when minLot is not itself an exact multiple of lotStep.
    lots=MathMin(maxLot,lots);
-   lots=MathFloor(lots/lotStep)*lotStep;
+   if(lots<minLot)
+      return 0.0;
+   lots=minLot+MathFloor((lots-minLot)/lotStep)*lotStep;
+   lots=MathMin(maxLot,lots);
    lots=NormalizeDouble(lots,8);
 
    if(lots<minLot)
