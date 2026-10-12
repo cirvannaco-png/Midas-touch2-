@@ -14,7 +14,10 @@ private:
    int               m_maxRetries;
    int               m_retryDelayMs;
    ulong             m_lastLatencyUs;
+   bool              m_allowUnboundedMarketExecution;
+   bool              m_unboundedExecutionWarningLogged;
 
+   bool              MarketRequestSupportsPriceDeviation(string symbol,string action);
    bool              LastRequestOk(string action);
    bool              LastExecutionCompleted(string action,bool allowPartial=false,bool allowNoChanges=false);
    ulong             ResolvePositionTicket(string symbol);
@@ -25,7 +28,8 @@ private:
    bool              ValidateStopDistance(string symbol, double refPrice, double sl, double tp, bool isBuy, string action);
 
 public:
-   void              Init(ulong magic, int maxRetries = 3, int retryDelayMs = 300);
+   void              Init(ulong magic, int maxRetries = 3, int retryDelayMs = 300,
+                              bool allowUnboundedMarketExecution = false);
    double            LastLatencyMs() { return (double)m_lastLatencyUs / 1000.0; }
    ulong             MagicNumber() { return m_magic; }
    bool              MarketBuy(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "", int deviationPoints = 20);
@@ -39,7 +43,8 @@ public:
    ulong             PositionTicketForIdentifier(string symbol, ulong positionIdentifier);
   };
 //+------------------------------------------------------------------+
-void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs)
+void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs,
+                         bool allowUnboundedMarketExecution)
   {
    m_magic = magic;
    m_trade.SetExpertMagicNumber(magic);
@@ -48,6 +53,36 @@ void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs)
    m_maxRetries = MathMax(1,maxRetries);
    m_retryDelayMs = MathMax(0,retryDelayMs);
    m_lastLatencyUs = 0;
+   m_allowUnboundedMarketExecution=allowUnboundedMarketExecution;
+   m_unboundedExecutionWarningLogged=false;
+  }
+//+------------------------------------------------------------------+
+bool CBrokerAdapter::MarketRequestSupportsPriceDeviation(string symbol,string action)
+  {
+   ENUM_SYMBOL_TRADE_EXECUTION mode=(ENUM_SYMBOL_TRADE_EXECUTION)SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE);
+   if(mode==SYMBOL_TRADE_EXECUTION_REQUEST || mode==SYMBOL_TRADE_EXECUTION_INSTANT)
+      return true;
+
+   if(mode==SYMBOL_TRADE_EXECUTION_MARKET || mode==SYMBOL_TRADE_EXECUTION_EXCHANGE)
+     {
+      if(!m_allowUnboundedMarketExecution)
+        {
+         PrintFormat("MedisTouch BrokerAdapter: %s rejected for %s — this broker execution mode does not enforce the configured price-deviation cap. Use bounded limit entries or explicitly enable InpAllowUnboundedMarketExecution after accepting the risk.",
+                     action,symbol);
+         return false;
+        }
+      if(!m_unboundedExecutionWarningLogged)
+        {
+         PrintFormat("MedisTouch BrokerAdapter WARNING: market/exchange execution deviation may be ignored for %s; stop-based risk estimates can be exceeded by adverse fills, gaps, costs, and liquidity conditions.",
+                     symbol);
+         m_unboundedExecutionWarningLogged=true;
+        }
+      return true;
+     }
+
+   PrintFormat("MedisTouch BrokerAdapter: %s rejected for %s — unsupported or unknown SYMBOL_TRADE_EXEMODE=%d.",
+               action,symbol,(int)mode);
+   return false;
   }
 //+------------------------------------------------------------------+
 // Retry only broker outcomes that are explicitly transient. Unknown,
@@ -241,6 +276,7 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
   {
    ticketOut=0; fillPriceOut=0.0;
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,true)) { m_lastLatencyUs=0; return false; }
+   if(!MarketRequestSupportsPriceDeviation(symbol,"MarketBuy")) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,true,"MarketBuy")) { m_lastLatencyUs=0; return false; }
    m_trade.SetDeviationInPoints((ulong)MathMax(0,deviationPoints));
@@ -266,6 +302,7 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
   {
    ticketOut=0; fillPriceOut=0.0;
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,false)) { m_lastLatencyUs=0; return false; }
+   if(!MarketRequestSupportsPriceDeviation(symbol,"MarketSell")) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_BID);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,false,"MarketSell")) { m_lastLatencyUs=0; return false; }
    m_trade.SetDeviationInPoints((ulong)MathMax(0,deviationPoints));
