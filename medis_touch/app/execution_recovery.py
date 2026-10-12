@@ -169,7 +169,6 @@ class ExecutionRecoveryJournal:
             "SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED",
             "CANCEL_PENDING", "RECOVERY_REQUIRED",
         )
-        placeholders = ",".join("?" for _ in states)
         with self._connect() as db:
             rows = db.execute(
                 "SELECT order_id,state,venue_order_id,filled_quantity,filled_notional,"
