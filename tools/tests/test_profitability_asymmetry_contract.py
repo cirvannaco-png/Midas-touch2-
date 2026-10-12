@@ -6,10 +6,10 @@ EA = ROOT / "EA" / "MedisTouch_v2.8.mq5"
 
 def test_payoff_asymmetry_candidate_defaults_are_explicit():
     ea = EA.read_text(encoding="utf-8")
-    assert 'input double InpMinRiskReward=1.8;' in ea
+    assert 'input double InpMinRiskReward=2.2;' in ea
     assert 'input double InpPartialAtR=2.5;' in ea
     assert 'input double InpPartialFraction=0.5;' in ea
-    assert 'input double InpManualRiskReward=2.4;' in ea
+    assert 'input double InpManualRiskReward=2.8;' in ea
 
 
 def test_partial_payoff_floor_improves_when_runner_returns_to_entry():
