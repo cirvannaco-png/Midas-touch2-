@@ -99,3 +99,78 @@ def test_empty_ea_backend_parity_is_not_treated_as_success(tmp_path) -> None:
     journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
     assert journal.parity("never-seen") is False
 
+
+
+
+def test_aggregate_only_recovery_is_not_claimed_as_authoritative_deal_history(tmp_path) -> None:
+    journal = ExecutionRecoveryJournal(str(tmp_path / "aggregate-only.db"))
+    journal.begin_submission("aggregate-only", requested_quantity=2.0, client_order_id="client-aggregate")
+    journal.mark_unknown("aggregate-only", "acknowledgement lost")
+    recovered = journal.recover_unknown(
+        "aggregate-only", None, "FILLED",
+        filled_quantity=2.0, filled_notional=202.0,
+    )
+    assert recovered.state == "FILLED"
+    assert recovered.filled_quantity == 2.0
+    assert recovered.fill_ledger_complete is False
+    assert journal.fill_ledger("aggregate-only") == ()
+    # Filled aggregate-only recoveries must keep the recovery gate closed until
+    # their authoritative broker deal ledger has been reconstructed.
+    assert [row.order_id for row in journal.unresolved_records()] == ["aggregate-only"]
+
+
+def test_recovery_rebuilds_authoritative_fill_ledger_and_replay_is_idempotent(tmp_path) -> None:
+    journal = ExecutionRecoveryJournal(str(tmp_path / "authoritative-ledger.db"))
+    journal.begin_submission("ledger-order", requested_quantity=3.0, client_order_id="ledger-client")
+    journal.mark_unknown("ledger-order", "acknowledgement lost")
+    fills = [
+        {"fill_id": "deal-1", "quantity": 1.0, "price": 100.0, "created_at": 10.0},
+        {"fill_id": "deal-2", "quantity": 2.0, "price": 101.0, "created_at": 11.0},
+    ]
+    recovered = journal.recover_unknown(
+        "ledger-order", "venue-order", "FILLED",
+        filled_quantity=3.0, filled_notional=302.0, now=12.0, fills=fills,
+    )
+    assert recovered.fill_ledger_complete is True
+    assert recovered.filled_quantity == 3.0
+    assert recovered.filled_notional == 302.0
+    assert [row["fill_id"] for row in journal.fill_ledger("ledger-order")] == ["deal-1", "deal-2"]
+
+    replay = journal.mark_fill("ledger-order", 1.0, 100.0, fill_id="deal-1")
+    assert replay.filled_quantity == 3.0
+    assert replay.filled_notional == 302.0
+    assert len(journal.fill_ledger("ledger-order")) == 2
+
+
+def test_recovery_rejects_fill_ledger_that_does_not_match_broker_aggregate(tmp_path) -> None:
+    journal = ExecutionRecoveryJournal(str(tmp_path / "bad-ledger.db"))
+    journal.begin_submission("bad-ledger", requested_quantity=2.0)
+    journal.mark_unknown("bad-ledger", "history query pending")
+    with pytest.raises(ValueError, match="quantity does not reconcile"):
+        journal.recover_unknown(
+            "bad-ledger", "venue-bad", "FILLED",
+            filled_quantity=2.0, filled_notional=201.0,
+            fills=[{"fill_id": "deal-1", "quantity": 1.0, "price": 100.0},
+                   {"fill_id": "deal-2", "quantity": 0.5, "price": 101.0}],
+        )
+    assert journal.get("bad-ledger").state == "UNKNOWN"
+    assert journal.get("bad-ledger").filled_quantity == 0.0
+    assert journal.fill_ledger("bad-ledger") == ()
+
+
+def test_partial_recovery_can_continue_without_double_counting_recovered_fills(tmp_path) -> None:
+    journal = ExecutionRecoveryJournal(str(tmp_path / "partial-recovered.db"))
+    journal.begin_submission("part-ledger", requested_quantity=3.0)
+    journal.mark_unknown("part-ledger", "connection lost after partial fill")
+    recovered = journal.recover_unknown(
+        "part-ledger", "venue-part", "PARTIALLY_FILLED",
+        filled_quantity=1.5, filled_notional=150.0,
+        fills=[{"fill_id": "deal-part-1", "quantity": 1.5, "price": 100.0}],
+    )
+    assert recovered.fill_ledger_complete is True
+    assert recovered.state == "PARTIALLY_FILLED"
+    next_state = journal.mark_fill("part-ledger", 1.5, 101.0, fill_id="deal-part-2")
+    assert next_state.state == "FILLED"
+    assert next_state.filled_quantity == 3.0
+    assert next_state.filled_notional == 301.5
+    assert len(journal.fill_ledger("part-ledger")) == 2
