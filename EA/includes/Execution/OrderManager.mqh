@@ -37,7 +37,7 @@ private:
 
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
-   bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0);
+   bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,double maxRiskCash,ulong &ticketOut,int legIndex=0);
    bool              RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice=0.0,int legIndex=0);
    int               OpenCount();
    int               Total() { return ArraySize(m_trades); }
