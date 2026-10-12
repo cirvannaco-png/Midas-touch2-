@@ -17,39 +17,101 @@ private:
    bool m_calibrationEnabled; string m_symbol; ENUM_TIMEFRAMES m_entryTF; ENUM_FILL_POLICY m_fillPolicy; ENUM_TIMEFRAMES m_replayTF; OutcomeStats m_stats;
    double m_breakEvenAtR,m_partialAtR,m_partialFraction,m_trailATRMult,m_riskPercent; bool m_allowMinLotOverride,m_liveExecution;
    double m_commissionPerLot,m_spreadPoints,m_slippagePoints,m_decayHalfLifeBars; string m_weightVersion;
+   ulong m_seenDealTickets[];
+   bool DealAlreadyProcessed(ulong dealTicket)
+     {
+      if(dealTicket==0) return false;
+      for(int i=0;i<ArraySize(m_seenDealTickets);i++)
+         if(m_seenDealTickets[i]==dealTicket) return true;
+      return false;
+     }
+   void RememberDeal(ulong dealTicket)
+     {
+      if(dealTicket==0 || DealAlreadyProcessed(dealTicket)) return;
+      int n=ArraySize(m_seenDealTickets);
+      if(ArrayResize(m_seenDealTickets,n+1)!=n+1) return;
+      m_seenDealTickets[n]=dealTicket;
+     }
    int Find(long id){for(int i=0;i<m_count;i++)if(m_pending[i].decisionId==id)return i;return -1;}
    double RValue(const PendingSetup &p) const{double ts=SymbolInfoDouble(m_symbol,SYMBOL_TRADE_TICK_SIZE),tv=SymbolInfoDouble(m_symbol,SYMBOL_TRADE_TICK_VALUE);if(ts<=0.0||tv<=0.0)return 0.0;double riskLotsDistance=p.weightedRiskDistLots>0.0?p.weightedRiskDistLots:(p.mgmtRiskDist*p.lots);if(riskLotsDistance<=0.0)return 0.0;double oneR=riskLotsDistance*(tv/ts);return oneR>0.0?p.realizedPnL/oneR:0.0;}
    string EnvironmentJson(const PendingSetup &p) const{SetupReasons r=p.setup.reasons;string structure=EnumToString(r.sweep_grade)+"/"+IntegerToString((int)r.breakout_class)+"/"+IntegerToString((int)r.reversion_class)+"/"+IntegerToString((int)r.keylevel_reaction);return StringFormat("{\"regime\":\"%s\",\"volatility_state\":\"%s\",\"trend_strength\":%.3f,\"liquidity_score\":%.3f,\"liquidity_bucket\":%d,\"news_state\":\"%s\",\"session\":\"%s\",\"spread_points\":%.2f,\"point_size\":%.10f,\"atr_value\":%.10f,\"atr_regime\":\"%s\",\"htf_ob_aligned\":%s,\"htf_ob_state\":\"%s\",\"value_area_zone\":\"%s\",\"market_phase\":\"%s\",\"market_structure\":\"%s\",\"bos_strength\":%.3f,\"sweep_grade\":\"%s\"}",EnumToString(r.regime),EnumToString(r.vol_regime),r.trend_strength,r.liquidity_score,r.liquidity_bucket,EnumToString(r.news_risk),EnumToString(r.session),r.spread_points,r.point_size,r.atr_value,EnumToString(r.vol_regime),r.htf_ob_confluence?"true":"false",EnumToString(r.htf_ob_state),EnumToString(r.va_zone),EnumToString(r.phase),structure,r.bos_strength,EnumToString(r.sweep_grade));}
-   void Finalize(int idx,string exitReason,double exitPrice,datetime outcomeTime){if(idx<0||idx>=m_count)return;PendingSetup p=m_pending[idx];datetime resolvedAt=outcomeTime;if(resolvedAt<=0)resolvedAt=TimeCurrent();double rr=RValue(p);bool sized=p.filled&&p.lots>0.0;string coarseOutcome="scratch";if(p.realizedPnL>0.0000001)coarseOutcome="win";else if(p.realizedPnL<-0.0000001)coarseOutcome="loss";if(exitReason=="Ambiguous_SLandBE"||exitReason=="Ambiguous_SLandPartial"||exitReason=="Ambiguous_SLandTP")coarseOutcome="ambiguous";if(sized&&coarseOutcome!="ambiguous"&&coarseOutcome!="no_fill"){if(coarseOutcome=="win")m_stats.wins++;else if(coarseOutcome=="loss")m_stats.losses++;else m_stats.scratches++;m_stats.resolvedCount++;m_stats.netPnL+=p.realizedPnL;if(p.realizedPnL>0)m_stats.grossProfit+=p.realizedPnL;if(p.realizedPnL<0)m_stats.grossLoss+=-p.realizedPnL;m_stats.totalCommission+=p.totalCommission;m_stats.totalSpreadCost+=p.totalSpreadCost;m_stats.totalSlippageCost+=p.totalSlippageCost;m_stats.sumRMultiple+=rr;if(m_calibrationEnabled)m_calibration.Record(p.confidenceAtSignal,p.realizedPnL);if(m_environmentMemory!=NULL){bool buy=p.setup.type==ORDER_TYPE_BUY;double mfeR=0.0,maeR=0.0;if(p.mgmtRiskDist>0.0){mfeR=buy?(p.mfePrice-p.entryRef)/p.mgmtRiskDist:(p.entryRef-p.maePrice)/p.mgmtRiskDist;maeR=buy?(p.entryRef-p.maePrice)/p.mgmtRiskDist:(p.maePrice-p.entryRef)/p.mgmtRiskDist;}m_environmentMemory.RecordOutcome(p.setup.reasons,p.setup.reasons.selected_strategy,rr,maeR,mfeR,p.barsElapsed,resolvedAt);}}else if(coarseOutcome=="ambiguous")m_stats.ambiguous++;if(m_logger!=NULL)m_logger.LogOutcome(p,m_symbol,m_entryTF,exitReason,exitPrice,m_fillPolicy,resolvedAt);if(m_publisher!=NULL&&p.decisionId>0){bool buy=p.setup.type==ORDER_TYPE_BUY;double mfeR=0.0,maeR=0.0;if(p.filled&&p.mgmtRiskDist>0){double mfe=buy?(p.mfePrice-p.entryRef):(p.entryRef-p.mfePrice);double mae=buy?(p.entryRef-p.maePrice):(p.maePrice-p.entryRef);mfeR=mfe/p.mgmtRiskDist;maeR=mae/p.mgmtRiskDist;}string signalId=m_publisher.SignalIdForDecision(p.decisionId);string strategy=EnumToString(p.setup.reasons.selected_strategy);string envKey="";if(m_environmentMemory!=NULL)envKey=m_environmentMemory.Key(p.setup.reasons);m_publisher.PublishOutcome(signalId,m_symbol,buy?"BUY":"SELL",coarseOutcome,exitReason,strategy,rr,mfeR,maeR,p.totalCommission,p.totalSpreadCost,p.totalSlippageCost,p.barsElapsed,p.barsToFill,p.filled,EnumToString(p.setup.reasons.regime),EnumToString(p.setup.reasons.session),EnumToString(p.setup.reasons.sweep_grade),p.setup.reasons.htf_ob_confluence,p.confidenceAtSignal,p.confidenceDecayed,p.decayBars,p.decision_fingerprint,p.setup.creation_time,p.fillTime,resolvedAt);}for(int j=idx;j<m_count-1;j++)m_pending[j]=m_pending[j+1];m_count--;ArrayResize(m_pending,m_count);}
+   void Finalize(int idx,string exitReason,double exitPrice,datetime outcomeTime){if(idx<0||idx>=m_count)return;PendingSetup p=m_pending[idx];datetime resolvedAt=outcomeTime;if(resolvedAt<=0)resolvedAt=TimeCurrent();double rr=RValue(p);bool sized=p.filled&&p.lots>0.0;string coarseOutcome="scratch";if(p.realizedPnL>0.0000001)coarseOutcome="win";else if(p.realizedPnL<-0.0000001)coarseOutcome="loss";if(!p.outcomeHistoryComplete&&p.filled)coarseOutcome="ambiguous";if(exitReason=="Ambiguous_SLandBE"||exitReason=="Ambiguous_SLandPartial"||exitReason=="Ambiguous_SLandTP"||exitReason=="Ambiguous_NettingReversal")coarseOutcome="ambiguous";if(sized&&coarseOutcome!="ambiguous"&&coarseOutcome!="no_fill"){if(coarseOutcome=="win")m_stats.wins++;else if(coarseOutcome=="loss")m_stats.losses++;else m_stats.scratches++;m_stats.resolvedCount++;m_stats.netPnL+=p.realizedPnL;if(p.realizedPnL>0)m_stats.grossProfit+=p.realizedPnL;if(p.realizedPnL<0)m_stats.grossLoss+=-p.realizedPnL;m_stats.totalCommission+=p.totalCommission;m_stats.totalSpreadCost+=p.totalSpreadCost;m_stats.totalSlippageCost+=p.totalSlippageCost;m_stats.sumRMultiple+=rr;if(m_calibrationEnabled)m_calibration.Record(p.confidenceAtSignal,p.realizedPnL);if(m_environmentMemory!=NULL){bool buy=p.setup.type==ORDER_TYPE_BUY;double mfeR=0.0,maeR=0.0;if(p.mgmtRiskDist>0.0){mfeR=buy?(p.mfePrice-p.entryRef)/p.mgmtRiskDist:(p.entryRef-p.maePrice)/p.mgmtRiskDist;maeR=buy?(p.entryRef-p.maePrice)/p.mgmtRiskDist:(p.maePrice-p.entryRef)/p.mgmtRiskDist;}m_environmentMemory.RecordOutcome(p.setup.reasons,p.setup.reasons.selected_strategy,rr,maeR,mfeR,p.barsElapsed,resolvedAt);}}else if(coarseOutcome=="ambiguous")m_stats.ambiguous++;if(m_logger!=NULL)m_logger.LogOutcome(p,m_symbol,m_entryTF,exitReason,exitPrice,m_fillPolicy,resolvedAt);if(m_publisher!=NULL&&p.decisionId>0){bool buy=p.setup.type==ORDER_TYPE_BUY;double mfeR=0.0,maeR=0.0;if(p.filled&&p.mgmtRiskDist>0){double mfe=buy?(p.mfePrice-p.entryRef):(p.entryRef-p.mfePrice);double mae=buy?(p.entryRef-p.maePrice):(p.maePrice-p.entryRef);mfeR=mfe/p.mgmtRiskDist;maeR=mae/p.mgmtRiskDist;}string signalId=m_publisher.SignalIdForDecision(p.decisionId);string strategy=EnumToString(p.setup.reasons.selected_strategy);string envKey="";if(m_environmentMemory!=NULL)envKey=m_environmentMemory.Key(p.setup.reasons);m_publisher.PublishOutcome(signalId,m_symbol,buy?"BUY":"SELL",coarseOutcome,exitReason,strategy,rr,mfeR,maeR,p.totalCommission,p.totalSpreadCost,p.totalSlippageCost,p.barsElapsed,p.barsToFill,p.filled,EnumToString(p.setup.reasons.regime),EnumToString(p.setup.reasons.session),EnumToString(p.setup.reasons.sweep_grade),p.setup.reasons.htf_ob_confluence,p.confidenceAtSignal,p.confidenceDecayed,p.decayBars,p.decision_fingerprint,p.setup.creation_time,p.fillTime,resolvedAt);}for(int j=idx;j<m_count-1;j++)m_pending[j]=m_pending[j+1];m_count--;ArrayResize(m_pending,m_count);}
    void SimFill(int i,double price,datetime t){if(i<0||i>=m_count||m_pending[i].filled)return;PendingSetup p=m_pending[i];p.filled=true;p.fillTime=t;p.barsToFill=0;p.entryRef=price;p.entryFillPrice=price;p.mfePrice=price;p.maePrice=price;p.riskDist=MathAbs(price-p.setup.stop_loss);p.mgmtRiskDist=p.riskDist;m_pending[i]=p;}
 public:
    COutcomeTrackerLive():m_count(0),m_maxBars(100),m_logger(NULL),m_publisher(NULL),m_environmentMemory(NULL),m_calibrationEnabled(false),m_symbol(""),m_entryTF(PERIOD_CURRENT),m_fillPolicy(FILL_CONSERVATIVE),m_replayTF(PERIOD_M1),m_breakEvenAtR(1.0),m_partialAtR(2.0),m_partialFraction(0.5),m_trailATRMult(1.5),m_riskPercent(0.5),m_allowMinLotOverride(true),m_liveExecution(true),m_commissionPerLot(7.0),m_spreadPoints(10.0),m_slippagePoints(2.0),m_decayHalfLifeBars(12.0),m_weightVersion(""){ZeroMemory(m_stats);g_activeOutcomeTracker=GetPointer(this);}
-   void Init(CSignalLogger* logger,string symbol,ENUM_TIMEFRAMES tf,int maxBars,ENUM_FILL_POLICY fp=FILL_CONSERVATIVE,ENUM_TIMEFRAMES replayTF=PERIOD_M1){m_logger=logger;m_symbol=symbol;m_entryTF=tf;m_maxBars=MathMax(5,maxBars);m_fillPolicy=fp;m_replayTF=replayTF;m_count=0;ArrayResize(m_pending,0);ZeroMemory(m_stats);}
+   void Init(CSignalLogger* logger,string symbol,ENUM_TIMEFRAMES tf,int maxBars,ENUM_FILL_POLICY fp=FILL_CONSERVATIVE,ENUM_TIMEFRAMES replayTF=PERIOD_M1){m_logger=logger;m_symbol=symbol;m_entryTF=tf;m_maxBars=MathMax(5,maxBars);m_fillPolicy=fp;m_replayTF=replayTF;m_count=0;ArrayResize(m_pending,0);ArrayResize(m_seenDealTickets,0);ZeroMemory(m_stats);}
    void ConfigureExecutionMode(bool live){m_liveExecution=live;}void ConfigureSimulation(double risk,bool allow,double be,double partial,double frac,double trail,double comm,double spread,double slip){m_riskPercent=risk;m_allowMinLotOverride=allow;m_breakEvenAtR=be;m_partialAtR=partial;m_partialFraction=MathMax(0.0,MathMin(1.0,frac));m_trailATRMult=trail;m_commissionPerLot=MathMax(0.0,comm);m_spreadPoints=MathMax(0.0,spread);m_slippagePoints=MathMax(0.0,slip);}void ConfigureCalibration(bool enabled,int minSample=30){m_calibrationEnabled=enabled;m_calibration.Init(m_symbol,minSample);}void ConfigureConfidenceDecay(double halfLife=12.0){m_decayHalfLifeBars=halfLife;}void ConfigurePublishing(CSignalPublisher* p,string version){m_publisher=p;m_weightVersion=version;}void ConfigureEnvironmentMemory(CEnvironmentStrategyMemory* memory){m_environmentMemory=memory;}
    int ActiveCount()const{return m_count;}OutcomeStats GetStats()const{return m_stats;}double GetCalibratedProbability(double confidence,int &sample,bool &enough)const{return m_calibration.GetCalibratedProbability(confidence,sample,enough);}
-   void AddSetup(TradeSetup &setup,long decisionId=-1,string decisionFingerprint=""){if(!setup.active||decisionId<=0||Find(decisionId)>=0)return;PendingSetup p;ZeroMemory(p);p.setup=setup;p.decisionId=decisionId;p.decision_fingerprint=decisionFingerprint;p.entryRef=ResolveExecutionEntry(setup);p.riskDist=MathAbs(p.entryRef-setup.stop_loss);p.sizingEntryPrice=p.entryRef;p.mgmtRiskDist=p.riskDist;p.weightedRiskDistLots=0.0;p.mfePrice=p.entryRef;p.maePrice=p.entryRef;p.currentSL=setup.stop_loss;p.confidenceAtSignal=setup.confidence;p.confidenceDecayed=setup.confidence;int n=m_count++;ArrayResize(m_pending,m_count);m_pending[n]=p;}
-   bool MarkExecuted(long id,double fill,datetime t,double volume)
+   void AddSetup(TradeSetup &setup,long decisionId=-1,string decisionFingerprint=""){if(!setup.active||decisionId<=0||Find(decisionId)>=0)return;PendingSetup p;ZeroMemory(p);p.setup=setup;p.decisionId=decisionId;p.decision_fingerprint=decisionFingerprint;p.entryRef=ResolveExecutionEntry(setup);p.riskDist=MathAbs(p.entryRef-setup.stop_loss);p.sizingEntryPrice=p.entryRef;p.mgmtRiskDist=p.riskDist;p.weightedRiskDistLots=0.0;p.mfePrice=p.entryRef;p.maePrice=p.entryRef;p.currentSL=setup.stop_loss;p.confidenceAtSignal=setup.confidence;p.confidenceDecayed=setup.confidence;p.cashflowsKnown=true;p.outcomeHistoryComplete=true;int n=m_count++;ArrayResize(m_pending,m_count);m_pending[n]=p;}
+   bool MarkExecuted(long id,double fill,datetime t,double volume,ulong dealTicket=0,double commission=0.0,double swap=0.0,double fee=0.0,bool cashflowsKnown=true)
      {
+      if(DealAlreadyProcessed(dealTicket)) return true;
       int i=Find(id);if(i<0||fill<=0.0||volume<=0.0)return false;
       PendingSetup p=m_pending[i];
+      // Entry-side commission, swap and broker fee are cashflows too; ignoring
+      // them creates a systematic positive bias even when every exit is captured.
+      p.realizedPnL+=commission+swap+fee;
+      p.totalCommissionCashflow+=commission;
+      p.totalSwapCashflow+=swap;
+      p.totalBrokerFeeCashflow+=fee;
+      p.totalCommission+=MathMax(0.0,-commission);
+      p.cashflowsKnown=p.cashflowsKnown&&cashflowsKnown;
       if(p.filled)
         {
-         // Multi-trade: multiple execution legs belong to one parent
-         // decision. Keep one calibration record while aggregating the
-         // realized exposure across all child fills.
+         // Multi-trade: multiple fills/legs belong to one parent decision.
          p.lots+=volume;
          p.remainingLots+=volume;
          p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume;
          m_pending[i]=p;
+         RememberDeal(dealTicket);
          return true;
         }
       p.filled=true;p.entryFillPrice=fill;p.entryRef=fill;p.fillTime=t;p.barsToFill=0;
       p.lots=volume;p.remainingLots=volume;p.riskDist=MathAbs(fill-p.setup.stop_loss);
       p.mgmtRiskDist=p.riskDist;p.weightedRiskDistLots=p.riskDist*volume;p.mfePrice=fill;p.maePrice=fill;p.currentSL=p.setup.stop_loss;
-      m_pending[i]=p;return true;
+      m_pending[i]=p;
+      RememberDeal(dealTicket);
+      return true;
      }
-   bool RestoreExecuted(TradeSetup &setup,long id,double fill,datetime t,double volume){AddSetup(setup,id);return MarkExecuted(id,fill,t,volume);}
-   bool MarkClosed(long id,double exitPrice,datetime t,double netPnl,double commission,double swap,double fee,bool stillOpen,string outcome){int i=Find(id);if(i<0)return false;PendingSetup p=m_pending[i];if(!p.filled)return false;p.realizedPnL+=netPnl;p.totalCommission+=commission;p.totalSpreadCost+=swap;p.totalSlippageCost+=fee;if(stillOpen){m_pending[i]=p;return true;}m_pending[i]=p;Finalize(i,outcome,exitPrice,t);return true;}
+   bool RestoreExecuted(TradeSetup &setup,long id,double fill,datetime t,double volume)
+     {
+      AddSetup(setup,id);
+      if(!MarkExecuted(id,fill,t,volume,0,0.0,0.0,0.0,false)) return false;
+      int i=Find(id);if(i<0)return false;
+      PendingSetup p=m_pending[i];
+      // A current-position snapshot contains remaining volume, not complete
+      // entry/partial-exit deal history. Keep it out of calibration and learning
+      // until broker history has been reconciled.
+      p.cashflowsKnown=false;p.outcomeHistoryComplete=false;
+      m_pending[i]=p;
+      return true;
+     }
+   void MarkHistoryIncomplete(long id)
+     {
+      int i=Find(id);if(i<0)return;
+      PendingSetup p=m_pending[i];p.outcomeHistoryComplete=false;p.cashflowsKnown=false;m_pending[i]=p;
+     }
+   bool MarkClosed(long id,double exitPrice,datetime t,double netPnl,double commission,double swap,double fee,bool stillOpen,string outcome,ulong dealTicket=0,double closedVolume=0.0,bool cashflowsKnown=true)
+     {
+      if(DealAlreadyProcessed(dealTicket)) return true;
+      int i=Find(id);if(i<0)return false;PendingSetup p=m_pending[i];if(!p.filled)return false;
+      p.realizedPnL+=netPnl;
+      p.totalCommission+=MathMax(0.0,-commission);
+      p.totalCommissionCashflow+=commission;p.totalSwapCashflow+=swap;p.totalBrokerFeeCashflow+=fee;
+      p.cashflowsKnown=p.cashflowsKnown&&cashflowsKnown;
+      if(closedVolume>0.0)
+        {
+         if(closedVolume>p.remainingLots+1e-8)p.outcomeHistoryComplete=false;
+         p.remainingLots=MathMax(0.0,p.remainingLots-closedVolume);
+        }
+      // Swap and broker fees are not spread/slippage. Leave those separate
+      // telemetry fields untouched rather than reporting costs under the wrong name.
+      RememberDeal(dealTicket);
+      m_pending[i]=p;
+      if(stillOpen)return true;
+      Finalize(i,outcome,exitPrice,t);
+      return true;
+     }
    void Update(CTFContext* ctx){if(ctx==NULL||ctx.candles.Total()<3||ctx.candles.Timeframe()!=m_entryTF)return;CandleData bar=ctx.candles.GetCandle(1);if(bar.time<=0)return;for(int i=m_count-1;i>=0;i--){PendingSetup p=m_pending[i];bool buy=p.setup.type==ORDER_TYPE_BUY;int fshift=iBarShift(m_symbol,m_entryTF,p.fillTime,false);datetime creationBar=0;if(!p.filled){int shift=iBarShift(m_symbol,m_entryTF,p.setup.creation_time,false);creationBar=shift>=0?iTime(m_symbol,m_entryTF,shift):p.setup.creation_time;}if(!p.filled&&!m_liveExecution&&bar.time>creationBar){bool touched=buy?(bar.low<=p.entryRef):(bar.high>=p.entryRef);if(touched)SimFill(i,p.entryRef,bar.time);}if(!p.filled){p.barsElapsed++;p.lastBarTime=bar.time;m_pending[i]=p;if(p.barsElapsed>=m_maxBars)Finalize(i,"no_fill",bar.close,bar.time);continue;}if(fshift>=0){datetime fillBar=iTime(m_symbol,m_entryTF,fshift);if(bar.time<=fillBar)continue;}if(p.lastBarTime==bar.time)continue;p.barsElapsed++;p.lastBarTime=bar.time;if(buy){if(bar.high>p.mfePrice)p.mfePrice=bar.high;if(bar.low<p.maePrice)p.maePrice=bar.low;}else{if(bar.low<p.mfePrice)p.mfePrice=bar.low;if(bar.high>p.maePrice)p.maePrice=bar.high;}if(m_decayHalfLifeBars>0){p.decayBars=p.barsElapsed;p.confidenceDecayed=p.confidenceAtSignal*MathPow(0.5,(double)p.decayBars/m_decayHalfLifeBars);}m_pending[i]=p;if(p.barsElapsed>=m_maxBars)Finalize(i,"timeout",bar.close,bar.time);}}
    bool GetFillState(datetime creationTime,long id,bool &filled,double &fillPrice,datetime &fillTime,int &barsToFill){for(int i=0;i<m_count;i++)if(m_pending[i].setup.creation_time==creationTime&&(id<0||m_pending[i].decisionId==id)){filled=m_pending[i].filled;fillPrice=m_pending[i].entryFillPrice;fillTime=m_pending[i].fillTime;barsToFill=m_pending[i].barsToFill;return true;}return false;}
   };
