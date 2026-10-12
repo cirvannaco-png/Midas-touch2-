@@ -200,7 +200,14 @@ class GovernedExecutionCoordinator:
                 fill_price = quote.ask if child.side.upper() == "BUY" else quote.bid
                 fill = self.venue.fill(child, venue_order_id, fill_price)
                 if self.recovery_journal is not None:
+                    # Persist the broker fill in the child ledger and the parent's
+                    # aggregate ledger. Prefixing the child identity prevents fill-ID
+                    # collisions when a venue reuses IDs across child order scopes.
                     self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price, fill_id=fill.fill_id)
+                    self.recovery_journal.mark_fill(
+                        stored.order_id, fill.quantity, fill.price,
+                        fill_id=f"{child.order_id}:{fill.fill_id}",
+                    )
                 stored = self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
                 self._record_backend_state(stored, status=stored.status, sequence=4 + child_index, setup_fingerprint=lineage_fingerprint)
                 expected_child = replace(child, status=OrderStatus.FILLED, filled_quantity=child.quantity, average_fill_price=fill.price)
