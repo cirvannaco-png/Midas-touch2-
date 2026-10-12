@@ -162,12 +162,13 @@ class ExecutionRecoveryJournal:
             "SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED",
             "CANCEL_PENDING", "RECOVERY_REQUIRED",
         )
-        placeholders = ",".join("?" for _ in states)
+        # Keep the SQL statement static so security scanners can verify that
+        # every state value is bound as a parameter rather than interpolated.
         with self._connect() as db:
             rows = db.execute(
                 "SELECT order_id,state,venue_order_id,filled_quantity,filled_notional,"
                 "last_error,updated_at,parent_order_id,client_order_id,requested_quantity "
-                f"FROM execution_recovery WHERE state IN ({placeholders}) ORDER BY updated_at,order_id",
+                "FROM execution_recovery WHERE state IN (?,?,?,?,?,?) ORDER BY updated_at,order_id",
                 states,
             ).fetchall()
         return tuple(RecoveryRecord(*row) for row in rows)
