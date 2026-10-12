@@ -108,7 +108,7 @@ int CRecoveryEngine::Recover()
       double currentSL=PositionGetDouble(POSITION_SL);
       ENUM_TRADE_STATE state=InferPositionState(submittedVolume,currentVolume,actualEntry,currentSL,isBuy);
 
-      if(m_orders.RestoreTrade(restoredDecision,currentVolume,ticket,state,actualEntry,legIndex))
+      if(m_orders.RestoreTrade(restoredDecision,submittedVolume,ticket,state,actualEntry,legIndex))
         {
          restored++;
          ulong positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
