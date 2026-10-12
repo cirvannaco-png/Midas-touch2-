@@ -365,22 +365,54 @@ public:
    bool MarkClosed(long id,double exitPrice,datetime t,double netPnl,double commission,double swap,double fee,bool stillOpen,string outcome,ulong dealTicket=0,double closedVolume=0.0,bool cashflowsKnown=true)
      {
       if(DealAlreadyProcessed(dealTicket)) return true;
-      int i=Find(id);if(i<0)return false;PendingSetup p=m_pending[i];if(!p.filled)return false;
-      p.realizedPnL+=netPnl;
+      int i=Find(id);
+      if(i<0) return false;
+      PendingSetup p=m_pending[i];
+      if(!p.filled) return false;
+
+      // Broker history is the accounting authority. Reject malformed values
+      // before touching PnL, cashflows, the remaining-volume ledger or the
+      // idempotency set, so a bad event cannot partially corrupt the outcome.
+      if(!MathIsValidNumber(exitPrice) || exitPrice<=0.0 || t<=0 ||
+         !MathIsValidNumber(netPnl) || !MathIsValidNumber(commission) ||
+         !MathIsValidNumber(swap) || !MathIsValidNumber(fee) ||
+         !MathIsValidNumber(closedVolume) || closedVolume<0.0 ||
+         !MathIsValidNumber(p.realizedPnL) || !MathIsValidNumber(p.remainingLots) ||
+         p.remainingLots<0.0)
+        {
+         MarkHistoryIncomplete(id);
+         PrintFormat("MedisTouch OutcomeTracker: rejected invalid exit-deal accounting for decision #%I64d (deal=%I64u).",
+                     id,dealTicket);
+         return false;
+        }
+
+      double nextPnL=p.realizedPnL+netPnl;
+      double nextRemaining=MathMax(0.0,p.remainingLots-closedVolume);
+      if(!MathIsValidNumber(nextPnL) || !MathIsValidNumber(nextRemaining) ||
+         (closedVolume>0.0 && closedVolume>p.remainingLots+MathMax(1e-8,SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP)*1e-6)))
+        {
+         MarkHistoryIncomplete(id);
+         PrintFormat("MedisTouch OutcomeTracker: rejected inconsistent exit volume/PnL for decision #%I64d (deal=%I64u closed=%.8f remaining=%.8f).",
+                     id,dealTicket,closedVolume,p.remainingLots);
+         return false;
+        }
+
+      p.realizedPnL=nextPnL;
       p.totalCommission+=MathMax(0.0,-commission);
-      p.totalCommissionCashflow+=commission;p.totalSwapCashflow+=swap;p.totalBrokerFeeCashflow+=fee;
+      p.totalCommissionCashflow+=commission;
+      p.totalSwapCashflow+=swap;
+      p.totalBrokerFeeCashflow+=fee;
       p.cashflowsKnown=p.cashflowsKnown&&cashflowsKnown;
       if(closedVolume>0.0)
-        {
-         if(closedVolume>p.remainingLots+1e-8)p.outcomeHistoryComplete=false;
-         p.remainingLots=MathMax(0.0,p.remainingLots-closedVolume);
-        }
-      if(!stillOpen&&p.remainingLots>1e-8)p.outcomeHistoryComplete=false;
+         p.remainingLots=nextRemaining;
+      if(!stillOpen && p.remainingLots>1e-8)
+         p.outcomeHistoryComplete=false;
+
       // Swap and broker fees are not spread/slippage. Leave those separate
       // telemetry fields untouched rather than reporting costs under the wrong name.
       RememberDeal(dealTicket);
       m_pending[i]=p;
-      if(stillOpen)return true;
+      if(stillOpen) return true;
       Finalize(i,outcome,exitPrice,t);
       return true;
      }
