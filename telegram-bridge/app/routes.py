@@ -172,6 +172,10 @@ class OutcomeRequest(BaseModel):
     commission_cost: float | None = Field(default=None, ge=0)
     spread_cost: float | None = Field(default=None, ge=0)
     slippage_cost: float | None = Field(default=None, ge=0)
+    # Signed broker cashflows are distinct from non-negative cost magnitudes.
+    commission_cashflow: float | None = Field(default=None)
+    swap_cashflow: float | None = Field(default=None)
+    broker_fee_cashflow: float | None = Field(default=None)
     weight_version: str | None = Field(default=None, max_length=64)
     strategy_version: str | None = Field(default=None, max_length=64)
     model_version: str | None = Field(default=None, max_length=64)
@@ -179,8 +183,13 @@ class OutcomeRequest(BaseModel):
     feature_schema_version: str | None = Field(default=None, max_length=64)
     environment_schema_version: str | None = Field(default=None, max_length=64)
     decision_fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
+    signal_time: datetime | None = None
+    decision_time: datetime | None = None
     execution_time: datetime | None = None
     outcome_time: datetime | None = None
+    environment_key: str | None = Field(default=None, max_length=512)
+    environment: dict | None = Field(default=None)
+    exit_reason: str | None = Field(default=None, max_length=64)
     confidence_at_signal: float | None = Field(default=None)
     confidence_decayed: float | None = Field(default=None)
     decay_bars: int | None = Field(default=None, ge=0)
@@ -670,32 +679,20 @@ async def retry_failed_trade_events_core(session: AsyncSession) -> dict:
     }
 
 
-@router.post("/outcome", response_model=OutcomeResponse)
-async def receive_outcome(
+def _apply_outcome_fields(
+    row: SignalOutcome,
     payload: OutcomeRequest,
-    session: AsyncSession = Depends(get_session),
-    _auth: bool = Depends(verify_api_key),
-    _rate: None = Depends(enforce_rate_limit),
-):
-    log = logger.bind(signal_id=payload.signal_id)
-    received_at = datetime.now(timezone.utc)
-
-    existing = await session.scalar(
-        select(SignalOutcome).where(SignalOutcome.signal_id == payload.signal_id)
-    )
-    upserted = existing is not None
-    row = existing or SignalOutcome(signal_id=payload.signal_id)
-
-    source_signal = await session.scalar(
-        select(Signal).where(Signal.signal_id == payload.signal_id)
-    )
+    source_signal: Signal | None,
+    received_at: datetime,
+) -> None:
+    """Persist the complete EA outcome contract using one canonical handler."""
     if source_signal is not None:
         row.signal_time = source_signal.signal_time or source_signal.received_at
-        row.decision_time = source_signal.decision_time
+        row.decision_time = source_signal.decision_time or payload.decision_time
         row.original_decision_fingerprint = source_signal.decision_fingerprint
         row.canonical_decision = source_signal.canonical_decision
         row.decision_fingerprint = payload.decision_fingerprint or source_signal.decision_fingerprint
-        row.environment_key = source_signal.environment_key
+        row.environment_key = payload.environment_key or source_signal.environment_key
         row.parity_status = (
             "PARITY_MISMATCH"
             if payload.decision_fingerprint
@@ -703,18 +700,20 @@ async def receive_outcome(
             and payload.decision_fingerprint.upper() != source_signal.decision_fingerprint.upper()
             else source_signal.parity_status or "FINGERPRINT_MISSING"
         )
-        row.decision_schema_version = (source_signal.decision_schema_version if source_signal else None)
-        row.strategy_version = payload.strategy_version or (source_signal.strategy_version if source_signal else None)
+        row.decision_schema_version = source_signal.decision_schema_version
+        row.strategy_version = payload.strategy_version or source_signal.strategy_version
         row.model_version = payload.model_version or source_signal.model_version
         row.calibration_version = payload.calibration_version or source_signal.calibration_version
         row.feature_schema_version = payload.feature_schema_version or source_signal.feature_schema_version
         row.environment_schema_version = payload.environment_schema_version or source_signal.environment_schema_version
         row.weight_version = payload.weight_version or source_signal.weight_version
-        row.data_received_time = received_at
     else:
+        row.signal_time = payload.signal_time
+        row.decision_time = payload.decision_time
+        row.original_decision_fingerprint = None
+        row.canonical_decision = None
         row.decision_fingerprint = payload.decision_fingerprint
         row.parity_status = "ORPHAN_SIGNAL"
-        row.data_received_time = received_at
         row.decision_schema_version = "decision-v1"
         row.strategy_version = payload.strategy_version
         row.model_version = payload.model_version
@@ -722,7 +721,9 @@ async def receive_outcome(
         row.feature_schema_version = payload.feature_schema_version
         row.environment_schema_version = payload.environment_schema_version
         row.weight_version = payload.weight_version
+        row.environment_key = payload.environment_key
 
+    row.data_received_time = received_at
     row.symbol = payload.symbol
     row.direction = payload.direction
     row.outcome = payload.outcome
@@ -739,17 +740,64 @@ async def receive_outcome(
     row.sweep_grade = payload.sweep_grade
     row.htf_ob_aligned = payload.htf_ob_aligned
     row.strategy = payload.strategy or (source_signal.strategy if source_signal else None)
-    row.resolution = payload.resolution
+    row.resolution = payload.resolution or payload.exit_reason
+    row.exit_reason = payload.exit_reason or payload.resolution
     row.commission_cost = payload.commission_cost
     row.spread_cost = payload.spread_cost
     row.slippage_cost = payload.slippage_cost
+    row.commission_cashflow = payload.commission_cashflow
+    row.swap_cashflow = payload.swap_cashflow
+    row.broker_fee_cashflow = payload.broker_fee_cashflow
+    row.environment_key = payload.environment_key or row.environment_key
+    row.environment = payload.environment
     row.confidence_at_signal = payload.confidence_at_signal
     row.confidence_decayed = payload.confidence_decayed
     row.decay_bars = payload.decay_bars
 
+
+@router.post("/outcome", response_model=OutcomeResponse)
+async def receive_outcome(
+    payload: OutcomeRequest,
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+    _rate: None = Depends(enforce_rate_limit),
+):
+    log = logger.bind(signal_id=payload.signal_id)
+    received_at = datetime.now(timezone.utc)
+
+    existing = await session.scalar(
+        select(SignalOutcome).where(SignalOutcome.signal_id == payload.signal_id)
+    )
+    upserted = existing is not None
+    row = existing or SignalOutcome(signal_id=payload.signal_id)
+    source_signal = await session.scalar(
+        select(Signal).where(Signal.signal_id == payload.signal_id)
+    )
+    _apply_outcome_fields(row, payload, source_signal, received_at)
+
     if not upserted:
         session.add(row)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Two concurrent first deliveries can both observe no outcome row.
+        # Preserve the environment endpoint's race-safe upsert behavior.
+        if upserted:
+            await session.rollback()
+            raise
+        await session.rollback()
+        existing = await session.scalar(
+            select(SignalOutcome).where(SignalOutcome.signal_id == payload.signal_id)
+        )
+        if existing is None:
+            raise
+        source_signal = await session.scalar(
+            select(Signal).where(Signal.signal_id == payload.signal_id)
+        )
+        row = existing
+        _apply_outcome_fields(row, payload, source_signal, received_at)
+        await session.commit()
+        upserted = True
 
     if row.parity_status == "PARITY_MISMATCH":
         raise HTTPException(
@@ -759,7 +807,6 @@ async def receive_outcome(
 
     log.info(f"Outcome recorded: {payload.outcome}" + (" (updated)" if upserted else ""))
     return OutcomeResponse(status="ok", signal_id=payload.signal_id, upserted=upserted)
-
 
 class ConfigResponse(BaseModel):
     symbol: str
