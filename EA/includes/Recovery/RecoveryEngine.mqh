@@ -166,6 +166,40 @@ int CRecoveryEngine::Recover()
         }
      }
 
+   // Reconcile fully closed broker histories after live positions and pending
+   // orders have been restored. This is intentionally a second pass: an earlier
+   // child exit must not finalize a parent decision that still has another live
+   // leg, and historical deals remain the source of prices, volume and cashflows.
+   if(m_tracker!=NULL)
+     {
+      TradeDecisionRecord decisions[];
+      int decisionCount=m_store.LoadAll(decisions);
+      long handledDecisionIds[];
+      for(int i=0;i<decisionCount;i++)
+        {
+         long decisionId=decisions[i].decision_id;
+         if(decisionId<=0) continue;
+         bool alreadyHandled=false;
+         for(int h=0;h<ArraySize(handledDecisionIds);h++)
+            if(handledDecisionIds[h]==decisionId) { alreadyHandled=true; break; }
+         if(alreadyHandled) continue;
+         int hcount=ArraySize(handledDecisionIds);
+         if(ArrayResize(handledDecisionIds,hcount+1)!=hcount+1) break;
+         handledDecisionIds[hcount]=decisionId;
+
+         bool hasExecutionRecord=false;
+         for(int e=0;e<execCount;e++)
+            if(execs[e].decision_id==decisionId && execs[e].ticket>0)
+              { hasExecutionRecord=true; break; }
+         if(!hasExecutionRecord || m_orders.HasLiveTradeForDecision(decisionId)) continue;
+         if(m_tracker.IsDecisionFinalized(decisionId)) continue;
+
+         if(m_tracker.RebuildClosedDecisionFromHistory(decisions[i].setup,decisionId,m_magic))
+            PrintFormat("MedisTouch Recovery: reconciled closed history for decision #%I64d from authoritative broker deals.",
+                        decisionId);
+        }
+     }
+
    return restored;
   }
 
