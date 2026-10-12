@@ -13,10 +13,12 @@ struct ManagedTrade
   {
    TradeDecisionRecord  decision;
    CTradeStateMachine   fsm;
-   double               volume;
-   double               fillPrice;
+   double               volume;              // requested volume
+   double               fillPrice;           // volume-weighted authoritative fill price
+   double               filledVolume;        // cumulative authoritative entry-deal volume
+   double               fillNotional;        // sum(fill price * fill quantity)
    int                  legIndex;
-   ulong                positionIdentifier;
+   ulong                positionIdentifier;  // stable POSITION_IDENTIFIER / DEAL_POSITION_ID
   };
 
 class COrderManager
@@ -29,16 +31,20 @@ private:
    int                 FindByDecisionAndLeg(long id,int legIndex);
    int                 FindByTicket(ulong ticket);
    bool                IsBrokerVolumeValid(string symbol,double volume);
+   ulong               ResolveLivePositionTicket(ulong positionIdentifier);
+   bool                FillDealSeen(ulong dealTicket);
+   void                RememberFillDeal(ulong dealTicket);
+   ulong               m_seenFillDeals[];
 
 public:
    void              Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMonitor* monitor);
-   bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0);
+   bool              Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,double maxRiskCash,ulong &ticketOut,int legIndex=0);
    bool              RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice=0.0,int legIndex=0);
    int               OpenCount();
    int               Total() { return ArraySize(m_trades); }
    void              Prune();
    bool              CancelPendingAt(int idx);
-   bool              MarkFilledFromPending(ulong orderTicket,ulong positionTicket,double fillPrice=0.0);
+   bool              MarkFilledFromPending(ulong orderTicket,ulong positionIdentifier,ulong positionTicket,double fillPrice=0.0,double fillVolume=0.0,ulong dealTicket=0);
    bool              BindPositionIdentity(ulong knownTicket,ulong positionIdentifier,ulong positionTicket);
    ulong             PositionTicketAt(int idx);
    long              DecisionIdForPositionIdentifier(ulong positionIdentifier);
@@ -48,7 +54,8 @@ public:
    ENUM_TRADE_STATE  StateAt(int idx) { return m_trades[idx].fsm.State(); }
    ulong             TicketAt(int idx) { return m_trades[idx].fsm.Ticket(); }
    TradeDecisionRecord DecisionAt(int idx) { return m_trades[idx].decision; }
-   double            VolumeAt(int idx) { return m_trades[idx].volume; }
+   double            VolumeAt(int idx) { return (idx>=0 && idx<ArraySize(m_trades)) ? m_trades[idx].volume : 0.0; }
+   double            FilledVolumeAt(int idx) { return (idx>=0 && idx<ArraySize(m_trades)) ? m_trades[idx].filledVolume : 0.0; }
    bool              TransitionAt(int idx,ENUM_TRADE_STATE to) { return m_trades[idx].fsm.Transition(to); }
    bool              HasLiveTradeForDecision(long decisionId,ulong excludeTicket=0);
    int               LegIndexForTicket(ulong ticket);
@@ -66,6 +73,7 @@ void COrderManager::Init(CBrokerAdapter* broker,int maxOpenTrades,CProductionMon
    m_maxOpen=MathMax(1,maxOpenTrades);
    m_monitor=monitor;
    ArrayResize(m_trades,0);
+   ArrayResize(m_seenFillDeals,0);
   }
 //+------------------------------------------------------------------+
 int COrderManager::FindByDecisionAndLeg(long id,int legIndex)
@@ -78,7 +86,7 @@ int COrderManager::FindByTicket(ulong ticket)
   {
    if(ticket==0) return -1;
    for(int i=0;i<ArraySize(m_trades);i++)
-      if(m_trades[i].fsm.Ticket()==ticket) return i;
+      if(m_trades[i].fsm.Ticket()==ticket || m_trades[i].positionIdentifier==ticket) return i;
    return -1;
   }
 //+------------------------------------------------------------------+
@@ -121,14 +129,96 @@ void COrderManager::Prune()
    for(int i=0;i<n;i++) m_trades[i]=kept[i];
   }
 //+------------------------------------------------------------------+
-bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionTicket,double fillPrice)
+bool COrderManager::FillDealSeen(ulong dealTicket)
   {
+   if(dealTicket==0) return false;
+   for(int i=0;i<ArraySize(m_seenFillDeals);i++)
+      if(m_seenFillDeals[i]==dealTicket) return true;
+   return false;
+  }
+//+------------------------------------------------------------------+
+void COrderManager::RememberFillDeal(ulong dealTicket)
+  {
+   if(dealTicket==0 || FillDealSeen(dealTicket)) return;
+   int n=ArraySize(m_seenFillDeals);
+   if(ArrayResize(m_seenFillDeals,n+1)!=n+1) return;
+   m_seenFillDeals[n]=dealTicket;
+}
+//+------------------------------------------------------------------+
+ulong COrderManager::ResolveLivePositionTicket(ulong positionIdentifier)
+  {
+   if(positionIdentifier==0) return 0;
+   for(int i=0;i<PositionsTotal();i++)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionIdentifier)
+         return ticket;
+     }
+   return 0;
+}
+//+------------------------------------------------------------------+
+bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionIdentifier,ulong positionTicket,double fillPrice,double fillVolume,ulong dealTicket)
+  {
+   if(positionIdentifier==0) return false;
+   if(FillDealSeen(dealTicket)) return true;
    for(int i=0;i<ArraySize(m_trades);i++)
      {
-      if(m_trades[i].fsm.State()!=TS_PENDING || m_trades[i].fsm.Ticket()!=orderTicket) continue;
-      m_trades[i].fsm.SetTicket(positionTicket);
-      if(fillPrice>0.0) m_trades[i].fillPrice=fillPrice;
-      bool filled=m_trades[i].fsm.Transition(TS_FILLED);
+      bool orderMatch=(orderTicket>0 && m_trades[i].fsm.Ticket()==orderTicket);
+      bool positionMatch=(m_trades[i].positionIdentifier==positionIdentifier);
+      bool ticketMatch=(positionTicket>0 && m_trades[i].fsm.Ticket()==positionTicket);
+      if(!orderMatch && !positionMatch && !ticketMatch) continue;
+
+      ulong existingIdentifier=m_trades[i].positionIdentifier;
+      if(existingIdentifier>0 && existingIdentifier!=positionIdentifier)
+        {
+         PrintFormat("MedisTouch OrderManager: refusing conflicting position identity for decision #%I64d (existing=%I64u observed=%I64u).",
+                     m_trades[i].decision.decision_id,existingIdentifier,positionIdentifier);
+         return false;
+        }
+      if(fillVolume>0.0)
+        {
+         if(!MathIsValidNumber(fillVolume) || !MathIsValidNumber(fillPrice) || fillVolume<=0.0 || fillPrice<=0.0)
+            return false;
+         double nextFilled=m_trades[i].filledVolume+fillVolume;
+         double tolerance=MathMax(1e-8,m_trades[i].volume*1e-6);
+         if(!MathIsValidNumber(nextFilled) || nextFilled>m_trades[i].volume+tolerance)
+           {
+            PrintFormat("MedisTouch OrderManager: cumulative fill %.8f exceeds requested volume %.8f for decision #%I64d; reconciliation required.",
+                        nextFilled,m_trades[i].volume,m_trades[i].decision.decision_id);
+            return false;
+           }
+         double nextNotional=m_trades[i].fillNotional+fillPrice*fillVolume;
+         if(!MathIsValidNumber(nextNotional) || nextNotional<=0.0) return false;
+         m_trades[i].filledVolume=nextFilled;
+         m_trades[i].fillNotional=nextNotional;
+         m_trades[i].fillPrice=nextNotional/nextFilled;
+         RememberFillDeal(dealTicket);
+        }
+      else if(fillPrice>0.0 && m_trades[i].filledVolume<=0.0)
+         m_trades[i].fillPrice=fillPrice;
+
+      m_trades[i].positionIdentifier=positionIdentifier;
+      ulong liveTicket=ResolveLivePositionTicket(positionIdentifier);
+      ENUM_TRADE_STATE state=m_trades[i].fsm.State();
+      if(liveTicket>0)
+         m_trades[i].fsm.SetTicket(liveTicket);
+      else if(positionTicket>0)
+         m_trades[i].fsm.SetTicket(positionTicket);
+      else if(state==TS_PENDING || state==TS_WAITING)
+         m_trades[i].fsm.SetTicket(positionIdentifier);
+
+      bool filled=false;
+      if(state==TS_PENDING)
+         filled=m_trades[i].fsm.Transition(TS_FILLED);
+      else if(state==TS_WAITING)
+        {
+         bool pending=m_trades[i].fsm.Transition(TS_PENDING);
+         if(pending) filled=m_trades[i].fsm.Transition(TS_FILLED);
+        }
+      else if(state==TS_FILLED || state==TS_PROTECTED || state==TS_PARTIAL || state==TS_RUNNER)
+         filled=true;
+
       if(filled && m_monitor!=NULL)
         {
          double totalMs=m_trades[i].fsm.TotalLatencyMs();
@@ -229,10 +319,26 @@ long COrderManager::DecisionIdForTicket(ulong ticket)
 //+------------------------------------------------------------------+
 double COrderManager::FillPriceForDecision(long decisionId)
   {
+   double authoritativeNotional=0.0,authoritativeVolume=0.0;
    for(int i=0;i<ArraySize(m_trades);i++)
-      if(m_trades[i].decision.decision_id==decisionId)
-         return FillPriceAt(i);
-   return 0.0;
+     {
+      if(m_trades[i].decision.decision_id!=decisionId || m_trades[i].filledVolume<=0.0) continue;
+      authoritativeNotional+=m_trades[i].fillNotional;
+      authoritativeVolume+=m_trades[i].filledVolume;
+     }
+   // Never combine observed deal prices with estimates for legs without an
+   // authoritative fill record.
+   if(authoritativeVolume>0.0)
+      return authoritativeNotional/authoritativeVolume;
+
+   double estimatedNotional=0.0,estimatedVolume=0.0;
+   for(int i=0;i<ArraySize(m_trades);i++)
+     {
+      if(m_trades[i].decision.decision_id!=decisionId || m_trades[i].fillPrice<=0.0 || m_trades[i].volume<=0.0) continue;
+      estimatedNotional+=m_trades[i].fillPrice*m_trades[i].volume;
+      estimatedVolume+=m_trades[i].volume;
+     }
+   return estimatedVolume>0.0 ? estimatedNotional/estimatedVolume : 0.0;
   }
 bool COrderManager::HasLiveTradeForDecision(long decisionId,ulong excludeTicket)
   {
@@ -278,12 +384,14 @@ bool COrderManager::IsBrokerVolumeValid(string symbol,double volume)
    return true;
   }
 //+------------------------------------------------------------------+
-bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex)
+bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,double maxRiskCash,ulong &ticketOut,int legIndex)
   {
    ticketOut=0;
    if(decision.action!=POLICY_EXECUTE_ONLY && decision.action!=POLICY_EXECUTE_AND_SIGNAL) return false;
    if(decision.decision_id<=0 ||
-      (decision.setup.type!=ORDER_TYPE_BUY && decision.setup.type!=ORDER_TYPE_SELL)) return false;
+      (decision.setup.type!=ORDER_TYPE_BUY && decision.setup.type!=ORDER_TYPE_SELL) ||
+      !MathIsValidNumber(maxEntryDeviation) || !MathIsValidNumber(maxRiskCash) || maxRiskCash<=0.0)
+      return false;
    if(!IsBrokerVolumeValid(decision.symbol,volume))
      {
       PrintFormat("MedisTouch OrderManager: reject decision #%I64d — volume %.8f violates broker min/max/step for %s.",
@@ -295,19 +403,64 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    if(FindByDecisionAndLeg(decision.decision_id,legIndex)>=0) return false;
 
    double entry=ResolveExecutionEntry(decision.setup);
-   if(useMarket && maxEntryDeviation>0.0)
+   if(!MathIsValidNumber(entry) || entry<=0.0 ||
+      !MathIsValidNumber(decision.setup.stop_loss) || decision.setup.stop_loss<=0.0)
+      return false;
+
+   MqlTick tick;
+   int brokerDeviationPoints=20;
+   double riskEntry=entry;
+   if(useMarket)
      {
-      MqlTick tick;
       if(!SymbolInfoTick(decision.symbol,tick)) return false;
       double marketPrice=(decision.setup.type==ORDER_TYPE_BUY)?tick.ask:tick.bid;
-      if(MathAbs(marketPrice-entry)>maxEntryDeviation) return false;
+      double point=SymbolInfoDouble(decision.symbol,SYMBOL_POINT);
+      if(!MathIsValidNumber(marketPrice) || marketPrice<=0.0 ||
+         !MathIsValidNumber(point) || point<=0.0)
+         return false;
+      if(maxEntryDeviation>0.0)
+        {
+         bool adverse=(decision.setup.type==ORDER_TYPE_BUY)
+                      ? marketPrice>entry+maxEntryDeviation : marketPrice<entry-maxEntryDeviation;
+         if(adverse) return false;
+         double worstAllowedFill=(decision.setup.type==ORDER_TYPE_BUY)
+                                 ? entry+maxEntryDeviation : entry-maxEntryDeviation;
+         double remainingPriceRoom=(decision.setup.type==ORDER_TYPE_BUY)
+                                   ? worstAllowedFill-marketPrice : marketPrice-worstAllowedFill;
+         if(!MathIsValidNumber(remainingPriceRoom) || remainingPriceRoom<0.0) return false;
+         brokerDeviationPoints=(int)MathMax(0.0,MathFloor(remainingPriceRoom/point));
+         riskEntry=worstAllowedFill;
+        }
+      else
+         riskEntry=(decision.setup.type==ORDER_TYPE_BUY)
+                   ? marketPrice+20.0*point : marketPrice-20.0*point;
+     }
+
+   ENUM_ORDER_TYPE orderType=(decision.setup.type==ORDER_TYPE_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+   double estimatedAtStop=0.0;
+   if(!OrderCalcProfit(orderType,decision.symbol,volume,riskEntry,decision.setup.stop_loss,estimatedAtStop) ||
+      !MathIsValidNumber(estimatedAtStop) || estimatedAtStop>=0.0)
+     {
+      PrintFormat("MedisTouch OrderManager: rejecting decision #%I64d — cannot verify positive stop-loss risk.",
+                  decision.decision_id);
+      return false;
+     }
+   double estimatedRisk=-estimatedAtStop;
+   double riskTolerance=MathMax(0.000001,maxRiskCash*1e-8);
+   if(!MathIsValidNumber(estimatedRisk) || estimatedRisk>maxRiskCash+riskTolerance)
+     {
+      PrintFormat("MedisTouch OrderManager: rejecting decision #%I64d — worst-case stop risk %.2f exceeds configured budget %.2f.",
+                  decision.decision_id,estimatedRisk,maxRiskCash);
+      return false;
      }
 
    int idx=ArraySize(m_trades);
-   ArrayResize(m_trades,idx+1);
+   if(ArrayResize(m_trades,idx+1)!=idx+1) return false;
    m_trades[idx].decision=decision;
    m_trades[idx].volume=volume;
    m_trades[idx].fillPrice=0.0;
+   m_trades[idx].filledVolume=0.0;
+   m_trades[idx].fillNotional=0.0;
    m_trades[idx].legIndex=legIndex;
    m_trades[idx].positionIdentifier=0;
    m_trades[idx].fsm.Start(decision.decision_id);
@@ -324,20 +477,29 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
       m_trades[idx].fsm.Transition(TS_PENDING);
       string comment="MT#"+IntegerToString(decision.decision_id)+(legIndex>0?":L"+IntegerToString(legIndex):"");
       if(decision.setup.type==ORDER_TYPE_BUY)
-        {
-         ok=m_broker.MarketBuy(decision.symbol,volume,sl,tp,ticket,fillPrice,comment);
-        }
+         ok=m_broker.MarketBuy(decision.symbol,volume,sl,tp,ticket,fillPrice,comment,brokerDeviationPoints);
       else
-        {
-         ok=m_broker.MarketSell(decision.symbol,volume,sl,tp,ticket,fillPrice,comment);
-        }
+         ok=m_broker.MarketSell(decision.symbol,volume,sl,tp,ticket,fillPrice,comment,brokerDeviationPoints);
       if(ok)
         {
-         m_trades[idx].fsm.SetTicket(ticket);
-         m_trades[idx].fsm.Transition(TS_FILLED);
+         // BrokerAdapter returns the stable history identifier; resolve the
+         // current selectable ticket separately and keep unresolved exposure reserved.
+         m_trades[idx].positionIdentifier=ticket;
          m_trades[idx].fillPrice=fillPrice;
-         double totalMs=m_trades[idx].fsm.TotalLatencyMs();
-         if(m_monitor!=NULL && totalMs>=0.0) m_monitor.NotifyTradeLatency(totalMs,m_broker.LastLatencyMs());
+         ulong liveTicket=ResolveLivePositionTicket(ticket);
+         if(liveTicket>0)
+           {
+            m_trades[idx].fsm.SetTicket(liveTicket);
+            m_trades[idx].fsm.Transition(TS_FILLED);
+            double totalMs=m_trades[idx].fsm.TotalLatencyMs();
+            if(m_monitor!=NULL && totalMs>=0.0) m_monitor.NotifyTradeLatency(totalMs,m_broker.LastLatencyMs());
+           }
+         else
+           {
+            m_trades[idx].fsm.SetTicket(ticket);
+            PrintFormat("MedisTouch OrderManager: decision #%I64d accepted; position identity %I64u awaits live-ticket resolution.",
+                        decision.decision_id,ticket);
+           }
         }
       else m_trades[idx].fsm.Transition(TS_REJECTED);
      }
@@ -365,6 +527,8 @@ bool COrderManager::RestoreTrade(const TradeDecisionRecord &decision,double volu
    m_trades[idx].decision=decision;
    m_trades[idx].volume=volume;
    m_trades[idx].fillPrice=fillPrice;
+   m_trades[idx].filledVolume=0.0;
+   m_trades[idx].fillNotional=0.0;
    m_trades[idx].legIndex=legIndex;
    m_trades[idx].positionIdentifier=0;
    m_trades[idx].fsm.Start(decision.decision_id);
