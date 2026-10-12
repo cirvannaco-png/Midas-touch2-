@@ -28,7 +28,8 @@ def test_live_tracker_uses_closed_execution_bars_and_excludes_fill_bar():
     t=TRACKER.read_text();assert "ctx.candles.GetCandle(1)" in t;assert "ctx.candles.Timeframe()!=m_entryTF" in t;assert "if(bar.time<=fillBar)continue" in t
 
 def test_live_tracker_closes_from_broker_deals():
-    t=TRACKER.read_text();assert "bool MarkClosed" in t;assert "p.realizedPnL+=netPnl" in t
+    t=TRACKER.read_text();assert "bool MarkClosed" in t;assert "double nextPnL=p.realizedPnL+netPnl;" in t
+    assert "p.realizedPnL=nextPnL;" in t
 
 def test_restart_restores_tracker_state():
     t=RECOVERY.read_text();assert "m_tracker.RestoreExecuted(restoredDecision.setup,decisionId,actualEntry" in t;assert "g_activeOutcomeTracker" in t
@@ -138,8 +139,9 @@ def test_execution_store_persists_leg_index_and_target():
  
 def test_outcome_tracker_aggregates_risk_across_child_fills():
     t=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh").read_text()
-    assert "p.weightedRiskDistLots=p.riskDist*volume" in t
-    assert "p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume" in t
+    assert "p.weightedRiskDistLots=riskIncrement;" in t
+    assert "double weightedRisk=p.weightedRiskDistLots+riskIncrement;" in t
+    assert "p.weightedRiskDistLots=weightedRisk;" in t
     assert "p.weightedRiskDistLots>0.0?p.weightedRiskDistLots" in t
 
 
