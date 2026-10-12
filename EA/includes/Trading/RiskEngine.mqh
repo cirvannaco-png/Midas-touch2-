@@ -101,10 +101,11 @@ double CRiskEngine::CalculateLotSize(string symbol,double riskPercent,double ent
 
    if(lots<minLot)
      {
-      if(!allowMinLotOverride)
-         return 0.0;
-      exceededRiskBudget=true;
-      lots=minLot;
+      // Never increase volume to the broker minimum: the minimum lot can
+      // breach the configured risk budget at wide stops or small risk values.
+      // Keep the legacy argument for call-site compatibility, but enforce
+      // hard risk compliance even when InpAllowMinLotOverride is enabled.
+      return 0.0;
      }
 
    return lots;
