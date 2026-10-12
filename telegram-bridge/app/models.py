@@ -189,6 +189,10 @@ class SignalOutcome(Base):
     commission_cost = Column(Float, nullable=True)
     spread_cost = Column(Float, nullable=True)
     slippage_cost = Column(Float, nullable=True)
+    # Cost magnitudes stay non-negative; signed broker cashflows are stored separately.
+    commission_cashflow = Column(Float, nullable=True)
+    swap_cashflow = Column(Float, nullable=True)
+    broker_fee_cashflow = Column(Float, nullable=True)
     weight_version = Column(String, nullable=True, index=True)
     confidence_at_signal = Column(Float, nullable=True)
     confidence_decayed = Column(Float, nullable=True)
@@ -291,4 +295,122 @@ class Payment(Base):
     invoice_payload = Column(String, nullable=False)
     status = Column(String, nullable=False, default=PAYMENT_STATUS_SUCCEEDED)
     raw_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+
+# Compatibility-restored durable research and execution models.
+# These are additive to Midas-specific configuration, provenance, and outbox models.
+class ResearchExperiment(Base):
+    __tablename__ = "research_experiments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    experiment_id = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    code_sha = Column(String, nullable=False)
+    config_hash = Column(String, nullable=False, index=True)
+    data_snapshot = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    train_start = Column(DateTime(timezone=True), nullable=False)
+    train_end = Column(DateTime(timezone=True), nullable=False)
+    oos_start = Column(DateTime(timezone=True), nullable=False)
+    oos_end = Column(DateTime(timezone=True), nullable=False)
+    walk_forward_id = Column(String, nullable=True, index=True)
+    holdout_locked = Column(sa.Boolean, nullable=False, default=False)
+
+
+class ExperimentObservation(Base):
+    __tablename__ = "experiment_observations"
+    __table_args__ = (
+        Index("ix_exp_obs_experiment_time", "experiment_id", "timestamp"),
+        Index("ix_exp_obs_signal", "signal_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    experiment_id = Column(String, nullable=False, index=True)
+    signal_id = Column(String, nullable=False)
+    symbol = Column(String, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+    payload = Column(JSON, nullable=False)
+    fingerprint = Column(String, nullable=False, index=True)
+
+
+class ExperimentBookResult(Base):
+    __tablename__ = "experiment_book_results"
+    __table_args__ = (Index("ix_book_experiment_book", "experiment_id", "book"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    experiment_id = Column(String, nullable=False, index=True)
+    signal_id = Column(String, nullable=False, index=True)
+    book = Column(String, nullable=False)
+    strategy = Column(String, nullable=True)
+    direction = Column(String, nullable=True)
+    outcome = Column(String, nullable=False)
+    realized_r = Column(Float, nullable=True)
+    mfe_r = Column(Float, nullable=True)
+    mae_r = Column(Float, nullable=True)
+    hypothetical = Column(sa.Boolean, nullable=False)
+    metadata_json = Column(JSON, nullable=False, default=dict)
+
+
+class ValidationRun(Base):
+    __tablename__ = "validation_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    experiment_id = Column(String, nullable=False, index=True)
+    validation_type = Column(String, nullable=False)
+    window_json = Column(JSON, nullable=False)
+    metrics_json = Column(JSON, nullable=False)
+    passed = Column(sa.Boolean, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class PromotionDecisionAudit(Base):
+    __tablename__ = "promotion_decision_audit"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    experiment_id = Column(String, nullable=False, index=True)
+    champion_id = Column(String, nullable=False)
+    challenger_id = Column(String, nullable=False)
+    decision = Column(String, nullable=False)
+    reason = Column(Text, nullable=False)
+    metrics_json = Column(JSON, nullable=False)
+    holdout_passed = Column(sa.Boolean, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ExecutionLedger(Base):
+    __tablename__ = "execution_ledger"
+    __table_args__ = (Index("ix_exec_ledger_state", "state"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(String, unique=True, nullable=False, index=True)
+    signal_id = Column(String, nullable=True, index=True)
+    symbol = Column(String, nullable=False)
+    state = Column(String, nullable=False)
+    broker_order_id = Column(String, nullable=True)
+    broker_deal_id = Column(String, nullable=True)
+    broker_position_id = Column(String, nullable=True)
+    request_json = Column(JSON, nullable=False)
+    result_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    checked_at = Column(DateTime(timezone=True), nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    reconciled_at = Column(DateTime(timezone=True), nullable=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    latency_ms = Column(Float, nullable=True)
+
+
+class PortfolioReservation(Base):
+    __tablename__ = "portfolio_reservations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(String, unique=True, nullable=False, index=True)
+    symbol = Column(String, nullable=False)
+    direction = Column(String, nullable=False)
+    risk_r = Column(Float, nullable=False)
+    volatility = Column(Float, nullable=False)
+    factor_exposure = Column(JSON, nullable=False)
+    status = Column(String, nullable=False, index=True)
+    lease_until = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
