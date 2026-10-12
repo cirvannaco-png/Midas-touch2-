@@ -457,7 +457,9 @@ class ExecutionRecoveryJournal:
             "PARTIALLY_FILLED": {"PARTIALLY_FILLED", "UNKNOWN", "FILLED", "CANCEL_PENDING", "CANCELLED", "RECOVERED"},
             "CANCEL_PENDING": {"CANCEL_PENDING", "UNKNOWN", "PARTIALLY_FILLED", "FILLED", "CANCELLED"},
             "CANCELLED": {"CANCELLED"},
-            "FILLED": {"FILLED"},
+            # Reconciliation may discover that an apparently terminal fill
+            # conflicts with broker truth; retain a fail-closed path to UNKNOWN.
+            "FILLED": {"FILLED", "UNKNOWN"},
             "REJECTED": {"REJECTED"},
             "EXPIRED": {"EXPIRED"},
             "RECOVERED": {"RECOVERED"},
