@@ -282,7 +282,11 @@ public:
    bool MarkExecuted(long id,double fill,datetime t,double volume,ulong dealTicket=0,double commission=0.0,double swap=0.0,double fee=0.0,bool cashflowsKnown=true)
      {
       if(DealAlreadyProcessed(dealTicket)) return true;
-      int i=Find(id);if(i<0||fill<=0.0||volume<=0.0)return false;
+      int i=Find(id);
+      if(i<0 || !MathIsValidNumber(fill) || !MathIsValidNumber(volume) ||
+         !MathIsValidNumber(commission) || !MathIsValidNumber(swap) ||
+         !MathIsValidNumber(fee) || fill<=0.0 || volume<=0.0 || t<=0)
+         return false;
       PendingSetup p=m_pending[i];
       // Entry-side commission, swap and broker fee are cashflows too; ignoring
       // them creates a systematic positive bias even when every exit is captured.
@@ -294,17 +298,48 @@ public:
       p.cashflowsKnown=p.cashflowsKnown&&cashflowsKnown;
       if(p.filled)
         {
-         // Multi-trade: multiple fills/legs belong to one parent decision.
-         p.lots+=volume;
-         p.remainingLots+=volume;
-         p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume;
+         // Multiple entry deals/legs under one decision must use the actual
+         // volume-weighted entry, never the first fill or a requested-volume
+         // estimate. Keep separate risk contributions so realized R remains
+         // based on the sum of each fill's stop exposure.
+         if(!MathIsValidNumber(p.lots) || !MathIsValidNumber(p.remainingLots) ||
+            !MathIsValidNumber(p.weightedRiskDistLots) ||
+            !MathIsValidNumber(p.entryFillPrice) || p.lots<=0.0 ||
+            p.remainingLots<0.0 || p.weightedRiskDistLots<0.0 || p.entryFillPrice<=0.0)
+            return false;
+         double nextLots=p.lots+volume;
+         double nextRemaining=p.remainingLots+volume;
+         double nextRiskDistanceLots=p.weightedRiskDistLots+
+                                     MathAbs(fill-p.setup.stop_loss)*volume;
+         double nextEntryNotional=p.entryFillPrice*p.lots+fill*volume;
+         if(!MathIsValidNumber(nextLots) || !MathIsValidNumber(nextRemaining) ||
+            !MathIsValidNumber(nextRiskDistanceLots) || !MathIsValidNumber(nextEntryNotional) ||
+            nextLots<=0.0 || nextRemaining<0.0 || nextRiskDistanceLots<0.0 ||
+            nextEntryNotional<=0.0)
+            return false;
+         p.entryFillPrice=nextEntryNotional/nextLots;
+         p.entryRef=p.entryFillPrice;
+         p.sizingEntryPrice=p.entryFillPrice;
+         p.lots=nextLots;
+         p.remainingLots=nextRemaining;
+         p.weightedRiskDistLots=nextRiskDistanceLots;
+         p.riskDist=MathAbs(p.entryRef-p.setup.stop_loss);
+         p.mgmtRiskDist=p.weightedRiskDistLots/p.lots;
+         // Historical MFE/MAE cannot be reconstructed per lot slice, so never
+         // train excursion-based environment memory from this merged position.
+         p.excursionHistoryComplete=false;
          m_pending[i]=p;
          RememberDeal(dealTicket);
          return true;
         }
-      p.filled=true;p.entryFillPrice=fill;p.entryRef=fill;p.fillTime=t;p.barsToFill=0;
-      p.lots=volume;p.remainingLots=volume;p.riskDist=MathAbs(fill-p.setup.stop_loss);
-      p.mgmtRiskDist=p.riskDist;p.weightedRiskDistLots=p.riskDist*volume;p.mfePrice=fill;p.maePrice=fill;p.currentSL=p.setup.stop_loss;
+      double riskDistance=MathAbs(fill-p.setup.stop_loss);
+      double riskDistanceLots=riskDistance*volume;
+      if(!MathIsValidNumber(riskDistance) || !MathIsValidNumber(riskDistanceLots) ||
+         !MathIsValidNumber(commission+swap+fee) || riskDistanceLots<0.0)
+         return false;
+      p.filled=true;p.entryFillPrice=fill;p.entryRef=fill;p.sizingEntryPrice=fill;p.fillTime=t;p.barsToFill=0;
+      p.lots=volume;p.remainingLots=volume;p.riskDist=riskDistance;
+      p.mgmtRiskDist=riskDistance;p.weightedRiskDistLots=riskDistanceLots;p.mfePrice=fill;p.maePrice=fill;p.currentSL=p.setup.stop_loss;
       m_pending[i]=p;
       RememberDeal(dealTicket);
       return true;
