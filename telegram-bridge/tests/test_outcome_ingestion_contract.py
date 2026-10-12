@@ -108,6 +108,26 @@ def test_ea_outcome_contract_persists_environment_lineage_and_costs(client, auth
     assert row.swap_cashflow == -0.75
     assert row.broker_fee_cashflow == -0.2
 
+    # A retry from an older EA may omit richer fields; it must not erase the
+    # already persisted cashflows or environment snapshot.
+    retry = client.post(
+        "/outcome",
+        headers=auth_headers,
+        json={
+            "signal_id": signal_id,
+            "symbol": "EURUSD",
+            "direction": "BUY",
+            "outcome": "win",
+        },
+    )
+    assert retry.status_code == 200, retry.text
+    row = _read_outcome(client, signal_id)
+    assert row is not None
+    assert row.commission_cashflow == -3.5
+    assert row.swap_cashflow == -0.75
+    assert row.broker_fee_cashflow == -0.2
+    assert row.environment == {"atr_regime": "NORMAL", "spread_points": 12.0}
+
 
 def test_signed_cashflows_are_accepted_but_negative_cost_magnitudes_are_rejected(client, auth_headers):
     accepted = client.post(
