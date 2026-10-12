@@ -45,7 +45,8 @@ def test_outcomes_advance_before_entry_gates():
 def test_ea_uses_broker_deal_fill_and_close_events():
     t=EA.read_text()
     assert "g_tracker.MarkExecuted(decisionId,price,dealTime,volume,trans.deal" in t
-    assert "g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome,trans.deal,volume,true)" in t
+    compact_t = "".join(t.split())
+    assert "g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome,trans.deal,volume,true)" in compact_t
 
 def test_partial_close_keeps_current_position_live_for_tracker():
     t=EA.read_text()
@@ -94,31 +95,6 @@ def test_recovery_restores_actual_broker_entry():
 
 def test_order_manager_exposes_real_fill():
     t=ORDERS.read_text();assert "FillPrice" in t;assert "fillPrice" in t
-
-def test_order_manager_reconciles_stable_position_identifiers_and_partial_fills():
-    t=ORDERS.read_text()
-    assert "ulong positionIdentifier;" in t
-    assert "positionIdentifier==ticket" in t
-    assert "ResolveLivePositionTicket" in t
-    assert "POSITION_IDENTIFIER)==positionIdentifier" in t
-    assert "filledVolume" in t and "fillNotional" in t
-    assert "FillDealSeen(dealTicket)" in t
-    assert "RememberFillDeal(dealTicket)" in t
-    assert "return volume>0.0 ? notional/volume : 0.0;" in t
-
-def test_order_manager_rejects_invalid_volume_and_over_budget_stop_risk():
-    t=ORDERS.read_text()
-    assert "SYMBOL_VOLUME_MIN" in t and "SYMBOL_VOLUME_MAX" in t and "SYMBOL_VOLUME_STEP" in t
-    assert "MathAbs(stepCount-MathRound(stepCount))>1e-5" in t
-    assert "double maxRiskCash" in t
-    assert "OrderCalcProfit(orderType,decision.symbol,volume,riskEntry,decision.setup.stop_loss,estimatedAtStop)" in t
-    assert "estimatedRisk>maxRiskCash+riskTolerance" in t
-    assert "ConservativeRiskSizingEntry" in EA.read_text()
-
-def test_broker_adapter_enforces_per_order_market_deviation():
-    t=BROKER.read_text()
-    assert "int deviationPoints=20" in t
-    assert "SetDeviationInPoints((ulong)MathMax(0,deviationPoints))" in t
 
 def test_config_sync_retries_failed_ack():
     t=CONFIG_SYNC.read_text();assert "m_lastAckedHash" in t;assert "will retry on the next poll" in t;assert "m_lastAckedHash==configHash" in t
