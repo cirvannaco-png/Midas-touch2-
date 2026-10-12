@@ -86,7 +86,7 @@ struct PendingSetup {
    // Signed broker cashflows stay distinct from positive cost magnitudes. Restored
    // snapshots are not history-complete unless their deals are replayed from broker history.
    double totalCommissionCashflow; double totalSwapCashflow; double totalBrokerFeeCashflow;
-   bool cashflowsKnown; bool outcomeHistoryComplete;
+   bool cashflowsKnown; bool outcomeHistoryComplete; bool excursionHistoryComplete;
    double confidenceAtSignal; double confidenceDecayed; int decayBars; long decisionId; string decision_fingerprint;
 };
 
