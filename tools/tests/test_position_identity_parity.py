@@ -66,3 +66,19 @@ def test_trade_transaction_maps_entries_and_exits_by_position_identifier():
     assert "g_orders.BindPositionIdentity(orderTicket,positionIdentifier,positionTicket);" in source
     assert "g_orders.DecisionIdForPositionIdentifier(positionIdentifier)" in source
     assert "if(decisionId<=0) decisionId=g_orders.DecisionIdForTicket(positionIdentifier);" in source
+
+
+
+def test_final_exit_archives_the_matching_managed_trade_by_stable_identity():
+    source = read(ORDERS)
+    ea = read(EA)
+    assert "bool COrderManager::MarkPositionExitByIdentifier(ulong positionIdentifier,bool positionStillOpen)" in source
+    body = method_body(
+        source,
+        "bool COrderManager::MarkPositionExitByIdentifier",
+        "long COrderManager::DecisionIdForTicket",
+    )
+    assert "if(positionStillOpen) return true;" in body
+    assert "Transition(TS_CLOSED)" in body
+    assert "Transition(TS_ARCHIVED)" in body
+    assert "g_orders.MarkPositionExitByIdentifier(positionIdentifier,samePositionStillOpen);" in "".join(ea.split())
