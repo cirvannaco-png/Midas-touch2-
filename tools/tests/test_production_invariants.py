@@ -157,3 +157,17 @@ def test_outcome_provenance_preserves_signed_cashflows_and_unknown_costs():
     assert r'\"swap_cashflow\":%s' in publisher
     assert r'\"broker_fee_cashflow\":%s' in publisher
     assert '"commission_cashflow", "swap_cashflow", "broker_fee_cashflow"' in walk_forward
+
+
+def test_restart_recovery_preserves_requested_volume_for_fill_reconciliation():
+    recovery = (ROOT / "EA" / "includes" / "Recovery" / "RecoveryEngine.mqh").read_text(encoding="utf-8")
+    restore_start = recovery.index("ENUM_TRADE_STATE state=InferPositionState")
+    restore_end = recovery.index("PrintFormat(\"MedisTouch Recovery: restored decision", restore_start)
+    block = recovery[restore_start:restore_end]
+
+    # Current position volume may already be reduced by partial closes. The
+    # manager's fill ceiling must remain the originally requested order volume,
+    # loaded from the durable execution record when available.
+    assert "submittedVolume=execs[e].volume;" in recovery
+    assert "m_orders.RestoreTrade(restoredDecision,submittedVolume,ticket,state,actualEntry,legIndex)" in block
+    assert "m_orders.RestoreTrade(restoredDecision,currentVolume,ticket,state,actualEntry,legIndex)" not in block
