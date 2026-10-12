@@ -392,7 +392,8 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    if(decision.action!=POLICY_EXECUTE_ONLY && decision.action!=POLICY_EXECUTE_AND_SIGNAL) return false;
    if(decision.decision_id<=0 ||
       (decision.setup.type!=ORDER_TYPE_BUY && decision.setup.type!=ORDER_TYPE_SELL) ||
-      !MathIsValidNumber(maxEntryDeviation) || !MathIsValidNumber(maxRiskCash) || maxRiskCash<=0.0)
+      !MathIsValidNumber(maxEntryDeviation) || maxEntryDeviation<0.0 ||
+      !MathIsValidNumber(maxRiskCash) || maxRiskCash<=0.0)
       return false;
    if(!IsBrokerVolumeValid(decision.symbol,volume))
      {
@@ -437,6 +438,8 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
          riskEntry=(decision.setup.type==ORDER_TYPE_BUY)
                    ? marketPrice+20.0*point : marketPrice-20.0*point;
      }
+
+   if(!MathIsValidNumber(riskEntry) || riskEntry<=0.0) return false;
 
    ENUM_ORDER_TYPE orderType=(decision.setup.type==ORDER_TYPE_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
    double estimatedAtStop=0.0;
@@ -538,11 +541,12 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
 //+------------------------------------------------------------------+
 bool COrderManager::RestoreTrade(const TradeDecisionRecord &decision,double volume,ulong ticket,ENUM_TRADE_STATE state,double fillPrice,int legIndex)
   {
-   if(volume<=0 || ticket==0) return false;
+   if(!MathIsValidNumber(volume) || volume<=0.0 || ticket==0 ||
+      !MathIsValidNumber(fillPrice) || fillPrice<0.0) return false;
    if(FindByTicket(ticket)>=0) return false;
    if(legIndex<0) return false;
    int idx=ArraySize(m_trades);
-   ArrayResize(m_trades,idx+1);
+   if(ArrayResize(m_trades,idx+1)!=idx+1) return false;
    m_trades[idx].decision=decision;
    m_trades[idx].volume=volume;
    m_trades[idx].fillPrice=fillPrice;
