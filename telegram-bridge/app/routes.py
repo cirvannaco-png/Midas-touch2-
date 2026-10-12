@@ -187,6 +187,12 @@ class OutcomeRequest(BaseModel):
     decision_time: datetime | None = None
     execution_time: datetime | None = None
     outcome_time: datetime | None = None
+    # Missing flags remain NULL for old EAs and are ineligible for recalibration.
+    outcome_history_complete: bool | None = None
+    cashflows_known: bool | None = None
+    spread_cost_known: bool | None = None
+    slippage_cost_known: bool | None = None
+    excursion_history_complete: bool | None = None
     environment_key: str | None = Field(default=None, max_length=512)
     environment: dict | None = Field(default=None)
     exit_reason: str | None = Field(default=None, max_length=64)
@@ -747,6 +753,8 @@ def _apply_outcome_fields(
     for field in (
         "commission_cost", "spread_cost", "slippage_cost",
         "commission_cashflow", "swap_cashflow", "broker_fee_cashflow",
+        "outcome_history_complete", "cashflows_known", "spread_cost_known",
+        "slippage_cost_known", "excursion_history_complete",
         "confidence_at_signal", "confidence_decayed", "decay_bars",
     ):
         value = getattr(payload, field)
