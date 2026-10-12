@@ -70,6 +70,8 @@ METRIC_KEYS = (
     "completed_positions", "wins", "losses", "breakeven_positions",
     "net_pnl", "account_return_pct", "profit_factor",
     "net_expectancy_per_completed_position",
+    "average_win", "average_loss", "average_win_R", "average_loss_R_abs",
+    "payoff_ratio_R", "break_even_win_rate_pct_from_avg_R",
     "max_closed_position_drawdown_cash", "max_closed_position_drawdown_pct",
     "average_realized_R", "max_consecutive_losses",
 )
