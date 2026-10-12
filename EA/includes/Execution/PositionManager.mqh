@@ -137,7 +137,8 @@ void CPositionManager::OnTick(double currentAtr)
       if(state!=TS_FILLED && state!=TS_PROTECTED && state!=TS_PARTIAL && state!=TS_RUNNER)
          continue;
 
-      ulong ticket=m_orders.TicketAt(i);
+      ulong ticket=m_orders.PositionTicketAt(i);
+      if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket))
         {
          m_orders.TransitionAt(i,TS_CLOSED);
