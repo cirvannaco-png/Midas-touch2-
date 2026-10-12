@@ -81,6 +81,8 @@ def forced_rate_limit():
 @pytest.fixture()
 def client():
     """TestClient with Telegram sends mocked; persisted rows are cleared per test."""
+    # Register the route module before dotted-name mocks in isolated test processes.
+    import app.routes
     with (
         patch("app.routes.send_telegram_message", new=AsyncMock(return_value=42)),
         patch("app.signal_outbox.send_telegram_message", new=AsyncMock(return_value=42)),
