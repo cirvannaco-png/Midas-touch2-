@@ -573,5 +573,86 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    RefreshTradeControlPanel();
   }
 
-void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result){if(trans.type!=TRADE_TRANSACTION_DEAL_ADD||trans.deal==0)return;if(!HistoryDealSelect(trans.deal))return;if(HistoryDealGetString(trans.deal,DEAL_SYMBOL)!=_Symbol)return;if((ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=InpMagicNumber)return;ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(trans.deal,DEAL_ENTRY);ulong position=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);if(position==0)return;datetime dealTime=(datetime)HistoryDealGetInteger(trans.deal,DEAL_TIME);double price=HistoryDealGetDouble(trans.deal,DEAL_PRICE);double volume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);long decisionId=-1;if(entry==DEAL_ENTRY_IN){g_dailyTradeTarget.OnExecution(dealTime);ulong orderTicket=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);g_orders.MarkFilledFromPending(orderTicket,position,price);decisionId=g_orders.DecisionIdForTicket(position);double entryCommission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION),entrySwap=HistoryDealGetDouble(trans.deal,DEAL_SWAP),entryFee=HistoryDealGetDouble(trans.deal,DEAL_FEE);if(decisionId>0)g_tracker.MarkExecuted(decisionId,price,dealTime,volume,trans.deal,entryCommission,entrySwap,entryFee,true);double loggedSL=0.0,loggedTP=0.0;if(PositionSelectByTicket(position)){loggedSL=PositionGetDouble(POSITION_SL);loggedTP=PositionGetDouble(POSITION_TP);}g_execAudit.Log("FILL_IN",StringFormat("deal=%I64u",trans.deal),decisionId,position,volume,price,loggedSL,loggedTP);return;}if(entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY||entry==DEAL_ENTRY_INOUT){decisionId=g_orders.DecisionIdForTicket(position);if(decisionId<=0)return;double profit=HistoryDealGetDouble(trans.deal,DEAL_PROFIT),commission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION),swap=HistoryDealGetDouble(trans.deal,DEAL_SWAP),fee=HistoryDealGetDouble(trans.deal,DEAL_FEE);double net=profit+commission+swap+fee;bool stillOpen=g_orders.HasLiveTradeForDecision(decisionId);ENUM_DEAL_REASON reason=(ENUM_DEAL_REASON)HistoryDealGetInteger(trans.deal,DEAL_REASON);string outcome="closed";if(reason==DEAL_REASON_SL)outcome="SL_Hit";else if(reason==DEAL_REASON_TP)outcome="FinalTP_Hit";if(entry==DEAL_ENTRY_INOUT){outcome="Ambiguous_NettingReversal";g_tracker.MarkHistoryIncomplete(decisionId);}g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome,trans.deal,volume,true);g_execAudit.Log("FILL_OUT",StringFormat("outcome=%s net=%.2f commission=%.2f swap=%.2f fee=%.2f still_open=%s deal=%I64u",outcome,net,commission,swap,fee,stillOpen?"true":"false",trans.deal),decisionId,position,volume,price);}}
+void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result)
+  {
+   if(trans.type!=TRADE_TRANSACTION_DEAL_ADD || trans.deal==0) return;
+   if(!HistoryDealSelect(trans.deal)) return;
+   if(HistoryDealGetString(trans.deal,DEAL_SYMBOL)!=_Symbol) return;
+   if((ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=InpMagicNumber) return;
+
+   ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
+   ulong positionIdentifier=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+   if(positionIdentifier==0) return;
+
+   datetime dealTime=(datetime)HistoryDealGetInteger(trans.deal,DEAL_TIME);
+   double price=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
+   double volume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
+   ulong positionTicket=g_broker.PositionTicketForIdentifier(_Symbol,positionIdentifier);
+   // Preserve the stable identifier as a temporary token if a just-executed
+   // position has not appeared in the terminal snapshot yet. The order manager
+   // repairs the token to a selectable POSITION_TICKET on the next resolution.
+   if(positionTicket==0) positionTicket=positionIdentifier;
+
+   long decisionId=-1;
+   if(entry==DEAL_ENTRY_IN)
+     {
+      g_dailyTradeTarget.OnExecution(dealTime);
+      ulong orderTicket=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
+      g_orders.MarkFilledFromPending(orderTicket,positionTicket,price);
+      g_orders.BindPositionIdentity(orderTicket,positionIdentifier,positionTicket);
+      decisionId=g_orders.DecisionIdForPositionIdentifier(positionIdentifier);
+      if(decisionId<=0) decisionId=g_orders.DecisionIdForTicket(positionTicket);
+
+      double entryCommission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION);
+      double entrySwap=HistoryDealGetDouble(trans.deal,DEAL_SWAP);
+      double entryFee=HistoryDealGetDouble(trans.deal,DEAL_FEE);
+      if(decisionId>0)
+         g_tracker.MarkExecuted(decisionId,price,dealTime,volume,trans.deal,entryCommission,entrySwap,entryFee,true);
+
+      double loggedSL=0.0,loggedTP=0.0;
+      if(g_broker.PositionTicketForIdentifier(_Symbol,positionIdentifier)>0 &&
+         PositionSelectByTicket(g_broker.PositionTicketForIdentifier(_Symbol,positionIdentifier)))
+        {
+         loggedSL=PositionGetDouble(POSITION_SL);
+         loggedTP=PositionGetDouble(POSITION_TP);
+        }
+      g_execAudit.Log("FILL_IN",
+                      StringFormat("deal=%I64u position_id=%I64u",trans.deal,positionIdentifier),
+                      decisionId,positionTicket,volume,price,loggedSL,loggedTP);
+      return;
+     }
+
+   if(entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY || entry==DEAL_ENTRY_INOUT)
+     {
+      decisionId=g_orders.DecisionIdForPositionIdentifier(positionIdentifier);
+      // Compatibility fallback for positions recovered by older builds before
+      // stable position identifiers were retained by the order manager.
+      if(decisionId<=0) decisionId=g_orders.DecisionIdForTicket(positionIdentifier);
+      if(decisionId<=0) return;
+
+      double profit=HistoryDealGetDouble(trans.deal,DEAL_PROFIT);
+      double commission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION);
+      double swap=HistoryDealGetDouble(trans.deal,DEAL_SWAP);
+      double fee=HistoryDealGetDouble(trans.deal,DEAL_FEE);
+      double net=profit+commission+swap+fee;
+      bool samePositionStillOpen=(g_broker.PositionTicketForIdentifier(_Symbol,positionIdentifier)>0);
+      g_orders.MarkPositionExitByIdentifier(positionIdentifier,samePositionStillOpen);
+      bool stillOpen=g_orders.HasLiveTradeForDecision(decisionId);
+      ENUM_DEAL_REASON reason=(ENUM_DEAL_REASON)HistoryDealGetInteger(trans.deal,DEAL_REASON);
+      string outcome="closed";
+      if(reason==DEAL_REASON_SL) outcome="SL_Hit";
+      else if(reason==DEAL_REASON_TP) outcome="FinalTP_Hit";
+      if(entry==DEAL_ENTRY_INOUT)
+        {
+         outcome="Ambiguous_NettingReversal";
+         g_tracker.MarkHistoryIncomplete(decisionId);
+        }
+      g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,
+                           outcome,trans.deal,volume,true);
+      g_execAudit.Log("FILL_OUT",
+                      StringFormat("outcome=%s net=%.2f commission=%.2f swap=%.2f fee=%.2f still_open=%s deal=%I64u position_id=%I64u",
+                                   outcome,net,commission,swap,fee,stillOpen?"true":"false",trans.deal,positionIdentifier),
+                      decisionId,positionTicket,volume,price);
+     }
+  }
 //+------------------------------------------------------------------+

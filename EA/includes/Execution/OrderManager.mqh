@@ -16,6 +16,7 @@ struct ManagedTrade
    double               volume;
    double               fillPrice;
    int                  legIndex;
+   ulong                positionIdentifier;
   };
 
 class COrderManager
@@ -38,6 +39,10 @@ public:
    void              Prune();
    bool              CancelPendingAt(int idx);
    bool              MarkFilledFromPending(ulong orderTicket,ulong positionTicket,double fillPrice=0.0);
+   bool              BindPositionIdentity(ulong knownTicket,ulong positionIdentifier,ulong positionTicket);
+   ulong             PositionTicketAt(int idx);
+   long              DecisionIdForPositionIdentifier(ulong positionIdentifier);
+   bool              MarkPositionExitByIdentifier(ulong positionIdentifier,bool positionStillOpen);
    long              DecisionIdForTicket(ulong ticket);
    double            FillPriceForDecision(long decisionId);
    ENUM_TRADE_STATE  StateAt(int idx) { return m_trades[idx].fsm.State(); }
@@ -133,6 +138,87 @@ bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionTicket
      }
    return false;
   }
+// Bind the stable broker history identity to the current selectable position ticket.
+bool COrderManager::BindPositionIdentity(ulong knownTicket,ulong positionIdentifier,ulong positionTicket)
+  {
+   if(positionIdentifier==0 || positionTicket==0) return false;
+   int idx=FindByTicket(knownTicket);
+   if(idx<0) idx=FindByTicket(positionIdentifier);
+   if(idx<0) idx=FindByTicket(positionTicket);
+   if(idx<0) return false;
+   if(m_trades[idx].positionIdentifier!=0 &&
+      m_trades[idx].positionIdentifier!=positionIdentifier)
+     {
+      PrintFormat("MedisTouch OrderManager: refused conflicting position identity for decision #%I64d.",m_trades[idx].decision.decision_id);
+      return false;
+     }
+   m_trades[idx].positionIdentifier=positionIdentifier;
+   m_trades[idx].fsm.SetTicket(positionTicket);
+   return true;
+  }
+//+------------------------------------------------------------------+
+ulong COrderManager::PositionTicketAt(int idx)
+  {
+   if(idx<0 || idx>=ArraySize(m_trades)) return 0;
+   // Until a stable deal/position identity is bound, do not guess that a
+   // broker order ticket or history identifier is a selectable position.
+   ulong identifier=m_trades[idx].positionIdentifier;
+   if(identifier==0) return 0;
+
+   ulong ticket=m_trades[idx].fsm.Ticket();
+   if(ticket>0 && PositionSelectByTicket(ticket))
+     {
+      if(PositionGetString(POSITION_SYMBOL)==m_trades[idx].decision.symbol &&
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)==identifier)
+         return ticket;
+     }
+
+   // POSITION_TICKET may change over the lifetime of a live position. Resolve
+   // the current ticket via the stable POSITION_IDENTIFIER and repair the FSM.
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong actualTicket=PositionGetTicket(i);
+      if(actualTicket==0 || !PositionSelectByTicket(actualTicket)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=m_trades[idx].decision.symbol) continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)!=identifier) continue;
+      m_trades[idx].fsm.SetTicket(actualTicket);
+      return actualTicket;
+     }
+   return 0;
+  }
+//+------------------------------------------------------------------+
+long COrderManager::DecisionIdForPositionIdentifier(ulong positionIdentifier)
+  {
+   if(positionIdentifier==0) return -1;
+   for(int i=0;i<ArraySize(m_trades);i++)
+      if(m_trades[i].positionIdentifier==positionIdentifier)
+         return m_trades[i].decision.decision_id;
+   return -1;
+  }
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+bool COrderManager::MarkPositionExitByIdentifier(ulong positionIdentifier,bool positionStillOpen)
+  {
+   if(positionIdentifier==0) return false;
+   for(int i=0;i<ArraySize(m_trades);i++)
+     {
+      if(m_trades[i].positionIdentifier!=positionIdentifier) continue;
+      if(positionStillOpen) return true;
+
+      ENUM_TRADE_STATE state=m_trades[i].fsm.State();
+      if(state==TS_ARCHIVED) return true;
+      if(state!=TS_CLOSED && !m_trades[i].fsm.Transition(TS_CLOSED))
+        {
+         PrintFormat("MedisTouch OrderManager: could not close decision #%I64d after broker position #%I64u disappeared.",
+                     m_trades[i].decision.decision_id,positionIdentifier);
+         return false;
+        }
+      if(m_trades[i].fsm.State()==TS_CLOSED)
+         return m_trades[i].fsm.Transition(TS_ARCHIVED);
+      return true;
+     }
+   return false;
+  }
 //+------------------------------------------------------------------+
 long COrderManager::DecisionIdForTicket(ulong ticket)
   {
@@ -153,12 +239,12 @@ bool COrderManager::HasLiveTradeForDecision(long decisionId,ulong excludeTicket)
    for(int i=0;i<ArraySize(m_trades);i++)
      {
       if(m_trades[i].decision.decision_id!=decisionId) continue;
-      if(excludeTicket!=0 && m_trades[i].fsm.Ticket()==excludeTicket) continue;
+      if(excludeTicket!=0 && (m_trades[i].fsm.Ticket()==excludeTicket || m_trades[i].positionIdentifier==excludeTicket)) continue;
       ENUM_TRADE_STATE s=m_trades[i].fsm.State();
       if(s==TS_PENDING || s==TS_WAITING) return true;
       if(s==TS_FILLED || s==TS_PROTECTED || s==TS_PARTIAL || s==TS_RUNNER)
         {
-         ulong ticket=m_trades[i].fsm.Ticket();
+         ulong ticket=PositionTicketAt(i);
          if(ticket!=0 && PositionSelectByTicket(ticket)) return true;
         }
      }
@@ -223,6 +309,7 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
    m_trades[idx].volume=volume;
    m_trades[idx].fillPrice=0.0;
    m_trades[idx].legIndex=legIndex;
+   m_trades[idx].positionIdentifier=0;
    m_trades[idx].fsm.Start(decision.decision_id);
    m_trades[idx].fsm.BindMonitor(m_monitor);
    m_trades[idx].fsm.Transition(TS_VALIDATED);
@@ -279,6 +366,7 @@ bool COrderManager::RestoreTrade(const TradeDecisionRecord &decision,double volu
    m_trades[idx].volume=volume;
    m_trades[idx].fillPrice=fillPrice;
    m_trades[idx].legIndex=legIndex;
+   m_trades[idx].positionIdentifier=0;
    m_trades[idx].fsm.Start(decision.decision_id);
    m_trades[idx].fsm.BindMonitor(m_monitor);
    m_trades[idx].fsm.SetTicket(ticket);
