@@ -181,6 +181,8 @@ def test_market_execution_deviation_is_enforced_by_mode_or_explicit_opt_in():
 
     assert "InpAllowUnboundedMarketExecution=false" in ea
     assert "g_broker.Init(InpMagicNumber,3,300,InpAllowUnboundedMarketExecution)" in ea
+    assert "SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE,rawMode)" in adapter
+    assert "if(!SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE,rawMode))" in adapter
     assert "SYMBOL_TRADE_EXECUTION_REQUEST" in adapter
     assert "SYMBOL_TRADE_EXECUTION_INSTANT" in adapter
     assert "SYMBOL_TRADE_EXECUTION_MARKET" in adapter
