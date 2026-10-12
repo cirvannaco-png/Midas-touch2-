@@ -12,22 +12,19 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
-from collections import defaultdict
 import json
 import math
 import re
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 try:
     from tools.position_ledger_metrics import (
-        EPS,
         IN,
         INOUT,
-        OUT,
-        OUT_BY,
         LedgerError,
         calculate_metrics,
         read_deals,
