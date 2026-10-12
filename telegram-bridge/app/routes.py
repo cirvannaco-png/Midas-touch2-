@@ -740,19 +740,21 @@ def _apply_outcome_fields(
     row.sweep_grade = payload.sweep_grade
     row.htf_ob_aligned = payload.htf_ob_aligned
     row.strategy = payload.strategy or (source_signal.strategy if source_signal else None)
-    row.resolution = payload.resolution or payload.exit_reason
-    row.exit_reason = payload.exit_reason or payload.resolution
-    row.commission_cost = payload.commission_cost
-    row.spread_cost = payload.spread_cost
-    row.slippage_cost = payload.slippage_cost
-    row.commission_cashflow = payload.commission_cashflow
-    row.swap_cashflow = payload.swap_cashflow
-    row.broker_fee_cashflow = payload.broker_fee_cashflow
+    row.resolution = payload.resolution or payload.exit_reason or row.resolution
+    row.exit_reason = payload.exit_reason or payload.resolution or row.exit_reason
+    # Outcome retries may be sent by older EA builds with a reduced payload.
+    # Missing optional fields must not erase already-persisted provenance.
+    for field in (
+        "commission_cost", "spread_cost", "slippage_cost",
+        "commission_cashflow", "swap_cashflow", "broker_fee_cashflow",
+        "confidence_at_signal", "confidence_decayed", "decay_bars",
+    ):
+        value = getattr(payload, field)
+        if value is not None:
+            setattr(row, field, value)
     row.environment_key = payload.environment_key or row.environment_key
-    row.environment = payload.environment
-    row.confidence_at_signal = payload.confidence_at_signal
-    row.confidence_decayed = payload.confidence_decayed
-    row.decay_bars = payload.decay_bars
+    if payload.environment is not None:
+        row.environment = payload.environment
 
 
 @router.post("/outcome", response_model=OutcomeResponse)
