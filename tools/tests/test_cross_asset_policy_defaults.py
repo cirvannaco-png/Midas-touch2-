@@ -38,6 +38,6 @@ def test_risk_sizing_uses_mt5_account_currency_profit_model():
         "SYMBOL_VOLUME_MIN",
         "SYMBOL_VOLUME_MAX",
         "SYMBOL_VOLUME_STEP",
-        "MathFloor(lots/lotStep",
+        "lots=minLot+MathFloor((lots-minLot)/lotStep)",
     ):
         assert token in text
