@@ -137,7 +137,15 @@ def upgrade() -> None:
     op.create_index("ix_portfolio_reservations_status", "portfolio_reservations", ["status"])
 
 
+    # Signed broker cashflows are distinct from positive cost magnitudes.
+    op.add_column("signal_outcomes", sa.Column("commission_cashflow", sa.Float(), nullable=True))
+    op.add_column("signal_outcomes", sa.Column("swap_cashflow", sa.Float(), nullable=True))
+    op.add_column("signal_outcomes", sa.Column("broker_fee_cashflow", sa.Float(), nullable=True))
+
 def downgrade() -> None:
+    op.drop_column("signal_outcomes", "broker_fee_cashflow")
+    op.drop_column("signal_outcomes", "swap_cashflow")
+    op.drop_column("signal_outcomes", "commission_cashflow")
     # Downgrade removes only tables introduced by this revision.
     op.drop_index("ix_portfolio_reservations_status", table_name="portfolio_reservations")
     op.drop_index("ix_portfolio_reservations_request_id", table_name="portfolio_reservations")
