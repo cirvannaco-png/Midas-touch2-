@@ -39,7 +39,7 @@ private:
    void SelectPeerStrategy(bool forBuy,SetupReasons &reasons,ENUM_SELECTED_STRATEGY &selected,double &selectedScore);
    TradeSetup BuildSMC(bool forBuy,double confidence,const SetupReasons &reasons);
    bool BuildNonSMC(bool forBuy,ENUM_SELECTED_STRATEGY selected,double confidence,const SetupReasons &reasons,TradeSetup &out);
-   TradeSetup Generate(bool forBuy);
+   TradeSetup BuildAuthoritativeStrategy(bool forBuy);
 
 public:
    CTradeDecision();
@@ -111,10 +111,64 @@ bool CTradeDecision::BuildNonSMC(bool forBuy,ENUM_SELECTED_STRATEGY selected,dou
    return true;
   }
 
-TradeSetup CTradeDecision::Generate(bool forBuy)
-  {TradeSetup out;ZeroMemory(out);if(m_scoring==NULL||m_priceRef==NULL)return out;SetupReasons reasons;PopulateStrategyReads(forBuy,reasons);ENUM_SELECTED_STRATEGY selected=STRATEGY_NONE;double selectedScore=0.0;SelectPeerStrategy(forBuy,reasons,selected,selectedScore);if(selected==STRATEGY_NONE||selectedScore<m_minSelectionScore){m_lastSetup=out;return out;}reasons.selected_strategy=selected;reasons.selected_strategy_score=selectedScore;if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons);else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out)){ZeroMemory(out);m_lastSetup=out;return out;}if(!out.active){ZeroMemory(out);m_lastSetup=out;return out;}out.reasons.selected_strategy=selected;out.reasons.selected_strategy_score=selectedScore;m_lastSetup=out;return out;}
+TradeSetup CTradeDecision::BuildAuthoritativeStrategy(bool forBuy)
+  {
+   TradeSetup owned;
+   ZeroMemory(owned);
 
-TradeSetup CTradeDecision::GenerateBuySetup(){return Generate(true);}TradeSetup CTradeDecision::GenerateSellSetup(){return Generate(false);}
+   if(m_scoring==NULL || m_priceRef==NULL)
+     {
+      m_lastSetup=owned;
+      return owned;
+     }
+
+   SetupReasons reasons;
+   PopulateStrategyReads(forBuy,reasons);
+   ENUM_SELECTED_STRATEGY selected=STRATEGY_NONE;
+   double selectedScore=0.0;
+   SelectPeerStrategy(forBuy,reasons,selected,selectedScore);
+
+   if(selected==STRATEGY_NONE || selectedScore<m_minSelectionScore)
+     {
+      m_lastSetup=owned;
+      return owned;
+     }
+
+   reasons.selected_strategy=selected;
+   reasons.selected_strategy_score=selectedScore;
+
+   if(selected==STRATEGY_SMC)
+      owned=BuildSMC(forBuy,selectedScore,reasons);
+   else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,owned))
+     {
+      ZeroMemory(owned);
+      m_lastSetup=owned;
+      return owned;
+     }
+
+   if(owned.active)
+     {
+      owned.reasons.selected_strategy=selected;
+      owned.reasons.selected_strategy_score=selectedScore;
+      m_lastSetup=owned;
+      return owned;
+     }
+
+   // Fail closed: never expose an inactive or incomplete candidate.
+   ZeroMemory(owned);
+   m_lastSetup=owned;
+   return owned;
+  }
+
+TradeSetup CTradeDecision::GenerateBuySetup()
+  {
+   return BuildAuthoritativeStrategy(true);
+  }
+
+TradeSetup CTradeDecision::GenerateSellSetup()
+  {
+   return BuildAuthoritativeStrategy(false);
+  }
 
 #endif
 //+------------------------------------------------------------------+

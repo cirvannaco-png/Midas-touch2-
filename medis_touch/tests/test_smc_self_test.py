@@ -1,5 +1,4 @@
 import pytest
-
 from medis_touch.app.smc_self_test import (
     SMCCandidateResult,
     assert_frozen_configuration,

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Static gate for the authoritative strategy -> setup -> bridge lineage.
+"""Static gate for authoritative strategy -> owned setup -> bridge lineage.
 
-This is intentionally complementary to MetaEditor: it cannot type-check
-MQL5 or execute the service, but it can fail CI when a future refactor
-removes explicit contracts that make the strategy and signal path auditable.
+Complements (but does not replace) MetaEditor compilation and MT5 validation.
+The gate checks stable contracts with whitespace-tolerant patterns so formatting
+changes do not break CI while genuine setup-ownership regressions still fail.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -28,9 +29,10 @@ REQUIRED = {
         "ValidateCandidate",
     ],
     "EA/includes/Trading/StrategyTradeZone.mqh": [
+        "BuildAuthoritativeStrategy",
         "SelectPeerStrategy",
-        "BuildNonSMC",
         "BuildSMC",
+        "BuildNonSMC",
         "GenerateBuySetup",
         "GenerateSellSetup",
         "selected_strategy",
@@ -86,23 +88,39 @@ def main() -> int:
         if not path.is_file():
             errors.append(f"missing required file: {rel}")
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        texts[rel] = text
+        content = path.read_text(encoding="utf-8", errors="replace")
+        texts[rel] = content
         for token in tokens:
-            if token not in text:
+            if token not in content:
                 errors.append(f"{rel}: required contract token missing: {token}")
 
     trade_zone = texts.get("EA/includes/Trading/StrategyTradeZone.mqh", "")
-    if "SelectPeerStrategy(forBuy,reasons,selected,selectedScore)" not in trade_zone:
-        errors.append("TradeZone: authoritative strategy selection is not explicitly wired")
-    if "if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons)" not in trade_zone:
-        errors.append("TradeZone: selected SMC strategy is not built through its owned builder")
-    if "else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))" not in trade_zone:
-        errors.append("TradeZone: selected challenger strategy is not built through its owned builder")
-    if "out.reasons.selected_strategy=selected" not in trade_zone:
+    checks = [
+        (
+            r"SelectPeerStrategy\s*\(\s*forBuy\s*,\s*reasons\s*,\s*selected\s*,\s*selectedScore\s*\)",
+            "TradeZone: authoritative strategy selection is not explicitly wired",
+        ),
+        (
+            r"if\s*\(\s*selected\s*==\s*STRATEGY_SMC\s*\)\s*owned\s*=\s*BuildSMC\s*\(\s*forBuy\s*,\s*selectedScore\s*,\s*reasons\s*\)",
+            "TradeZone: selected SMC strategy is not built through its owned builder",
+        ),
+        (
+            r"else\s+if\s*\(\s*!\s*BuildNonSMC\s*\(\s*forBuy\s*,\s*selected\s*,\s*selectedScore\s*,\s*reasons\s*,\s*owned\s*\)\s*\)",
+            "TradeZone: selected challenger strategy is not built through its owned builder",
+        ),
+        (
+            r"if\s*\(\s*owned\.active\s*\)\s*\{(?:(?!\}).)*m_lastSetup\s*=\s*owned\s*;(?:(?!\}).)*return\s+owned\s*;",
+            "TradeZone: only an active owned setup may cross the authoritative return boundary",
+        ),
+    ]
+    for pattern, message in checks:
+        if re.search(pattern, trade_zone, re.S) is None:
+            errors.append(message)
+
+    if "owned.reasons.selected_strategy=selected" not in trade_zone:
         errors.append("TradeZone: selected strategy provenance is not retained on the completed setup")
-    if "m_lastSetup=out;return out;" not in trade_zone:
-        errors.append("TradeZone: completed setup is not returned through the owned last-setup path")
+    if "m_lastSetup=owned;" not in trade_zone:
+        errors.append("TradeZone: completed setup is not persisted through the owned last-setup path")
     if "return TradeSetup();" in trade_zone:
         errors.append("TradeZone: temporary TradeSetup return reintroduced in a fail-closed path")
 
@@ -112,7 +130,7 @@ def main() -> int:
         print(f"\n{len(errors)} edge-lineage problem(s) found.", file=sys.stderr)
         return 1
 
-    print("Edge-lineage validation: strategy authority, setup ownership, durable thesis/provenance, bridge persistence, symmetric geometry validation, and fail-closed return path present.")
+    print("Edge-lineage validation: authoritative strategy selection, owned setup construction, thesis/provenance persistence, bridge contract, symmetric geometry validation, and fail-closed return path present.")
     return 0
 
 

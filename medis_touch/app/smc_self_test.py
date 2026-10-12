@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from math import isfinite
-from typing import Mapping, Sequence
 
 
 @dataclass(frozen=True)

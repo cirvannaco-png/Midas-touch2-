@@ -5,10 +5,10 @@ candidate-level diagnostics plus hooks for true Strategy Tester replays.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from math import inf
 from statistics import mean
-from typing import Callable, Iterable, Sequence
 
 from .smc_self_test import (
     FrozenSMCConfiguration,
