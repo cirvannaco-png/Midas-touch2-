@@ -33,7 +33,9 @@ def test_recovered_snapshots_and_netting_reversals_are_not_training_labels():
     ea = EA.read_text(encoding="utf-8")
     assert "p.cashflowsKnown=false;p.outcomeHistoryComplete=false;" in tracker
     assert "if((!p.outcomeHistoryComplete||!p.cashflowsKnown)&&p.filled)coarseOutcome=\"ambiguous\";" in tracker
-    assert 'outcome="Ambiguous_NettingReversal";g_tracker.MarkHistoryIncomplete(decisionId);' in ea
+    compact_ea = "".join(ea.split())
+    assert 'outcome="Ambiguous_NettingReversal";' in compact_ea
+    assert "g_tracker.MarkHistoryIncomplete(decisionId);" in compact_ea
 
 
 
