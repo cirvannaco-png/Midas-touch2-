@@ -239,8 +239,10 @@ def _metric_delta(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[s
     return delta
 
 
-def _metrics_for(positions: list[dict[str, Any]], initial_balance: float, ignored: dict[str, int]) -> dict[str, Any]:
-    report = calculate_metrics(positions, initial_balance, ignored)
+def _metrics_for(positions: list[dict[str, Any]], initial_balance: float) -> dict[str, Any]:
+    # Ignore counters are reported once at ledger_diagnostics scope. Passing the
+    # whole-ledger counts into a filtered cohort would misstate them as cohort data.
+    report = calculate_metrics(positions, initial_balance, {})
     # Reconstructed datetimes inside equity_curve are already strings, so this
     # payload can be serialized with allow_nan=False without custom encoders.
     return report
@@ -431,17 +433,19 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
                 "open_positions_csv": {"path": str(open_path.relative_to(source_path.parent)) if open_path.is_relative_to(source_path.parent) else str(open_path), "sha256": _sha256(open_path)},
             },
             "metrics": {
-                "full_period": _metrics_for(period_complete, context["initial_balance"], ignored),
-                "locked_oos": _metrics_for(oos_complete, context["initial_balance"], ignored),
+                "full_period": _metrics_for(period_complete, context["initial_balance"]),
+                "locked_oos": _metrics_for(oos_complete, context["initial_balance"]),
             },
             "ledger_diagnostics": {
                 "deal_rows": len(deals),
                 "reconstructed_complete_positions_before_window_filter": len(positions),
-                "positions_opened_in_period": len(in_period),
+                "positions_opened_in_period": len(in_period) + period_unresolved,
+                "reconstructed_positions_opened_in_period": len(in_period),
                 "period_positions_censored_at_period_end": period_censored,
                 "period_open_incomplete_or_ambiguous_entries": period_unresolved,
                 "period_censored_or_unresolved_entries": period_censored + period_unresolved,
-                "positions_opened_in_locked_oos": len(in_oos),
+                "positions_opened_in_locked_oos": len(in_oos) + oos_unresolved,
+                "reconstructed_positions_opened_in_locked_oos": len(in_oos),
                 "locked_oos_positions_censored_at_oos_end": oos_censored,
                 "locked_oos_open_incomplete_or_ambiguous_entries": oos_unresolved,
                 "locked_oos_censored_or_unresolved_entries": oos_censored + oos_unresolved,
