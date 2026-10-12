@@ -118,3 +118,22 @@ def test_sizing_uses_the_worst_permitted_market_fill_for_both_manual_and_automat
     assert "ConservativeRiskSizingEntry(_Symbol,setup.type,entry,true,maxDeviation)" in t
     assert "RiskAmountForLots(_Symbol,legLots[leg],sizingEntry,chosen.stop_loss)" in t
     assert "RiskAmountForLots(_Symbol,lots,sizingEntry,setup.stop_loss)" in t
+
+
+def test_submit_disambiguates_position_ticket_from_stable_ledger_identity():
+    orders = ORDERS.read_text(encoding="utf-8")
+    broker = (ROOT / "EA" / "includes" / "Execution" / "BrokerAdapter.mqh").read_text(encoding="utf-8")
+    submit_start = orders.index("bool COrderManager::Submit(")
+    submit_end = orders.index("bool COrderManager::RestoreTrade(", submit_start)
+    submit = orders[submit_start:submit_end]
+
+    # BrokerAdapter returns a live ticket when available, but may return a
+    # stable identifier or unresolved order token while MT5 catches up.
+    # Do not poison the stable identity field with an untyped token.
+    assert "ulong             MagicNumber() { return m_magic; }" in broker
+    assert "ResolveLivePositionTicket(string symbol,ulong positionIdentifier)" in orders
+    assert "PositionGetString(POSITION_SYMBOL)!=symbol" in orders
+    assert "PositionGetInteger(POSITION_MAGIC)!=m_broker.MagicNumber()" in orders
+    assert "stableIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);" in submit
+    assert "if(stableIdentifier>0) m_trades[idx].positionIdentifier=stableIdentifier;" in submit
+    assert "m_trades[idx].positionIdentifier=ticket;" not in submit
