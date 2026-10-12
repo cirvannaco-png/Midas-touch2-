@@ -55,3 +55,13 @@ def test_history_rebuild_rejects_netting_reversals_and_missing_exposure_history(
     assert "if(entry==DEAL_ENTRY_INOUT) return false;" in tracker
     assert "if(!liveEntryConfirmed || ArraySize(positionIds)==0) return false;" in tracker
     assert "MarkHistoryIncomplete(decisionId)" in tracker
+
+
+
+def test_recovered_deal_ledger_does_not_fabricate_excursion_metrics():
+    tracker = TRACKER.read_text(encoding="utf-8")
+    config = CONFIG.read_text(encoding="utf-8")
+    assert "bool cashflowsKnown; bool outcomeHistoryComplete; bool excursionHistoryComplete;" in config
+    assert "state.excursionHistoryComplete=false;" in tracker
+    assert "m_environmentMemory!=NULL&&p.excursionHistoryComplete" in tracker
+    assert "if(!p.excursionHistoryComplete){mfeR=0.0;maeR=0.0;}" in tracker
