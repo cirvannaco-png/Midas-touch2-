@@ -37,7 +37,7 @@ private:
    long m_rebuiltDecisionIds[];
    long m_finalizedDecisionIds[];
    string m_finalizedFilename;
-   bool WasDecisionFinalized(long decisionId)
+   bool WasDecisionFinalized(long decisionId) const
      {
       for(int i=0;i<ArraySize(m_finalizedDecisionIds);i++)
          if(m_finalizedDecisionIds[i]==decisionId) return true;
