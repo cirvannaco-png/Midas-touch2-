@@ -114,6 +114,9 @@ def test_aggregate_only_recovery_is_not_claimed_as_authoritative_deal_history(tm
     assert recovered.filled_quantity == 2.0
     assert recovered.fill_ledger_complete is False
     assert journal.fill_ledger("aggregate-only") == ()
+    # Filled aggregate-only recoveries must keep the recovery gate closed until
+    # their authoritative broker deal ledger has been reconstructed.
+    assert [row.order_id for row in journal.unresolved_records()] == ["aggregate-only"]
 
 
 def test_recovery_rebuilds_authoritative_fill_ledger_and_replay_is_idempotent(tmp_path) -> None:
