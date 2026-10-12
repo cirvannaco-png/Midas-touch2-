@@ -174,7 +174,7 @@ class ExecutionRecoveryJournal:
             rows = db.execute(
                 "SELECT order_id,state,venue_order_id,filled_quantity,filled_notional,"
                 "last_error,updated_at,parent_order_id,client_order_id,requested_quantity,fill_ledger_complete "
-                f"FROM execution_recovery WHERE state IN ({placeholders}) "
+                "FROM execution_recovery WHERE state IN (?,?,?,?,?,?) "
                 "OR (state='FILLED' AND fill_ledger_complete=0) ORDER BY updated_at,order_id",
                 states,
             ).fetchall()
