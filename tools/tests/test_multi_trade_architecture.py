@@ -69,7 +69,8 @@ def test_child_closes_do_not_finalize_parent_until_last_live_leg():
     tracker = TRACKER.read_text()
     assert "g_orders.HasLiveTradeForDecision(decisionId)" in ea
     assert "g_orders.HasLiveTradeForDecision(decisionId,position)" not in ea
-    assert "p.lots+=volume" in tracker
+    assert "double nextLots=p.lots+volume" in tracker
+    assert "p.lots=nextLots" in tracker
     assert "m_calibration.Record(p.confidenceAtSignal,p.realizedPnL)" in tracker
 
 
