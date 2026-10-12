@@ -442,22 +442,85 @@ public:
    bool MarkClosed(long id,double exitPrice,datetime t,double netPnl,double commission,double swap,double fee,bool stillOpen,string outcome,ulong dealTicket=0,double closedVolume=0.0,bool cashflowsKnown=true)
      {
       if(DealAlreadyProcessed(dealTicket)) return true;
-      int i=Find(id);if(i<0)return false;PendingSetup p=m_pending[i];if(!p.filled)return false;
-      p.realizedPnL+=netPnl;
-      p.totalCommission+=MathMax(0.0,-commission);
-      p.totalCommissionCashflow+=commission;p.totalSwapCashflow+=swap;p.totalBrokerFeeCashflow+=fee;
-      p.cashflowsKnown=p.cashflowsKnown&&cashflowsKnown;
+      int i=Find(id);
+      if(i<0) return false;
+      PendingSetup p=m_pending[i];
+      if(!p.filled) return false;
+
+      bool timeValid=(t>0);
+      bool exitPriceValid=MathIsValidNumber(exitPrice) && exitPrice>0.0;
+      bool pnlValid=MathIsValidNumber(netPnl);
+      bool volumeValid=MathIsValidNumber(closedVolume) && closedVolume>=0.0;
+      bool costValuesValid=MathIsValidNumber(commission) &&
+                           MathIsValidNumber(swap) &&
+                           MathIsValidNumber(fee);
+      if(!timeValid) t=TimeCurrent();
+      if(!exitPriceValid) exitPrice=0.0;
+      if(!pnlValid) netPnl=0.0;
+      if(!costValuesValid)
+        {
+         if(!MathIsValidNumber(commission)) commission=0.0;
+         if(!MathIsValidNumber(swap)) swap=0.0;
+         if(!MathIsValidNumber(fee)) fee=0.0;
+        }
+      if(!volumeValid) closedVolume=0.0;
+
+      // Incomplete broker values must never fall through into a scratch label
+      // (NaN comparisons are false in MQL5). Continue tracking the close using
+      // only finite values, but mark the outcome ineligible for calibration.
+      if(!timeValid || !exitPriceValid || !pnlValid || !volumeValid)
+        {
+         p.outcomeHistoryComplete=false;
+         p.excursionHistoryComplete=false;
+        }
+      if(!costValuesValid)
+        {
+         p.cashflowsKnown=false;
+         p.outcomeHistoryComplete=false;
+        }
+
+      double nextPnL=p.realizedPnL+netPnl;
+      double nextCommissionCashflow=p.totalCommissionCashflow+commission;
+      double nextSwapCashflow=p.totalSwapCashflow+swap;
+      double nextFeeCashflow=p.totalBrokerFeeCashflow+fee;
+      double nextCommission=p.totalCommission+MathMax(0.0,-commission);
+      bool totalsValid=MathIsValidNumber(nextPnL) &&
+                       MathIsValidNumber(nextCommissionCashflow) &&
+                       MathIsValidNumber(nextSwapCashflow) &&
+                       MathIsValidNumber(nextFeeCashflow) &&
+                       MathIsValidNumber(nextCommission);
+      if(totalsValid)
+        {
+         p.realizedPnL=nextPnL;
+         p.totalCommissionCashflow=nextCommissionCashflow;
+         p.totalSwapCashflow=nextSwapCashflow;
+         p.totalBrokerFeeCashflow=nextFeeCashflow;
+         p.totalCommission=nextCommission;
+        }
+      else
+        {
+         p.cashflowsKnown=false;
+         p.outcomeHistoryComplete=false;
+        }
+      p.cashflowsKnown=p.cashflowsKnown && cashflowsKnown &&
+                       costValuesValid && pnlValid && totalsValid;
+
       if(closedVolume>0.0)
         {
-         if(closedVolume>p.remainingLots+1e-8)p.outcomeHistoryComplete=false;
-         p.remainingLots=MathMax(0.0,p.remainingLots-closedVolume);
+         if(!MathIsValidNumber(p.remainingLots) || p.remainingLots<0.0 ||
+            closedVolume>p.remainingLots+1e-8)
+            p.outcomeHistoryComplete=false;
+         double left=p.remainingLots-closedVolume;
+         p.remainingLots=(MathIsValidNumber(left) ? MathMax(0.0,left) : 0.0);
         }
-      if(!stillOpen&&p.remainingLots>1e-8)p.outcomeHistoryComplete=false;
-      // Swap and broker fees are not spread/slippage. Leave those separate
-      // telemetry fields untouched rather than reporting costs under the wrong name.
+      if(!stillOpen && p.remainingLots>1e-8)
+         p.outcomeHistoryComplete=false;
+
+      // Swap and broker fees are not spread/slippage. Keep their signed values
+      // separate, even for partial exits and manually resolved broker outcomes.
       RememberDeal(dealTicket);
       m_pending[i]=p;
-      if(stillOpen)return true;
+      if(stillOpen) return true;
       Finalize(i,outcome,exitPrice,t);
       return true;
      }
