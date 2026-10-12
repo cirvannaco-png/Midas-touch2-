@@ -45,7 +45,7 @@ input double InpFVGMinSizeATR=0.1;
 input group "Liquidity"
 input double InpInternalLiqThresholdATR=0.2;
 input group "Risk (setup validation)"
-input double InpMinRiskReward=1.8; // Candidate: demand more TP1 distance relative to stop risk
+input double InpMinRiskReward=2.2; // Candidate: require positive payoff headroom beyond one full R of loss // Candidate: demand more TP1 distance relative to stop risk
 input double InpMaxSLDistanceATR=1.5;
 input double InpSLBufferATR=0.25;
 input double InpMinStopSpreadMult=3.0;
@@ -214,7 +214,7 @@ input double InpMaxDrawdownAlertPercent=10.0;
 input group "On-chart Trade Control"
 input bool InpShowTradeControlPanel=true;
 input double InpManualStopATR=1.25;          // ATR distance used by BUY/SELL buttons
-input double InpManualRiskReward=2.4;       // Candidate final TP R multiple; maintain room beyond minimum TP1 R
+input double InpManualRiskReward=2.8;       // Candidate final TP R multiple; maintain room beyond minimum TP1 R
 input bool InpUseCustomTradingSessions=false; // optional extra gate based on broker-server time
 input bool InpSession1Enabled=true;
 input string InpSession1Start="07:00";
