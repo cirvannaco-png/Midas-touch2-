@@ -345,7 +345,16 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
             )
 
         try:
-            deals = read_deals(deals_path)
+            try:
+                deals = read_deals(deals_path)
+            except LedgerError as exc:
+                # A header-only deal export is meaningful for a strict-only
+                # candidate that generated no executions. Other ledger errors
+                # still fail closed.
+                if str(exc) == "CSV contains no deal rows":
+                    deals = []
+                else:
+                    raise
             open_ids = read_open_ids(open_path)
             positions, ignored = reconstruct_positions(deals, open_ids)
         except (OSError, LedgerError) as exc:
