@@ -244,22 +244,25 @@ long COrderManager::DecisionIdForTicket(ulong ticket)
 //+------------------------------------------------------------------+
 double COrderManager::FillPriceForDecision(long decisionId)
   {
-   double notional=0.0,volume=0.0;
+   double filledNotional=0.0,filledVolume=0.0;
    for(int i=0;i<ArraySize(m_trades);i++)
      {
-      if(m_trades[i].decision.decision_id!=decisionId) continue;
-      if(m_trades[i].filledVolume>0.0)
-        {
-         notional+=m_trades[i].fillNotional;
-         volume+=m_trades[i].filledVolume;
-        }
-      else if(m_trades[i].fillPrice>0.0 && m_trades[i].volume>0.0)
-        {
-         notional+=m_trades[i].fillPrice*m_trades[i].volume;
-         volume+=m_trades[i].volume;
-        }
+      if(m_trades[i].decision.decision_id!=decisionId || m_trades[i].filledVolume<=0.0) continue;
+      filledNotional+=m_trades[i].fillNotional;
+      filledVolume+=m_trades[i].filledVolume;
      }
-   return volume>0.0 ? notional/volume : 0.0;
+   // Once even one authoritative deal fill is known, do not mix it with
+   // requested volume estimates from legs whose fill history is still absent.
+   if(filledVolume>0.0) return filledNotional/filledVolume;
+
+   double submittedNotional=0.0,submittedVolume=0.0;
+   for(int i=0;i<ArraySize(m_trades);i++)
+     {
+      if(m_trades[i].decision.decision_id!=decisionId || m_trades[i].fillPrice<=0.0 || m_trades[i].volume<=0.0) continue;
+      submittedNotional+=m_trades[i].fillPrice*m_trades[i].volume;
+      submittedVolume+=m_trades[i].volume;
+     }
+   return submittedVolume>0.0 ? submittedNotional/submittedVolume : 0.0;
 }
 bool COrderManager::HasLiveTradeForDecision(long decisionId,ulong excludeTicket)
   {
