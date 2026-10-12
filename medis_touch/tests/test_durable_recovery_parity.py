@@ -2,6 +2,7 @@
 
 from medis_touch.app.execution_recovery import ExecutionRecoveryJournal, ExecutionStateEvent
 
+
 def test_unknown_recovery_uses_existing_broker_identity(tmp_path) -> None:
     path = str(tmp_path / "recovery.db")
     journal = ExecutionRecoveryJournal(path)
