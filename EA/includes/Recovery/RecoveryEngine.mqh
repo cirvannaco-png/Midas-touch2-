@@ -91,7 +91,19 @@ int CRecoveryEngine::Recover()
         {
          restored++;
          if(m_tracker!=NULL)
-            m_tracker.RestoreExecuted(restoredDecision.setup,decisionId,actualEntry,(datetime)PositionGetInteger(POSITION_TIME),currentVolume);
+           {
+            ulong positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+            bool historyRebuilt=m_tracker.RebuildOpenDecisionFromHistory(restoredDecision.setup,decisionId,positionIdentifier,m_magic);
+            if(!historyRebuilt)
+              {
+               // Do not synthesize missing partial closes or charges. Keep the
+               // broker snapshot usable for protection, but mark its outcome
+               // accounting incomplete so it cannot teach the calibration engine.
+               m_tracker.RestoreExecuted(restoredDecision.setup,decisionId,actualEntry,(datetime)PositionGetInteger(POSITION_TIME),currentVolume);
+               m_tracker.MarkHistoryIncomplete(decisionId);
+               PrintFormat("MedisTouch Recovery: history ledger for decision #%I64d did not reconcile; outcome learning disabled until clean closure.",decisionId);
+              }
+           }
          PrintFormat("MedisTouch Recovery: restored decision #%I64d leg %d as ticket #%I64u in state %s at broker entry %.5f.",decisionId,legIndex,ticket,TradeStateToString(state),actualEntry);
         }
      }
