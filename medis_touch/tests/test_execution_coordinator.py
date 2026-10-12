@@ -51,7 +51,10 @@ def test_durable_parent_identity_and_backend_lineage_are_bound(tmp_path) -> None
     outcome, _ = coordinator.execute(order, reference_price=100.0, portfolio_notional=0, symbol_notional=0, daily_loss=0, spread_bps=2, limits=_limits(), regime="normal")
     parent = journal.get(outcome.order_id)
     assert parent.client_order_id == "parent-client-1"
-    assert parent.state == "RECOVERED"
+    assert parent.state == "FILLED"
+    assert parent.filled_quantity == outcome.filled_quantity == 1.0
+    assert parent.fill_ledger_complete is True
+    assert len(journal.fill_ledger(outcome.order_id)) == 1
     assert journal.child_records(outcome.order_id)
     assert journal.parity(outcome.order_id) is False
     assert "lineage_fingerprint" in coordinator.oms.get(outcome.order_id).metadata
