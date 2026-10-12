@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+from collections import defaultdict
 import json
 import math
 import re
@@ -22,6 +23,11 @@ from typing import Any
 
 try:
     from tools.position_ledger_metrics import (
+        EPS,
+        IN,
+        INOUT,
+        OUT,
+        OUT_BY,
         LedgerError,
         calculate_metrics,
         read_deals,
@@ -30,6 +36,11 @@ try:
     )
 except ImportError:
     from position_ledger_metrics import (  # type: ignore[no-redef]
+        EPS,
+        IN,
+        INOUT,
+        OUT,
+        OUT_BY,
         LedgerError,
         calculate_metrics,
         read_deals,
@@ -238,6 +249,31 @@ def _metrics_for(positions: list[dict[str, Any]], initial_balance: float, ignore
     return report
 
 
+def _unresolved_entries_in_window(
+    deals: list[dict[str, Any]], completed_positions: list[dict[str, Any]],
+    start: datetime, end: datetime,
+) -> int:
+    """Count entry cohorts omitted from the complete-position metric.
+
+    This surfaces open/incomplete/reversal-ambiguous groups whose entry falls
+    in the scoring window. They remain censored rather than being assigned a
+    fabricated outcome. Fully reconstructed positions are counted separately
+    as boundary-censored if they closed after the window end.
+    """
+    completed_ids = {str(row["position_id"]) for row in completed_positions}
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for deal in deals:
+        grouped[str(deal["position_id"])].append(deal)
+    unresolved = 0
+    for position_id, rows in grouped.items():
+        if position_id in completed_ids:
+            continue
+        entries = [row for row in rows if row["entry"] in IN or row["entry"] in INOUT]
+        if any(start <= row["time"] < end for row in entries):
+            unresolved += 1
+    return unresolved
+
+
 def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
     source_path = Path(manifest_path).expanduser().resolve()
     try:
@@ -368,6 +404,7 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
         in_period = [p for p in positions if period_start <= p["opened_at"] < period_end]
         period_complete = [p for p in in_period if p["closed_at"] < period_end]
         period_censored = sum(1 for p in in_period if p["closed_at"] >= period_end)
+        period_unresolved = _unresolved_entries_in_window(deals, positions, period_start, period_end)
         untagged = [p["position_id"] for p in period_complete if p["lane"] == "UNTAGGED"]
         if untagged:
             raise ComparisonError(
@@ -378,6 +415,7 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
         in_oos = [p for p in positions if oos_start <= p["opened_at"] < oos_end]
         oos_complete = [p for p in in_oos if p["closed_at"] < oos_end]
         oos_censored = sum(1 for p in in_oos if p["closed_at"] >= oos_end)
+        oos_unresolved = _unresolved_entries_in_window(deals, positions, oos_start, oos_end)
         untagged_oos = [p["position_id"] for p in oos_complete if p["lane"] == "UNTAGGED"]
         if untagged_oos:
             raise ComparisonError(
@@ -404,8 +442,12 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
                 "reconstructed_complete_positions_before_window_filter": len(positions),
                 "positions_opened_in_period": len(in_period),
                 "period_positions_censored_at_period_end": period_censored,
+                "period_open_incomplete_or_ambiguous_entries": period_unresolved,
+                "period_censored_or_unresolved_entries": period_censored + period_unresolved,
                 "positions_opened_in_locked_oos": len(in_oos),
                 "locked_oos_positions_censored_at_oos_end": oos_censored,
+                "locked_oos_open_incomplete_or_ambiguous_entries": oos_unresolved,
+                "locked_oos_censored_or_unresolved_entries": oos_censored + oos_unresolved,
                 "ignored_groups": ignored,
                 "lane_attribution_complete": True,
             },
