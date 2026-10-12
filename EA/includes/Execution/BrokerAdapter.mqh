@@ -27,6 +27,7 @@ private:
 public:
    void              Init(ulong magic, int maxRetries = 3, int retryDelayMs = 300);
    double            LastLatencyMs() { return (double)m_lastLatencyUs / 1000.0; }
+   ulong             MagicNumber() { return m_magic; }
    bool              MarketBuy(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "", int deviationPoints = 20);
    bool              MarketSell(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "", int deviationPoints = 20);
    bool              PlaceLimit(string symbol, ENUM_ORDER_TYPE type, double volume, double price,
