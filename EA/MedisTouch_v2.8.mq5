@@ -251,7 +251,7 @@ void CheckSignalLifecycle(double atr){if(g_lifecycleDecisionId==0)return;bool fi
 double ConservativeRiskSizingEntry(string symbol,ENUM_ORDER_TYPE orderType,double plannedEntry,bool useMarket,double maxEntryDeviation)
   {
    if(!MathIsValidNumber(plannedEntry) || plannedEntry<=0.0 ||
-      !MathIsValidNumber(maxEntryDeviation))
+      !MathIsValidNumber(maxEntryDeviation) || maxEntryDeviation<0.0)
       return 0.0;
    if(!useMarket) return plannedEntry;
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
