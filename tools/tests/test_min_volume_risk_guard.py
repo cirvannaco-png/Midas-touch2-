@@ -7,7 +7,8 @@ RISK = ROOT / "EA" / "includes" / "Trading" / "RiskEngine.mqh"
 def test_risk_sizing_rejects_volume_below_broker_minimum_even_if_override_enabled():
     source = RISK.read_text(encoding="utf-8")
     assert "OrderCalcProfit(" in source
-    assert "MathFloor(lots/lotStep)*lotStep" in source
+    assert "lots=minLot+MathFloor((lots-minLot)/lotStep)*lotStep" in source
+    assert "if(lots<minLot)" in source
     assert "if(lots<minLot)" in source
     block = source.split("if(lots<minLot)", 1)[1].split("\n     }", 1)[0]
     assert "return 0.0;" in block
