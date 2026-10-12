@@ -89,3 +89,19 @@ def test_incremental_entry_fills_keep_authoritative_vwap_and_disable_inexact_exc
 
     # Aggregate MFE/MAE does not prove slice-level excursions for later fills.
     assert "p.excursionHistoryComplete=false;" in method
+
+
+def test_exit_deals_reject_nonfinite_pnl_costs_and_excess_close_volume():
+    tracker = TRACKER.read_text(encoding="utf-8")
+    start = tracker.index("bool MarkClosed(")
+    end = tracker.index("void Update(", start)
+    method = tracker[start:end]
+
+    assert "!MathIsValidNumber(exitPrice)" in method
+    assert "!MathIsValidNumber(netPnl)" in method
+    assert "!MathIsValidNumber(commission)" in method
+    assert "!MathIsValidNumber(swap)" in method
+    assert "!MathIsValidNumber(fee)" in method
+    assert "!MathIsValidNumber(closedVolume)" in method
+    assert "closedVolume>p.remainingLots+" in method
+    assert "MarkHistoryIncomplete(id);" in method
