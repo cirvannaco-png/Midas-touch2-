@@ -41,6 +41,17 @@ def test_no_fill_and_ambiguous_excluded_from_expectancy(make_outcome):
     assert exp["overall_avg_r"] == 2.0
 
 
+def test_incomplete_outcome_provenance_is_excluded_from_expectancy(make_outcome):
+    rows = [
+        make_outcome(outcome="win", realized_r=1.0),
+        make_outcome(outcome="win", realized_r=9.0, outcome_history_complete=None),
+    ]
+    report = compute_report(rows)
+    assert report["coverage"]["total_signals"] == 2
+    assert report["expectancy"]["resolved_count"] == 1
+    assert report["expectancy"]["overall_avg_r"] == 1.0
+
+
 def test_directional_bias_breakdown(make_outcome):
     rows = [
         make_outcome(direction="BUY", outcome="win", realized_r=1.0),
