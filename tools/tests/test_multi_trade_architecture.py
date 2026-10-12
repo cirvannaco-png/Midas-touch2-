@@ -173,3 +173,19 @@ def test_multi_target_execution_always_falls_back_on_netting_accounts():
     assert "m_requireHedging" in guard
     assert "child TP legs cannot be managed independently" in guard
     assert "return true;" in guard
+
+
+def test_market_execution_deviation_is_enforced_by_mode_or_explicit_opt_in():
+    adapter = (ROOT / "EA" / "includes" / "Execution" / "BrokerAdapter.mqh").read_text(encoding="utf-8")
+    ea = EA.read_text(encoding="utf-8")
+
+    assert "InpAllowUnboundedMarketExecution=false" in ea
+    assert "g_broker.Init(InpMagicNumber,3,300,InpAllowUnboundedMarketExecution)" in ea
+    assert "SYMBOL_TRADE_EXECUTION_REQUEST" in adapter
+    assert "SYMBOL_TRADE_EXECUTION_INSTANT" in adapter
+    assert "SYMBOL_TRADE_EXECUTION_MARKET" in adapter
+    assert "SYMBOL_TRADE_EXECUTION_EXCHANGE" in adapter
+    assert "if(!MarketRequestSupportsPriceDeviation(symbol,\"MarketBuy\"))" in adapter
+    assert "if(!MarketRequestSupportsPriceDeviation(symbol,\"MarketSell\"))" in adapter
+    assert "m_allowUnboundedMarketExecution" in adapter
+    assert "does not enforce the configured price-deviation cap" in adapter
