@@ -193,6 +193,12 @@ class SignalOutcome(Base):
     commission_cashflow = Column(Float, nullable=True)
     swap_cashflow = Column(Float, nullable=True)
     broker_fee_cashflow = Column(Float, nullable=True)
+    # Nullable means legacy/missing evidence; calibration must fail closed on unknown completeness.
+    outcome_history_complete = sa.Column(sa.Boolean, nullable=True)
+    cashflows_known = sa.Column(sa.Boolean, nullable=True)
+    spread_cost_known = sa.Column(sa.Boolean, nullable=True)
+    slippage_cost_known = sa.Column(sa.Boolean, nullable=True)
+    excursion_history_complete = sa.Column(sa.Boolean, nullable=True)
     weight_version = Column(String, nullable=True, index=True)
     confidence_at_signal = Column(Float, nullable=True)
     confidence_decayed = Column(Float, nullable=True)
