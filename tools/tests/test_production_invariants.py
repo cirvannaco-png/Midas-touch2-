@@ -28,7 +28,8 @@ def test_live_tracker_uses_closed_execution_bars_and_excludes_fill_bar():
     t=TRACKER.read_text();assert "ctx.candles.GetCandle(1)" in t;assert "ctx.candles.Timeframe()!=m_entryTF" in t;assert "if(bar.time<=fillBar)continue" in t
 
 def test_live_tracker_closes_from_broker_deals():
-    t=TRACKER.read_text();assert "bool MarkClosed" in t;assert "p.realizedPnL+=netPnl" in t
+    t=TRACKER.read_text();assert "bool MarkClosed" in t;assert "double nextPnL=p.realizedPnL+netPnl" in t
+    assert "p.realizedPnL=nextPnL;" in t
 
 def test_restart_restores_tracker_state():
     t=RECOVERY.read_text();assert "m_tracker.RestoreExecuted(restoredDecision.setup,decisionId,actualEntry" in t;assert "g_activeOutcomeTracker" in t
