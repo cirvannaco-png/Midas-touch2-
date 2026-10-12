@@ -110,6 +110,12 @@ Run from the repository root:
 
 The comparator fails closed when a required artifact is missing/empty, the dataset digest differs, run IDs or input presets are duplicated, a variant is missing, observed settings do not match the common context, deal history is malformed, or lane attribution is absent. It outputs hashes and separate full-period/locked-OOS performance summaries, including completed-position expectancy, profit factor, win/loss counts, average realized R where initial risk was exported, maximum closed-position drawdown, consecutive losses, and metrics by lane.
 
+### Required payoff-asymmetry diagnostics
+
+The comparison JSON reports average net winning-position P&L and average net losing-position P&L in account currency, average winner R, average absolute loser R, their payoff ratio, and the implied break-even win rate from those average R magnitudes. These R metrics are calculated only from completed positions with a positive, exported `risk_cash`; missing risk must remain missing, never be inferred from stop distance after the fact. R values are net of exported profit, commission, swap, and fee cashflows. The implied break-even win rate is descriptive, assumes observed average winner/loser magnitudes remain stable, and is not a forecast.
+
+A candidate with a higher win rate but a lower payoff ratio can still have negative expectancy. Inspect payoff ratio and net expectancy together for the full period, locked OOS, and each attributed lane. Do not treat a configured target R multiple as a realized average winner R multiple.
+
 Drawdown limitation: the existing position-ledger metric computes closed-position settlement drawdown, not intratrade/tick-level equity drawdown. Capture the native MT5 tester equity/drawdown report separately and compare it alongside this output.
 
 ## Interpretation rules
