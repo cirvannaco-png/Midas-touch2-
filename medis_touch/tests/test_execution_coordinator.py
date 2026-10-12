@@ -105,3 +105,37 @@ def test_multiple_trades_enforce_existing_symbol_exposure() -> None:
     with pytest.raises(PermissionError, match="symbol exposure limit"):
         coordinator.execute_many((order,), reference_prices={"XAUUSD": 100.0}, portfolio_notional=0, symbol_notionals={"XAUUSD": 4900.0}, daily_loss=0, spread_bps={"XAUUSD": 2.0}, limits=_limits(), regime="normal")
     assert coordinator.oms.all_orders() == ()
+
+def test_unresolved_durable_execution_blocks_new_exposure_before_reservation(tmp_path):
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    journal.begin_submission(
+        "unknown-existing", client_order_id="unknown-client", requested_quantity=1.0
+    )
+    journal.mark_unknown("unknown-existing", "broker acknowledgement lost")
+    coordinator = _coordinator(_config(), journal)
+    order = ExecutionOrder("new-order-blocked", "decision-new", "XAUUSD", "BUY", 1.0)
+    with pytest.raises(PermissionError, match="durable execution recovery unresolved"):
+        coordinator.execute(
+            order, reference_price=100.0, portfolio_notional=0.0,
+            symbol_notional=0.0, daily_loss=0.0, spread_bps=2.0,
+            limits=_limits(), regime="normal",
+        )
+    assert coordinator.oms.all_orders() == ()
+    assert coordinator._local_reservations.snapshot() == ()
+
+
+def test_same_durable_parent_cannot_be_submitted_twice(tmp_path):
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    coordinator = _coordinator(_config(), journal)
+    order = ExecutionOrder(
+        "durable-no-replay", "decision-no-replay", "XAUUSD", "BUY", 1.0,
+        idempotency_key="stable-no-replay",
+    )
+    args = dict(
+        reference_price=100.0, portfolio_notional=0.0, symbol_notional=0.0,
+        daily_loss=0.0, spread_bps=2.0, limits=_limits(), regime="normal",
+    )
+    coordinator.execute(order, **args)
+    with pytest.raises(ValueError, match="already exists"):
+        coordinator.execute(order, **args)
+    assert len(coordinator.oms.all_orders()) == 1
