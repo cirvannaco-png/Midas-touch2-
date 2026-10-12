@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 from app import config_evaluation_model, config_registry_model, config_sync_state_model, models
 from app.database import Base
 
@@ -73,3 +76,12 @@ def test_migration_is_additive_and_follows_current_head():
         "portfolio_reservations",
     ):
         assert f'"{table}"' in source
+
+
+def test_alembic_graph_has_one_head_at_0017():
+    bridge_root = Path(__file__).parents[1]
+    config = Config(str(bridge_root / "alembic.ini"))
+    config.set_main_option("script_location", str(bridge_root / "migrations"))
+    scripts = ScriptDirectory.from_config(config)
+    assert scripts.get_current_head() == "0017"
+    assert scripts.get_heads() == ["0017"]
