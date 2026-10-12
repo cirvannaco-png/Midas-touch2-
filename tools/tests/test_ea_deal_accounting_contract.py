@@ -20,8 +20,10 @@ def test_entry_and_exit_cashflows_are_net_and_signed_separately():
     tracker = TRACKER.read_text(encoding="utf-8")
     config = CONFIG.read_text(encoding="utf-8")
     ea = EA.read_text(encoding="utf-8")
-    assert "p.realizedPnL+=commission+swap+fee;" in tracker
-    assert "p.realizedPnL+=netPnl;" in tracker
+    assert "double nextPnL=p.realizedPnL+commission+swap+fee;" in tracker
+    assert "p.realizedPnL=nextPnL;" in tracker
+    assert "double nextPnL=p.realizedPnL+netPnl;" in tracker
+    assert "p.realizedPnL=nextPnL;" in tracker
     assert "totalCommissionCashflow" in config
     assert "totalSwapCashflow" in config
     assert "totalBrokerFeeCashflow" in config
