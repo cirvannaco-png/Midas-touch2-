@@ -10,6 +10,22 @@
 #include "EnvironmentStrategyMemory.mqh"
 class COutcomeTrackerLive;
 COutcomeTrackerLive* g_activeOutcomeTracker=NULL;
+
+struct OutcomeReplayDeal
+  {
+   ulong ticket;
+   ulong positionId;
+   long timeMsc;
+   ENUM_DEAL_ENTRY entry;
+   datetime time;
+   double volume;
+   double price;
+   double profit;
+   double commission;
+   double swap;
+   double fee;
+  };
+
 class COutcomeTrackerLive
   {
 private:
@@ -18,6 +34,58 @@ private:
    double m_breakEvenAtR,m_partialAtR,m_partialFraction,m_trailATRMult,m_riskPercent; bool m_allowMinLotOverride,m_liveExecution;
    double m_commissionPerLot,m_spreadPoints,m_slippagePoints,m_decayHalfLifeBars; string m_weightVersion;
    ulong m_seenDealTickets[];
+   long m_rebuiltDecisionIds[];
+   bool WasDecisionRebuilt(long decisionId)
+     {
+      for(int i=0;i<ArraySize(m_rebuiltDecisionIds);i++)
+         if(m_rebuiltDecisionIds[i]==decisionId) return true;
+      return false;
+     }
+   bool MarkDecisionRebuilt(long decisionId)
+     {
+      if(WasDecisionRebuilt(decisionId)) return true;
+      int n=ArraySize(m_rebuiltDecisionIds);
+      if(ArrayResize(m_rebuiltDecisionIds,n+1)!=n+1) return false;
+      m_rebuiltDecisionIds[n]=decisionId;
+      return true;
+     }
+   bool ParseHistoryDecisionComment(string comment,long &decisionId)
+     {
+      decisionId=0;
+      int marker=StringFind(comment,"MT#");
+      if(marker<0) return false;
+      string payload=StringSubstr(comment,marker+3);
+      int separator=StringFind(payload,":");
+      if(separator>=0) payload=StringSubstr(payload,0,separator);
+      int length=StringLen(payload);
+      if(length<=0) return false;
+      for(int i=0;i<length;i++)
+        {
+         ushort ch=StringGetCharacter(payload,i);
+         if(ch<48 || ch>57) return false;
+        }
+      decisionId=(long)StringToInteger(payload);
+      return decisionId>0;
+     }
+   bool HistoryDealDecisionId(ulong dealTicket,long &decisionId)
+     {
+      string dealComment=HistoryDealGetString(dealTicket,DEAL_COMMENT);
+      if(ParseHistoryDecisionComment(dealComment,decisionId)) return true;
+      ulong orderTicket=(ulong)HistoryDealGetInteger(dealTicket,DEAL_ORDER);
+      if(orderTicket>0)
+        {
+         string orderComment=HistoryOrderGetString(orderTicket,ORDER_COMMENT);
+         if(ParseHistoryDecisionComment(orderComment,decisionId)) return true;
+        }
+      decisionId=0;
+      return false;
+     }
+   int ReplayPositionIndex(const ulong &positionIds[],ulong positionId)
+     {
+      for(int i=0;i<ArraySize(positionIds);i++)
+         if(positionIds[i]==positionId) return i;
+      return -1;
+     }
    bool DealAlreadyProcessed(ulong dealTicket)
      {
       if(dealTicket==0) return false;
@@ -39,10 +107,177 @@ private:
    void SimFill(int i,double price,datetime t){if(i<0||i>=m_count||m_pending[i].filled)return;PendingSetup p=m_pending[i];p.filled=true;p.fillTime=t;p.barsToFill=0;p.entryRef=price;p.entryFillPrice=price;p.mfePrice=price;p.maePrice=price;p.riskDist=MathAbs(price-p.setup.stop_loss);p.mgmtRiskDist=p.riskDist;m_pending[i]=p;}
 public:
    COutcomeTrackerLive():m_count(0),m_maxBars(100),m_logger(NULL),m_publisher(NULL),m_environmentMemory(NULL),m_calibrationEnabled(false),m_symbol(""),m_entryTF(PERIOD_CURRENT),m_fillPolicy(FILL_CONSERVATIVE),m_replayTF(PERIOD_M1),m_breakEvenAtR(1.0),m_partialAtR(2.0),m_partialFraction(0.5),m_trailATRMult(1.5),m_riskPercent(0.5),m_allowMinLotOverride(true),m_liveExecution(true),m_commissionPerLot(7.0),m_spreadPoints(10.0),m_slippagePoints(2.0),m_decayHalfLifeBars(12.0),m_weightVersion(""){ZeroMemory(m_stats);g_activeOutcomeTracker=GetPointer(this);}
-   void Init(CSignalLogger* logger,string symbol,ENUM_TIMEFRAMES tf,int maxBars,ENUM_FILL_POLICY fp=FILL_CONSERVATIVE,ENUM_TIMEFRAMES replayTF=PERIOD_M1){m_logger=logger;m_symbol=symbol;m_entryTF=tf;m_maxBars=MathMax(5,maxBars);m_fillPolicy=fp;m_replayTF=replayTF;m_count=0;ArrayResize(m_pending,0);ArrayResize(m_seenDealTickets,0);ZeroMemory(m_stats);}
+   void Init(CSignalLogger* logger,string symbol,ENUM_TIMEFRAMES tf,int maxBars,ENUM_FILL_POLICY fp=FILL_CONSERVATIVE,ENUM_TIMEFRAMES replayTF=PERIOD_M1){m_logger=logger;m_symbol=symbol;m_entryTF=tf;m_maxBars=MathMax(5,maxBars);m_fillPolicy=fp;m_replayTF=replayTF;m_count=0;ArrayResize(m_pending,0);ArrayResize(m_seenDealTickets,0);ArrayResize(m_rebuiltDecisionIds,0);ZeroMemory(m_stats);}
    void ConfigureExecutionMode(bool live){m_liveExecution=live;}void ConfigureSimulation(double risk,bool allow,double be,double partial,double frac,double trail,double comm,double spread,double slip){m_riskPercent=risk;m_allowMinLotOverride=allow;m_breakEvenAtR=be;m_partialAtR=partial;m_partialFraction=MathMax(0.0,MathMin(1.0,frac));m_trailATRMult=trail;m_commissionPerLot=MathMax(0.0,comm);m_spreadPoints=MathMax(0.0,spread);m_slippagePoints=MathMax(0.0,slip);}void ConfigureCalibration(bool enabled,int minSample=30){m_calibrationEnabled=enabled;m_calibration.Init(m_symbol,minSample);}void ConfigureConfidenceDecay(double halfLife=12.0){m_decayHalfLifeBars=halfLife;}void ConfigurePublishing(CSignalPublisher* p,string version){m_publisher=p;m_weightVersion=version;}void ConfigureEnvironmentMemory(CEnvironmentStrategyMemory* memory){m_environmentMemory=memory;}
    int ActiveCount()const{return m_count;}OutcomeStats GetStats()const{return m_stats;}double GetCalibratedProbability(double confidence,int &sample,bool &enough)const{return m_calibration.GetCalibratedProbability(confidence,sample,enough);}
    void AddSetup(TradeSetup &setup,long decisionId=-1,string decisionFingerprint=""){if(!setup.active||decisionId<=0||Find(decisionId)>=0)return;PendingSetup p;ZeroMemory(p);p.setup=setup;p.decisionId=decisionId;p.decision_fingerprint=decisionFingerprint;p.entryRef=ResolveExecutionEntry(setup);p.riskDist=MathAbs(p.entryRef-setup.stop_loss);p.sizingEntryPrice=p.entryRef;p.mgmtRiskDist=p.riskDist;p.weightedRiskDistLots=0.0;p.mfePrice=p.entryRef;p.maePrice=p.entryRef;p.currentSL=setup.stop_loss;p.confidenceAtSignal=setup.confidence;p.confidenceDecayed=setup.confidence;p.cashflowsKnown=true;p.outcomeHistoryComplete=true;int n=m_count++;ArrayResize(m_pending,m_count);m_pending[n]=p;}
+   // Rebuild only a currently-live decision from broker deal history. Completed
+   // decisions are intentionally not replayed here: replaying them on every restart
+   // would duplicate calibration samples and published outcomes. The method first
+   // validates the entire candidate ledger against current broker exposure, then
+   // mutates tracker state; if validation fails the caller uses an ambiguous snapshot.
+   bool RebuildOpenDecisionFromHistory(TradeSetup &setup,long decisionId,ulong livePositionId,ulong magic)
+     {
+      if(decisionId<=0 || livePositionId==0 || magic==0) return false;
+      if(WasDecisionRebuilt(decisionId)) return true;
+      if(Find(decisionId)>=0) return false;
+
+      datetime fromTime=setup.creation_time>0 ? setup.creation_time-1 : 0;
+      datetime toTime=TimeCurrent();
+      if(toTime<fromTime || !HistorySelect(fromTime,toTime)) return false;
+
+      ulong positionIds[];
+      if(ArrayResize(positionIds,1)!=1) return false;
+      positionIds[0]=livePositionId;
+      bool liveEntryConfirmed=false;
+      int totalDeals=HistoryDealsTotal();
+
+      // Pass 1: enumerate every position identifier tied to this decision using
+      // entry deal identity or its originating order comment. We require the
+      // live position's original entry to be provable before trusting its history.
+      for(int i=0;i<totalDeals;i++)
+        {
+         ulong dealTicket=HistoryDealGetTicket(i);
+         if(dealTicket==0) continue;
+         if(HistoryDealGetString(dealTicket,DEAL_SYMBOL)!=m_symbol) continue;
+         if((ulong)HistoryDealGetInteger(dealTicket,DEAL_MAGIC)!=magic) continue;
+         ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
+         if(entry!=DEAL_ENTRY_IN && entry!=DEAL_ENTRY_INOUT) continue;
+         long foundDecision=0;
+         if(!HistoryDealDecisionId(dealTicket,foundDecision) || foundDecision!=decisionId) continue;
+         ulong positionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
+         if(positionId==0) return false;
+         if(positionId==livePositionId) liveEntryConfirmed=true;
+         if(ReplayPositionIndex(positionIds,positionId)<0)
+           {
+            int n=ArraySize(positionIds);
+            if(ArrayResize(positionIds,n+1)!=n+1) return false;
+            positionIds[n]=positionId;
+           }
+        }
+      if(!liveEntryConfirmed || ArraySize(positionIds)==0) return false;
+
+      // Pass 2: materialize a deterministic per-deal ledger across every child
+      // position in this decision. A netting reversal cannot be safely reduced to
+      // ordinary close/open rows here, so it deliberately fails closed.
+      OutcomeReplayDeal deals[];
+      double expectedRemaining[];
+      if(ArrayResize(expectedRemaining,ArraySize(positionIds))!=ArraySize(positionIds)) return false;
+      ArrayInitialize(expectedRemaining,0.0);
+      for(int i=0;i<totalDeals;i++)
+        {
+         ulong dealTicket=HistoryDealGetTicket(i);
+         if(dealTicket==0) continue;
+         if(HistoryDealGetString(dealTicket,DEAL_SYMBOL)!=m_symbol) continue;
+         if((ulong)HistoryDealGetInteger(dealTicket,DEAL_MAGIC)!=magic) continue;
+         ulong positionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
+         int pidx=ReplayPositionIndex(positionIds,positionId);
+         if(pidx<0) continue;
+         ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
+         if(entry==DEAL_ENTRY_INOUT) return false;
+         if(entry!=DEAL_ENTRY_IN && entry!=DEAL_ENTRY_OUT && entry!=DEAL_ENTRY_OUT_BY) continue;
+
+         OutcomeReplayDeal row;
+         row.ticket=dealTicket;
+         row.positionId=positionId;
+         row.timeMsc=(long)HistoryDealGetInteger(dealTicket,DEAL_TIME_MSC);
+         row.time=(datetime)HistoryDealGetInteger(dealTicket,DEAL_TIME);
+         row.entry=entry;
+         row.volume=HistoryDealGetDouble(dealTicket,DEAL_VOLUME);
+         row.price=HistoryDealGetDouble(dealTicket,DEAL_PRICE);
+         row.profit=HistoryDealGetDouble(dealTicket,DEAL_PROFIT);
+         row.commission=HistoryDealGetDouble(dealTicket,DEAL_COMMISSION);
+         row.swap=HistoryDealGetDouble(dealTicket,DEAL_SWAP);
+         row.fee=HistoryDealGetDouble(dealTicket,DEAL_FEE);
+         if(row.volume<=0.0 || row.price<=0.0 || row.time<=0) return false;
+
+         int n=ArraySize(deals);
+         if(ArrayResize(deals,n+1)!=n+1) return false;
+         deals[n]=row;
+         if(entry==DEAL_ENTRY_IN)
+            expectedRemaining[pidx]+=row.volume;
+         else
+           {
+            expectedRemaining[pidx]-=row.volume;
+            double step=SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP);
+            double tolerance=MathMax(1e-7,step*0.51);
+            if(expectedRemaining[pidx]<-tolerance) return false;
+            if(expectedRemaining[pidx]<0.0) expectedRemaining[pidx]=0.0;
+           }
+        }
+      if(ArraySize(deals)==0) return false;
+
+      // Broker open positions must match the volume reconstructed from all entries
+      // and partial exits. This catches missing history rows, reversals and bad IDs.
+      double actualRemaining[];
+      if(ArrayResize(actualRemaining,ArraySize(positionIds))!=ArraySize(positionIds)) return false;
+      ArrayInitialize(actualRemaining,0.0);
+      for(int i=0;i<PositionsTotal();i++)
+        {
+         ulong ticket=PositionGetTicket(i);
+         if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=m_symbol) continue;
+         if((ulong)PositionGetInteger(POSITION_MAGIC)!=magic) continue;
+         ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         int pidx=ReplayPositionIndex(positionIds,positionId);
+         if(pidx>=0) actualRemaining[pidx]+=PositionGetDouble(POSITION_VOLUME);
+        }
+      double volumeStep=SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP);
+      double volumeTolerance=MathMax(1e-7,volumeStep*0.51);
+      for(int i=0;i<ArraySize(positionIds);i++)
+         if(MathAbs(expectedRemaining[i]-actualRemaining[i])>volumeTolerance) return false;
+      if(actualRemaining[ReplayPositionIndex(positionIds,livePositionId)]<=0.0) return false;
+
+      // Sort deterministically by broker millisecond timestamp then unique deal ticket.
+      for(int i=1;i<ArraySize(deals);i++)
+        {
+         OutcomeReplayDeal key=deals[i];
+         int j=i-1;
+         while(j>=0 && (deals[j].timeMsc>key.timeMsc ||
+               (deals[j].timeMsc==key.timeMsc && deals[j].ticket>key.ticket)))
+           {
+            deals[j+1]=deals[j];
+            j--;
+           }
+         deals[j+1]=key;
+        }
+
+      AddSetup(setup,decisionId);
+      int trackerIndex=Find(decisionId);
+      if(trackerIndex<0) return false;
+      PendingSetup state=m_pending[trackerIndex];
+      state.outcomeHistoryComplete=true;
+      state.cashflowsKnown=true;
+      m_pending[trackerIndex]=state;
+
+      // Replay historical partial closes but keep the parent decision active while
+      // any part of it is currently open. Every deal ticket is remembered so the
+      // terminal's subsequent transaction callback cannot double-count it.
+      for(int i=0;i<ArraySize(deals);i++)
+        {
+         OutcomeReplayDeal row=deals[i];
+         if(row.entry==DEAL_ENTRY_IN)
+           {
+            if(!MarkExecuted(decisionId,row.price,row.time,row.volume,row.ticket,row.commission,row.swap,row.fee,true))
+              {
+               MarkHistoryIncomplete(decisionId);
+               return false;
+              }
+           }
+         else
+           {
+            double net=row.profit+row.commission+row.swap+row.fee;
+            if(!MarkClosed(decisionId,row.price,row.time,net,row.commission,row.swap,row.fee,
+                           true,"Recovered_Partial",row.ticket,row.volume,true))
+              {
+               MarkHistoryIncomplete(decisionId);
+               return false;
+              }
+           }
+        }
+      return MarkDecisionRebuilt(decisionId);
+     }
+
    bool MarkExecuted(long id,double fill,datetime t,double volume,ulong dealTicket=0,double commission=0.0,double swap=0.0,double fee=0.0,bool cashflowsKnown=true)
      {
       if(DealAlreadyProcessed(dealTicket)) return true;
