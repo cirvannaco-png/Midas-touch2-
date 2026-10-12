@@ -60,7 +60,7 @@ def test_order_manager_supports_same_parent_with_distinct_legs():
     t = ORDERS.read_text()
     assert "legIndex" in t
     assert "FindByDecisionAndLeg" in t
-    assert "Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0)" in t
+    assert "Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,double maxRiskCash,ulong &ticketOut,int legIndex=0)" in t
     assert "HasLiveTradeForDecision" in t
 
 
@@ -81,7 +81,7 @@ def test_ea_wires_multi_trade_through_portfolio_before_order_submission():
     assert "MultiTradePlan plan" in t
     build = t.index("g_multiTrade.Build(decision.setup,availableSlots,plan)")
     gate = t.index("g_portfolio.AllowNewTradeBatch", build)
-    submit = t.index("g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,ticket,leg)", gate)
+    submit = t.index("g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,legRisk[leg],ticket,leg)", gate)
     assert build < gate < submit
 
 
