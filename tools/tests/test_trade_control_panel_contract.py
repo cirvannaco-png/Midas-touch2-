@@ -30,7 +30,7 @@ def test_manual_orders_use_risk_controls_and_normal_order_manager():
     assert "g_risk.ValidateSetup(setup,InpMinRiskReward,InpMaxSLDistanceATR,atr)" in ea
     assert "g_risk.CalculateLotSize(_Symbol,InpRiskPercentPerTrade" in ea
     assert "g_portfolio.AllowNewTradeBatch(_Symbol,proposedRisk,1,portfolioReason)" in ea
-    assert "g_orders.Submit(decision,lots,true,maxDeviation,ticket,0)" in ea
+    assert "g_orders.Submit(decision,lots,true,maxDeviation,proposedRisk,ticket,0)" in ea
     assert "g_store.SaveExecution(decision.decision_id,lots,ticket,0,setup.final_tp)" in ea
 
 

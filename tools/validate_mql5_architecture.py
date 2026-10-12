@@ -144,8 +144,8 @@ INTERFACE_CONTRACTS = {
     },
     ("includes/Execution/OrderManager.mqh", "COrderManager"): {
         "Init": 3,
-        "Submit": 6,
-        "MarkFilledFromPending": 3,
+        "Submit": 7,
+        "MarkFilledFromPending": 6,
         "DecisionIdForTicket": 1,
         "HasLiveTradeForDecision": 2,
     },
@@ -226,7 +226,7 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
         "g_router.Decide(chosen)",
         "g_multiTrade.Build(decision.setup,availableSlots,plan)",
         "g_portfolio.AllowNewTradeBatch",
-        "g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,ticket,leg)",
+        "g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,legRisk[leg],ticket,leg)",
     )
     positions = [ea.find(token) for token in call_order]
     if any(i < 0 for i in positions):
