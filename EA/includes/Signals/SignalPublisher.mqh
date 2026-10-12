@@ -46,18 +46,18 @@ string CSignalPublisher::BuildOutcomeJsonPayloadProvenance(string signalId,strin
   {
    bool hasR=(outcome!="no_fill"&&outcome!="ambiguous");
    string realizedRStr=hasR?StringFormat("%.4f",realizedR):"null";
-   string mfeRStr=hasR?StringFormat("%.4f",mfeR):"null";
-   string maeRStr=hasR?StringFormat("%.4f",maeR):"null";
+   string mfeRStr=(hasR&&excursionHistoryComplete)?StringFormat("%.4f",mfeR):"null";
+   string maeRStr=(hasR&&excursionHistoryComplete)?StringFormat("%.4f",maeR):"null";
    string commissionStr=filled?StringFormat("%.4f",commissionCost):"null";
    string spreadStr=filled?StringFormat("%.4f",spreadCost):"null";
    string slippageStr=filled?StringFormat("%.4f",slippageCost):"null";
    return StringFormat("{\"signal_id\":\"%s\",\"symbol\":\"%s\",\"direction\":\"%s\",\"outcome\":\"%s\",\"resolution\":\"%s\",\"strategy\":\"%s\",\"realized_r\":%s,\"mfe_r\":%s,\"mae_r\":%s,\"commission_cost\":%s,\"spread_cost\":%s,\"slippage_cost\":%s,\"bars_held\":%d,\"bars_to_fill\":%d,\"filled\":%s,\"regime\":\"%s\",\"session\":\"%s\",\"sweep_grade\":\"%s\",\"htf_ob_aligned\":%s,\"weight_version\":\"%s\",\"confidence_at_signal\":%.2f,\"confidence_decayed\":%.2f,\"decay_bars\":%d,\"decision_fingerprint\":\"%s\",\"signal_time\":%I64d,\"execution_time\":%I64d,\"outcome_time\":%I64d}",
-      signalId,symbol,direction,outcome,resolution,strategy,realizedRStr,mfeRStr,maeRStr,commissionStr,spreadStr,slippageStr,barsHeld,barsToFill,filled?"true":"false",regime,session,sweepGrade,htfObAligned?"true":"false",m_weightVersion,confidenceAtSignal,confidenceDecayed,decayBars,decisionFingerprint,signalTime,executionTime,outcomeTime,excursionHistoryComplete);
+      signalId,symbol,direction,outcome,resolution,strategy,realizedRStr,mfeRStr,maeRStr,commissionStr,spreadStr,slippageStr,barsHeld,barsToFill,filled?"true":"false",regime,session,sweepGrade,htfObAligned?"true":"false",m_weightVersion,confidenceAtSignal,confidenceDecayed,decayBars,decisionFingerprint,signalTime,executionTime,outcomeTime);
   }
 bool CSignalPublisher::PublishOutcome(string signalId,string symbol,string direction,string outcome,string resolution,string strategy,double realizedR,double mfeR,double maeR,double commissionCost,double spreadCost,double slippageCost,int barsHeld,int barsToFill,bool filled,string regime,string session,string sweepGrade,bool htfObAligned,double confidenceAtSignal,double confidenceDecayed,int decayBars,string decisionFingerprint,datetime signalTime,datetime executionTime,datetime outcomeTime,bool excursionHistoryComplete)
   {
    if(m_platform==NULL)return false;
-   string payload=BuildOutcomeJsonPayloadProvenance(signalId,symbol,direction,outcome,resolution,strategy,realizedR,mfeR,maeR,commissionCost,spreadCost,slippageCost,barsHeld,barsToFill,filled,regime,session,sweepGrade,htfObAligned,confidenceAtSignal,confidenceDecayed,decayBars,decisionFingerprint,signalTime,executionTime,outcomeTime);
+   string payload=BuildOutcomeJsonPayloadProvenance(signalId,symbol,direction,outcome,resolution,strategy,realizedR,mfeR,maeR,commissionCost,spreadCost,slippageCost,barsHeld,barsToFill,filled,regime,session,sweepGrade,htfObAligned,confidenceAtSignal,confidenceDecayed,decayBars,decisionFingerprint,signalTime,executionTime,outcomeTime,excursionHistoryComplete);
    Subscriber subs[];int targeted=m_platform.GetActiveSubscribers(subs);bool anyOk=false;
    for(int i=0;i<targeted;i++)
      {
