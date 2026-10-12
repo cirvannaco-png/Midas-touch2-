@@ -34,3 +34,24 @@ def test_recovered_snapshots_and_netting_reversals_are_not_training_labels():
     assert "p.cashflowsKnown=false;p.outcomeHistoryComplete=false;" in tracker
     assert "if((!p.outcomeHistoryComplete||!p.cashflowsKnown)&&p.filled)coarseOutcome=\"ambiguous\";" in tracker
     assert 'outcome="Ambiguous_NettingReversal";g_tracker.MarkHistoryIncomplete(decisionId);' in ea
+
+
+
+def test_restart_rebuilds_active_position_from_authoritative_deals_before_fallback():
+    tracker = TRACKER.read_text(encoding="utf-8")
+    recovery = (ROOT / "EA" / "includes" / "Recovery" / "RecoveryEngine.mqh").read_text(encoding="utf-8")
+    assert "RebuildOpenDecisionFromHistory(TradeSetup &setup,long decisionId,ulong livePositionId,ulong magic)" in tracker
+    assert "HistorySelect(fromTime,toTime)" in tracker
+    assert "DEAL_POSITION_ID" in tracker
+    assert "DEAL_ENTRY_OUT_BY" in tracker
+    assert "MathAbs(expectedRemaining[i]-actualRemaining[i])>volumeTolerance" in tracker
+    assert "DealAlreadyProcessed(dealTicket)" in tracker
+    assert "m_tracker.RebuildOpenDecisionFromHistory(restoredDecision.setup,decisionId,positionIdentifier,m_magic)" in recovery
+    assert "m_tracker.MarkHistoryIncomplete(decisionId);" in recovery
+
+
+def test_history_rebuild_rejects_netting_reversals_and_missing_exposure_history():
+    tracker = TRACKER.read_text(encoding="utf-8")
+    assert "if(entry==DEAL_ENTRY_INOUT) return false;" in tracker
+    assert "if(!liveEntryConfirmed || ArraySize(positionIds)==0) return false;" in tracker
+    assert "MarkHistoryIncomplete(decisionId)" in tracker
