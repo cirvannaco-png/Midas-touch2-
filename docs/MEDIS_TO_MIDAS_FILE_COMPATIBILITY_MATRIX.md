@@ -33,6 +33,10 @@
 | `EA/includes/Execution/PositionManager.mqh` | Midas integrates `DynamicStopEngine`, dynamic-stop input policy, structural swing anchors, spread/ATR guardrails, stop-modification throttling, and SL-modification audit. | Preserve Midas stop-management enhancements; do not replace with the simpler source manager. |
 | `EA/includes/Trading/OutcomeTracker.mqh` / `OutcomeTrackerLive.mqh` | The Midas EA facade uses `OutcomeTrackerLive`, which records actual executed/closed outcomes and integrates environment-strategy memory and decision fingerprints. The target also has a separate simulation tracker with resolution-time provenance. | Preserve the live/simulation split and Midas lineage. Do not substitute the source's simulation tracker for live accounting. |
 
+
+| `EA/includes/Trading/TradeZone.mqh` | Source file defines a runtime-parameter overlay on `CTradeDecision`. Midas intentionally turns this same path into a compatibility shim and makes `StrategyTradeZone.mqh` authoritative; the EA facade includes the strategy router, which builds SMC and peer-strategy setups and incorporates environment-memory evidence. | Do not restore the source file over the shim. Doing so would introduce a duplicate `CTradeDecision` definition and bypass Midas's strategy-selection architecture. |
+| `EA/includes/Decision/DecisionEngine.mqh` | Midas adds `EnvironmentPolicy` arbitration and explicit setup-geometry validation before routing an action. | Preserve Midas gates; test their thresholds and invalid-geometry handling rather than porting the source router wholesale. |
+
 ## Validation in this PR
 
 - ORM metadata tests assert all seven restored tables and critical idempotency, lease, broker-reference, holdout, and outcome fields.
