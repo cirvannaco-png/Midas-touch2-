@@ -17,7 +17,7 @@ private:
 
    bool              LastRequestOk(string action);
    bool              LastExecutionCompleted(string action,bool allowPartial=false,bool allowNoChanges=false);
-   ulong             ResolvePositionTicket();
+   ulong             ResolvePositionTicket(string symbol);
    bool              IsRetryable(uint retcode);
    int               DelayForRetcode(uint retcode);
    bool              IsConnected();
@@ -35,6 +35,7 @@ public:
    bool              ModifySLTP(ulong ticket, double sl, double tp);
    bool              ClosePartial(ulong ticket, double volume);
    bool              CloseFull(ulong ticket);
+   ulong             PositionTicketForIdentifier(string symbol, ulong positionIdentifier);
   };
 //+------------------------------------------------------------------+
 void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs)
@@ -184,22 +185,55 @@ bool CBrokerAdapter::LastExecutionCompleted(string action,bool allowPartial,bool
    return completed;
   }
 //+------------------------------------------------------------------+
-ulong CBrokerAdapter::ResolvePositionTicket()
+// Resolve the terminal's current position ticket from the stable history identifier.
+// POSITION_IDENTIFIER is a ledger identity, not the argument to PositionSelectByTicket.
+ulong CBrokerAdapter::PositionTicketForIdentifier(string symbol,ulong positionIdentifier)
+  {
+   if(positionIdentifier==0) return 0;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic) continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionIdentifier)
+         return ticket;
+     }
+   return 0;
+  }
+//+------------------------------------------------------------------+
+ulong CBrokerAdapter::ResolvePositionTicket(string symbol)
   {
    ulong dealTicket=m_trade.ResultDeal();
-   if(dealTicket==0) return m_trade.ResultOrder();
-   if(!HistoryDealSelect(dealTicket))
+   ulong positionIdentifier=0;
+   if(dealTicket>0 && HistoryDealSelect(dealTicket))
+      positionIdentifier=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
+
+   if(positionIdentifier>0)
      {
-      PrintFormat("MedisTouch BrokerAdapter: could not select deal #%d; falling back to order ticket.",dealTicket);
-      return m_trade.ResultOrder();
+      ulong ticket=PositionTicketForIdentifier(symbol,positionIdentifier);
+      if(ticket>0) return ticket;
+
+      // A synchronous trade call can return before the terminal exposes the
+      // resulting position snapshot. Keep the stable identifier temporarily:
+      // the transaction handler and manager reconcile it to POSITION_TICKET.
+      PrintFormat("MedisTouch BrokerAdapter: position identifier #%I64u has no current ticket snapshot yet; deferred reconciliation will retry.",positionIdentifier);
+      return positionIdentifier;
      }
-   ulong positionId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
-   if(positionId==0)
+
+   ulong orderTicket=m_trade.ResultOrder();
+   if(orderTicket>0)
      {
-      PrintFormat("MedisTouch BrokerAdapter: deal #%d has no DEAL_POSITION_ID; falling back to order ticket.",dealTicket);
-      return m_trade.ResultOrder();
+      if(PositionSelectByTicket(orderTicket) &&
+         PositionGetString(POSITION_SYMBOL)==symbol &&
+         (ulong)PositionGetInteger(POSITION_MAGIC)==m_magic)
+         return orderTicket;
+      PrintFormat("MedisTouch BrokerAdapter: accepted order #%I64u has no resolved deal/position identity yet; transaction recovery must reconcile it.",orderTicket);
+      return orderTicket;
      }
-   return positionId;
+
+   Print("MedisTouch BrokerAdapter: broker accepted a request without a resolvable deal, order, or position identifier.");
+   return 0;
   }
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
@@ -213,7 +247,7 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
      {
       if(m_trade.Buy(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketBuy"))
         {
-         ticketOut=ResolvePositionTicket();
+         ticketOut=ResolvePositionTicket(symbol);
          fillPriceOut=m_trade.ResultPrice();
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
@@ -237,7 +271,7 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
      {
       if(m_trade.Sell(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketSell"))
         {
-         ticketOut=ResolvePositionTicket();
+         ticketOut=ResolvePositionTicket(symbol);
          fillPriceOut=m_trade.ResultPrice();
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
