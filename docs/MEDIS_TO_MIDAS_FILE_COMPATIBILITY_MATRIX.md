@@ -27,6 +27,12 @@
 | `telegram-bridge/app/deployment.py` | No same-path target module. Midas has config lifecycle/sync and deployment/maintenance workflows with distinct operational contracts. | Do not copy without a requirement-by-requirement endpoint and workflow comparison. |
 | `telegram-bridge/tests/test_imports.py` | Source-only import smoke test; target's CI already compiles Python sources and runs bridge tests, and the target module graph is intentionally different. | Do not port as a substitute for behavior tests. Add a focused regression test only if it detects a target-specific import-cycle risk. |
 
+
+| `EA/includes/Execution/OrderManager.mqh` | Same path differs. Midas identifies trades by decision **and leg**, adds ticket/decision lookup, prevents duplicate live trades for a decision, and supports per-leg restore/cancel behavior for its multi-trade engine. | Preserve Midas implementation; do not overwrite with the source's single-decision-indexed version. |
+| `EA/includes/Execution/BrokerAdapter.mqh` | Same path differs. Midas has explicit execution-completion checks that distinguish partial fills and permitted no-change responses, plus direction-aware market-open checks. | Preserve Midas behavior and validate partial execution outcomes in the recovery test suite. |
+| `EA/includes/Execution/PositionManager.mqh` | Midas integrates `DynamicStopEngine`, dynamic-stop input policy, structural swing anchors, spread/ATR guardrails, stop-modification throttling, and SL-modification audit. | Preserve Midas stop-management enhancements; do not replace with the simpler source manager. |
+| `EA/includes/Trading/OutcomeTracker.mqh` / `OutcomeTrackerLive.mqh` | The Midas EA facade uses `OutcomeTrackerLive`, which records actual executed/closed outcomes and integrates environment-strategy memory and decision fingerprints. The target also has a separate simulation tracker with resolution-time provenance. | Preserve the live/simulation split and Midas lineage. Do not substitute the source's simulation tracker for live accounting. |
+
 ## Validation in this PR
 
 - ORM metadata tests assert all seven restored tables and critical idempotency, lease, broker-reference, holdout, and outcome fields.
