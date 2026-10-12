@@ -42,6 +42,7 @@ public:
    bool              BindPositionIdentity(ulong knownTicket,ulong positionIdentifier,ulong positionTicket);
    ulong             PositionTicketAt(int idx);
    long              DecisionIdForPositionIdentifier(ulong positionIdentifier);
+   bool              MarkPositionExitByIdentifier(ulong positionIdentifier,bool positionStillOpen);
    long              DecisionIdForTicket(ulong ticket);
    double            FillPriceForDecision(long decisionId);
    ENUM_TRADE_STATE  StateAt(int idx) { return m_trades[idx].fsm.State(); }
@@ -195,6 +196,29 @@ long COrderManager::DecisionIdForPositionIdentifier(ulong positionIdentifier)
    return -1;
   }
 //+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+bool COrderManager::MarkPositionExitByIdentifier(ulong positionIdentifier,bool positionStillOpen)
+  {
+   if(positionIdentifier==0) return false;
+   for(int i=0;i<ArraySize(m_trades);i++)
+     {
+      if(m_trades[i].positionIdentifier!=positionIdentifier) continue;
+      if(positionStillOpen) return true;
+
+      ENUM_TRADE_STATE state=m_trades[i].fsm.State();
+      if(state==TS_ARCHIVED) return true;
+      if(state!=TS_CLOSED && !m_trades[i].fsm.Transition(TS_CLOSED))
+        {
+         PrintFormat("MedisTouch OrderManager: could not close decision #%I64d after broker position #%I64u disappeared.",
+                     m_trades[i].decision.decision_id,positionIdentifier);
+         return false;
+        }
+      if(m_trades[i].fsm.State()==TS_CLOSED)
+         return m_trades[i].fsm.Transition(TS_ARCHIVED);
+      return true;
+     }
+   return false;
+  }
 //+------------------------------------------------------------------+
 long COrderManager::DecisionIdForTicket(ulong ticket)
   {
