@@ -90,7 +90,7 @@ class ExecutionRecoveryJournal:
     def begin_submission(
         self, order_id: str, now: float | None = None, *,
         parent_order_id: str | None = None, client_order_id: str | None = None,
-        requested_quantity: float | None = None,
+        requested_quantity: float | None = None, reject_existing: bool = False,
     ) -> RecoveryRecord:
         if not order_id.strip():
             raise ValueError("order_id is required")
@@ -110,6 +110,9 @@ class ExecutionRecoveryJournal:
                 "FROM execution_recovery WHERE order_id=?", (order_id,),
             ).fetchone()
             if row is not None:
+                if reject_existing:
+                    db.rollback()
+                    raise ValueError("durable order identity already exists; duplicate broker submission blocked")
                 _, _, _, filled, _, _, _, parent_existing, client_existing, quantity_existing = row
                 if parent_order_id is not None and parent_existing not in (None, parent_order_id):
                     db.rollback()
@@ -151,6 +154,22 @@ class ExecutionRecoveryJournal:
     def child_records(self, parent_order_id: str) -> tuple[RecoveryRecord, ...]:
         with self._connect() as db:
             rows = db.execute("SELECT order_id,state,venue_order_id,filled_quantity,filled_notional,last_error,updated_at,parent_order_id,client_order_id,requested_quantity FROM execution_recovery WHERE parent_order_id=? ORDER BY order_id", (parent_order_id,)).fetchall()
+        return tuple(RecoveryRecord(*row) for row in rows)
+
+    def unresolved_records(self) -> tuple[RecoveryRecord, ...]:
+        """List orders whose durable states still require broker reconciliation."""
+        states = (
+            "SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED",
+            "CANCEL_PENDING", "RECOVERY_REQUIRED",
+        )
+        placeholders = ",".join("?" for _ in states)
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT order_id,state,venue_order_id,filled_quantity,filled_notional,"
+                "last_error,updated_at,parent_order_id,client_order_id,requested_quantity "
+                f"FROM execution_recovery WHERE state IN ({placeholders}) ORDER BY updated_at,order_id",
+                states,
+            ).fetchall()
         return tuple(RecoveryRecord(*row) for row in rows)
 
     def mark_unknown(self, order_id: str, error: str, now: float | None = None) -> RecoveryRecord:
