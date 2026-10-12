@@ -36,7 +36,7 @@ def _context(dataset_hash):
     }
 
 
-def _write_deals(path: Path, *, with_lane=True, profits=(5.0, 20.0)):
+def _write_deals(path: Path, *, with_lane=True, profits=(5.0, -20.0)):
     columns = ["position_id", "time", "entry", "volume", "profit", "commission", "swap", "fee", "risk_cash"]
     if with_lane:
         columns.append("lane")
@@ -105,6 +105,12 @@ def test_matched_run_comparison_hashes_artifacts_and_reports_oos_deltas(tmp_path
     baseline = report["variants"]["baseline_dual_lane"]
     assert baseline["metrics"]["full_period"]["completed_positions"] == 2
     assert baseline["metrics"]["locked_oos"]["completed_positions"] == 1
+    full = baseline["metrics"]["full_period"]
+    assert full["average_win_R"] == 0.03
+    assert full["average_loss_R_abs"] == 0.22
+    assert full["payoff_ratio_R"] == 0.1364
+    assert full["break_even_win_rate_pct_from_avg_R"] == 88.0
+    assert "payoff_ratio_R" in report["candidate_deltas_vs_baseline"]["strict_only"]["full_period_delta"]
     assert baseline["artifacts"]["report"]["sha256"]
     assert report["candidate_deltas_vs_baseline"]["strict_only"]["locked_oos_delta"]["net_pnl"] == 0
 
