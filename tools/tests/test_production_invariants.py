@@ -151,7 +151,7 @@ def test_outcome_provenance_preserves_signed_cashflows_and_unknown_costs():
     assert "p.totalCommissionCashflow,p.totalSwapCashflow,p.totalBrokerFeeCashflow" in tracker
     assert "p.cashflowsKnown,p.spreadCostKnown,p.slippageCostKnown,envKey,EnvironmentJson(p)" in tracker
     assert 'string commissionCashflowStr=(filled&&cashflowsKnown)?StringFormat("%.4f",commissionCashflow):"null";' in publisher
-    assert '"commission_cashflow":%s' in publisher
-    assert '"swap_cashflow":%s' in publisher
-    assert '"broker_fee_cashflow":%s' in publisher
+    assert r'\"commission_cashflow\":%s' in publisher
+    assert r'\"swap_cashflow\":%s' in publisher
+    assert r'\"broker_fee_cashflow\":%s' in publisher
     assert '"commission_cashflow", "swap_cashflow", "broker_fee_cashflow"' in walk_forward
