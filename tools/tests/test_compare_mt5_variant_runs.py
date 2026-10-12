@@ -49,9 +49,11 @@ def _write_deals(path: Path, *, with_lane=True, profits=(5.0, 20.0)):
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
         writer.writerow(columns)
-        for row in rows:
+        for index, row in enumerate(rows):
             if with_lane:
-                row.append("STRICT")
+                # P1 is the fallback lane, P2 the strict lane, which exercises
+                # lane-specific aggregation instead of merely checking a header.
+                row.append("FALLBACK" if index < 2 else "STRICT")
             writer.writerow(row)
 
 
@@ -169,3 +171,11 @@ def test_empty_strict_only_run_is_reported_without_inventing_metrics(tmp_path):
     metrics = report["variants"]["strict_only"]["metrics"]["locked_oos"]
     assert metrics["completed_positions"] == 0
     assert metrics["net_expectancy_per_completed_position"] is None
+
+def test_lane_metrics_are_reported_separately(tmp_path):
+    manifest = _make_manifest(tmp_path)
+    report, _ = compare_manifest(manifest)
+    lanes = report["variants"]["baseline_dual_lane"]["metrics"]["full_period"]["by_lane"]
+    assert set(lanes) == {"FALLBACK", "STRICT"}
+    assert lanes["FALLBACK"]["positions"] == 1
+    assert lanes["STRICT"]["positions"] == 1
