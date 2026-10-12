@@ -282,29 +282,141 @@ public:
    bool MarkExecuted(long id,double fill,datetime t,double volume,ulong dealTicket=0,double commission=0.0,double swap=0.0,double fee=0.0,bool cashflowsKnown=true)
      {
       if(DealAlreadyProcessed(dealTicket)) return true;
-      int i=Find(id);if(i<0||fill<=0.0||volume<=0.0)return false;
+      int i=Find(id);
+      if(i<0) return false;
+      if(!MathIsValidNumber(fill) || !MathIsValidNumber(volume) || fill<=0.0 || volume<=0.0)
+        {
+         // Do not let NaN/Inf values poison the parent's P&L or volume state.
+         // The real broker fill still requires reconciliation before learning.
+         MarkHistoryIncomplete(id);
+         return false;
+        }
+
+      bool costValuesValid=MathIsValidNumber(commission) &&
+                           MathIsValidNumber(swap) &&
+                           MathIsValidNumber(fee);
+      bool timeValid=(t>0);
+      if(!costValuesValid)
+        {
+         if(!MathIsValidNumber(commission)) commission=0.0;
+         if(!MathIsValidNumber(swap)) swap=0.0;
+         if(!MathIsValidNumber(fee)) fee=0.0;
+        }
+      if(!timeValid) t=TimeCurrent();
+
       PendingSetup p=m_pending[i];
-      // Entry-side commission, swap and broker fee are cashflows too; ignoring
-      // them creates a systematic positive bias even when every exit is captured.
-      p.realizedPnL+=commission+swap+fee;
-      p.totalCommissionCashflow+=commission;
-      p.totalSwapCashflow+=swap;
-      p.totalBrokerFeeCashflow+=fee;
-      p.totalCommission+=MathMax(0.0,-commission);
-      p.cashflowsKnown=p.cashflowsKnown&&cashflowsKnown;
+      if(!timeValid || !costValuesValid)
+        {
+         p.outcomeHistoryComplete=false;
+         p.excursionHistoryComplete=false;
+        }
+      double nextPnL=p.realizedPnL+commission+swap+fee;
+      double nextCommissionCashflow=p.totalCommissionCashflow+commission;
+      double nextSwapCashflow=p.totalSwapCashflow+swap;
+      double nextFeeCashflow=p.totalBrokerFeeCashflow+fee;
+      double nextCommission=p.totalCommission+MathMax(0.0,-commission);
+      bool totalsValid=MathIsValidNumber(nextPnL) &&
+                       MathIsValidNumber(nextCommissionCashflow) &&
+                       MathIsValidNumber(nextSwapCashflow) &&
+                       MathIsValidNumber(nextFeeCashflow) &&
+                       MathIsValidNumber(nextCommission);
+      if(totalsValid)
+        {
+         p.realizedPnL=nextPnL;
+         p.totalCommissionCashflow=nextCommissionCashflow;
+         p.totalSwapCashflow=nextSwapCashflow;
+         p.totalBrokerFeeCashflow=nextFeeCashflow;
+         p.totalCommission=nextCommission;
+        }
+      else
+        {
+         p.outcomeHistoryComplete=false;
+         p.cashflowsKnown=false;
+        }
+      p.cashflowsKnown=p.cashflowsKnown && cashflowsKnown && costValuesValid && totalsValid;
+
+      double stopLoss=p.setup.stop_loss;
+      double riskIncrement=(MathIsValidNumber(stopLoss) && stopLoss>0.0)
+                           ? MathAbs(fill-stopLoss)*volume : 0.0;
+      if(!MathIsValidNumber(riskIncrement))
+        {
+         riskIncrement=0.0;
+         p.outcomeHistoryComplete=false;
+         p.excursionHistoryComplete=false;
+        }
+
       if(p.filled)
         {
-         // Multi-trade: multiple fills/legs belong to one parent decision.
-         p.lots+=volume;
-         p.remainingLots+=volume;
-         p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume;
+         // Multiple partial fills/target legs share a parent decision. Keep a
+         // true volume-weighted fill price, but do not train MFE/MAE on a single
+         // path when that parent contains fills at different prices/times.
+         if(!MathIsValidNumber(p.lots) || p.lots<=0.0 ||
+            !MathIsValidNumber(p.entryFillPrice) || p.entryFillPrice<=0.0)
+           {
+            p.outcomeHistoryComplete=false;
+            p.excursionHistoryComplete=false;
+            p.cashflowsKnown=false;
+            m_pending[i]=p;
+            return false;
+           }
+         double totalLots=p.lots+volume;
+         double totalNotional=p.entryFillPrice*p.lots+fill*volume;
+         double nextRemaining=p.remainingLots+volume;
+         if(!MathIsValidNumber(totalLots) || totalLots<=p.lots ||
+            !MathIsValidNumber(nextRemaining) || nextRemaining<=p.remainingLots)
+           {
+            p.outcomeHistoryComplete=false;
+            p.excursionHistoryComplete=false;
+            m_pending[i]=p;
+            return false;
+           }
+         p.lots=totalLots;
+         p.remainingLots=nextRemaining;
+         if(MathIsValidNumber(totalNotional) && totalNotional>0.0)
+           {
+            double averageFill=totalNotional/totalLots;
+            if(MathIsValidNumber(averageFill) && averageFill>0.0)
+              {
+               p.entryFillPrice=averageFill;
+               p.entryRef=averageFill;
+              }
+            else
+               p.outcomeHistoryComplete=false;
+           }
+         else
+            p.outcomeHistoryComplete=false;
+
+         double weightedRisk=p.weightedRiskDistLots+riskIncrement;
+         if(MathIsValidNumber(weightedRisk) && weightedRisk>=0.0)
+            p.weightedRiskDistLots=weightedRisk;
+         else
+            p.outcomeHistoryComplete=false;
+         p.excursionHistoryComplete=false;
+         p.mfePrice=0.0;
+         p.maePrice=0.0;
          m_pending[i]=p;
          RememberDeal(dealTicket);
          return true;
         }
-      p.filled=true;p.entryFillPrice=fill;p.entryRef=fill;p.fillTime=t;p.barsToFill=0;
-      p.lots=volume;p.remainingLots=volume;p.riskDist=MathAbs(fill-p.setup.stop_loss);
-      p.mgmtRiskDist=p.riskDist;p.weightedRiskDistLots=p.riskDist*volume;p.mfePrice=fill;p.maePrice=fill;p.currentSL=p.setup.stop_loss;
+
+      p.filled=true;
+      p.entryFillPrice=fill;
+      p.entryRef=fill;
+      p.fillTime=t;
+      p.barsToFill=0;
+      p.lots=volume;
+      p.remainingLots=volume;
+      p.riskDist=riskIncrement/volume;
+      p.mgmtRiskDist=p.riskDist;
+      p.weightedRiskDistLots=riskIncrement;
+      p.mfePrice=fill;
+      p.maePrice=fill;
+      p.currentSL=stopLoss;
+      if(riskIncrement<=0.0)
+        {
+         p.outcomeHistoryComplete=false;
+         p.excursionHistoryComplete=false;
+        }
       m_pending[i]=p;
       RememberDeal(dealTicket);
       return true;
