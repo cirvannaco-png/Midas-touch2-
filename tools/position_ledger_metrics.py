@@ -218,6 +218,10 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
                 lane_loss_streak_max = max(lane_loss_streak_max, lane_loss_streak)
             else:
                 lane_loss_streak = 0
+        lane_r_w = [p["net_pnl"] / p["risk_cash"] for p in lane_w if p.get("risk_cash") and p["risk_cash"] > 0]
+        lane_r_l = [-p["net_pnl"] / p["risk_cash"] for p in lane_l if p.get("risk_cash") and p["risk_cash"] > 0]
+        lane_avg_win_r = sum(lane_r_w) / len(lane_r_w) if lane_r_w else None
+        lane_avg_loss_r = sum(lane_r_l) / len(lane_r_l) if lane_r_l else None
         lanes[lane] = {
             "positions": len(rows),
             "wins": len(lane_w),
@@ -226,11 +230,25 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
             "expectancy_per_position": round(sum(p["net_pnl"] for p in rows) / len(rows), 4) if rows else None,
             "average_win": round(sum(p["net_pnl"] for p in lane_w) / len(lane_w), 2) if lane_w else None,
             "average_loss": round(sum(p["net_pnl"] for p in lane_l) / len(lane_l), 2) if lane_l else None,
+            "average_win_R": round(lane_avg_win_r, 4) if lane_avg_win_r is not None else None,
+            "average_loss_R_abs": round(lane_avg_loss_r, 4) if lane_avg_loss_r is not None else None,
+            "payoff_ratio_R": round(lane_avg_win_r / lane_avg_loss_r, 4) if lane_avg_win_r is not None and lane_avg_loss_r is not None and lane_avg_loss_r > 0 else None,
             "max_consecutive_losses": lane_loss_streak_max,
             "win_rate_pct_excluding_flats": round(100 * len(lane_w) / (len(lane_w) + len(lane_l)), 2) if lane_w or lane_l else None,
             "profit_factor": round(lp / ll, 4) if ll else (None if not lp else "no_losses"),
         }
-    r_values = [p["net_pnl"] / p["risk_cash"] for p in positions if p["risk_cash"] and p["risk_cash"] > 0]
+    r_positions = [p for p in positions if p.get("risk_cash") and p["risk_cash"] > 0]
+    r_values = [p["net_pnl"] / p["risk_cash"] for p in r_positions]
+    win_r = [p["net_pnl"] / p["risk_cash"] for p in wins if p.get("risk_cash") and p["risk_cash"] > 0]
+    loss_r_abs = [-p["net_pnl"] / p["risk_cash"] for p in losses if p.get("risk_cash") and p["risk_cash"] > 0]
+    avg_win_r = sum(win_r) / len(win_r) if win_r else None
+    avg_loss_r_abs = sum(loss_r_abs) / len(loss_r_abs) if loss_r_abs else None
+    payoff_ratio_r = avg_win_r / avg_loss_r_abs if avg_win_r is not None and avg_loss_r_abs is not None and avg_loss_r_abs > 0 else None
+    break_even_win_rate = (
+        100.0 * avg_loss_r_abs / (avg_win_r + avg_loss_r_abs)
+        if avg_win_r is not None and avg_loss_r_abs is not None and avg_win_r + avg_loss_r_abs > 0
+        else None
+    )
     return {
         "status": "completed" if positions else "no_complete_positions",
         "initial_balance": round(initial_balance, 2), "final_balance": round(balance, 2),
@@ -243,6 +261,12 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
         "profit_factor": round(gross_win / gross_loss, 4) if gross_loss else (None if not gross_win else "no_losses"),
         "average_win": round(sum(p["net_pnl"] for p in wins) / len(wins), 2) if wins else None,
         "average_loss": round(sum(p["net_pnl"] for p in losses) / len(losses), 2) if losses else None,
+        "average_win_R": round(avg_win_r, 4) if avg_win_r is not None else None,
+        "average_loss_R_abs": round(avg_loss_r_abs, 4) if avg_loss_r_abs is not None else None,
+        "payoff_ratio_R": round(payoff_ratio_r, 4) if payoff_ratio_r is not None else None,
+        "break_even_win_rate_pct_from_avg_R": round(break_even_win_rate, 2) if break_even_win_rate is not None else None,
+        "positions_with_win_risk_cash": len(win_r),
+        "positions_with_loss_risk_cash": len(loss_r_abs),
         "average_position_pnl": round(pnl / len(positions), 2) if positions else None,
         "net_expectancy_per_completed_position": round(pnl / len(positions), 4) if positions else None,
         "max_consecutive_losses": max_consecutive_losses,
