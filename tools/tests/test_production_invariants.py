@@ -45,7 +45,8 @@ def test_outcomes_advance_before_entry_gates():
 def test_ea_uses_broker_deal_fill_and_close_events():
     t=EA.read_text()
     assert "g_tracker.MarkExecuted(decisionId,price,dealTime,volume,trans.deal" in t
-    assert "g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome,trans.deal,volume,true)" in t
+    compact_t = "".join(t.split())
+    assert "g_tracker.MarkClosed(decisionId,price,dealTime,net,commission,swap,fee,stillOpen,outcome,trans.deal,volume,true)" in compact_t
 
 def test_partial_close_keeps_current_position_live_for_tracker():
     t=EA.read_text()
