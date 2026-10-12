@@ -635,6 +635,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       double swap=HistoryDealGetDouble(trans.deal,DEAL_SWAP);
       double fee=HistoryDealGetDouble(trans.deal,DEAL_FEE);
       double net=profit+commission+swap+fee;
+      bool samePositionStillOpen=(g_broker.PositionTicketForIdentifier(_Symbol,positionIdentifier)>0);
+      g_orders.MarkPositionExitByIdentifier(positionIdentifier,samePositionStillOpen);
       bool stillOpen=g_orders.HasLiveTradeForDecision(decisionId);
       ENUM_DEAL_REASON reason=(ENUM_DEAL_REASON)HistoryDealGetInteger(trans.deal,DEAL_REASON);
       string outcome="closed";
