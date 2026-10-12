@@ -10,7 +10,7 @@ This is a mechanical hypothesis explaining the observed asymmetry, not a claim t
 
 - Raise the minimum TP1-to-stop ratio from 1.5R to 1.8R.
 - Move the 50% partial realization threshold from +2.0R to +2.5R. If the other half subsequently exits at entry, the partial locks +1.25R gross on original position risk, versus +1.0R before this change. Reaching +2.5R may be less frequent, so expectancy must be measured rather than assumed to improve.
-- Increase the manual final target from 2.0R to 2.4R, remaining above the manual target validation floor.
+- Increase the manual final target from 2.0R to 2.8R, remaining above the manual target validation floor.
 - Enable the existing minimum sweep-grade, setup-freshness (maximum five bars since BOS), and anti-chase (maximum 0.75 ATR) gates by default in this research candidate.
 - Require a five-point directional-confidence advantage when both directional setups are active, avoiding arbitrary selection when the competing setups are nearly tied.
 - Align the outcome simulator's configured breakeven threshold and ATR trail multiplier with the corresponding dynamic-stop inputs, reducing avoidable configuration drift.
