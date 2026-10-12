@@ -7,7 +7,6 @@ from starlette.responses import JSONResponse, Response
 
 from app.api.backtest_evidence import router as backtest_evidence_router
 from app.api.config_sync import router as config_sync_router
-from app.api.environment_outcomes import router as environment_outcome_router
 from app.bot import init_bot, shutdown_bot
 from app.config import APP_VERSION, settings
 from app.logger import logger
@@ -115,12 +114,11 @@ def create_app() -> FastAPI:
     async def body_too_large_handler(request, exc):
         return JSONResponse(status_code=413, content={"detail": "Request body too large"})
 
-    # Mount the immutable config-sync protocol first. The rich environment
-    # outcome boundary is also mounted before the legacy /outcome route so
-    # upgraded EA payloads are persisted without breaking older clients.
+    # Mount protocol-specific routes before the general bridge routes.
+    # The general router owns the single /outcome endpoint and accepts the
+    # full environment, lineage, and execution-cost contract.
     app.include_router(config_sync_router)
     app.include_router(backtest_evidence_router)
-    app.include_router(environment_outcome_router)
     app.include_router(router)
 
     return app

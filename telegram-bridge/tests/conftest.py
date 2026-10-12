@@ -106,7 +106,15 @@ def client():
 
         main_module.init_bot = _offline_init_bot
         main_module.shutdown_bot = _offline_shutdown_bot
-        from app.models import BotSetting, Payment, Signal, SignalDeliveryOutbox, Subscriber, TradeEvent
+        from app.models import (
+            BotSetting,
+            Payment,
+            Signal,
+            SignalDeliveryOutbox,
+            SignalOutcome,
+            Subscriber,
+            TradeEvent,
+        )
 
         with TestClient(app) as c:
             yield c
@@ -116,7 +124,7 @@ def client():
             async with engine.begin() as conn:
                 for model in (
                     ConfigurationEvaluation, ConfigSyncState, ConfigurationRegistry,
-                    Signal, SignalDeliveryOutbox, TradeEvent, BotSetting, Payment, Subscriber,
+                    Signal, SignalDeliveryOutbox, SignalOutcome, TradeEvent, BotSetting, Payment, Subscriber,
                 ):
                     await conn.run_sync(lambda sync_conn, table=model.__table__: sync_conn.execute(table.delete()))
             await engine.dispose()
