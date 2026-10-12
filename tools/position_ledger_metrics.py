@@ -186,6 +186,14 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
     gross_win = sum(p["net_pnl"] for p in wins)
     gross_loss = abs(sum(p["net_pnl"] for p in losses))
     pnl = sum(p["net_pnl"] for p in positions)
+    max_consecutive_losses = 0
+    current_consecutive_losses = 0
+    for position in positions:
+        if position["net_pnl"] < -EPS:
+            current_consecutive_losses += 1
+            max_consecutive_losses = max(max_consecutive_losses, current_consecutive_losses)
+        else:
+            current_consecutive_losses = 0
     balance, peak, max_dd, max_dd_pct = initial_balance, initial_balance, 0.0, 0.0
     equity = [{"time": None, "balance": initial_balance, "position_id": None}]
     for p in positions:
@@ -202,8 +210,23 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
         lane_l = [p for p in rows if p["net_pnl"] < -EPS]
         lp = sum(p["net_pnl"] for p in lane_w)
         ll = abs(sum(p["net_pnl"] for p in lane_l))
+        lane_loss_streak = 0
+        lane_loss_streak_max = 0
+        for position in rows:
+            if position["net_pnl"] < -EPS:
+                lane_loss_streak += 1
+                lane_loss_streak_max = max(lane_loss_streak_max, lane_loss_streak)
+            else:
+                lane_loss_streak = 0
         lanes[lane] = {
-            "positions": len(rows), "net_pnl": round(sum(p["net_pnl"] for p in rows), 2),
+            "positions": len(rows),
+            "wins": len(lane_w),
+            "losses": len(lane_l),
+            "net_pnl": round(sum(p["net_pnl"] for p in rows), 2),
+            "expectancy_per_position": round(sum(p["net_pnl"] for p in rows) / len(rows), 4) if rows else None,
+            "average_win": round(sum(p["net_pnl"] for p in lane_w) / len(lane_w), 2) if lane_w else None,
+            "average_loss": round(sum(p["net_pnl"] for p in lane_l) / len(lane_l), 2) if lane_l else None,
+            "max_consecutive_losses": lane_loss_streak_max,
             "win_rate_pct_excluding_flats": round(100 * len(lane_w) / (len(lane_w) + len(lane_l)), 2) if lane_w or lane_l else None,
             "profit_factor": round(lp / ll, 4) if ll else (None if not lp else "no_losses"),
         }
@@ -221,6 +244,8 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
         "average_win": round(sum(p["net_pnl"] for p in wins) / len(wins), 2) if wins else None,
         "average_loss": round(sum(p["net_pnl"] for p in losses) / len(losses), 2) if losses else None,
         "average_position_pnl": round(pnl / len(positions), 2) if positions else None,
+        "net_expectancy_per_completed_position": round(pnl / len(positions), 4) if positions else None,
+        "max_consecutive_losses": max_consecutive_losses,
         "max_closed_position_drawdown_cash": round(max_dd, 2), "max_closed_position_drawdown_pct": round(max_dd_pct, 4),
         "average_realized_R": round(sum(r_values) / len(r_values), 4) if r_values else None,
         "positions_with_risk_cash": len(r_values), "by_lane": lanes, "ignored_groups": ignored or {},
