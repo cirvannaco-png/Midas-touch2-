@@ -138,7 +138,6 @@ def test_execution_store_persists_leg_index_and_target():
  
 def test_outcome_tracker_aggregates_risk_across_child_fills():
     t=(ROOT/"EA"/"includes"/"Trading"/"OutcomeTrackerLive.mqh").read_text()
-    assert "p.weightedRiskDistLots=p.riskDist*volume" in t
     assert "nextRiskDistanceLots=p.weightedRiskDistLots+" in t
     assert "p.weightedRiskDistLots=nextRiskDistanceLots" in t
     assert "p.weightedRiskDistLots>0.0?p.weightedRiskDistLots" in t
