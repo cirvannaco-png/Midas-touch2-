@@ -60,7 +60,7 @@ def test_order_manager_supports_same_parent_with_distinct_legs():
     t = ORDERS.read_text()
     assert "legIndex" in t
     assert "FindByDecisionAndLeg" in t
-    assert "Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex=0)" in t
+    assert "Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,double maxRiskCash,ulong &ticketOut,int legIndex=0)" in t
     assert "HasLiveTradeForDecision" in t
 
 
@@ -81,7 +81,7 @@ def test_ea_wires_multi_trade_through_portfolio_before_order_submission():
     assert "MultiTradePlan plan" in t
     build = t.index("g_multiTrade.Build(decision.setup,availableSlots,plan)")
     gate = t.index("g_portfolio.AllowNewTradeBatch", build)
-    submit = t.index("g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,ticket,leg)", gate)
+    submit = t.index("g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,legRisk[leg],ticket,leg)", gate)
     assert build < gate < submit
 
 
@@ -89,3 +89,31 @@ def test_multi_trade_capacity_supports_three_symbol_positions():
     t = EA.read_text()
     assert "input int InpMaxOpenTrades=3;" in t
     assert "input int InpMaxPositionsPerSymbol=3;" in t
+
+
+def test_order_manager_rejects_invalid_or_over_budget_entries_before_sending():
+    t = ORDERS.read_text()
+    assert "!MathIsValidNumber(maxRiskCash)" in t
+    assert "maxRiskCash<=0.0" in t
+    assert "OrderCalcProfit(orderType,decision.symbol,volume,riskEntry,decision.setup.stop_loss,estimatedAtStop)" in t
+    assert "estimatedRisk>maxRiskCash+riskTolerance" in t
+    assert "IsBrokerVolumeValid(decision.symbol,volume)" in t
+    assert "if(ArrayResize(m_trades,idx+1)!=idx+1) return false;" in t
+
+
+def test_incremental_fill_events_are_deal_idempotent_and_volume_bounded():
+    t = ORDERS.read_text()
+    ea = EA.read_text()
+    assert "FillDealSeen(dealTicket)" in t
+    assert "RememberFillDeal(dealTicket)" in t
+    assert "nextFilled>m_trades[i].volume+tolerance" in t
+    assert "m_trades[i].fillPrice=nextNotional/nextFilled" in t
+    assert "g_orders.MarkFilledFromPending(orderTicket,positionIdentifier,positionTicket,price,volume,trans.deal);" in ea
+
+
+def test_sizing_uses_the_worst_permitted_market_fill_for_both_manual_and_automated_orders():
+    t = EA.read_text()
+    assert "ConservativeRiskSizingEntry(_Symbol,decision.setup.type,entry,InpUseMarketOrders,maxDeviation)" in t
+    assert "ConservativeRiskSizingEntry(_Symbol,setup.type,entry,true,maxDeviation)" in t
+    assert "RiskAmountForLots(_Symbol,legLots[leg],sizingEntry,chosen.stop_loss)" in t
+    assert "RiskAmountForLots(_Symbol,lots,sizingEntry,setup.stop_loss)" in t
