@@ -140,3 +140,18 @@ def test_outcome_tracker_aggregates_risk_across_child_fills():
     assert "p.weightedRiskDistLots=p.riskDist*volume" in t
     assert "p.weightedRiskDistLots+=MathAbs(fill-p.setup.stop_loss)*volume" in t
     assert "p.weightedRiskDistLots>0.0?p.weightedRiskDistLots" in t
+
+
+
+def test_outcome_provenance_preserves_signed_cashflows_and_unknown_costs():
+    tracker = TRACKER.read_text()
+    publisher = (ROOT / "EA" / "includes" / "Signals" / "SignalPublisher.mqh").read_text()
+    walk_forward = (ROOT / "tools" / "walk_forward.py").read_text()
+    assert 'if(!p.filled)coarseOutcome="no_fill"' in tracker
+    assert "p.totalCommissionCashflow,p.totalSwapCashflow,p.totalBrokerFeeCashflow" in tracker
+    assert "p.cashflowsKnown,p.spreadCostKnown,p.slippageCostKnown,envKey,EnvironmentJson(p)" in tracker
+    assert 'string commissionCashflowStr=(filled&&cashflowsKnown)?StringFormat("%.4f",commissionCashflow):"null";' in publisher
+    assert '"commission_cashflow":%s' in publisher
+    assert '"swap_cashflow":%s' in publisher
+    assert '"broker_fee_cashflow":%s' in publisher
+    assert '"commission_cashflow", "swap_cashflow", "broker_fee_cashflow"' in walk_forward
