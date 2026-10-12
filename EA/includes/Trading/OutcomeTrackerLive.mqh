@@ -153,7 +153,7 @@ private:
    int Find(long id){for(int i=0;i<m_count;i++)if(m_pending[i].decisionId==id)return i;return -1;}
    double RValue(const PendingSetup &p) const{double ts=SymbolInfoDouble(m_symbol,SYMBOL_TRADE_TICK_SIZE),tv=SymbolInfoDouble(m_symbol,SYMBOL_TRADE_TICK_VALUE);if(ts<=0.0||tv<=0.0)return 0.0;double riskLotsDistance=p.weightedRiskDistLots>0.0?p.weightedRiskDistLots:(p.mgmtRiskDist*p.lots);if(riskLotsDistance<=0.0)return 0.0;double oneR=riskLotsDistance*(tv/ts);return oneR>0.0?p.realizedPnL/oneR:0.0;}
    string EnvironmentJson(const PendingSetup &p) const{SetupReasons r=p.setup.reasons;string structure=EnumToString(r.sweep_grade)+"/"+IntegerToString((int)r.breakout_class)+"/"+IntegerToString((int)r.reversion_class)+"/"+IntegerToString((int)r.keylevel_reaction);return StringFormat("{\"regime\":\"%s\",\"volatility_state\":\"%s\",\"trend_strength\":%.3f,\"liquidity_score\":%.3f,\"liquidity_bucket\":%d,\"news_state\":\"%s\",\"session\":\"%s\",\"spread_points\":%.2f,\"point_size\":%.10f,\"atr_value\":%.10f,\"atr_regime\":\"%s\",\"htf_ob_aligned\":%s,\"htf_ob_state\":\"%s\",\"value_area_zone\":\"%s\",\"market_phase\":\"%s\",\"market_structure\":\"%s\",\"bos_strength\":%.3f,\"sweep_grade\":\"%s\"}",EnumToString(r.regime),EnumToString(r.vol_regime),r.trend_strength,r.liquidity_score,r.liquidity_bucket,EnumToString(r.news_risk),EnumToString(r.session),r.spread_points,r.point_size,r.atr_value,EnumToString(r.vol_regime),r.htf_ob_confluence?"true":"false",EnumToString(r.htf_ob_state),EnumToString(r.va_zone),EnumToString(r.phase),structure,r.bos_strength,EnumToString(r.sweep_grade));}
-   void Finalize(int idx,string exitReason,double exitPrice,datetime outcomeTime){if(idx<0||idx>=m_count)return;PendingSetup p=m_pending[idx];datetime resolvedAt=outcomeTime;if(resolvedAt<=0)resolvedAt=TimeCurrent();double rr=RValue(p);bool sized=p.filled&&p.lots>0.0;string coarseOutcome="scratch";if(!p.filled)coarseOutcome="no_fill";else if(p.realizedPnL>0.0000001)coarseOutcome="win";else if(p.realizedPnL<-0.0000001)coarseOutcome="loss";if((!p.outcomeHistoryComplete||!p.cashflowsKnown)&&p.filled)coarseOutcome="ambiguous";if(exitReason=="Ambiguous_SLandBE"||exitReason=="Ambiguous_SLandPartial"||exitReason=="Ambiguous_SLandTP"||exitReason=="Ambiguous_NettingReversal")coarseOutcome="ambiguous";if(sized&&coarseOutcome!="ambiguous"&&coarseOutcome!="no_fill"){if(coarseOutcome=="win")m_stats.wins++;else if(coarseOutcome=="loss")m_stats.losses++;else m_stats.scratches++;m_stats.resolvedCount++;m_stats.netPnL+=p.realizedPnL;if(p.realizedPnL>0)m_stats.grossProfit+=p.realizedPnL;if(p.realizedPnL<0)m_stats.grossLoss+=-p.realizedPnL;m_stats.totalCommission+=p.totalCommission;m_stats.totalSpreadCost+=p.totalSpreadCost;m_stats.totalSlippageCost+=p.totalSlippageCost;m_stats.sumRMultiple+=rr;if(m_calibrationEnabled)m_calibration.Record(p.confidenceAtSignal,p.realizedPnL);if(m_environmentMemory!=NULL&&p.excursionHistoryComplete){bool buy=p.setup.type==ORDER_TYPE_BUY;double mfeR=0.0,maeR=0.0;if(p.mgmtRiskDist>0.0){mfeR=buy?(p.mfePrice-p.entryRef)/p.mgmtRiskDist:(p.entryRef-p.maePrice)/p.mgmtRiskDist;maeR=buy?(p.entryRef-p.maePrice)/p.mgmtRiskDist:(p.maePrice-p.entryRef)/p.mgmtRiskDist;}m_environmentMemory.RecordOutcome(p.setup.reasons,p.setup.reasons.selected_strategy,rr,maeR,mfeR,p.barsElapsed,resolvedAt);}}else if(coarseOutcome=="ambiguous")m_stats.ambiguous++;if(m_logger!=NULL)m_logger.LogOutcome(p,m_symbol,m_entryTF,exitReason,exitPrice,m_fillPolicy,resolvedAt);if(m_publisher!=NULL&&p.decisionId>0){bool buy=p.setup.type==ORDER_TYPE_BUY;double mfeR=0.0,maeR=0.0;if(p.filled&&p.mgmtRiskDist>0){double mfe=buy?(p.mfePrice-p.entryRef):(p.entryRef-p.mfePrice);double mae=buy?(p.entryRef-p.maePrice):(p.maePrice-p.entryRef);mfeR=mfe/p.mgmtRiskDist;maeR=mae/p.mgmtRiskDist;}if(!p.excursionHistoryComplete){mfeR=0.0;maeR=0.0;}string signalId=m_publisher.SignalIdForDecision(p.decisionId);string strategy=EnumToString(p.setup.reasons.selected_strategy);string envKey="";if(m_environmentMemory!=NULL)envKey=m_environmentMemory.Key(p.setup.reasons);m_publisher.PublishOutcome(signalId,m_symbol,buy?"BUY":"SELL",coarseOutcome,exitReason,strategy,rr,mfeR,maeR,p.totalCommission,p.totalSpreadCost,p.totalSlippageCost,p.barsElapsed,p.barsToFill,p.filled,EnumToString(p.setup.reasons.regime),EnumToString(p.setup.reasons.session),EnumToString(p.setup.reasons.sweep_grade),p.setup.reasons.htf_ob_confluence,p.confidenceAtSignal,p.confidenceDecayed,p.decayBars,p.decision_fingerprint,p.setup.creation_time,p.fillTime,resolvedAt,p.excursionHistoryComplete,p.totalCommissionCashflow,p.totalSwapCashflow,p.totalBrokerFeeCashflow,p.cashflowsKnown,p.spreadCostKnown,p.slippageCostKnown,envKey,EnvironmentJson(p));}for(int j=idx;j<m_count-1;j++)m_pending[j]=m_pending[j+1];m_count--;ArrayResize(m_pending,m_count);}
+   void Finalize(int idx,string exitReason,double exitPrice,datetime outcomeTime){if(idx<0||idx>=m_count)return;PendingSetup p=m_pending[idx];if(p.decisionId>0){if(WasDecisionFinalized(p.decisionId)){for(int j=idx;j<m_count-1;j++)m_pending[j]=m_pending[j+1];m_count--;ArrayResize(m_pending,m_count);return;}bool legacyBuy=p.setup.type==ORDER_TYPE_BUY;string legacySignalId=StringFormat("%s_%s_%d",m_symbol,legacyBuy?"BUY":"SELL",(long)p.setup.creation_time);if(m_logger!=NULL&&m_logger.HasOutcomeSignal(legacySignalId)){RecordFinalizedDecision(p.decisionId);for(int j=idx;j<m_count-1;j++)m_pending[j]=m_pending[j+1];m_count--;ArrayResize(m_pending,m_count);return;}if(!RecordFinalizedDecision(p.decisionId)){p.outcomeHistoryComplete=false;p.cashflowsKnown=false;m_pending[idx]=p;PrintFormat("MedisTouch OutcomeTracker: finalization journal unavailable for decision #%I64d; marking outcome ambiguous.",p.decisionId);}}datetime resolvedAt=outcomeTime;if(resolvedAt<=0)resolvedAt=TimeCurrent();double rr=RValue(p);bool sized=p.filled&&p.lots>0.0;string coarseOutcome="scratch";if(!p.filled)coarseOutcome="no_fill";else if(p.realizedPnL>0.0000001)coarseOutcome="win";else if(p.realizedPnL<-0.0000001)coarseOutcome="loss";if((!p.outcomeHistoryComplete||!p.cashflowsKnown)&&p.filled)coarseOutcome="ambiguous";if(exitReason=="Ambiguous_SLandBE"||exitReason=="Ambiguous_SLandPartial"||exitReason=="Ambiguous_SLandTP"||exitReason=="Ambiguous_NettingReversal")coarseOutcome="ambiguous";if(sized&&coarseOutcome!="ambiguous"&&coarseOutcome!="no_fill"){if(coarseOutcome=="win")m_stats.wins++;else if(coarseOutcome=="loss")m_stats.losses++;else m_stats.scratches++;m_stats.resolvedCount++;m_stats.netPnL+=p.realizedPnL;if(p.realizedPnL>0)m_stats.grossProfit+=p.realizedPnL;if(p.realizedPnL<0)m_stats.grossLoss+=-p.realizedPnL;m_stats.totalCommission+=p.totalCommission;m_stats.totalSpreadCost+=p.totalSpreadCost;m_stats.totalSlippageCost+=p.totalSlippageCost;m_stats.sumRMultiple+=rr;if(m_calibrationEnabled)m_calibration.Record(p.confidenceAtSignal,p.realizedPnL);if(m_environmentMemory!=NULL&&p.excursionHistoryComplete){bool buy=p.setup.type==ORDER_TYPE_BUY;double mfeR=0.0,maeR=0.0;if(p.mgmtRiskDist>0.0){mfeR=buy?(p.mfePrice-p.entryRef)/p.mgmtRiskDist:(p.entryRef-p.maePrice)/p.mgmtRiskDist;maeR=buy?(p.entryRef-p.maePrice)/p.mgmtRiskDist:(p.maePrice-p.entryRef)/p.mgmtRiskDist;}m_environmentMemory.RecordOutcome(p.setup.reasons,p.setup.reasons.selected_strategy,rr,maeR,mfeR,p.barsElapsed,resolvedAt);}}else if(coarseOutcome=="ambiguous")m_stats.ambiguous++;if(m_logger!=NULL)m_logger.LogOutcome(p,m_symbol,m_entryTF,exitReason,exitPrice,m_fillPolicy,resolvedAt);if(m_publisher!=NULL&&p.decisionId>0){bool buy=p.setup.type==ORDER_TYPE_BUY;double mfeR=0.0,maeR=0.0;if(p.filled&&p.mgmtRiskDist>0){double mfe=buy?(p.mfePrice-p.entryRef):(p.entryRef-p.mfePrice);double mae=buy?(p.entryRef-p.maePrice):(p.maePrice-p.entryRef);mfeR=mfe/p.mgmtRiskDist;maeR=mae/p.mgmtRiskDist;}if(!p.excursionHistoryComplete){mfeR=0.0;maeR=0.0;}string signalId=m_publisher.SignalIdForDecision(p.decisionId);string strategy=EnumToString(p.setup.reasons.selected_strategy);string envKey="";if(m_environmentMemory!=NULL)envKey=m_environmentMemory.Key(p.setup.reasons);m_publisher.PublishOutcome(signalId,m_symbol,buy?"BUY":"SELL",coarseOutcome,exitReason,strategy,rr,mfeR,maeR,p.totalCommission,p.totalSpreadCost,p.totalSlippageCost,p.barsElapsed,p.barsToFill,p.filled,EnumToString(p.setup.reasons.regime),EnumToString(p.setup.reasons.session),EnumToString(p.setup.reasons.sweep_grade),p.setup.reasons.htf_ob_confluence,p.confidenceAtSignal,p.confidenceDecayed,p.decayBars,p.decision_fingerprint,p.setup.creation_time,p.fillTime,resolvedAt,p.excursionHistoryComplete,p.totalCommissionCashflow,p.totalSwapCashflow,p.totalBrokerFeeCashflow,p.cashflowsKnown,p.spreadCostKnown,p.slippageCostKnown,envKey,EnvironmentJson(p));}for(int j=idx;j<m_count-1;j++)m_pending[j]=m_pending[j+1];m_count--;ArrayResize(m_pending,m_count);}
    void SimFill(int i,double price,datetime t){if(i<0||i>=m_count||m_pending[i].filled)return;PendingSetup p=m_pending[i];p.filled=true;p.fillTime=t;p.barsToFill=0;p.entryRef=price;p.entryFillPrice=price;p.mfePrice=price;p.maePrice=price;p.riskDist=MathAbs(price-p.setup.stop_loss);p.mgmtRiskDist=p.riskDist;m_pending[i]=p;}
 public:
    COutcomeTrackerLive():m_count(0),m_maxBars(100),m_logger(NULL),m_publisher(NULL),m_environmentMemory(NULL),m_calibrationEnabled(false),m_symbol(""),m_entryTF(PERIOD_CURRENT),m_fillPolicy(FILL_CONSERVATIVE),m_replayTF(PERIOD_M1),m_breakEvenAtR(1.0),m_partialAtR(2.0),m_partialFraction(0.5),m_trailATRMult(1.5),m_riskPercent(0.5),m_allowMinLotOverride(true),m_liveExecution(true),m_commissionPerLot(7.0),m_spreadPoints(10.0),m_slippagePoints(2.0),m_decayHalfLifeBars(12.0),m_weightVersion(""){ZeroMemory(m_stats);g_activeOutcomeTracker=GetPointer(this);}
@@ -167,7 +167,6 @@ public:
    // validates the entire candidate ledger against current broker exposure, then
    // mutates tracker state; if validation fails the caller uses an ambiguous snapshot.
    bool IsDecisionFinalized(long decisionId) const { return WasDecisionFinalized(decisionId); }
-   bool RebuildClosedDecisionFromHistory(TradeSetup &setup,long decisionId,ulong magic);
    bool RebuildOpenDecisionFromHistory(TradeSetup &setup,long decisionId,ulong livePositionId,ulong magic)
      {
       if(decisionId<=0 || livePositionId==0 || magic==0) return false;
@@ -329,6 +328,177 @@ public:
            }
         }
       return MarkDecisionRebuilt(decisionId);
+     }
+
+   bool RebuildClosedDecisionFromHistory(TradeSetup &setup,long decisionId,ulong magic)
+     {
+      if(decisionId<=0 || magic==0) return false;
+      if(WasDecisionFinalized(decisionId)) return true;
+      if(Find(decisionId)>=0) return false;
+
+      // Legacy outcome rows do not carry decision IDs. Use their durable signal
+      // key conservatively to avoid replaying the same finished outcome twice.
+      bool buy=setup.type==ORDER_TYPE_BUY;
+      string signalId=StringFormat("%s_%s_%d",m_symbol,buy?"BUY":"SELL",(long)setup.creation_time);
+      if(m_logger!=NULL && m_logger.HasOutcomeSignal(signalId))
+        {
+         RecordFinalizedDecision(decisionId);
+         return true;
+        }
+
+      datetime fromTime=setup.creation_time>0 ? setup.creation_time-1 : 0;
+      datetime toTime=TimeCurrent();
+      if(toTime<fromTime || !HistorySelect(fromTime,toTime)) return false;
+      int totalDeals=HistoryDealsTotal();
+      ulong positionIds[];
+      bool matchedAnyEntry=false;
+
+      // Resolve all child position identifiers from the authoritative entry deal
+      // and originating order comments. Reversals cannot be reconstructed safely.
+      for(int i=0;i<totalDeals;i++)
+        {
+         ulong ticket=HistoryDealGetTicket(i);
+         if(ticket==0 || HistoryDealGetString(ticket,DEAL_SYMBOL)!=m_symbol ||
+            (ulong)HistoryDealGetInteger(ticket,DEAL_MAGIC)!=magic) continue;
+         ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket,DEAL_ENTRY);
+         if(entry!=DEAL_ENTRY_IN && entry!=DEAL_ENTRY_INOUT) continue;
+         long foundDecision=0;
+         if(!HistoryDealDecisionId(ticket,foundDecision) || foundDecision!=decisionId) continue;
+         if(entry==DEAL_ENTRY_INOUT) return false;
+         ulong positionId=(ulong)HistoryDealGetInteger(ticket,DEAL_POSITION_ID);
+         if(positionId==0) return false;
+         matchedAnyEntry=true;
+         if(ReplayPositionIndex(positionIds,positionId)<0)
+           {
+            int n=ArraySize(positionIds);
+            if(ArrayResize(positionIds,n+1)!=n+1) return false;
+            positionIds[n]=positionId;
+           }
+        }
+      if(!matchedAnyEntry || ArraySize(positionIds)==0) return false;
+
+      // Never call a position "finally closed" while the broker still exposes a
+      // live child position or pending entry belonging to this parent decision.
+      for(int i=0;i<PositionsTotal();i++)
+        {
+         ulong ticket=PositionGetTicket(i);
+         if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=m_symbol ||
+            (ulong)PositionGetInteger(POSITION_MAGIC)!=magic) continue;
+         if(ReplayPositionIndex(positionIds,(ulong)PositionGetInteger(POSITION_IDENTIFIER))>=0)
+            return false;
+        }
+      for(int i=0;i<OrdersTotal();i++)
+        {
+         ulong ticket=OrderGetTicket(i);
+         if(ticket==0 || !OrderSelect(ticket)) continue;
+         if(OrderGetString(ORDER_SYMBOL)!=m_symbol ||
+            (ulong)OrderGetInteger(ORDER_MAGIC)!=magic) continue;
+         long foundDecision=0;
+         if(ParseHistoryDecisionComment(OrderGetString(ORDER_COMMENT),foundDecision) && foundDecision==decisionId)
+            return false;
+        }
+
+      OutcomeReplayDeal deals[];
+      double remainingByPosition[];
+      if(ArrayResize(remainingByPosition,ArraySize(positionIds))!=ArraySize(positionIds)) return false;
+      ArrayInitialize(remainingByPosition,0.0);
+
+      // Read and validate the full per-deal ledger before mutating tracker state.
+      for(int i=0;i<totalDeals;i++)
+        {
+         ulong ticket=HistoryDealGetTicket(i);
+         if(ticket==0 || HistoryDealGetString(ticket,DEAL_SYMBOL)!=m_symbol ||
+            (ulong)HistoryDealGetInteger(ticket,DEAL_MAGIC)!=magic) continue;
+         ulong positionId=(ulong)HistoryDealGetInteger(ticket,DEAL_POSITION_ID);
+         int pidx=ReplayPositionIndex(positionIds,positionId);
+         if(pidx<0) continue;
+         ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket,DEAL_ENTRY);
+         if(entry==DEAL_ENTRY_INOUT) return false;
+         if(entry!=DEAL_ENTRY_IN && entry!=DEAL_ENTRY_OUT && entry!=DEAL_ENTRY_OUT_BY) continue;
+         OutcomeReplayDeal row;
+         row.ticket=ticket; row.positionId=positionId;
+         row.timeMsc=(long)HistoryDealGetInteger(ticket,DEAL_TIME_MSC);
+         row.time=(datetime)HistoryDealGetInteger(ticket,DEAL_TIME);
+         row.entry=entry;
+         row.volume=HistoryDealGetDouble(ticket,DEAL_VOLUME);
+         row.price=HistoryDealGetDouble(ticket,DEAL_PRICE);
+         row.profit=HistoryDealGetDouble(ticket,DEAL_PROFIT);
+         row.commission=HistoryDealGetDouble(ticket,DEAL_COMMISSION);
+         row.swap=HistoryDealGetDouble(ticket,DEAL_SWAP);
+         row.fee=HistoryDealGetDouble(ticket,DEAL_FEE);
+         if(!MathIsValidNumber(row.volume) || !MathIsValidNumber(row.price) ||
+            !MathIsValidNumber(row.profit) || !MathIsValidNumber(row.commission) ||
+            !MathIsValidNumber(row.swap) || !MathIsValidNumber(row.fee) ||
+            row.volume<=0.0 || row.price<=0.0 || row.time<=0) return false;
+         int n=ArraySize(deals);
+         if(ArrayResize(deals,n+1)!=n+1) return false;
+         deals[n]=row;
+         if(entry==DEAL_ENTRY_IN) remainingByPosition[pidx]+=row.volume;
+         else
+           {
+            remainingByPosition[pidx]-=row.volume;
+            double step=SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP);
+            double tol=MathMax(1e-7,step*0.51);
+            if(remainingByPosition[pidx]<-tol) return false;
+            if(remainingByPosition[pidx]<0.0) remainingByPosition[pidx]=0.0;
+           }
+        }
+      if(ArraySize(deals)==0) return false;
+      double step=SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP);
+      double tolerance=MathMax(1e-7,step*0.51);
+      for(int i=0;i<ArraySize(remainingByPosition);i++)
+         if(MathAbs(remainingByPosition[i])>tolerance) return false;
+
+      for(int i=1;i<ArraySize(deals);i++)
+        {
+         OutcomeReplayDeal key=deals[i];
+         int j=i-1;
+         while(j>=0 && (deals[j].timeMsc>key.timeMsc ||
+               (deals[j].timeMsc==key.timeMsc && deals[j].ticket>key.ticket)))
+           { deals[j+1]=deals[j]; j--; }
+         deals[j+1]=key;
+        }
+
+      AddSetup(setup,decisionId);
+      int trackerIndex=Find(decisionId);
+      if(trackerIndex<0) return false;
+      PendingSetup state=m_pending[trackerIndex];
+      state.outcomeHistoryComplete=true;
+      state.cashflowsKnown=true;
+      state.excursionHistoryComplete=false;
+      m_pending[trackerIndex]=state;
+
+      ArrayInitialize(remainingByPosition,0.0);
+      double totalRemaining=0.0;
+      for(int i=0;i<ArraySize(deals);i++)
+        {
+         OutcomeReplayDeal row=deals[i];
+         int pidx=ReplayPositionIndex(positionIds,row.positionId);
+         if(pidx<0) { MarkHistoryIncomplete(decisionId); return false; }
+         if(row.entry==DEAL_ENTRY_IN)
+           {
+            remainingByPosition[pidx]+=row.volume;
+            totalRemaining+=row.volume;
+            if(!MarkExecuted(decisionId,row.price,row.time,row.volume,row.ticket,
+                             row.commission,row.swap,row.fee,true))
+              { MarkHistoryIncomplete(decisionId); return false; }
+           }
+         else
+           {
+            double tol=MathMax(1e-7,step*0.51);
+            if(row.volume>remainingByPosition[pidx]+tol || row.volume>totalRemaining+tol)
+              { MarkHistoryIncomplete(decisionId); return false; }
+            remainingByPosition[pidx]=MathMax(0.0,remainingByPosition[pidx]-row.volume);
+            totalRemaining=MathMax(0.0,totalRemaining-row.volume);
+            bool stillOpen=totalRemaining>tolerance;
+            double net=row.profit+row.commission+row.swap+row.fee;
+            if(!MarkClosed(decisionId,row.price,row.time,net,row.commission,row.swap,row.fee,
+                           stillOpen,"Recovered_History",row.ticket,row.volume,true))
+              { MarkHistoryIncomplete(decisionId); return false; }
+           }
+        }
+      return Find(decisionId)<0 && totalRemaining<=tolerance;
      }
 
    bool MarkExecuted(long id,double fill,datetime t,double volume,ulong dealTicket=0,double commission=0.0,double swap=0.0,double fee=0.0,bool cashflowsKnown=true)
