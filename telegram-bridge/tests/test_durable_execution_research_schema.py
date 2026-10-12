@@ -1,9 +1,6 @@
 from pathlib import Path
 
-import app.config_evaluation_model
-import app.config_registry_model
-import app.config_sync_state_model
-from app import models
+from app import config_evaluation_model, config_registry_model, config_sync_state_model, models
 from app.database import Base
 
 
@@ -53,9 +50,9 @@ def test_research_tables_keep_holdout_and_outcome_provenance():
 def test_midas_specific_models_remain_registered():
     # Compatibility restoration must not displace Midas's existing schema.
     assert "signal_delivery_outbox" in Base.metadata.tables
-    assert "configuration_registry" in Base.metadata.tables
-    assert "configuration_evaluations" in Base.metadata.tables
-    assert "config_sync_states" in Base.metadata.tables
+    assert config_registry_model.ConfigurationRegistry.__tablename__ == "configuration_registry"
+    assert config_evaluation_model.ConfigurationEvaluation.__tablename__ == "configuration_evaluations"
+    assert config_sync_state_model.ConfigSyncState.__tablename__ == "config_sync_states"
     assert models.SignalDeliveryOutbox.__tablename__ == "signal_delivery_outbox"
 
 
