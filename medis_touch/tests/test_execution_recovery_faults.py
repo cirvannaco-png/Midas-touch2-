@@ -35,3 +35,37 @@ def test_oms_submit_failure_closes_durable_parent_and_releases_reservation(tmp_p
         coordinator.execute(order, reference_price=100.0, portfolio_notional=0.0, symbol_notional=0.0, daily_loss=0.0, spread_bps=2.0, limits=_limits(), regime="normal")
     assert journal.get("oms-fail").state == "CANCELLED"
     assert coordinator._local_reservations.snapshot() == ()
+
+def test_existing_durable_order_cannot_be_resubmitted_on_recovery_path(tmp_path):
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    journal.begin_submission("duplicate-order", client_order_id="stable-client-id", requested_quantity=2.0)
+    journal.mark_unknown("duplicate-order", "submit acknowledgement timeout")
+    with pytest.raises(ValueError, match="already exists"):
+        journal.begin_submission(
+            "duplicate-order", client_order_id="stable-client-id",
+            requested_quantity=2.0, reject_existing=True,
+        )
+    assert journal.get("duplicate-order").state == "UNKNOWN"
+
+
+def test_unresolved_durable_orders_are_visible_after_restart(tmp_path):
+    path = str(tmp_path / "recovery.db")
+    journal = ExecutionRecoveryJournal(path)
+    journal.begin_submission("ambiguous-order", client_order_id="client-ambiguous", requested_quantity=1.0)
+    journal.mark_unknown("ambiguous-order", "venue acknowledgement lost")
+    restarted = ExecutionRecoveryJournal(path)
+    unresolved = restarted.unresolved_records()
+    assert [(record.order_id, record.state) for record in unresolved] == [
+        ("ambiguous-order", "UNKNOWN")
+    ]
+
+
+def test_recovery_journal_rejects_non_finite_and_overfills(tmp_path):
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    journal.begin_submission("bounded-order", requested_quantity=1.0)
+    journal.mark_working("bounded-order", "venue-bounded")
+    with pytest.raises(ValueError, match="finite and positive"):
+        journal.mark_fill("bounded-order", float("nan"), 100.0)
+    with pytest.raises(ValueError, match="exceeds requested_quantity"):
+        journal.mark_fill("bounded-order", 1.1, 100.0)
+    assert journal.get("bounded-order").filled_quantity == 0.0
