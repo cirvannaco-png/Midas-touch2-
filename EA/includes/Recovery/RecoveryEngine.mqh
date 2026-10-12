@@ -111,9 +111,10 @@ int CRecoveryEngine::Recover()
       if(m_orders.RestoreTrade(restoredDecision,currentVolume,ticket,state,actualEntry,legIndex))
         {
          restored++;
+         ulong positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         m_orders.BindPositionIdentity(ticket,positionIdentifier,ticket);
          if(m_tracker!=NULL)
            {
-            ulong positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
             bool historyRebuilt=m_tracker.RebuildOpenDecisionFromHistory(restoredDecision.setup,decisionId,positionIdentifier,m_magic);
             if(!historyRebuilt)
               {
