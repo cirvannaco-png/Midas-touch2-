@@ -13,7 +13,8 @@ import asyncio
 import json
 import os
 import sys
-from collections import defaultdict
+import math
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -44,6 +45,62 @@ RESOLVED_OUTCOMES = {"win", "loss", "scratch"}
 CONFIDENCE_BUCKET_WIDTH = 10.0
 
 
+def research_ineligibility_reason(row) -> str | None:
+    """Return why an outcome must not influence calibration or training.
+
+    Legacy NULL flags, unverified decision provenance, missing broker cashflows,
+    incomplete history, and non-finite measurements fail closed. Coverage reports
+    still include these rows; only resolved-performance statistics exclude them.
+    """
+    if getattr(row, "outcome", None) not in RESOLVED_OUTCOMES:
+        return "unresolved_outcome"
+    if getattr(row, "filled", None) is not True:
+        return "not_filled"
+    if getattr(row, "outcome_history_complete", None) is not True:
+        return "outcome_history_incomplete_or_unknown"
+    if getattr(row, "cashflows_known", None) is not True:
+        return "broker_cashflows_incomplete_or_unknown"
+    if getattr(row, "parity_status", None) != "PARITY_OK":
+        return "decision_parity_not_verified"
+    fingerprint = getattr(row, "decision_fingerprint", None)
+    original_fingerprint = getattr(row, "original_decision_fingerprint", None)
+    if (
+        not isinstance(fingerprint, str)
+        or not fingerprint
+        or not isinstance(original_fingerprint, str)
+        or not original_fingerprint
+        or fingerprint.upper() != original_fingerprint.upper()
+    ):
+        return "decision_fingerprint_missing_or_mismatched"
+    if getattr(row, "execution_time", None) is None:
+        return "execution_time_missing"
+    if getattr(row, "outcome_time", None) is None:
+        return "outcome_time_missing"
+    realized_r = getattr(row, "realized_r", None)
+    if isinstance(realized_r, bool) or not isinstance(realized_r, (int, float)) or not math.isfinite(realized_r):
+        return "realized_r_missing_or_non_finite"
+    for field_name in ("commission_cashflow", "swap_cashflow", "broker_fee_cashflow"):
+        value = getattr(row, field_name, None)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return f"{field_name}_missing_or_non_finite"
+    return None
+
+
+def is_research_eligible_outcome(row) -> bool:
+    """Whether a row may enter resolved-performance/calibration statistics."""
+    return research_ineligibility_reason(row) is None
+
+
+def research_ineligibility_counts(rows) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if getattr(row, "outcome", None) in RESOLVED_OUTCOMES:
+            reason = research_ineligibility_reason(row)
+            if reason is not None:
+                counts[reason] += 1
+    return dict(sorted(counts.items()))
+
+
 @dataclass
 class TagBreakdown:
     tag_value: str
@@ -57,21 +114,25 @@ class TagBreakdown:
     slippage_cost_sum: float = 0.0
     cost_count: int = 0
 
+    eligible_by_outcome: dict = field(default_factory=lambda: defaultdict(int))
+    eligible_realized_r_sum: float = 0.0
+    eligible_realized_r_count: int = 0
+
     @property
     def resolved_count(self) -> int:
-        return sum(self.by_outcome.get(o, 0) for o in RESOLVED_OUTCOMES)
+        return sum(self.eligible_by_outcome.get(o, 0) for o in RESOLVED_OUTCOMES)
 
     @property
     def win_rate(self) -> float | None:
         if self.resolved_count == 0:
             return None
-        return self.by_outcome.get("win", 0) / self.resolved_count
+        return self.eligible_by_outcome.get("win", 0) / self.resolved_count
 
     @property
     def avg_r(self) -> float | None:
-        if self.realized_r_count == 0:
+        if self.eligible_realized_r_count == 0:
             return None
-        return self.realized_r_sum / self.realized_r_count
+        return self.eligible_realized_r_sum / self.eligible_realized_r_count
 
     @property
     def no_fill_rate(self) -> float | None:
@@ -95,6 +156,12 @@ def _bucket(rows, keyfn):
         tb.total += 1
         tb.by_outcome[r.outcome] += 1
         tb.by_direction[r.direction] += 1
+        # Raw labels remain visible in coverage, but statistics use only rows
+        # whose deal history, broker cashflows and decision identity reconcile.
+        if is_research_eligible_outcome(r):
+            tb.eligible_by_outcome[r.outcome] += 1
+            tb.eligible_realized_r_sum += float(r.realized_r)
+            tb.eligible_realized_r_count += 1
         if r.outcome in RESOLVED_OUTCOMES and r.realized_r is not None:
             tb.realized_r_sum += r.realized_r
             tb.realized_r_count += 1
@@ -107,7 +174,7 @@ def _bucket(rows, keyfn):
 
 
 def _resolved_stats(rows) -> dict:
-    resolved = [r for r in rows if r.outcome in RESOLVED_OUTCOMES]
+    resolved = [r for r in rows if is_research_eligible_outcome(r)]
     win_scores = [r.confidence_at_signal for r in resolved if r.outcome == "win" and r.confidence_at_signal is not None]
     loss_scores = [r.confidence_at_signal for r in resolved if r.outcome == "loss" and r.confidence_at_signal is not None]
     pairs = [
@@ -125,7 +192,8 @@ def _resolved_stats(rows) -> dict:
 
 def compute_report(rows) -> dict:
     total = len(rows)
-    resolved = [r for r in rows if r.outcome in RESOLVED_OUTCOMES]
+    resolved = [r for r in rows if is_research_eligible_outcome(r)]
+    label_resolved = [r for r in rows if r.outcome in RESOLVED_OUTCOMES]
     no_fill = [r for r in rows if r.outcome == "no_fill"]
     ambiguous = [r for r in rows if r.outcome == "ambiguous"]
 
@@ -142,6 +210,10 @@ def compute_report(rows) -> dict:
         "no_fill_count": len(no_fill),
         "no_fill_rate": (len(no_fill) / total) if total else None,
         "ambiguous_count": len(ambiguous),
+        "resolved_label_count": len(label_resolved),
+        "research_eligible_resolved_count": len(resolved),
+        "research_ineligible_resolved_count": len(label_resolved) - len(resolved),
+        "research_ineligibility_reasons": research_ineligibility_counts(rows),
         "directional_bias": {
             d: {
                 "count": by_direction_total[d],
@@ -168,7 +240,7 @@ def compute_report(rows) -> dict:
         "overall_stats": _resolved_stats(rows),
         "by_weight_version_stats": {
             wv: _resolved_stats(group_rows)
-            for wv, group_rows in _group_by(rows, lambda r: r.weight_version).items()
+            for wv, group_rows in _group_by(resolved, lambda r: r.weight_version).items()
         },
         "by_regime": {k: _tb_to_expectancy_dict(v) for k, v in _bucket(rows, lambda r: r.regime).items()},
         "by_session": {k: _tb_to_expectancy_dict(v) for k, v in _bucket(rows, lambda r: r.session).items()},
@@ -218,7 +290,7 @@ def _confidence_deciles(resolved_rows) -> dict:
 def compute_regime_matrix(rows) -> list[dict]:
     buckets: dict[tuple, list] = defaultdict(list)
     for r in rows:
-        if r.outcome not in RESOLVED_OUTCOMES:
+        if not is_research_eligible_outcome(r):
             continue
         key = (r.symbol, r.strategy or "(untagged)", r.session or "(untagged)", r.regime or "(untagged)")
         buckets[key].append(r)
