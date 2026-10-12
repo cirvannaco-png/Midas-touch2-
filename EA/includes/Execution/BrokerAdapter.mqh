@@ -27,8 +27,8 @@ private:
 public:
    void              Init(ulong magic, int maxRetries = 3, int retryDelayMs = 300);
    double            LastLatencyMs() { return (double)m_lastLatencyUs / 1000.0; }
-   bool              MarketBuy(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "");
-   bool              MarketSell(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "");
+   bool              MarketBuy(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "",int deviationPoints=20);
+   bool              MarketSell(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "",int deviationPoints=20);
    bool              PlaceLimit(string symbol, ENUM_ORDER_TYPE type, double volume, double price,
                                 double sl, double tp, ulong &ticketOut, string comment = "");
    bool              CancelOrder(ulong ticket);
@@ -202,12 +202,13 @@ ulong CBrokerAdapter::ResolvePositionTicket()
    return positionId;
   }
 //+------------------------------------------------------------------+
-bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
+bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment,int deviationPoints)
   {
    ticketOut=0; fillPriceOut=0.0;
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,true)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,true,"MarketBuy")) { m_lastLatencyUs=0; return false; }
+   m_trade.SetDeviationInPoints((ulong)MathMax(0,deviationPoints));
    ulong t0=GetMicrosecondCount();
    for(int i=0;i<m_maxRetries;i++)
      {
@@ -226,12 +227,13 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
    return false;
   }
 //+------------------------------------------------------------------+
-bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
+bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment,int deviationPoints)
   {
    ticketOut=0; fillPriceOut=0.0;
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,false)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_BID);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,false,"MarketSell")) { m_lastLatencyUs=0; return false; }
+   m_trade.SetDeviationInPoints((ulong)MathMax(0,deviationPoints));
    ulong t0=GetMicrosecondCount();
    for(int i=0;i<m_maxRetries;i++)
      {
