@@ -59,7 +59,7 @@ class TesterProvenance(StrictModel):
     locked_oos_end: datetime
     generated_at: datetime
     spread_model: str = Field(min_length=1, max_length=120)
-    spread_points: float = Field(ge=0)
+    spread_points: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     commission_per_lot: float = Field(ge=0)
     slippage_points: float = Field(ge=0)
     fill_policy: str = Field(min_length=1, max_length=80)
@@ -93,6 +93,12 @@ class TesterProvenance(StrictModel):
             raise ValueError("period_start must be earlier than period_end")
         if not self.period_start <= self.locked_oos_start < self.locked_oos_end <= self.period_end:
             raise ValueError("locked OOS period must be inside the overall backtest period")
+        if self.spread_points is None:
+            model = self.spread_model.casefold()
+            if not any(token in model for token in ("tick", "variable", "floating", "real")):
+                raise ValueError(
+                    "spread_points may be null only when spread_model identifies a real-tick or variable spread model"
+                )
         return self
 
 
