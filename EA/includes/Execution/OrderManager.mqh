@@ -31,7 +31,7 @@ private:
    int                 FindByDecisionAndLeg(long id,int legIndex);
    int                 FindByTicket(ulong ticket);
    bool                IsBrokerVolumeValid(string symbol,double volume);
-   ulong               ResolveLivePositionTicket(ulong positionIdentifier);
+   ulong               ResolveLivePositionTicket(string symbol,ulong positionIdentifier);
    bool                FillDealSeen(ulong dealTicket);
    void                RememberFillDeal(ulong dealTicket);
    ulong               m_seenFillDeals[];
@@ -145,18 +145,20 @@ void COrderManager::RememberFillDeal(ulong dealTicket)
    m_seenFillDeals[n]=dealTicket;
 }
 //+------------------------------------------------------------------+
-ulong COrderManager::ResolveLivePositionTicket(ulong positionIdentifier)
+ulong COrderManager::ResolveLivePositionTicket(string symbol,ulong positionIdentifier)
   {
-   if(positionIdentifier==0) return 0;
+   if(positionIdentifier==0 || StringLen(symbol)==0) return 0;
    for(int i=0;i<PositionsTotal();i++)
      {
       ulong ticket=PositionGetTicket(i);
       if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_broker.MagicNumber()) continue;
       if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionIdentifier)
          return ticket;
      }
    return 0;
-}
+  }
 //+------------------------------------------------------------------+
 bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionIdentifier,ulong positionTicket,double fillPrice,double fillVolume,ulong dealTicket)
   {
@@ -199,7 +201,7 @@ bool COrderManager::MarkFilledFromPending(ulong orderTicket,ulong positionIdenti
          m_trades[i].fillPrice=fillPrice;
 
       m_trades[i].positionIdentifier=positionIdentifier;
-      ulong liveTicket=ResolveLivePositionTicket(positionIdentifier);
+      ulong liveTicket=ResolveLivePositionTicket(m_trades[i].decision.symbol,positionIdentifier);
       ENUM_TRADE_STATE state=m_trades[i].fsm.State();
       if(liveTicket>0)
          m_trades[i].fsm.SetTicket(liveTicket);
@@ -482,11 +484,25 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
          ok=m_broker.MarketSell(decision.symbol,volume,sl,tp,ticket,fillPrice,comment,brokerDeviationPoints);
       if(ok)
         {
-         // BrokerAdapter returns the stable history identifier; resolve the
-         // current selectable ticket separately and keep unresolved exposure reserved.
-         m_trades[idx].positionIdentifier=ticket;
+         // ResolvePositionTicket can return either a live POSITION_TICKET
+         // or a temporary stable identifier when the terminal has not published
+         // the position snapshot yet. Never store an untyped token as a ledger ID.
          m_trades[idx].fillPrice=fillPrice;
-         ulong liveTicket=ResolveLivePositionTicket(ticket);
+         ulong liveTicket=0;
+         ulong stableIdentifier=0;
+         if(PositionSelectByTicket(ticket) &&
+            PositionGetString(POSITION_SYMBOL)==decision.symbol &&
+            (ulong)PositionGetInteger(POSITION_MAGIC)==m_broker.MagicNumber())
+           {
+            liveTicket=ticket;
+            stableIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+           }
+         else
+           {
+            liveTicket=ResolveLivePositionTicket(decision.symbol,ticket);
+            if(liveTicket>0) stableIdentifier=ticket;
+           }
+         if(stableIdentifier>0) m_trades[idx].positionIdentifier=stableIdentifier;
          if(liveTicket>0)
            {
             m_trades[idx].fsm.SetTicket(liveTicket);
@@ -496,8 +512,11 @@ bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,boo
            }
          else
            {
+            // Keep the unknown order/identity token only in the FSM ticket
+            // slot. OnTradeTransaction binds the real POSITION_IDENTIFIER
+            // before it can be used for position accounting or modification.
             m_trades[idx].fsm.SetTicket(ticket);
-            PrintFormat("MedisTouch OrderManager: decision #%I64d accepted; position identity %I64u awaits live-ticket resolution.",
+            PrintFormat("MedisTouch OrderManager: decision #%I64d accepted; broker token %I64u awaits transaction identity reconciliation.",
                         decision.decision_id,ticket);
            }
         }
