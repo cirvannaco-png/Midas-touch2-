@@ -131,10 +131,15 @@ def test_same_durable_parent_cannot_be_submitted_twice(tmp_path):
         "durable-no-replay", "decision-no-replay", "XAUUSD", "BUY", 1.0,
         idempotency_key="stable-no-replay",
     )
-    args = dict(
-        reference_price=100.0, portfolio_notional=0.0, symbol_notional=0.0,
-        daily_loss=0.0, spread_bps=2.0, limits=_limits(), regime="normal",
-    )
+    args = {
+        "reference_price": 100.0,
+        "portfolio_notional": 0.0,
+        "symbol_notional": 0.0,
+        "daily_loss": 0.0,
+        "spread_bps": 2.0,
+        "limits": _limits(),
+        "regime": "normal",
+    }
     coordinator.execute(order, **args)
     with pytest.raises(ValueError, match="already exists"):
         coordinator.execute(order, **args)
