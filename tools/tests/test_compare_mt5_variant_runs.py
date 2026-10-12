@@ -179,3 +179,20 @@ def test_lane_metrics_are_reported_separately(tmp_path):
     assert set(lanes) == {"FALLBACK", "STRICT"}
     assert lanes["FALLBACK"]["positions"] == 1
     assert lanes["STRICT"]["positions"] == 1
+
+def test_open_or_incomplete_locked_oos_entries_are_censored_not_outcomes(tmp_path):
+    manifest_path = _make_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    variant = next(item for item in manifest["variants"] if item["role"] == "strict_only")
+    deals = tmp_path / variant["deals_csv"]
+    with deals.open("a", encoding="utf-8") as stream:
+        stream.write("P3,2025-10-08T10:00:00Z,in,0.5,0,-1,0,0,100,STRICT\n")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report, _ = compare_manifest(manifest_path)
+    metrics = report["variants"]["strict_only"]["metrics"]["locked_oos"]
+    diagnostics = report["variants"]["strict_only"]["ledger_diagnostics"]
+    assert metrics["completed_positions"] == 1
+    assert diagnostics["locked_oos_open_incomplete_or_ambiguous_entries"] == 1
+    assert diagnostics["locked_oos_censored_or_unresolved_entries"] == 1
+    assert diagnostics["ignored_groups"]["incomplete_volume"] == 1
