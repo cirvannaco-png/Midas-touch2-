@@ -49,3 +49,19 @@ def test_order_manager_rejects_invalid_trade_identity_and_side_before_submission
     submit = source[source.index("bool COrderManager::Submit"):]
     assert "decision.decision_id<=0" in submit
     assert "decision.setup.type!=ORDER_TYPE_BUY && decision.setup.type!=ORDER_TYPE_SELL" in submit
+
+
+def test_enabled_atr_distance_cap_fails_closed_without_valid_atr():
+    source = RISK.read_text(encoding="utf-8")
+    start = source.index("bool CRiskEngine::ValidateSetupAtEntry")
+    end = source.index("\n  }\n#endif", start)
+    body = source[start:end]
+
+    # maxSLDistanceATR == 0 is the explicit opt-out. A negative or non-finite
+    # limit is invalid, and an enabled cap cannot be considered satisfied if
+    # ATR is unavailable or invalid.
+    assert "if(!MathIsValidNumber(maxSLDistanceATR) || maxSLDistanceATR<0.0)" in body
+    assert "if(maxSLDistanceATR>0.0)" in body
+    assert "if(!MathIsValidNumber(currentATR) || currentATR<=0.0)" in body
+    assert body.index("if(!MathIsValidNumber(currentATR) || currentATR<=0.0)") < body.index("double slDistATR=slDist/currentATR;")
+    assert "if(currentATR>0.0 && maxSLDistanceATR>0.0)" not in body
