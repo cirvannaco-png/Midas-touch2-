@@ -85,3 +85,11 @@ def test_alembic_graph_has_one_head_at_0017():
     scripts = ScriptDirectory.from_config(config)
     assert scripts.get_current_head() == "0017"
     assert scripts.get_heads() == ["0017"]
+
+
+
+def test_signal_outcomes_keep_signed_cashflows_separate_from_cost_magnitudes():
+    table = Base.metadata.tables["signal_outcomes"]
+    assert {"commission_cashflow", "swap_cashflow", "broker_fee_cashflow"}.issubset(
+        table.columns.keys()
+    )
