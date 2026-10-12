@@ -137,3 +137,28 @@ def test_submit_disambiguates_position_ticket_from_stable_ledger_identity():
     assert "stableIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);" in submit
     assert "if(stableIdentifier>0) m_trades[idx].positionIdentifier=stableIdentifier;" in submit
     assert "m_trades[idx].positionIdentifier=ticket;" not in submit
+
+
+def test_invalid_entry_deviation_and_nonpositive_worst_fill_fail_closed():
+    ea = EA.read_text(encoding="utf-8")
+    orders = ORDERS.read_text(encoding="utf-8")
+    sizing_start = ea.index("double ConservativeRiskSizingEntry(")
+    sizing_end = ea.index("\nvoid OnTick()", sizing_start)
+    sizing = ea[sizing_start:sizing_end]
+    submit_start = orders.index("bool COrderManager::Submit(")
+    submit_end = orders.index("bool COrderManager::RestoreTrade(", submit_start)
+    submit = orders[submit_start:submit_end]
+
+    assert "!MathIsValidNumber(maxEntryDeviation) || maxEntryDeviation<0.0" in sizing
+    assert "!MathIsValidNumber(maxEntryDeviation) || maxEntryDeviation<0.0" in submit
+    assert "if(!MathIsValidNumber(riskEntry) || riskEntry<=0.0) return false;" in submit
+
+
+def test_recovery_trade_allocation_rejects_invalid_volume_and_failed_resize():
+    orders = ORDERS.read_text(encoding="utf-8")
+    start = orders.index("bool COrderManager::RestoreTrade(")
+    end = orders.index("#endif", start)
+    method = orders[start:end]
+    assert "!MathIsValidNumber(volume)" in method
+    assert "!MathIsValidNumber(fillPrice)" in method
+    assert "if(ArrayResize(m_trades,idx+1)!=idx+1) return false;" in method
