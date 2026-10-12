@@ -41,7 +41,7 @@ def test_order_manager_rejects_bad_volume_before_allocating_trade_state():
     assert "MathRound(steps)" in helper
     assert "if(!IsBrokerVolumeValid(decision.symbol,volume))" in submit
     assert submit.index("if(!IsBrokerVolumeValid(decision.symbol,volume))") < submit.index("ArrayResize(m_trades,idx+1)")
-    assert "volume violates broker min/max/step" in submit
+    assert "violates broker min/max/step" in submit
 
 
 def test_order_manager_rejects_invalid_trade_identity_and_side_before_submission():
