@@ -43,6 +43,7 @@ public:
    bool              LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES entryTF, string outcome,
                                 double exitPrice, ENUM_FILL_POLICY fillPolicy = FILL_CONSERVATIVE,
                                 datetime outcomeTime = 0);
+   bool              HasOutcomeSignal(string signalId);
   };
 //+------------------------------------------------------------------+
 CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(false), m_gmtOffsetOverrideHours(999) {}
@@ -343,6 +344,31 @@ bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES e
    return true;
   }
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+// Check the durable outcome CSV for an existing signal key. Used by
+// restart reconciliation to avoid emitting a duplicate legacy outcome
+// when older records predate the decision-completion ledger.
+bool CSignalLogger::HasOutcomeSignal(string signalId)
+  {
+   if(signalId=="") return false;
+   int handle=FileOpen(m_outcomeFilename,FILE_CSV|FILE_READ|FILE_SHARE_READ|FILE_ANSI,',');
+   if(handle==INVALID_HANDLE) return false;
+   bool found=false;
+   while(!FileIsEnding(handle))
+     {
+      string recorded=FileReadString(handle);
+      if(recorded==signalId)
+        {
+         found=true;
+         break;
+        }
+      while(!FileIsEnding(handle) && !FileIsLineEnding(handle))
+         FileReadString(handle);
+     }
+   FileClose(handle);
+   return found;
+  }
 bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES entryTF, string outcome,
                                double exitPrice, ENUM_FILL_POLICY fillPolicy, datetime outcomeTime)
   {
