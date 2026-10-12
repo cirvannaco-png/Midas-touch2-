@@ -32,7 +32,7 @@ else:
 
 from environment_memory import as_report as build_environment_memory
 from gating import GatingError, decide, load_cycles_from_db
-from metrics_engine import compute_report
+from metrics_engine import compute_report, is_research_eligible_outcome, research_ineligibility_counts
 from regime_allocation import build_regime_allocations
 
 CYCLE_WINDOW_WEEKS = 2
@@ -190,15 +190,30 @@ async def run_cycle() -> dict:
             "config_lifecycle": config_lifecycle,
         }
 
+    # Coverage still sees every received outcome. Performance metrics, environment
+    # memory and risk allocation only see outcomes whose broker history/cashflows
+    # are complete and whose decision fingerprint is verified.
+    eligible_rows = [row for row in rows if is_research_eligible_outcome(row)]
     report = compute_report(rows)
+    report["calibration_eligibility"] = {
+        "policy": "complete-history+known-cashflows+verified-decision-parity-v1",
+        "total_rows": len(rows),
+        "eligible_resolved_rows": len(eligible_rows),
+        "ineligible_resolved_rows": sum(
+            1 for row in rows
+            if getattr(row, "outcome", None) in {"win", "loss", "scratch"}
+            and not is_research_eligible_outcome(row)
+        ),
+        "ineligibility_reasons": research_ineligibility_counts(rows),
+    }
     report["environment_strategy_memory"] = build_environment_memory(
-        rows,
+        eligible_rows,
         min_sample=ENVIRONMENT_MEMORY_MIN_SAMPLE,
     )
 
     previous_allocations = await _latest_regime_allocations()
     report["regime_allocations"] = build_regime_allocations(
-        rows,
+        eligible_rows,
         previous=previous_allocations,
     )
     report["regime_allocation_policy"] = {
