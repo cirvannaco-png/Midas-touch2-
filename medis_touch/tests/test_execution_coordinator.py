@@ -105,3 +105,98 @@ def test_multiple_trades_enforce_existing_symbol_exposure() -> None:
     with pytest.raises(PermissionError, match="symbol exposure limit"):
         coordinator.execute_many((order,), reference_prices={"XAUUSD": 100.0}, portfolio_notional=0, symbol_notionals={"XAUUSD": 4900.0}, daily_loss=0, spread_bps={"XAUUSD": 2.0}, limits=_limits(), regime="normal")
     assert coordinator.oms.all_orders() == ()
+
+def test_unresolved_durable_execution_blocks_new_exposure_before_reservation(tmp_path):
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    journal.begin_submission(
+        "unknown-existing", client_order_id="unknown-client", requested_quantity=1.0
+    )
+    journal.mark_unknown("unknown-existing", "broker acknowledgement lost")
+    coordinator = _coordinator(_config(), journal)
+    order = ExecutionOrder("new-order-blocked", "decision-new", "XAUUSD", "BUY", 1.0)
+    with pytest.raises(PermissionError, match="durable execution recovery unresolved"):
+        coordinator.execute(
+            order, reference_price=100.0, portfolio_notional=0.0,
+            symbol_notional=0.0, daily_loss=0.0, spread_bps=2.0,
+            limits=_limits(), regime="normal",
+        )
+    assert coordinator.oms.all_orders() == ()
+    assert coordinator._local_reservations.snapshot() == ()
+
+
+def test_same_durable_parent_cannot_be_submitted_twice(tmp_path):
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    coordinator = _coordinator(_config(), journal)
+    order = ExecutionOrder(
+        "durable-no-replay", "decision-no-replay", "XAUUSD", "BUY", 1.0,
+        idempotency_key="stable-no-replay",
+    )
+    args = dict(
+        reference_price=100.0, portfolio_notional=0.0, symbol_notional=0.0,
+        daily_loss=0.0, spread_bps=2.0, limits=_limits(), regime="normal",
+    )
+    coordinator.execute(order, **args)
+    with pytest.raises(ValueError, match="already exists"):
+        coordinator.execute(order, **args)
+    assert len(coordinator.oms.all_orders()) == 1
+
+def test_broker_fill_mismatch_freezes_recovery_and_blocks_next_order(tmp_path):
+    class InconsistentVenue(SimulatedVenue):
+        def reconcile(self, venue_order_id):
+            result = super().reconcile(venue_order_id)
+            result["filled_quantity"] = 0.0
+            return result
+
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    config = _config()
+    coordinator = GovernedExecutionCoordinator(
+        InconsistentVenue("sim", 100.0, 100.2, 1000.0),
+        config, approved_hash=config.config_hash, evidence_passed=True,
+        recovery_journal=journal,
+    )
+    order = ExecutionOrder("mismatch-parent", "decision-mismatch", "XAUUSD", "BUY", 1.0)
+    with pytest.raises(RuntimeError, match="reconciliation unresolved"):
+        coordinator.execute(
+            order, reference_price=100.0, portfolio_notional=0.0,
+            symbol_notional=0.0, daily_loss=0.0, spread_bps=2.0,
+            limits=_limits(), regime="normal",
+        )
+    assert journal.get("mismatch-parent").state == "UNKNOWN"
+    assert any(record.state == "UNKNOWN" for record in journal.unresolved_records())
+    with pytest.raises(PermissionError, match="durable execution recovery unresolved"):
+        coordinator.execute(
+            ExecutionOrder("blocked-after-mismatch", "decision-blocked", "XAUUSD", "BUY", 1.0),
+            reference_price=100.0, portfolio_notional=0.0, symbol_notional=0.0,
+            daily_loss=0.0, spread_bps=2.0, limits=_limits(), regime="normal",
+        )
+
+
+def test_lost_submit_acknowledgement_persists_ambiguous_state_and_blocks_new_order(tmp_path):
+    class AcknowledgementLostVenue(SimulatedVenue):
+        def submit(self, order):
+            raise TimeoutError("broker accepted or rejected order; acknowledgement lost")
+
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery.db"))
+    config = _config()
+    coordinator = GovernedExecutionCoordinator(
+        AcknowledgementLostVenue("sim", 100.0, 100.2, 1000.0),
+        config, approved_hash=config.config_hash, evidence_passed=True,
+        recovery_journal=journal,
+    )
+    order = ExecutionOrder(
+        "lost-ack-parent", "decision-lost-ack", "XAUUSD", "BUY", 1.0,
+        idempotency_key="lost-ack-client",
+    )
+    with pytest.raises(TimeoutError, match="acknowledgement lost"):
+        coordinator.execute(
+            order, reference_price=100.0, portfolio_notional=0.0,
+            symbol_notional=0.0, daily_loss=0.0, spread_bps=2.0,
+            limits=_limits(), regime="normal",
+        )
+    assert {record.state for record in journal.unresolved_records()} >= {"SUBMITTING", "UNKNOWN"}
+    with pytest.raises(PermissionError, match="durable execution recovery unresolved"):
+        coordinator.execute(
+            ExecutionOrder("no-duplicate", "decision-retry", "XAUUSD", "BUY", 1.0),
+            reference_price=100.0, portfolio_notional=0.0, symbol_notional=0.0,
+            daily_loss=0.0, spread_bps=2.0, limits=_limits(), regime="normal",
+        )

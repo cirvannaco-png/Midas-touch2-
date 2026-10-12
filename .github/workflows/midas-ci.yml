@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+      - hardening/production-recovery-reconciliation
   workflow_dispatch:
 
 permissions:
@@ -57,6 +58,53 @@ jobs:
             echo "=== $test_file ==="
             timeout 240 python -m pytest -q "$test_file"
           done
+
+  migration-smoke:
+    name: PostgreSQL migration smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: midas_migration_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d midas_migration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: telegram-bridge
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/midas_migration_test
+      BOT_TOKEN: "123456:test-token"
+      CHAT_ID: "-1000000000"
+      ADMIN_CHAT_ID: "777000777"
+      SECRET_KEY: "test-secret-key"
+      WEBHOOK_SECRET_TOKEN: "test-webhook-secret"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install migration dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Upgrade all migrations, downgrade the new revision, and re-upgrade
+        run: |
+          set -euo pipefail
+          alembic upgrade head
+          alembic downgrade -1
+          alembic upgrade head
 
   research-tests:
     name: Research tools tests

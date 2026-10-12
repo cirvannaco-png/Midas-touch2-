@@ -139,6 +139,15 @@ class GovernedExecutionCoordinator:
         risk = evaluate(governed, reference_price=reference_price, portfolio_notional=portfolio_notional, symbol_notional=symbol_notional, daily_loss=daily_loss, spread_bps=spread_bps, limits=limits, venue_healthy=quote.healthy, configuration_authorized=True)
         if not risk.allowed:
             raise PermissionError("pre-trade risk rejected: " + "; ".join(risk.reasons))
+        if self.recovery_journal is not None:
+            unresolved = self.recovery_journal.unresolved_records()
+            if unresolved:
+                details = ", ".join(f"{record.order_id}={record.state}" for record in unresolved[:5])
+                suffix = f" (+{len(unresolved) - 5} more)" if len(unresolved) > 5 else ""
+                raise PermissionError(
+                    "durable execution recovery unresolved; new exposure blocked: "
+                    + details + suffix
+                )
         derived_controls = control_inputs or ControlInputs(venue_healthy=quote.healthy, reconciliation_ok=True, market_data_fresh=True, risk_ok=risk.allowed, governance_match=True, execution_degraded=quote.rejection_rate > 0.25 or quote.historical_slippage_bps > 10.0)
         state = control_state(derived_controls)
         if state is not ControlState.NORMAL:
@@ -149,7 +158,7 @@ class GovernedExecutionCoordinator:
         try:
             if self.recovery_journal is not None:
                 parent_identity = governed.idempotency_key or governed.order_id
-                existing = self.recovery_journal.begin_submission(governed.order_id, parent_order_id=None, client_order_id=parent_identity)
+                existing = self.recovery_journal.begin_submission(governed.order_id, parent_order_id=None, client_order_id=parent_identity, requested_quantity=governed.quantity, reject_existing=True)
                 if existing.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
                     raise RuntimeError(f"invalid durable recovery state: {existing.state}")
             try:
@@ -176,7 +185,7 @@ class GovernedExecutionCoordinator:
                 child = replace(child, venue=route.venue, status=OrderStatus.WORKING)
                 if self.recovery_journal is not None:
                     child_client_id = child.idempotency_key or f"{stored.order_id}:{child.order_id}"
-                    child_record = self.recovery_journal.begin_submission(child.order_id, parent_order_id=stored.order_id, client_order_id=child_client_id)
+                    child_record = self.recovery_journal.begin_submission(child.order_id, parent_order_id=stored.order_id, client_order_id=child_client_id, requested_quantity=child.quantity, reject_existing=True)
                     if child_record.state not in {"SUBMITTING", "UNKNOWN", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}:
                         raise RuntimeError(f"invalid durable child recovery state: {child_record.state}")
                 broker_call_started = True
@@ -191,21 +200,28 @@ class GovernedExecutionCoordinator:
                 fill_price = quote.ask if child.side.upper() == "BUY" else quote.bid
                 fill = self.venue.fill(child, venue_order_id, fill_price)
                 if self.recovery_journal is not None:
-                    self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price)
+                    self.recovery_journal.mark_fill(child.order_id, fill.quantity, fill.price, fill_id=fill.fill_id)
                 stored = self.oms.record_fill(ExecutionFill(fill.fill_id, stored.order_id, venue_order_id, fill.quantity, fill.price, fill.timestamp))
                 self._record_backend_state(stored, status=stored.status, sequence=4 + child_index, setup_fingerprint=lineage_fingerprint)
                 expected_child = replace(child, status=OrderStatus.FILLED, filled_quantity=child.quantity, average_fill_price=fill.price)
                 observed = self.venue.reconcile(venue_order_id)
                 observed_status = OrderStatus(observed.get("status", "UNKNOWN"))
-                child_reconciliations.append(reconcile(expected_child, observed_status, fill.quantity))
-            if self.recovery_journal is not None:
-                parent_record = self.recovery_journal.get(stored.order_id)
-                if parent_record.state == "SUBMITTING":
-                    self.recovery_journal.mark_recovered(stored.order_id)
+                child_reconciliations.append(
+                    reconcile(expected_child, observed_status, observed.get("filled_quantity"))
+                )
         except Exception:
             if stored is not None:
                 self.oms.freeze_for_reconciliation(stored.order_id)
             if not broker_call_started:
+                if self.recovery_journal is not None:
+                    try:
+                        parent_record = self.recovery_journal.get(governed.order_id)
+                    except KeyError:
+                        parent_record = None
+                    if parent_record is not None and parent_record.state == "SUBMITTING":
+                        # No broker call began, so cancellation is certain rather
+                        # than an assumption about an ambiguous venue timeout.
+                        self.recovery_journal.mark_cancelled(governed.order_id)
                 self._release_reservation(governed.order_id)
             raise
         current = self.oms.get(stored.order_id)
@@ -217,13 +233,35 @@ class GovernedExecutionCoordinator:
             current = self.oms.get(current.order_id)
             if current is None:
                 raise RuntimeError("OMS lost parent order during reconciliation recovery")
+            if self.recovery_journal is not None:
+                parent_record = self.recovery_journal.get(current.order_id)
+                if parent_record.state != "UNKNOWN":
+                    self.recovery_journal.mark_unknown(
+                        current.order_id,
+                        "broker reconciliation unresolved: " + "; ".join(
+                            result.reason for result in child_reconciliations if not result.matched
+                        ),
+                    )
             raise RuntimeError(f"execution reconciliation unresolved for {current.order_id}")
-        self._commit_reservation(current.order_id, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, symbol=current.symbol)
         if self.recovery_journal is not None:
             durable_children = self.recovery_journal.child_records(current.order_id)
             durable_filled = sum(child.filled_quantity for child in durable_children)
-            if durable_filled != current.filled_quantity:
-                raise RuntimeError("durable child fill aggregate does not match OMS parent fill")
+            tolerance = 1e-9 * max(1.0, abs(current.filled_quantity))
+            if (
+                not durable_children
+                or any(child.state != "FILLED" for child in durable_children)
+                or abs(durable_filled - current.filled_quantity) > tolerance
+            ):
+                self.recovery_journal.mark_unknown(
+                    current.order_id,
+                    "durable child journal does not match reconciled OMS parent fills",
+                )
+                raise RuntimeError("durable child fill aggregate/state does not match OMS parent")
+        self._commit_reservation(current.order_id, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, symbol=current.symbol)
+        if self.recovery_journal is not None:
+            parent_record = self.recovery_journal.get(current.order_id)
+            if parent_record.state == "SUBMITTING":
+                self.recovery_journal.mark_recovered(current.order_id)
         alerts = inspect(rejection_rate=quote.rejection_rate, slippage_bps=quote.historical_slippage_bps, p99_latency_ms=quote.latency_ms, venue_healthy=quote.healthy)
         tca = calculate_tca(order_id=current.order_id, side=current.side, quantity=current.quantity, decision_price=reference_price, arrival_price=quote.ask if current.side.upper() == "BUY" else quote.bid, average_fill_price=current.average_fill_price, spread=quote.spread)
         outcome = ExecutionOutcome(order_id=current.order_id, decision_id=current.decision_id, symbol=current.symbol, side=current.side, requested_quantity=current.quantity, filled_quantity=current.filled_quantity, average_fill_price=current.average_fill_price, status=current.status, tca=tca, execution_config_hash=self.config.config_hash, execution_model_hash=self.config.model_hash, reconciled=reconciled, surveillance_codes=tuple(a.code for a in alerts))
