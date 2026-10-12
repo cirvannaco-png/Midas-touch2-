@@ -188,9 +188,15 @@ bool CRiskEngine::ValidateSetupAtEntry(const TradeSetup &setup,double entry,doub
    if(slDist<=0.0 || tpDist/slDist<minRR)
       return false;
 
-   // A zero cap disables the ATR-distance limit; positive caps enforce it.
-   if(currentATR>0.0 && maxSLDistanceATR>0.0)
+   // Zero explicitly disables the ATR-distance cap. Negative configuration is
+   // malformed and must not silently disable validation. When enabled, missing
+   // or non-positive ATR makes the cap unprovable, so reject the setup.
+   if(!MathIsValidNumber(maxSLDistanceATR) || maxSLDistanceATR<0.0)
+      return false;
+   if(maxSLDistanceATR>0.0)
      {
+      if(!MathIsValidNumber(currentATR) || currentATR<=0.0)
+         return false;
       double slDistATR=slDist/currentATR;
       if(!MathIsValidNumber(slDistATR) || slDistATR>maxSLDistanceATR)
          return false;
