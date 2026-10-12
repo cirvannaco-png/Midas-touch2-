@@ -59,7 +59,14 @@ void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs,
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::MarketRequestSupportsPriceDeviation(string symbol,string action)
   {
-   ENUM_SYMBOL_TRADE_EXECUTION mode=(ENUM_SYMBOL_TRADE_EXECUTION)SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE);
+   long rawMode=0;
+   if(!SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE,rawMode))
+     {
+      PrintFormat("MedisTouch BrokerAdapter: %s rejected for %s — could not read SYMBOL_TRADE_EXEMODE.",
+                  action,symbol);
+      return false;
+     }
+   ENUM_SYMBOL_TRADE_EXECUTION mode=(ENUM_SYMBOL_TRADE_EXECUTION)rawMode;
    if(mode==SYMBOL_TRADE_EXECUTION_REQUEST || mode==SYMBOL_TRADE_EXECUTION_INSTANT)
       return true;
 
