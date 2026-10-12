@@ -40,6 +40,11 @@
 
 | `medis_touch/app/parameter_proposal/*` | Source-only 22-file proposal package. Its own README explicitly says the production evaluator must be wired to real outcome data and the EA's replay callback, and calls out PostgreSQL persistence, multiple-testing provenance, state-machine deployment, and integration/failure-injection tests as remaining release gates. Midas has a separate research stack in `tools/optimizer.py`, `champion_challenger.py`, `walk_forward.py`, `oos_firewall.py`, `recalibration_guard.py`, and related tests. | Do not copy the package wholesale: it is an implementation foundation, not a proven complete capability. Map each remaining gate against Midas's actual replay, data, and activation paths before porting; never imply it is live-validated. |
 
+
+| `EA/includes/Decision/DecisionStore.mqh` | Midas persists the expanded decision record and execution-leg identity/target fields, supporting multi-leg restoration and per-leg outcome attribution. | Preserve Midas's expanded serialization contract. Replacing it with the source's shorter CSV record would lose Midas decision lineage and leg data. |
+| `EA/includes/Signals/SignalPublisher.mqh` | Midas adds decision-fingerprint transport and preserves the target's current outcome/provenance contract. | Preserve target payload fields and bridge schema alignment; only port source behavior if a contract test demonstrates a missing field. |
+| `EA/includes/Analysis/Scoring.mqh` | The target retains the core SMC score path and adds an explicit value-area contradiction block control; Midas strategy diagnostics remain separate from the base confidence sum. | Preserve the target's evidence-separation rule and contradiction gate. Do not merge old component scores in a way that double-counts the same structural evidence. |
+
 ## Validation in this PR
 
 - ORM metadata tests assert all seven restored tables and critical idempotency, lease, broker-reference, holdout, and outcome fields.
