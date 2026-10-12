@@ -162,3 +162,14 @@ def test_recovery_trade_allocation_rejects_invalid_volume_and_failed_resize():
     assert "!MathIsValidNumber(volume)" in method
     assert "!MathIsValidNumber(fillPrice)" in method
     assert "if(ArrayResize(m_trades,idx+1)!=idx+1) return false;" in method
+
+
+def test_multi_target_execution_always_falls_back_on_netting_accounts():
+    engine = (ROOT / "EA" / "includes" / "Portfolio" / "MultiTradeEngine.mqh").read_text(encoding="utf-8")
+    guard_start = engine.index("// Several TP legs cannot be independently protected on a netting account:")
+    guard_end = engine.index("int legs=2;", guard_start)
+    guard = engine[guard_start:guard_end]
+    assert "if(!IsHedgingAccount())" in guard
+    assert "m_requireHedging" in guard
+    assert "child TP legs cannot be managed independently" in guard
+    assert "return true;" in guard
