@@ -37,6 +37,9 @@
 | `EA/includes/Trading/TradeZone.mqh` | Source file defines a runtime-parameter overlay on `CTradeDecision`. Midas intentionally turns this same path into a compatibility shim and makes `StrategyTradeZone.mqh` authoritative; the EA facade includes the strategy router, which builds SMC and peer-strategy setups and incorporates environment-memory evidence. | Do not restore the source file over the shim. Doing so would introduce a duplicate `CTradeDecision` definition and bypass Midas's strategy-selection architecture. |
 | `EA/includes/Decision/DecisionEngine.mqh` | Midas adds `EnvironmentPolicy` arbitration and explicit setup-geometry validation before routing an action. | Preserve Midas gates; test their thresholds and invalid-geometry handling rather than porting the source router wholesale. |
 
+
+| `medis_touch/app/parameter_proposal/*` | Source-only 22-file proposal package. Its own README explicitly says the production evaluator must be wired to real outcome data and the EA's replay callback, and calls out PostgreSQL persistence, multiple-testing provenance, state-machine deployment, and integration/failure-injection tests as remaining release gates. Midas has a separate research stack in `tools/optimizer.py`, `champion_challenger.py`, `walk_forward.py`, `oos_firewall.py`, `recalibration_guard.py`, and related tests. | Do not copy the package wholesale: it is an implementation foundation, not a proven complete capability. Map each remaining gate against Midas's actual replay, data, and activation paths before porting; never imply it is live-validated. |
+
 ## Validation in this PR
 
 - ORM metadata tests assert all seven restored tables and critical idempotency, lease, broker-reference, holdout, and outcome fields.
