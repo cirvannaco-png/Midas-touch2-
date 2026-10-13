@@ -99,7 +99,7 @@ def test_broker_retries_only_explicit_transient_codes():
     assert "default:" in retry and "return false;" in retry
     assert "case TRADE_RETCODE_CONNECTION:" not in retry
     assert "case TRADE_RETCODE_TIMEOUT:" not in retry
-    ambiguous=t[t.index("bool LastRequestAmbiguous"):t.index("void ResetLastRequestStatus")]
+    ambiguous=t[t.index("LastRequestAmbiguous() const"):t.index("ResetLastRequestStatus()")]
     assert "TRADE_RETCODE_CONNECTION" in ambiguous
     assert "TRADE_RETCODE_TIMEOUT" in ambiguous
     assert "TRADE_RETCODE_ERROR" in ambiguous
