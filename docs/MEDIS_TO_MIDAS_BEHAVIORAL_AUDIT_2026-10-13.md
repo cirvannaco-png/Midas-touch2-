@@ -57,23 +57,22 @@ The source's 22-file package is **not** yet demonstrated to be behaviorally equi
 
 ## New bridge API integration boundary
 
-PR #81 provides authenticated `POST /execution-ledger/reserve`, `POST /execution-ledger/transition`, and lease recovery, plus authenticated research provenance endpoints. CI proves bridge-level tests and schema migration behavior only. The API explicitly does not send, cancel, or retry broker orders.
+PR #81 now wires the bridge into the main EA paths:
+- Before automated and manual order submission, the EA reserves risk and persists `CHECKED` then `SENT`; if the required bridge response is not acknowledged, it suppresses the broker call.
+- Broker acknowledgements are recorded after submission, and ambiguous outcomes move to `RECOVERING` without releasing reserved risk.
+- `OnTradeTransaction` submits stable broker-deal IDs and signed P&L/commission/swap/fee cashflows to the authenticated `POST /execution-ledger/deal-event` endpoint.
+- Startup reconciliation imports existing managed positions and pending orders, replays broker history idempotently, and attempts closed-position reconciliation. A failed sync keeps new entries blocked.
+- Deal events are persisted in `execution_deal_events` with uniqueness on portfolio + broker deal ID; conflicting reuse returns 409.
 
-**The EA does not yet call these endpoints at the authoritative `g_orders.Submit(...)` boundary or from `OnTradeTransaction`.** Therefore it is not yet safe to claim:
-- reservations are acquired atomically before every market/limit order;
-- broker acknowledgements/fills are correlated to the same durable request ID;
-- partial-close deals are recorded idempotently;
-- startup compares the full account broker snapshot with ledger reservations;
-- broker/database conflicts freeze new entries until reconciled.
-
-This boundary requires a durable broker-event ingestion contract (stable event/deal identity, cumulative fill quantity, partial-close accounting, and explicit terminal reconciliation) before a complete EA integration. A simple synchronous preflight POST alone would not prove recovery correctness.
+This is a meaningful integration, but not yet proof of full runtime correctness. The synchronous WebRequest calls can delay the EA event thread; transport failures must continue to be treated as ambiguous. The account/portfolio scope is per broker server + account login + magic number, so this does not aggregate positions belonging to other magic numbers. Unknown or unparseable positions without a verifiable stop are deliberately not normalized and keep admission blocked.
 
 ## Validation evidence and limits
 
-- Latest observed GitHub Actions run for PR #81: run `38359317052`, commit `951f586eaaae4b506c203dc77e785dbdbdcb76ea`, **success**. It includes bridge Python tests, PostgreSQL migration upgrade/downgrade/re-upgrade, research-tool tests, static MQL5 structural validation, handbook tests, and bridge quality/security checks.
-- Earlier run `38358829295` failed because the branch had two migrations both identified as revision `0018`; this was fixed by sequencing portfolio scoping as `0019` after the existing target `0018`. The latest successful run includes that fix.
-- CI's MQL5 structural validator is **not** MetaEditor compilation.
-- No MetaEditor compile, MT5 Strategy Tester run, demo-broker execution, or broker-account startup/restart fault-injection test has been run or established by these results.
+- MetaEditor compile run `38411210552` succeeded for commit `970347e0764284dc1543560e5dcba7ab2f861741`: **0 errors, 0 warnings**. The follow-up compile run `38411471533` also reported **0 errors, 0 warnings**. Artifact logs were uploaded by CI.
+- CI exposed and led to fixes for an MQL5 object-pointer call syntax error and a missing SQLAlchemy `select` import. The research-tool invariant tests were also updated to reflect the EA's current timer and explicit-transient-only retry policy; the newest CI run is still required to confirm those test changes.
+- PostgreSQL migration upgrade/downgrade/re-upgrade and the bridge security job passed on commit `970347e0764284dc1543560e5dcba7ab2f861741`; research-tool tests failed on stale invariant expectations and were corrected in a later commit.
+- CI's MQL5 structural validator is separate from the successful MetaEditor compiler.
+- No MT5 Strategy Tester report, Exness demo-broker order/close test, or live terminal restart/fault-injection evidence has been produced yet. These require a controlled tester dataset and an authorized demo account; the GitHub compiler runner alone cannot establish them.
 
 ## Release decision
 
