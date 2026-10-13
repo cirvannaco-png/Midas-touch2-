@@ -57,7 +57,7 @@ CONTEXT_KEYS = {
     "ea_build", "terminal_build", "data_vendor", "spread_model",
     "spread_widening_multiplier", "spread_points", "baseline_spread_points",
     "cash_per_point_per_lot", "commission_per_lot", "slippage_points",
-    "swap_included", "fill_policy", "costs_applied_in_tester",
+    "swap_included", "fill_policy", "base_costs_applied_in_tester", "stress_costs_applied_in_analysis",
     "initial_balance", "account_currency", "leverage",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -153,10 +153,15 @@ def _context(raw: object, name: str) -> dict[str, Any]:
     result["slippage_points"] = _num(raw["slippage_points"], f"{name}.slippage_points", positive=True)
     result["initial_balance"] = _num(raw["initial_balance"], f"{name}.initial_balance", positive=True)
     result["spread_points"] = None if raw["spread_points"] is None else _num(raw["spread_points"], f"{name}.spread_points", minimum=0)
-    for key in ("swap_included", "costs_applied_in_tester"):
-        if not isinstance(raw[key], bool) or not raw[key]:
-            raise ExperimentError(f"{name}.{key} must be true; costs and swap must be applied in the tester")
-        result[key] = raw[key]
+    if not isinstance(raw["swap_included"], bool) or not raw["swap_included"]:
+        raise ExperimentError(f"{name}.swap_included must be true")
+    result["swap_included"] = True
+    if not isinstance(raw["base_costs_applied_in_tester"], bool) or not raw["base_costs_applied_in_tester"]:
+        raise ExperimentError(f"{name}.base_costs_applied_in_tester must be true for broker commission, historic spread and swap")
+    result["base_costs_applied_in_tester"] = True
+    if not isinstance(raw["stress_costs_applied_in_analysis"], bool) or not raw["stress_costs_applied_in_analysis"]:
+        raise ExperimentError(f"{name}.stress_costs_applied_in_analysis must be true; the harness adds spread widening and slippage")
+    result["stress_costs_applied_in_analysis"] = True
     if result["spread_model"] not in {"real_ticks_plus_stress", "variable_spread_stress"}:
         raise ExperimentError(f"{name}.spread_model must explicitly include variable-spread/widening stress")
     if result["spread_model"] == "variable_spread_stress" and result["spread_points"] is None:
@@ -721,7 +726,8 @@ def compare_manifest(manifest_path: str | Path, *, simulations: int = 2000, seed
             "incremental_spread_stress_formula": "baseline_spread_points * (spread_widening_multiplier - 1) * cash_per_point_per_lot * total_entry_and_exit_volume / 2",
             "slippage_points_per_deal": ctx["slippage_points"],
             "slippage_stress_formula": "slippage_points * cash_per_point_per_lot * total_entry_and_exit_volume",
-            "swap_included": ctx["swap_included"], "costs_applied_in_tester": ctx["costs_applied_in_tester"],
+            "swap_included": ctx["swap_included"], "base_costs_applied_in_tester": ctx["base_costs_applied_in_tester"],
+            "stress_costs_applied_in_analysis": ctx["stress_costs_applied_in_analysis"],
             "net_pnl_source": "sum(deal profit + signed commission + swap + fee) less incremental spread widening and explicit per-deal slippage stress; historic spread is not charged twice",
         },
         "context": {k: (_iso(v) if isinstance(v, datetime) else v) for k, v in ctx.items()},
