@@ -432,3 +432,45 @@ class PortfolioReservation(Base):
     status = Column(String, nullable=False, index=True)
     lease_until = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ExecutionDealEvent(Base):
+    """Immutable, idempotent broker-deal evidence used for restart reconciliation."""
+
+    __tablename__ = "execution_deal_events"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "portfolio_key",
+            "broker_deal_id",
+            name="uq_execution_deal_portfolio_deal",
+        ),
+        Index(
+            "ix_execution_deal_events_position",
+            "portfolio_key",
+            "broker_position_id",
+        ),
+        Index(
+            "ix_execution_deal_events_order",
+            "portfolio_key",
+            "broker_order_id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_key = Column(String, nullable=False)
+    broker_deal_id = Column(String, nullable=False)
+    broker_order_id = Column(String, nullable=True)
+    broker_position_id = Column(String, nullable=False)
+    symbol = Column(String, nullable=False)
+    entry_type = Column(String, nullable=False)
+    deal_type = Column(String, nullable=False)
+    volume = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    profit_cashflow = Column(Float, nullable=False)
+    commission_cashflow = Column(Float, nullable=False)
+    swap_cashflow = Column(Float, nullable=False)
+    fee_cashflow = Column(Float, nullable=False)
+    cashflows_known = sa.Column(sa.Boolean, nullable=False)
+    event_fingerprint = Column(String(64), nullable=False)
+    payload_json = Column(JSON, nullable=False)
+    received_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
