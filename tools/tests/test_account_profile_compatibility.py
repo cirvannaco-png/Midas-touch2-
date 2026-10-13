@@ -106,6 +106,9 @@ def test_profile_identity_is_persistent_and_switch_fails_closed_with_exposure():
     assert "account profile identity was not initialized before existing exposure" in lock
     assert "GlobalVariablesFlush()" in lock
     assert "if(!InpConfirmAccountProfileChange)" in lock
+    source_gate = source[source.index("bool IsProfileExecutionAllowed(string &reasonOut)\n  {"):source.index("int OnInit()")]
+    assert "GlobalVariableCheck(lockKey)" in source_gate
+    assert "this chart's effective profile differs from the persisted account-wide profile" in source_gate
     assert "AccountHasAnyPositionOrOrder()" in lock
     assert "profile change to %s is pending" in lock
     assert "new entries disabled until the account is flat" in lock
