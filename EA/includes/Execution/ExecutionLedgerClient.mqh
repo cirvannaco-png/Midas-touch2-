@@ -29,13 +29,12 @@ private:
      {
       if(!m_ready) return false;
 
-      uchar rawData[];
-      int len=StringToCharArray(payload,rawData)-1;
-      if(len<0) len=0;
-      ArrayResize(rawData,len);
       char data[];
-      ArrayResize(data,len);
-      ArrayCopy(data,rawData);
+      int len=StringToCharArray(payload,data,0,WHOLE_ARRAY,CP_UTF8);
+      if(len>0)
+         ArrayResize(data,len-1); // remove the terminal NUL; HTTP body is UTF-8 JSON
+      else
+         ArrayResize(data,0);
 
       char result[];
       string resultHeaders;
@@ -77,9 +76,9 @@ public:
       string magicText=IntegerToString((long)magicNumber);
       // Account + broker server + strategy magic defines an isolated risk book.
       m_portfolioKey=server+":"+login+":"+magicText;
-      if(StringLen(m_portfolioKey)>128)
+      if(StringLen(m_portfolioKey)>80)
         {
-         Print("Midas execution ledger: generated portfolio key exceeds API limit.");
+         Print("Midas execution ledger: portfolio key exceeds safe request-ID budget.");
          m_portfolioKey="";
          return;
         }
@@ -193,6 +192,34 @@ public:
    bool RecoverExpired()
      {
       return PostJson("/execution-ledger/recover-expired","{}");
+     }
+
+
+   bool DealEvent(const string requestId,const ulong dealId,const ulong orderId,
+                  const ulong positionIdentifier,const string symbol,const string entryType,
+                  const string dealType,const string positionDirection,const double volume,
+                  const double price,const double profitCashflow,const double commissionCashflow,
+                  const double swapCashflow,const double feeCashflow,const bool cashflowsKnown,
+                  const bool positionOpen,const double remainingVolume,const double riskR,
+                  const double volatility,const string evidenceRef)
+     {
+      if(!m_ready || StringLen(requestId)==0 || StringLen(requestId)>128 ||
+         dealId==0 || positionIdentifier==0 || volume<=0.0 || price<=0.0 ||
+         !MathIsValidNumber(volume) || !MathIsValidNumber(price) ||
+         !MathIsValidNumber(profitCashflow) || !MathIsValidNumber(commissionCashflow) ||
+         !MathIsValidNumber(swapCashflow) || !MathIsValidNumber(feeCashflow) ||
+         !MathIsValidNumber(remainingVolume) || !MathIsValidNumber(riskR) ||
+         !MathIsValidNumber(volatility) || remainingVolume<0.0 || riskR<0.0 || volatility<0.0)
+         return false;
+      if(positionOpen && (remainingVolume<=0.0 || riskR<=0.0)) return false;
+      string payload=StringFormat(
+         "{\\"portfolio_key\\":\\"%s\\",\\"request_id\\":\\"%s\\",\\"broker_deal_id\\":\\"%I64u\\",\\"broker_order_id\\":\\"%I64u\\",\\"broker_position_id\\":\\"%I64u\\",\\"symbol\\":\\"%s\\",\\"entry_type\\":\\"%s\\",\\"deal_type\\":\\"%s\\",\\"direction\\":\\"%s\\",\\"volume\\":%.8f,\\"price\\":%.8f,\\"profit_cashflow\\":%.8f,\\"commission_cashflow\\":%.8f,\\"swap_cashflow\\":%.8f,\\"fee_cashflow\\":%.8f,\\"cashflows_known\\":%s,\\"position_open\\":%s,\\"remaining_volume\\":%.8f,\\"risk_r\\":%.8f,\\"volatility\\":%.8f,\\"factors\\":{},\\"evidence_ref\\":\\"%s\\"}",
+         JsonSafe(m_portfolioKey),JsonSafe(requestId),dealId,orderId,positionIdentifier,
+         JsonSafe(symbol),JsonSafe(entryType),JsonSafe(dealType),JsonSafe(positionDirection),
+         volume,price,profitCashflow,commissionCashflow,swapCashflow,feeCashflow,
+         cashflowsKnown?"true":"false",positionOpen?"true":"false",remainingVolume,
+         riskR,volatility,JsonSafe(evidenceRef));
+      return PostJson("/execution-ledger/deal-event",payload);
      }
 
    bool TerminalOrder(const ulong orderTicket,const string state,const string evidenceRef)
