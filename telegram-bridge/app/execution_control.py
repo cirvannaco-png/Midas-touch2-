@@ -26,11 +26,14 @@ ALLOWED_TRANSITIONS = {
 }
 
 
-async def _portfolio_lock(session: AsyncSession) -> None:
-    """Serialize portfolio admission on PostgreSQL, including an empty book."""
+async def _portfolio_lock(session: AsyncSession, portfolio_key: str) -> None:
+    """Serialize admission per account portfolio, including an empty book."""
     if session.bind and session.bind.dialect.name == "postgresql":
         await session.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext('midas-touch-portfolio-admission'))")
+            text(
+                "SELECT pg_advisory_xact_lock(hashtext('midas-touch-portfolio-admission:' || :portfolio_key))"
+            ),
+            {"portfolio_key": portfolio_key},
         )
 
 
@@ -54,12 +57,15 @@ async def reserve_execution(
     volatility: float,
     factors: dict[str, float],
     max_heat_r: float = MAX_PORTFOLIO_HEAT_R,
+    portfolio_key: str = "legacy-unscoped",
 ) -> bool:
-    """Atomically reserve normalized portfolio heat before execution is sent."""
+    """Atomically reserve normalized heat inside one account portfolio."""
+    if not portfolio_key or len(portfolio_key) > 128:
+        raise ValueError("portfolio_key must be 1-128 characters")
     _validate_risk(risk_r, volatility, factors)
     if not 0 < max_heat_r <= MAX_PORTFOLIO_HEAT_R:
         raise ValueError(f"max_heat_r must be in (0, {MAX_PORTFOLIO_HEAT_R}]")
-    await _portfolio_lock(session)
+    await _portfolio_lock(session, portfolio_key)
 
     existing = await session.scalar(
         select(ExecutionLedger)
@@ -72,7 +78,10 @@ async def reserve_execution(
     active = (
         await session.execute(
             select(PortfolioReservation)
-            .where(PortfolioReservation.status == "ACTIVE")
+            .where(
+                PortfolioReservation.status == "ACTIVE",
+                PortfolioReservation.portfolio_key == portfolio_key,
+            )
             .with_for_update()
         )
     ).scalars().all()
@@ -84,6 +93,7 @@ async def reserve_execution(
     lease_until = now + timedelta(seconds=LEASE_SECONDS)
     session.add(
         ExecutionLedger(
+            portfolio_key=portfolio_key,
             request_id=request_id,
             signal_id=signal_id,
             symbol=symbol,
@@ -100,6 +110,7 @@ async def reserve_execution(
     )
     session.add(
         PortfolioReservation(
+            portfolio_key=portfolio_key,
             request_id=request_id,
             symbol=symbol,
             direction=direction,
