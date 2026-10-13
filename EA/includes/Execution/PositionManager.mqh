@@ -8,6 +8,7 @@
 #include "BrokerAdapter.mqh"
 #include "DynamicStopEngine.mqh"
 #include "DynamicStopInputs.mqh"
+#include "PositionManagementPolicy.mqh"
 #include "../Monitoring/SLModificationAudit.mqh"
 #include "../Structure/SwingDetector.mqh"
 
@@ -177,7 +178,7 @@ void CPositionManager::OnTick(double currentAtr)
         }
 
       ENUM_TRADE_STATE stateAfterStop=m_orders.StateAt(i);
-      if(stateAfterStop==TS_PROTECTED && r>=m_partialAtR)
+      if(ShouldTakePartialAtR(stateAfterStop,r,m_partialAtR))
         {
          double vol=m_orders.VolumeAt(i)*m_partialFraction;
          double minVol=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_MIN);
