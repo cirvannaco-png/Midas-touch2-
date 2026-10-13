@@ -339,6 +339,9 @@ bool IsProfileExecutionAllowed(string &reasonOut)
      { reasonOut="effective account profile is not ready"; return false; }
    if(InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH && !InpConfirmMicroResearchExecution)
      { reasonOut="MICRO_RESEARCH is research-only; enable InpConfirmMicroResearchExecution only for controlled Strategy Tester or demo validation"; return false; }
+   if(InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH && !MQLInfoInteger(MQL_TESTER) &&
+      (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE)==ACCOUNT_TRADE_MODE_REAL)
+     { reasonOut="MICRO_RESEARCH order execution is prohibited on real-money accounts"; return false; }
    return true;
   }
 
