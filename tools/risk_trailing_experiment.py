@@ -55,8 +55,9 @@ CONTEXT_KEYS = {
     "account_profile", "symbol", "timeframe", "period_start", "period_end",
     "locked_oos_start", "locked_oos_end", "dataset_sha256", "ea_source_sha",
     "ea_build", "terminal_build", "data_vendor", "spread_model",
-    "spread_widening_multiplier", "spread_points", "commission_per_lot",
-    "slippage_points", "swap_included", "fill_policy", "costs_applied_in_tester",
+    "spread_widening_multiplier", "spread_points", "baseline_spread_points",
+    "cash_per_point_per_lot", "commission_per_lot", "slippage_points",
+    "swap_included", "fill_policy", "costs_applied_in_tester",
     "initial_balance", "account_currency", "leverage",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -146,6 +147,8 @@ def _context(raw: object, name: str) -> dict[str, Any]:
     if not SOURCE_SHA_RE.fullmatch(result["ea_source_sha"]):
         raise ExperimentError(f"{name}.ea_source_sha must be a 40- or 64-character commit SHA")
     result["spread_widening_multiplier"] = _num(raw["spread_widening_multiplier"], f"{name}.spread_widening_multiplier", minimum=1.01)
+    result["baseline_spread_points"] = _num(raw["baseline_spread_points"], f"{name}.baseline_spread_points", positive=True)
+    result["cash_per_point_per_lot"] = _num(raw["cash_per_point_per_lot"], f"{name}.cash_per_point_per_lot", positive=True)
     result["commission_per_lot"] = _num(raw["commission_per_lot"], f"{name}.commission_per_lot", positive=True)
     result["slippage_points"] = _num(raw["slippage_points"], f"{name}.slippage_points", positive=True)
     result["initial_balance"] = _num(raw["initial_balance"], f"{name}.initial_balance", positive=True)
@@ -454,9 +457,36 @@ def _positions(path: Path, ctx: dict[str, Any]) -> tuple[list[dict[str, Any]], i
         risk_cash = risks[0]
         if any(abs(v - risk_cash) > max(0.01, risk_cash * 0.02) for v in risks[1:]):
             raise ExperimentError(f"position {pid} contains conflicting initial risk")
-        net = sum(d["profit"] + d["commission"] + d["swap"] + d["fee"] for d in deals)
-        result.append({"position_id": pid, "entry_time": entry_time, "exit_time": exit_time,
-                       "net_pnl": net, "risk_cash": risk_cash, "realized_r": net / risk_cash})
+        gross_price_pnl = sum(d["profit"] for d in deals)
+        commission_cashflow = sum(d["commission"] for d in deals)
+        swap_cashflow = sum(d["swap"] for d in deals)
+        fee_cashflow = sum(d["fee"] for d in deals)
+        # Real-tick deal profit already reflects the historic spread. Apply only
+        # the predeclared widening delta, not the same spread twice. Turnover
+        # volume counts both entry and all partial/final exit deals; half-spread
+        # per fill makes full round-trip stress equal baseline_spread * delta * lots.
+        turnover_volume = sum(d["volume"] for d in deals)
+        spread_stress = (
+            ctx["baseline_spread_points"]
+            * (ctx["spread_widening_multiplier"] - 1.0)
+            * ctx["cash_per_point_per_lot"]
+            * turnover_volume / 2.0
+        )
+        # slippage_points is an adverse extra per executed deal, so it applies
+        # to entry and each exit/partial exit by deal volume.
+        slippage_stress = (
+            ctx["slippage_points"] * ctx["cash_per_point_per_lot"] * turnover_volume
+        )
+        net = gross_price_pnl + commission_cashflow + swap_cashflow + fee_cashflow - spread_stress - slippage_stress
+        result.append({
+            "position_id": pid, "entry_time": entry_time, "exit_time": exit_time,
+            "net_pnl": net, "risk_cash": risk_cash, "realized_r": net / risk_cash,
+            "gross_price_pnl": gross_price_pnl, "commission_cashflow": commission_cashflow,
+            "swap_cashflow": swap_cashflow, "fee_cashflow": fee_cashflow,
+            "turnover_volume": turnover_volume,
+            "spread_widening_stress_cost_cash": spread_stress,
+            "slippage_stress_cost_cash": slippage_stress,
+        })
     result.sort(key=lambda p: (p["exit_time"], p["position_id"]))
     return result, incomplete
 
@@ -502,6 +532,13 @@ def _metrics(positions: list[dict[str, Any]], ctx: dict[str, Any], simulations: 
         "net_return_pct": 100 * sum(pnls) / ctx["initial_balance"],
         "net_expectancy_cash_per_position": sum(pnls) / n if n else None,
         "net_expectancy_r_per_position": statistics.fmean(p["realized_r"] for p in positions) if n else None,
+        "gross_price_pnl_cash": sum(p["gross_price_pnl"] for p in positions),
+        "commission_cashflow": sum(p["commission_cashflow"] for p in positions),
+        "swap_cashflow": sum(p["swap_cashflow"] for p in positions),
+        "broker_fee_cashflow": sum(p["fee_cashflow"] for p in positions),
+        "spread_widening_stress_cost_cash": sum(p["spread_widening_stress_cost_cash"] for p in positions),
+        "slippage_stress_cost_cash": sum(p["slippage_stress_cost_cash"] for p in positions),
+        "net_pnl_reconciliation": "gross_price_pnl + signed commission + signed swap + signed broker fee - incremental spread-widening stress - modeled per-deal slippage stress",
         "gross_profit_cash": gains, "gross_loss_cash_abs": losses,
         "profit_factor": gains / losses if losses else (None if not gains else "undefined_no_losses"),
         "average_win_cash": statistics.fmean(v for v in pnls if v > 0) if wins else None,
@@ -676,10 +713,16 @@ def compare_manifest(manifest_path: str | Path, *, simulations: int = 2000, seed
         "generated_at_utc": _iso(datetime.now(timezone.utc)),
         "matched_context_verified": True, "dataset_digest_verified": True,
         "cost_model": {
-            "commission_per_lot": ctx["commission_per_lot"], "spread_model": ctx["spread_model"],
-            "spread_widening_multiplier": ctx["spread_widening_multiplier"], "slippage_points": ctx["slippage_points"],
+            "commission_per_lot": ctx["commission_per_lot"],
+            "historic_spread_source": "real tick fills; already reflected in deal profit",
+            "baseline_spread_points": ctx["baseline_spread_points"],
+            "spread_widening_multiplier": ctx["spread_widening_multiplier"],
+            "cash_per_point_per_lot": ctx["cash_per_point_per_lot"],
+            "incremental_spread_stress_formula": "baseline_spread_points * (spread_widening_multiplier - 1) * cash_per_point_per_lot * total_entry_and_exit_volume / 2",
+            "slippage_points_per_deal": ctx["slippage_points"],
+            "slippage_stress_formula": "slippage_points * cash_per_point_per_lot * total_entry_and_exit_volume",
             "swap_included": ctx["swap_included"], "costs_applied_in_tester": ctx["costs_applied_in_tester"],
-            "net_pnl_source": "sum(deal profit + commission + swap + fee); spread/slippage are represented by actual tester fills under the declared stressed setup",
+            "net_pnl_source": "sum(deal profit + signed commission + swap + fee) less incremental spread widening and explicit per-deal slippage stress; historic spread is not charged twice",
         },
         "context": {k: (_iso(v) if isinstance(v, datetime) else v) for k, v in ctx.items()},
         "variants": results, "candidate_deltas_vs_A": deltas,
