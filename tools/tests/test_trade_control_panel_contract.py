@@ -171,3 +171,16 @@ def test_execution_audit_is_separated_from_chart_presentation():
     assert "class CExecutionAudit" not in panel
     assert "class CExecutionAudit" in audit
     assert '#include "includes/Execution/ExecutionAudit.mqh"' in ea
+
+
+
+def test_position_manager_validates_partial_volume_before_broker_request():
+    manager = read(ROOT / "EA" / "includes" / "Execution" / "PositionManager.mqh")
+    assert "bool CPositionManager::PartialVolumeForPosition(" in manager
+    assert "MathFloor((currentVolume*m_partialFraction+1e-10)/step)*step" in manager
+    assert "double remainingVolume=NormalizeDouble(currentVolume-closeVolume,volumeDigits);" in manager
+    assert "remainingVolume<minVolume-tolerance" in manager
+    assert "closeVolume>=currentVolume-tolerance" in manager
+    assert "if(PartialVolumeForPosition(dec.symbol,currentVolume,closeVolume) &&" in manager
+    assert "m_broker.ClosePartial(ticket,closeVolume)" in manager
+    assert "double vol=m_orders.VolumeAt(i)*m_partialFraction;" not in manager
