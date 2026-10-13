@@ -509,6 +509,7 @@ async def reconcile_closed_position(
     broker_position_id: str,
     broker_deal_id: str,
     evidence_ref: str,
+    request_id: str | None = None,
 ) -> bool:
     """Release a position reservation only after MT5 reports a closed position."""
     if not broker_deal_id or not evidence_ref:
@@ -517,11 +518,23 @@ async def reconcile_closed_position(
     row = await _lookup_broker_record(
         session, portfolio_key=portfolio_key, broker_position_id=broker_position_id
     )
+    if row is None and request_id:
+        row = await session.scalar(
+            select(ExecutionLedger)
+            .where(
+                ExecutionLedger.portfolio_key == portfolio_key,
+                ExecutionLedger.request_id == request_id,
+            )
+            .with_for_update()
+        )
     if row is None:
         return False
+    if row.portfolio_key != portfolio_key:
+        raise ValueError("closed position portfolio does not match")
     now = datetime.now(timezone.utc)
     row.state = "RECONCILED"
     row.reconciled_at = now
+    row.broker_position_id = broker_position_id
     row.broker_deal_id = broker_deal_id
     merged = dict(row.result_json or {})
     merged.update(
