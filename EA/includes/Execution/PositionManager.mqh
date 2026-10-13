@@ -29,7 +29,7 @@ private:
    double RMultiple(const TradeDecisionRecord &dec,double entry,double price);
    bool   CanModifyNow(ulong ticket);
    void   RecordModification(ulong ticket);
-   double ConfirmedStructuralAnchor(bool isBuy);
+   double ConfirmedStructuralAnchor(bool isBuy,string symbol,double currentPrice,double atr);
 
 public:
    void Init(COrderManager* orders,CBrokerAdapter* broker,
@@ -106,27 +106,62 @@ void CPositionManager::RecordModification(ulong ticket)
    m_lastModifyTimes[n]=TimeCurrent();
   }
 
-// Return the newest CONFIRMED swing on the opposite side of the position.
-// CSwingDetector only exposes swings after its left/right strength window
-// has completed, so this is market structure derived from the actual
-// terminal candle feed rather than a synthetic price level.
-// BUY  -> most recent confirmed swing low.
-// SELL -> most recent confirmed swing high.
-// The DynamicStopEngine remains the final geometry/safety gate.
-double CPositionManager::ConfirmedStructuralAnchor(bool isBuy)
+// Return a confirmed protective anchor. Base behavior uses the newest confirmed
+// chart-timeframe swing. The optional HTF research mode may also consider only
+// the PREVIOUS COMPLETED W1/MN1 candle: BUY uses its low as support; SELL uses
+// its high as resistance. It never uses shift 0, so the forming week/month
+// cannot repaint the anchor. HTF mode is opt-in until matched MT5 validation.
+double CPositionManager::ConfirmedStructuralAnchor(bool isBuy,string symbol,double currentPrice,double atr)
   {
-   if(m_structureSwings==NULL) return 0.0;
-   if(isBuy)
+   double anchor=0.0;
+   if(m_structureSwings!=NULL)
      {
-      if(m_structureSwings.LowCount()<=0) return 0.0;
-      SwingPoint low=m_structureSwings.GetLow(0);
-      if(low.time<=0 || low.price<=0.0 || low.is_high) return 0.0;
-      return low.price;
+      if(isBuy && m_structureSwings.LowCount()>0)
+        {
+         SwingPoint low=m_structureSwings.GetLow(0);
+         if(low.time>0 && low.price>0.0 && !low.is_high) anchor=low.price;
+        }
+      else if(!isBuy && m_structureSwings.HighCount()>0)
+        {
+         SwingPoint high=m_structureSwings.GetHigh(0);
+         if(high.time>0 && high.price>0.0 && high.is_high) anchor=high.price;
+        }
      }
-   if(m_structureSwings.HighCount()<=0) return 0.0;
-   SwingPoint high=m_structureSwings.GetHigh(0);
-   if(high.time<=0 || high.price<=0.0 || !high.is_high) return 0.0;
-   return high.price;
+
+   if(!InpDynamicStopUseHTFReferenceLevels) return anchor;
+   if(currentPrice<=0.0 || atr<=0.0) return 0.0;
+   if(InpDynamicStopHTFMaxDistanceATR<=0.0) return anchor; // 0 disables only the HTF candidates
+
+   // When HTF mode is active, discard wrong-side or stale chart swings too.
+   bool anchorOnCorrectSide=(anchor>0.0 && (isBuy ? anchor<currentPrice : anchor>currentPrice));
+   bool anchorNearEnough=(anchorOnCorrectSide &&
+                          MathAbs(currentPrice-anchor)<=InpDynamicStopHTFMaxDistanceATR*atr);
+   if(!anchorNearEnough) anchor=0.0;
+
+   if(InpDynamicStopUseWeeklyReference && iTime(symbol,PERIOD_W1,1)>0)
+     {
+      double level=isBuy ? iLow(symbol,PERIOD_W1,1) : iHigh(symbol,PERIOD_W1,1);
+      bool correctSide=(level>0.0 && (isBuy ? level<currentPrice : level>currentPrice));
+      bool nearEnough=(correctSide &&
+                       MathAbs(currentPrice-level)<=InpDynamicStopHTFMaxDistanceATR*atr);
+      // Choose the closest valid protective level: highest support for BUY,
+      // lowest resistance for SELL. The engine still applies its ATR buffer,
+      // monotonic-tightening, broker stop/freeze, and spread constraints.
+      if(nearEnough && (anchor<=0.0 || (isBuy ? level>anchor : level<anchor)))
+         anchor=level;
+     }
+
+   if(InpDynamicStopUseMonthlyReference && iTime(symbol,PERIOD_MN1,1)>0)
+     {
+      double level=isBuy ? iLow(symbol,PERIOD_MN1,1) : iHigh(symbol,PERIOD_MN1,1);
+      bool correctSide=(level>0.0 && (isBuy ? level<currentPrice : level>currentPrice));
+      bool nearEnough=(correctSide &&
+                       MathAbs(currentPrice-level)<=InpDynamicStopHTFMaxDistanceATR*atr);
+      if(nearEnough && (anchor<=0.0 || (isBuy ? level>anchor : level<anchor)))
+         anchor=level;
+     }
+
+   return anchor;
   }
 
 void CPositionManager::OnTick(double currentAtr)
@@ -165,7 +200,7 @@ void CPositionManager::OnTick(double currentAtr)
          // detector for the entry timeframe. If no confirmed swing exists,
          // the DynamicStopEngine receives zero and deterministically falls
          // back to its ATR policy; it never fabricates structure.
-         double structuralAnchor=ConfirmedStructuralAnchor(isBuy);
+         double structuralAnchor=ConfirmedStructuralAnchor(isBuy,dec.symbol,price,currentAtr);
          DynamicStopDecision ds=m_dynamicStop.Evaluate(dec.symbol,isBuy,entry,dec.setup.stop_loss,
                                                         curSL,price,currentAtr,spreadPoints,structuralAnchor);
          if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))

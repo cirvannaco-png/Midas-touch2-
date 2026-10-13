@@ -65,12 +65,13 @@ bool CMarketPhase::IsDisplacementBar(int idx)
 //+------------------------------------------------------------------+
 ENUM_MARKET_PHASE CMarketPhase::Detect()
   {
+   // Use only completed candles for a stable regime read; index 0 may still form.
    if(m_candles == NULL || m_candles.Total() < m_rangeLookback + 2) return PHASE_UNDEFINED;
-   double atr = m_candles.GetATR(0);
+   double atr = m_candles.GetATR(1);
    if(atr <= 0) return PHASE_UNDEFINED;
 
    double hh = -DBL_MAX, ll = DBL_MAX;
-   for(int i = 0; i < m_rangeLookback; i++)
+   for(int i = 1; i <= m_rangeLookback; i++)
      {
       CandleData cd = m_candles.GetCandle(i);
       if(cd.high > hh) hh = cd.high;
@@ -82,11 +83,11 @@ ENUM_MARKET_PHASE CMarketPhase::Detect()
    if(m_liquidity != NULL && m_liquidity.EventCount() > 0)
      {
       LiquidityEvent ev = m_liquidity.GetEvent(0);
-      if(ev.bar_index <= m_sweepRecencyBars) recentSweep = true;
+      if(ev.bar_index >= 1 && ev.bar_index <= m_sweepRecencyBars + 1) recentSweep = true;
      }
 
    bool recentDisplacement = false;
-   for(int i = 0; i < MathMin(3, m_sweepRecencyBars); i++)
+   for(int i = 1; i <= MathMin(3, m_sweepRecencyBars); i++)
       if(IsDisplacementBar(i)) { recentDisplacement = true; break; }
 
    if(recentSweep && recentDisplacement) return PHASE_DISTRIBUTION;
