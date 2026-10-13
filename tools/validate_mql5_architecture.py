@@ -236,8 +236,12 @@ def check_architecture(by_rel: dict[str, str], errors: list[str]) -> None:
     elif positions != sorted(positions):
         errors.append("EA execution order is invalid: router -> multi-trade plan -> portfolio gate -> order submission must remain monotonic")
 
-    if 'if(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)' not in ea:
+    legacy_execution_gate = 'if(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)'
+    profile_execution_gate = 'if((decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)&&profileExecutionAllowed)'
+    if legacy_execution_gate not in ea and profile_execution_gate not in ea:
         errors.append("Multi-trade planning is no longer restricted to executable decisions")
+    if profile_execution_gate in ea and "PROFILE_EXECUTION_BLOCKED" not in ea:
+        errors.append("profile execution gate is present but blocked orders are not explicitly audited")
 
 
 def main() -> int:
