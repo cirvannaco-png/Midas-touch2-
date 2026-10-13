@@ -466,6 +466,8 @@ public:
      }
    bool MarkClosed(long id,double exitPrice,datetime t,double netPnl,double commission,double swap,double fee,bool stillOpen,string outcome,ulong dealTicket=0,double closedVolume=0.0,bool cashflowsKnown=true)
      {
+      m_lastFinalizedR=0.0;
+      m_lastFinalizedQualified=false;
       if(DealAlreadyProcessed(dealTicket)) return true;
       int i=Find(id);
       if(i<0) return false;
