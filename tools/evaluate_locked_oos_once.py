@@ -198,11 +198,15 @@ def _preflight(reservation_path: Path, manifest_path: Path, freeze_path: Path,
     }
 
 
-def _segment_positions(variant: dict, start: datetime, end: datetime) -> tuple[list[dict], dict]:
+def _segment_positions(variant: dict, entry_start: datetime, entry_end: datetime,
+                      maturity_cut: datetime) -> tuple[list[dict], dict]:
     deals = read_deals(variant["deals"])
     opens = read_open_ids(variant["opens"])
     positions, ignored = reconstruct_positions(deals, opens)
-    eligible = [p for p in positions if start <= p["opened_at"] < end and p["closed_at"] < end]
+    eligible = [
+        p for p in positions
+        if entry_start <= p["opened_at"] < entry_end and p["closed_at"] < maturity_cut
+    ]
     deals_by_id: dict[str, list[dict]] = {}
     for deal in deals:
         deals_by_id.setdefault(str(deal["position_id"]), []).append(deal)
@@ -211,16 +215,16 @@ def _segment_positions(variant: dict, start: datetime, end: datetime) -> tuple[l
     entry_ids = set()
     for pid, rows in deals_by_id.items():
         entries = [row for row in rows if row["entry"] in IN or row["entry"] in INOUT]
-        if any(start <= row["time"] < end for row in entries):
+        if any(entry_start <= row["time"] < entry_end for row in entries):
             entry_ids.add(pid)
     eligible_ids = {str(p["position_id"]) for p in eligible}
     late_close_ids = {
         str(p["position_id"]) for p in positions
-        if start <= p["opened_at"] < end and p["closed_at"] >= end
+        if entry_start <= p["opened_at"] < entry_end and p["closed_at"] >= maturity_cut
     }
     return eligible, {
         "completed_positions": len(eligible),
-        "closed_after_segment_boundary": len(late_close_ids),
+        "closed_after_maturity_cut": len(late_close_ids),
         "opened_but_not_completed": len(entry_ids - eligible_ids),
         "listed_open_positions_at_export": len(opens),
         "ledger_ignored_groups": ignored,
@@ -295,8 +299,10 @@ def evaluate_once(reservation_path: Path, manifest_path: Path, freeze_path: Path
         }
         stress: dict[str, Any] = {}
         for role, variant in info["variants"].items():
-            dev_rows, dev_counts = _segment_positions(variant, dev_start, oos_start)
-            oos_rows, oos_counts = _segment_positions(variant, oos_start, oos_end)
+            dev_rows, dev_counts = _segment_positions(variant, dev_start, oos_start, oos_start)
+            # OOS positions are selected by entry window, but allowed to mature
+            # until period_end (registered maturity cut), not merely oos_end.
+            oos_rows, oos_counts = _segment_positions(variant, oos_start, oos_end, context["period_end"])
             role_compare = matched["variants"][role]
             comparison["variants"][role] = {
                 "run_id": role_compare["run_id"],
