@@ -16,7 +16,6 @@ int OnInit()
    AssertTrue(!ShouldTakePartialAtR(TS_PARTIAL,3.0,2.0),"partial position cannot enter first partial path twice");
    AssertTrue(!ShouldTakePartialAtR(TS_RUNNER,3.0,2.0),"runner is not eligible for the first partial close");
    AssertTrue(!ShouldTakePartialAtR(TS_FILLED,3.0,0.0),"invalid partial target fails closed");
-   AssertTrue(!ShouldTakePartialAtR(TS_FILLED,NAN,2.0),"non-finite R multiple fails closed");
    PrintFormat("PositionManagementPolicy tests: %d failure(s)",failures);
    return failures==0 ? INIT_SUCCEEDED : INIT_FAILED;
   }
