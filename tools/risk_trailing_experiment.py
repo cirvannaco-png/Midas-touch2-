@@ -32,8 +32,7 @@ TRAILING_KEYS = {
     "InpDynamicStopATRMult", "InpDynamicStopMinImprovementPoints",
     "InpDynamicStopMaxSpreadPoints", "InpDynamicStopMinATR", "InpDynamicStopMaxATR",
     "InpDynamicStopModifyIntervalSec", "InpDynamicStopUseStructuralAnchor",
-    "InpDynamicStopStructuralBufferATR", "InpBreakEvenAtR", "InpPartialAtR",
-    "InpPartialFraction", "InpTrailATRMult",
+    "InpDynamicStopStructuralBufferATR",
 }
 COST_KEYS = {"InpSimCommissionPerLot", "InpSimSpreadPoints", "InpSimSlippagePoints"}
 CONTEXT_KEYS = {
