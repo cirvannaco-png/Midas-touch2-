@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from tools.position_ledger_metrics import calculate_metrics, reconstruct_positions
+from tools.position_ledger_metrics import LedgerError, calculate_metrics, reconstruct_positions
 
 
 def deal(pid, stamp, entry, volume, profit=0.0, commission=0.0, risk_cash=0.0, lane="A", row=2):
@@ -49,7 +49,7 @@ class PositionLedgerMetricsTests(unittest.TestCase):
         self.assertEqual(report["average_win"], 50)
         self.assertEqual(report["average_loss"], -25)
         self.assertEqual(report["max_closed_position_drawdown_cash"], 25)
-        self.assertIsNone(report["target_reached"])
+        self.assertNotIn("target_reached", report)
 
     def test_currently_open_ids_are_excluded(self):
         rows = [
@@ -121,3 +121,44 @@ def test_losing_streak_is_scoped_to_lane_and_flats_break_a_streak() -> None:
     report = calculate_metrics(positions, 10000.0, ignored)
     assert report["by_lane"]["STRICT"]["max_consecutive_losses"] == 2
     assert report["by_lane"]["SINGLE"]["max_consecutive_losses"] == 2
+
+
+
+def test_return_target_is_opt_in_and_scales_with_initial_balance() -> None:
+    rows = [
+        deal(10, "2026-02-01T09:00:00", "in", 1.0, risk_cash=100.0, row=2),
+        deal(10, "2026-02-01T10:00:00", "out", 1.0, profit=25.0, risk_cash=100.0, row=3),
+    ]
+    positions, ignored = reconstruct_positions(rows)
+
+    report = calculate_metrics(
+        positions, initial_balance=1000.0, ignored=ignored, target_return_pct=2.5
+    )
+
+    assert report["target_return_pct"] == 2.5
+    assert report["target_profit"] == 25.0
+    assert report["target_reached"] is True
+
+
+def test_return_target_can_be_reported_as_not_reached() -> None:
+    rows = [
+        deal(11, "2026-02-02T09:00:00", "in", 1.0, row=2),
+        deal(11, "2026-02-02T10:00:00", "out", 1.0, profit=25.0, row=3),
+    ]
+    positions, ignored = reconstruct_positions(rows)
+
+    report = calculate_metrics(
+        positions, initial_balance=1000.0, ignored=ignored, target_return_pct=3.0
+    )
+
+    assert report["target_profit"] == 30.0
+    assert report["target_reached"] is False
+
+
+def test_invalid_return_target_is_rejected() -> None:
+    try:
+        calculate_metrics([], target_return_pct=-1.0)
+    except LedgerError:
+        pass
+    else:
+        raise AssertionError("negative return target must be rejected")
