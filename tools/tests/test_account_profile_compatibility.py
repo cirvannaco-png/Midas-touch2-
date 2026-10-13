@@ -103,6 +103,8 @@ def test_profile_identity_is_persistent_and_switch_fails_closed_with_exposure():
     assert "MedisTouch_AccountProfile_" in source
     assert "GlobalVariableSet(key,-1.0)" in lock
     assert "GlobalVariableSet(key,selected)" in lock
+    assert "bool storedNumericValid=MathIsValidNumber(stored);" in lock
+    assert "if(storedNumericValid)" in lock
     assert "account profile identity was not initialized before existing exposure" in lock
     assert "GlobalVariablesFlush()" in lock
     assert "if(!InpConfirmAccountProfileChange)" in lock
