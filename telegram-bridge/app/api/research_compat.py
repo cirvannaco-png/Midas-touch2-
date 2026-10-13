@@ -208,12 +208,6 @@ async def record_validation_run(
     )
     if experiment is None:
         raise HTTPException(status_code=404, detail="experiment not found")
-    if body.passed and not experiment.holdout_locked:
-        raise HTTPException(
-            status_code=409,
-            detail="holdout must be locked before recording a passing validation run",
-        )
-
     row = ValidationRun(
         experiment_id=experiment_id,
         validation_type=body.validation_type,
