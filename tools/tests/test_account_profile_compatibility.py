@@ -38,8 +38,8 @@ def test_micro_account_research_is_documented_as_unvalidated_and_separate():
 def test_prop_and_micro_profiles_resolve_independently():
     source = EA.read_text()
     header = PROFILE_HEADER.read_text()
-    assert "if(InpAccountProfile==MIDAS_PROFILE_PROP_FIRM)" in source
-    assert "if(InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH)" in source
+    assert "if(selectedProfile==MIDAS_PROFILE_PROP_FIRM)" in source
+    assert "else if(selectedProfile==MIDAS_PROFILE_MICRO_RESEARCH)" in source
     assert 'g_effectiveProfile.profileName="PROP_FIRM";' in source
     assert 'g_effectiveProfile.profileName="MICRO_RESEARCH";' in source
     assert "g_effectiveProfile.riskPercentPerTrade=InpRiskPercentPerTrade;" in source
@@ -86,7 +86,7 @@ def test_micro_profile_cannot_execute_without_second_explicit_acknowledgement():
     tick_start = source.index("void OnTick()")
     tick_end = source.index("// Persistent per-symbol/per-magic emergency latch", tick_start)
     assert "InpConfirmMicroResearchExecution=false;" in source
-    assert "MIDAS_PROFILE_MICRO_RESEARCH && !InpConfirmMicroResearchExecution" in guard
+    assert "g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH && !InpConfirmMicroResearchExecution" in guard
     assert "ACCOUNT_TRADE_MODE_REAL" in guard
     assert "MQLInfoInteger(MQL_TESTER)" in guard
     assert "IsProfileExecutionAllowed(profileBlockReason)" in source[manual_start:manual_end]
@@ -105,7 +105,8 @@ def test_profile_identity_is_persistent_and_switch_fails_closed_with_exposure():
     assert "GlobalVariablesFlush()" in lock
     assert "if(!InpConfirmAccountProfileChange)" in lock
     assert "AccountHasAnyPositionOrOrder()" in lock
-    assert "profile switch refused while any account position or pending order exists" in lock
+    assert "profile change to %s is pending" in lock
+    assert "new entries disabled until the account is flat" in lock
     assert "GlobalVariableDel" not in lock
     assert "ManualReset" not in lock
 
@@ -116,8 +117,8 @@ def test_restart_recovery_and_account_protection_state_are_not_reset_by_profile_
     assert "g_recovery.Recover()" in source
     for key in ("_PeakEquity", "_HardHalted", "_DayStartEquity", "_DayKey"):
         assert key in guard
-    lock_start = source.index("bool AcquireAccountProfileLock")
-    lock_end = source.index("bool IsProfileExecutionAllowed", lock_start)
+    lock_start = source.index("bool AcquireAccountProfileLock(string &reasonOut)\n  {")
+    lock_end = source.index("bool IsProfileExecutionAllowed(string &reasonOut)\n  {", lock_start)
     lock = source[lock_start:lock_end]
     assert "persisted daily baseline, peak equity, hard-halt, and emergency-stop variables were not reset" in lock
     assert "GlobalVariableDel" not in lock
