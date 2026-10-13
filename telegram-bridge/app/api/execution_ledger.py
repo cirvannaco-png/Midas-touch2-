@@ -22,6 +22,7 @@ router = APIRouter(prefix="/execution-ledger", tags=["execution-ledger"])
 
 
 class ReserveRequest(BaseModel):
+    portfolio_key: str = Field(min_length=1, max_length=128)
     request_id: str = Field(min_length=1, max_length=128)
     signal_id: str = Field(min_length=1, max_length=100)
     symbol: str = Field(min_length=1, max_length=32)
@@ -56,6 +57,7 @@ async def reserve(
             volatility=body.volatility,
             factors=body.factors,
             max_heat_r=body.max_heat_r,
+            portfolio_key=body.portfolio_key,
         )
         if not reserved:
             await session.rollback()
@@ -67,7 +69,12 @@ async def reserve(
     except IntegrityError as exc:
         await session.rollback()
         raise HTTPException(409, "duplicate execution request") from exc
-    return {"reserved": True, "request_id": body.request_id, "state": "RESERVED"}
+    return {
+        "reserved": True,
+        "portfolio_key": body.portfolio_key,
+        "request_id": body.request_id,
+        "state": "RESERVED",
+    }
 
 
 @router.post("/transition")
