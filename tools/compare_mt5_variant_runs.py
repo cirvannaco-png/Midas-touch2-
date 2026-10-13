@@ -426,30 +426,20 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
             raise ComparisonError(f"{name} deal-ledger validation failed: {exc}") from exc
 
         period_start = context["period_start"]
-        period_end = context["period_end"]
-        oos_start = context["locked_oos_start"]
-        oos_end = context["locked_oos_end"]
+        development_end = context["locked_oos_start"]
 
-        in_period = [p for p in positions if period_start <= p["opened_at"] < period_end]
-        period_complete = [p for p in in_period if p["closed_at"] < period_end]
-        period_censored = sum(1 for p in in_period if p["closed_at"] >= period_end)
-        period_unresolved = _unresolved_entries_in_window(deals, positions, period_start, period_end)
-        untagged = [p["position_id"] for p in period_complete if p["lane"] == "UNTAGGED"]
+        # All standard comparison commands stop at the locked-OOS entry
+        # boundary. The reserved interval's outcomes and diagnostics must be
+        # emitted only by the registered one-shot evaluator.
+        in_development = [p for p in positions if period_start <= p["opened_at"] < development_end]
+        development_complete = [p for p in in_development if p["closed_at"] < development_end]
+        development_censored = sum(1 for p in in_development if p["closed_at"] >= development_end)
+        development_unresolved = _unresolved_entries_in_window(deals, positions, period_start, development_end)
+        untagged = [p["position_id"] for p in development_complete if p["lane"] == "UNTAGGED"]
         if untagged:
             raise ComparisonError(
-                f"{name} has completed in-period positions without lane attribution: "
+                f"{name} has completed development positions without lane attribution: "
                 + ", ".join(str(pid) for pid in untagged[:10])
-            )
-
-        in_oos = [p for p in positions if oos_start <= p["opened_at"] < oos_end]
-        oos_complete = [p for p in in_oos if p["closed_at"] < oos_end]
-        oos_censored = sum(1 for p in in_oos if p["closed_at"] >= oos_end)
-        oos_unresolved = _unresolved_entries_in_window(deals, positions, oos_start, oos_end)
-        untagged_oos = [p["position_id"] for p in oos_complete if p["lane"] == "UNTAGGED"]
-        if untagged_oos:
-            raise ComparisonError(
-                f"{name} has locked-OOS positions without lane attribution: "
-                + ", ".join(str(pid) for pid in untagged_oos[:10])
             )
 
         loaded[role] = {
@@ -463,23 +453,14 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
                 "open_positions_csv": {"path": str(open_path.relative_to(source_path.parent)) if open_path.is_relative_to(source_path.parent) else str(open_path), "sha256": _sha256(open_path)},
             },
             "metrics": {
-                "full_period": _metrics_for(period_complete, context["initial_balance"]),
-                "locked_oos": _metrics_for(oos_complete, context["initial_balance"]),
+                "development": _metrics_for(development_complete, context["initial_balance"]),
             },
             "ledger_diagnostics": {
-                "deal_rows": len(deals),
-                "reconstructed_complete_positions_before_window_filter": len(positions),
-                "positions_opened_in_period": len(in_period) + period_unresolved,
-                "reconstructed_positions_opened_in_period": len(in_period),
-                "period_positions_censored_at_period_end": period_censored,
-                "period_open_incomplete_or_ambiguous_entries": period_unresolved,
-                "period_censored_or_unresolved_entries": period_censored + period_unresolved,
-                "positions_opened_in_locked_oos": len(in_oos) + oos_unresolved,
-                "reconstructed_positions_opened_in_locked_oos": len(in_oos),
-                "locked_oos_positions_censored_at_oos_end": oos_censored,
-                "locked_oos_open_incomplete_or_ambiguous_entries": oos_unresolved,
-                "locked_oos_censored_or_unresolved_entries": oos_censored + oos_unresolved,
-                "ignored_groups": ignored,
+                "positions_opened_in_development": len(in_development) + development_unresolved,
+                "reconstructed_positions_opened_in_development": len(in_development),
+                "development_positions_censored_at_boundary": development_censored,
+                "development_open_incomplete_or_ambiguous_entries": development_unresolved,
+                "development_censored_or_unresolved_entries": development_censored + development_unresolved,
                 "lane_attribution_complete": True,
             },
         }
@@ -496,18 +477,16 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
             continue
         comparisons[role] = {
             "versus": "baseline_dual_lane",
-            "full_period_delta": _metric_delta(
-                loaded[role]["metrics"]["full_period"], baseline["metrics"]["full_period"]
-            ),
-            "locked_oos_delta": _metric_delta(
-                loaded[role]["metrics"]["locked_oos"], baseline["metrics"]["locked_oos"]
+            "development_delta": _metric_delta(
+                loaded[role]["metrics"]["development"], baseline["metrics"]["development"]
             ),
         }
 
     payload = {
         "status": "comparison_completed" if any(
-            loaded[role]["metrics"]["locked_oos"]["completed_positions"] for role in ROLES
-        ) else "no_complete_locked_oos_positions",
+            loaded[role]["metrics"]["development"]["completed_positions"] for role in ROLES
+        ) else "no_complete_development_positions",
+        "locked_oos_status": "withheld; use the registered one-shot evaluator after freezing the configuration",
         "experiment_id": experiment_id.strip(),
         "comparison_only": True,
         "promotion_recommendation": None,
