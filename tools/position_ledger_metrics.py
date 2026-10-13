@@ -177,9 +177,13 @@ def reconstruct_positions(deals, open_ids=None):
     return positions, ignored
 
 
-def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
+def calculate_metrics(positions, initial_balance=10000.0, ignored=None, target_return_pct=None):
     if not math.isfinite(initial_balance) or initial_balance <= 0:
         raise LedgerError("initial balance must be finite and positive")
+    if target_return_pct is not None and (
+        not math.isfinite(target_return_pct) or target_return_pct < 0
+    ):
+        raise LedgerError("target return percentage must be finite and non-negative")
     wins = [p for p in positions if p["net_pnl"] > EPS]
     losses = [p for p in positions if p["net_pnl"] < -EPS]
     flats = [p for p in positions if abs(p["net_pnl"]) <= EPS]
@@ -250,8 +254,11 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
         "average_realized_R": round(sum(r_values) / len(r_values), 4) if r_values else None,
         "positions_with_risk_cash": len(r_values), "by_lane": lanes, "ignored_groups": ignored or {},
         "drawdown_basis": "closed-position settlement sequence, not tick-level equity",
-        "target_account_return_pct": 87.0, "target_profit_from_10000": 8700.0,
-        "target_reached": pnl >= 8700.0 if abs(initial_balance - 10000.0) < 0.01 else None,
+        **({
+            "target_return_pct": round(float(target_return_pct), 4),
+            "target_profit": round(initial_balance * float(target_return_pct) / 100.0, 2),
+            "target_reached": pnl >= initial_balance * float(target_return_pct) / 100.0,
+        } if target_return_pct is not None else {}),
         "equity_curve": equity,
     }
 
@@ -261,11 +268,15 @@ def main():
     parser.add_argument("deals_csv")
     parser.add_argument("--open-positions", help="optional CSV of current position IDs to exclude")
     parser.add_argument("--initial-balance", type=float, default=10000.0)
+    parser.add_argument(
+        "--target-return-pct", type=float, default=None,
+        help="optional net account-return target percentage; no target is assumed by default",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
         positions, ignored = reconstruct_positions(read_deals(args.deals_csv), read_open_ids(args.open_positions))
-        report = calculate_metrics(positions, args.initial_balance, ignored)
+        report = calculate_metrics(positions, args.initial_balance, ignored, args.target_return_pct)
     except (OSError, LedgerError) as exc:
         print(f"position_ledger_metrics: {exc}", file=sys.stderr)
         return 2
@@ -279,7 +290,8 @@ def main():
         print(f"Win rate (exclude flats): {report['win_rate_pct_excluding_flats']}% | Profit factor: {report['profit_factor']}")
         print(f"Average win/loss: {report['average_win']} / {report['average_loss']}")
         print(f"Closed-position drawdown: {report['max_closed_position_drawdown_cash']:.2f} ({report['max_closed_position_drawdown_pct']:.2f}%)")
-        print(f"87% account-return target reached: {report['target_reached']}")
+        if args.target_return_pct is not None:
+            print(f"{args.target_return_pct:g}% net-return target reached: {report['target_reached']}")
         print("Warning: drawdown is closed-position based, not tick-level equity drawdown.")
     return 0 if positions else 1
 
