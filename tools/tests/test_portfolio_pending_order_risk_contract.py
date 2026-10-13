@@ -36,5 +36,5 @@ def test_breakeven_or_profit_locked_position_does_not_become_unknown_risk():
     source = read_portfolio()
     assert "if(type==POSITION_TYPE_BUY && sl>=entry) return 0.0;" in source
     assert "if(type==POSITION_TYPE_SELL && sl<=entry) return 0.0;" in source
-    assert "gaps, slippage and broker" in source
+    assert "Gaps, slippage and broker" in source
     assert "Invalid tick metadata remains unknown, not zero risk." in source
