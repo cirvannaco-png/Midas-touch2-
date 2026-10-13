@@ -79,8 +79,8 @@ def forced_rate_limit():
 
 
 @pytest.fixture()
-def client():
-    """TestClient with Telegram sends mocked; persisted rows are cleared per test."""
+def client(monkeypatch):
+    """Isolated TestClient; delivery-worker behavior is not raced against API assertions."""
     # Register the route module before dotted-name mocks in isolated test processes.
     import app.routes
     with (
@@ -106,8 +106,17 @@ def client():
         async def _offline_shutdown_bot():
             bot_module.application = None
 
-        main_module.init_bot = _offline_init_bot
-        main_module.shutdown_bot = _offline_shutdown_bot
+        async def _idle_outbox_worker(stop_event):
+            # Route tests verify atomic queue reservation and pending status.
+            # Running the polling worker in parallel can consume those rows
+            # while a separate test event loop queries SQLite, causing flaky
+            # database-locked teardown errors. Worker delivery is a separate
+            # lifecycle and should be exercised explicitly, not as a side effect.
+            await stop_event.wait()
+
+        monkeypatch.setattr(main_module, "init_bot", _offline_init_bot)
+        monkeypatch.setattr(main_module, "shutdown_bot", _offline_shutdown_bot)
+        monkeypatch.setattr(main_module, "run_outbox_worker", _idle_outbox_worker)
         from app.models import (
             BotSetting,
             Payment,
