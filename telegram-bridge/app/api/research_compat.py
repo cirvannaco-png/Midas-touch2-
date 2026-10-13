@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/research", tags=["research"])
 
 
 def canonical_hash(value: dict) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -94,7 +95,10 @@ async def create_experiment(
     if existing is not None:
         raise HTTPException(status_code=409, detail="experiment already exists")
 
-    config_hash = canonical_hash(body.config)
+    try:
+        config_hash = canonical_hash(body.config)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="config must be finite JSON data") from exc
     row = ResearchExperiment(
         experiment_id=body.experiment_id,
         name=body.name,
@@ -110,7 +114,11 @@ async def create_experiment(
         holdout_locked=False,
     )
     session.add(row)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="experiment already exists") from exc
     return {
         "experiment_id": row.experiment_id,
         "config_hash": row.config_hash,
@@ -131,15 +139,26 @@ async def ingest_observation(
     if experiment is None:
         raise HTTPException(status_code=404, detail="experiment not found")
 
-    fingerprint = canonical_hash(
-        {
-            "experiment_id": experiment_id,
-            "signal_id": body.signal_id,
-            "symbol": body.symbol,
-            "timestamp": body.timestamp.isoformat(),
-            "payload": body.payload,
-        }
-    )
+    try:
+        fingerprint = canonical_hash(
+            {
+                "experiment_id": experiment_id,
+                "signal_id": body.signal_id,
+                "symbol": body.symbol,
+                "timestamp": body.timestamp.isoformat(),
+                "payload": body.payload,
+            }
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="observation payload must be finite JSON data") from exc
+
+    # Serialize identical fingerprints on PostgreSQL so concurrent retries cannot
+    # insert the same observation twice despite the legacy non-unique index.
+    if session.bind and session.bind.dialect.name == "postgresql":
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:fingerprint))"),
+            {"fingerprint": fingerprint},
+        )
     existing = await session.scalar(
         select(ExperimentObservation).where(ExperimentObservation.fingerprint == fingerprint)
     )
@@ -156,7 +175,11 @@ async def ingest_observation(
             fingerprint=fingerprint,
         )
     )
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="observation persistence conflict") from exc
     return {"stored": True, "duplicate": False, "fingerprint": fingerprint}
 
 
@@ -208,6 +231,10 @@ async def record_validation_run(
     )
     if experiment is None:
         raise HTTPException(status_code=404, detail="experiment not found")
+    try:
+        json.dumps({"window": body.window, "metrics": body.metrics}, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="validation data must be finite JSON data") from exc
     row = ValidationRun(
         experiment_id=experiment_id,
         validation_type=body.validation_type,
