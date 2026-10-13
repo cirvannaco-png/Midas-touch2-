@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -110,7 +111,8 @@ def _preflight(reservation_path: Path, manifest_path: Path, freeze_path: Path,
 
     required_freeze = {
         "schema_version", "experiment_id", "frozen_at", "matched_manifest_sha256",
-        "point_value_per_lot", "spread_widening_points", "slippage_points_per_fill",
+        "point_value_per_lot", "point_value_source_path", "point_value_source_sha256",
+        "spread_widening_points", "slippage_points_per_fill",
         "simulations", "seed", "train_months", "test_months", "folds",
         "promotion_criteria", "oos_previously_inspected",
     }
@@ -118,13 +120,21 @@ def _preflight(reservation_path: Path, manifest_path: Path, freeze_path: Path,
         raise LockedOOSGateError("frozen config file has missing or unsupported fields")
     if freeze["schema_version"] != 1 or freeze["experiment_id"] != manifest["experiment_id"]:
         raise LockedOOSGateError("frozen config schema/experiment_id does not match the matched manifest")
-    _parse_time(freeze["frozen_at"], "frozen_config.frozen_at")
+    frozen_at = _parse_time(freeze["frozen_at"], "frozen_config.frozen_at")
+    if frozen_at > datetime.now(timezone.utc):
+        raise LockedOOSGateError("frozen_at cannot be in the future")
     if freeze["matched_manifest_sha256"] != _digest(manifest_path):
         raise LockedOOSGateError("matched manifest changed after the research configuration was frozen")
     if freeze["oos_previously_inspected"] is not False:
         raise LockedOOSGateError("frozen config must attest that this interval was not previously inspected")
     if isinstance(freeze["point_value_per_lot"], bool) or not isinstance(freeze["point_value_per_lot"], (int, float)) or not math.isfinite(float(freeze["point_value_per_lot"])) or float(freeze["point_value_per_lot"]) <= 0:
         raise LockedOOSGateError("point_value_per_lot must be the confirmed positive account-currency point value for one lot")
+    point_spec = _resolve(freeze_path, freeze["point_value_source_path"], "point_value_source_path")
+    point_spec_sha = freeze["point_value_source_sha256"]
+    if not isinstance(point_spec_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", point_spec_sha.lower()):
+        raise LockedOOSGateError("point_value_source_sha256 must be a SHA-256 digest")
+    if _sha256(point_spec) != point_spec_sha.lower():
+        raise LockedOOSGateError("point-value symbol-spec artifact SHA-256 does not match frozen config")
     for key in ("spread_widening_points", "slippage_points_per_fill"):
         values = freeze[key]
         if not isinstance(values, list) or not values or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)) or v < 0 for v in values):
@@ -195,6 +205,8 @@ def _preflight(reservation_path: Path, manifest_path: Path, freeze_path: Path,
         "manifest_sha256": _digest(manifest_path),
         "freeze_sha256": _digest(freeze_path),
         "dataset_sha256": _digest(dataset),
+        "point_value_source_path": point_spec,
+        "point_value_source_sha256": point_spec_sha.lower(),
     }
 
 
