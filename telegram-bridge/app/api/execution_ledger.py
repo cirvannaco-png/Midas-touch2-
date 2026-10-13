@@ -310,3 +310,33 @@ async def order_terminal(
         await session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"reconciled": True, "broker_order_id": body.broker_order_id, "state": body.terminal_state}
+
+
+@router.post("/sync-closed-position")
+async def sync_closed_position(
+    body: ClosedPositionRequest,
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Replay historical closure evidence after an EA/terminal restart.
+
+    Unknown historical positions are a no-op: this endpoint never creates a
+    closure record for an ID it cannot match to this portfolio.
+    """
+    try:
+        reconciled = await reconcile_closed_position(
+            session,
+            portfolio_key=body.portfolio_key,
+            broker_position_id=body.broker_position_id,
+            broker_deal_id=body.broker_deal_id,
+            evidence_ref=body.evidence_ref,
+        )
+        await session.commit()
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "found": reconciled,
+        "reconciled": reconciled,
+        "broker_position_id": body.broker_position_id,
+    }
