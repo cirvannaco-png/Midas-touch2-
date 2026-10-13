@@ -55,6 +55,8 @@ def _make_manifest(folder: Path, *, extra_setting=False):
             writer.writerow(["P1", "2025-09-05T11:00:00Z", "out", 1.0, 5.0, -1.0, 0.0, 0.0])
             writer.writerow(["P2", "2025-10-05T10:00:00Z", "in", 1.0, 0.0, -1.0, 0.0, 0.0])
             writer.writerow(["P2", "2025-10-05T11:00:00Z", "out", 1.0, -20.0, -1.0, 0.0, 0.0])
+            writer.writerow(["P3", "2025-11-30T10:00:00Z", "in", 1.0, 0.0, -1.0, 0.0, 0.0])
+            writer.writerow(["P3", "2025-12-03T11:00:00Z", "out", 1.0, 10.0, -1.0, 0.0, 0.0])
         opens = folder / f"{role}_open.csv"
         opens.write_text("position_id\n", encoding="utf-8")
         variants.append({
@@ -76,7 +78,7 @@ def test_regime_filter_pair_is_matched_and_cost_inclusive(tmp_path):
     assert report["only_effective_set_difference"] == "InpRequireTrendingRegime"
     assert report["matched_context_verified"] is True
     assert report["promotion_recommendation"] is None
-    assert report["variants"]["regime_filter_off"]["metrics"]["locked_oos"]["completed_positions"] == 1
+    assert report["variants"]["regime_filter_off"]["metrics"]["locked_oos"]["completed_positions"] == 2
     assert report["on_minus_off_deltas"]["locked_oos"]["net_pnl"] == 0
 
 
