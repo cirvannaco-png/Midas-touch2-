@@ -129,7 +129,8 @@ double CPositionManager::ConfirmedStructuralAnchor(bool isBuy,string symbol,doub
      }
 
    if(!InpDynamicStopUseHTFReferenceLevels) return anchor;
-   if(currentPrice<=0.0 || atr<=0.0 || InpDynamicStopHTFMaxDistanceATR<=0.0) return 0.0;
+   if(currentPrice<=0.0 || atr<=0.0) return 0.0;
+   if(InpDynamicStopHTFMaxDistanceATR<=0.0) return anchor; // 0 disables only the HTF candidates
 
    // When HTF mode is active, discard wrong-side or stale chart swings too.
    bool anchorOnCorrectSide=(anchor>0.0 && (isBuy ? anchor<currentPrice : anchor>currentPrice));
