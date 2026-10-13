@@ -141,7 +141,7 @@ def test_consumed_oos_lock_prevents_a_second_evaluation(tmp_path):
 def test_freeze_hash_mismatch_is_rejected_before_consuming_lock(tmp_path):
     reservation, manifest, freeze = _make_fixture(tmp_path)
     data = json.loads(freeze.read_text(encoding="utf-8"))
-    data["seed"] = 77
+    data["matched_manifest_sha256"] = "0" * 64
     freeze.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(LockedOOSGateError, match="manifest changed after"):
         evaluate_once(reservation, manifest, freeze, tmp_path / "one-shot.lock", tmp_path / "report.json", attest_untouched=True)
