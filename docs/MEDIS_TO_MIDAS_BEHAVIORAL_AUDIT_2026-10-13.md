@@ -32,7 +32,7 @@ Midas Touch 2 is not a file-for-file copy of Medis Touch, and it should not beco
 
 ### Research conclusion
 
-The source's 22-file package is **not** yet demonstrated to be behaviorally equivalent in every module. Target equivalents cover much of bounded search, challenger selection, walk-forward/OOS validation, immutable registry, execution-cost measurement, and risk-governed activation. The specific gaps requiring focused parity tests are multiple-testing correction, paired-statistics semantics, canonical configuration golden vectors, and proof that the locked-OOS restriction is enforced end-to-end by the real evaluation/activation path.
+The source's 22-file package is **not** yet demonstrated to be behaviorally equivalent end-to-end. The target now includes tested Holm-Bonferroni multiple-testing correction, paired challenger statistics (preserving the source's normal-tail approximation, not claiming an exact small-sample Student-t test), and source-compatible canonical config normalization/hash vectors. Bounded search, challenger selection, walk-forward/OOS validation, immutable registry, execution-cost measurement, and risk-governed activation also have target analogues. Remaining research gap: prove that these statistical gates are actually invoked by the production candidate-evaluation/promotion path and that locked OOS data cannot leak through alternate evaluators or activation routes.
 
 ## Execution and recovery audit
 
@@ -70,8 +70,8 @@ This is a meaningful integration, but not yet proof of full runtime correctness.
 
 - MetaEditor compile run `38411210552` succeeded for commit `970347e0764284dc1543560e5dcba7ab2f861741`: **0 errors, 0 warnings**. The follow-up compile run `38411471533` also reported **0 errors, 0 warnings**. Artifact logs were uploaded by CI.
 - CI exposed and led to fixes for an MQL5 object-pointer call syntax error, a missing SQLAlchemy `select` import, and stale research-tool invariant expectations.
-- Latest full CI run `38411769359` on commit `efaca75a81ed04e6026e313ce69cc529459dcafa` passed: Python bridge tests, research-tool tests, PostgreSQL migration upgrade/downgrade/re-upgrade, bridge quality/security, handbook tests, and MQL5 structural validation.
-- Latest MetaEditor compile run `38411769270` on the same commit passed with **0 errors and 0 warnings**.
+- Latest full CI run `38412496473` on code commit `794dd77ee03f7858e40af9cc21b3437b414f0e34` passed: Python bridge tests, research-tool tests, PostgreSQL migration upgrade/downgrade/re-upgrade, bridge quality/security, handbook tests, and MQL5 structural validation.
+- Latest MetaEditor compile run `38412497445` on the same code commit passed with **0 errors and 0 warnings**.
 - CI's MQL5 structural validator is separate from the successful MetaEditor compiler.
 - No MT5 Strategy Tester report, Exness demo-broker order/close test, or live terminal restart/fault-injection evidence has been produced yet. These require a controlled tester dataset and an authorized demo account; the GitHub compiler runner alone cannot establish them.
 
