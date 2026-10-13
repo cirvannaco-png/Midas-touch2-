@@ -38,17 +38,25 @@ The aggressive small-account work remains a separate StrategyTune research artif
 
 These values are deliberately documented as research parameters, not as approved production settings. Do not copy the 8% risk or other aggressive thresholds into the live EA or the prop-firm profile.
 
-## Required implementation design
+## Runtime selector implementation (branch; validation pending)
 
-Any future EA profile switch must be explicit and fail-safe:
+The EA now has an explicit `InpAccountProfile` selector:
 
-1. Default profile remains `PROP_FIRM` / existing defaults.
-2. `MICRO_RESEARCH` is opt-in and must be visibly identified in the EA log and chart/control panel.
-3. Keep independent effective parameters for risk per trade, concurrency, portfolio caps, daily loss, drawdown, and de-risk behavior. Never mutate the saved input values or silently reuse one profile's settings for the other.
-4. Validate risk against broker minimum volume, symbol contract/tick values, stop distance, margin, account currency, and the actual order result. Reject trades that cannot fit the risk budget; never force a minimum lot that exceeds it.
-5. Apply profile changes only to new entries. Manage/reconcile existing positions with the settings and identity under which they were opened.
-6. Add tests proving that the prop-firm defaults are unchanged, profiles do not leak into one another, restart recovery preserves profile identity, and invalid/missing profile values fail closed.
-7. Do not call the micro profile production-ready until MetaEditor compilation, Strategy Tester tests with costs, locked out-of-sample testing, and demo-broker validation pass.
+- `PROP_FIRM` is the default. It copies the existing risk inputs into a separate effective-configuration object, so the existing default values and any intentional prop-firm preset overrides remain the baseline.
+- `MICRO_RESEARCH` sets the research risk envelope to 8% risk per trade, 1 maximum open trade, 8.5% portfolio cap, 1 position per symbol/group, 18% daily-loss limit, 35% hard-drawdown halt, 10% de-risk start and 0.25 de-risk floor.
+- The profile's resolved limits are routed through order-manager capacity, automated sizing, manual sizing, portfolio limits, daily/drawdown guard initialization and outcome simulation. The original input declarations are not overwritten.
+- The active profile and effective risk settings are logged at startup and shown in the chart control panel.
+- A terminal Global Variable keyed by account login persists profile identity. A mismatch refuses initialization unless `InpConfirmAccountProfileChange=true`; a profile switch is further refused whenever any position or pending order exists on the account. Switching does not reset the risk guard's daily baseline, peak equity, hard halt or emergency-stop latch.
+- `InpConfirmMicroResearchExecution` defaults to `false`. Manual and automated order submission are blocked in `MICRO_RESEARCH` until it is explicitly enabled; the code also blocks that profile on real-money accounts outside Strategy Tester, even if the acknowledgement is set. Leave it disabled except for controlled testing.
+- Profile numeric values are checked for finite values and allowed ranges before initialization. Minimum-lot overrides are forced off so the sizing engine cannot exceed the cash risk budget just to reach a broker's minimum volume.
+
+**Scope boundary:** this is a runtime risk-envelope selector, not a port of the complete StrategyTune micro strategy. The candidate's quality scoring, volatility/spread filters, fallback-entry switches, 10%/20% staged drawdown policy, and consecutive-loss multipliers/pause are not all implemented in this EA profile; source startup logging states this explicitly. The effective micro limits are therefore experimental scaffolding, not strategy parity or profitability evidence.
+
+## Validation gates still required
+
+The static regression tests now cover default compatibility, distinct profile resolution, automated/manual wiring, micro-profile interlocks, persistent profile identity, restart protection invariants, and invalid risk input rejection. GitHub Actions must confirm these tests and the exact MQL5 source compile.
+
+This implementation is **not yet considered complete for live or demo promotion** until the current commit has a successful Windows MetaEditor compile and the actual EA completes matched Strategy Tester runs with spread/commission/slippage, broker-minimum-volume rejection checks, locked out-of-sample evaluation, and restart/partial-fill scenarios. Demo-broker validation must then verify profile lock behavior, broker position reconciliation, and execution recovery. No local MT5 terminal or Exness demo session is available through this repository connection, so those tests cannot be truthfully reported as executed from here.
 
 ## Promotion gate for the KSh 1,500 → KSh 10,000 weekly objective
 
