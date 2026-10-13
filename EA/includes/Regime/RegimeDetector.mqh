@@ -26,11 +26,10 @@
 // forcing every bar into one of two buckets a weak signal can't actually
 // support.
 //
-// DIAGNOSTIC ONLY. Nothing reads Classify()'s return value except
-// CSV logging (see SetupReasons.regime in Core/Config.mqh) and, later,
-// the strategy-selection engine this doc argues for — which does not
-// exist yet. No entry filter, confidence calculation, or order path
-// consults this today.
+// Diagnostic by default. An optional entry gate may consult this
+// classification only when explicitly enabled in an experimental .set file.
+// In that case volatility/phase reads must use completed candles; undefined
+// inputs map to REGIME_UNDEFINED and the optional gate fails closed.
 class CRegimeDetector
   {
 private:
@@ -46,16 +45,16 @@ public:
       m_volRegime = volRegime;
       m_phase = phase;
      }
-   ENUM_MARKET_REGIME   Classify();
+   ENUM_MARKET_REGIME   Classify(int closedBarShift=1);
   };
 //+------------------------------------------------------------------+
-ENUM_MARKET_REGIME CRegimeDetector::Classify()
+ENUM_MARKET_REGIME CRegimeDetector::Classify(int closedBarShift)
   {
-   if(m_trend == NULL || m_volRegime == NULL || m_phase == NULL)
+   if(closedBarShift<1 || m_trend == NULL || m_volRegime == NULL || m_phase == NULL)
       return REGIME_UNDEFINED;
 
    ENUM_TREND_STATE  trend = m_trend.GetCurrentTrend();
-   ENUM_VOL_REGIME   vol   = m_volRegime.Classify(0);
+   ENUM_VOL_REGIME   vol   = m_volRegime.Classify(closedBarShift);
    ENUM_MARKET_PHASE phase = m_phase.Detect();
 
    // Fail closed on an unverifiable volatility read, same convention as
