@@ -7,8 +7,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.database import Base
 from app.execution_control import (
     recover_expired_leases,
+    reconcile_closed_position,
+    reconcile_open_position,
+    reconcile_terminal_order,
     reserve_execution,
+    sync_pending_order,
     transition_execution,
+    update_position_risk,
 )
 from app.models import ExecutionLedger, PortfolioReservation
 
@@ -290,5 +295,170 @@ async def test_portfolio_heat_isolated_by_portfolio_key():
                 factors={"usd": 1.0},
             )
             await session.commit()
+    finally:
+        await engine.dispose()
+
+
+
+@pytest.mark.asyncio
+async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            request_id, heat, over_limit = await reconcile_open_position(
+                session,
+                portfolio_key="Exness:123:magic-77",
+                request_id="brokerpos:Exness:123:magic-77:9001",
+                broker_position_id="9001",
+                broker_order_id="8001",
+                broker_deal_id="7001",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=1.0,
+                volatility=0.6,
+                factors={"usd": 1.0},
+                evidence_ref="mt5-position-snapshot:9001",
+            )
+            assert request_id == "brokerpos:Exness:123:magic-77:9001"
+            assert heat == 1.0
+            assert not over_limit
+            await session.commit()
+
+        async with factory() as session:
+            request_id, heat, over_limit = await reconcile_open_position(
+                session,
+                portfolio_key="Exness:123:magic-77",
+                request_id="unused-request-id",
+                broker_position_id="9001",
+                broker_order_id="8001",
+                broker_deal_id="7002",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=0.4,
+                volatility=0.4,
+                factors={"usd": 0.4},
+                evidence_ref="mt5-restart-snapshot:9001",
+            )
+            assert request_id == "brokerpos:Exness:123:magic-77:9001"
+            assert heat == 0.4
+            assert not over_limit
+            await session.commit()
+
+        async with factory() as session:
+            rows = (
+                await session.execute(
+                    select(PortfolioReservation).where(
+                        PortfolioReservation.portfolio_key == "Exness:123:magic-77"
+                    )
+                )
+            ).scalars().all()
+            assert len(rows) == 1
+            assert rows[0].risk_r == 0.4
+            assert rows[0].status == "ACTIVE"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_partial_close_updates_risk_and_full_close_releases_reservation():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="Exness:123:magic-78",
+                request_id="brokerpos:Exness:123:magic-78:9002",
+                broker_position_id="9002",
+                broker_order_id="8002",
+                broker_deal_id="7003",
+                symbol="XAUUSD",
+                direction="SELL",
+                risk_r=1.2,
+                volatility=1.1,
+                factors={"gold": -1.0},
+                evidence_ref="mt5-position-snapshot:9002",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            assert await update_position_risk(
+                session,
+                portfolio_key="Exness:123:magic-78",
+                broker_position_id="9002",
+                direction="SELL",
+                risk_r=0.6,
+                volatility=0.7,
+                factors={"gold": -0.5},
+                evidence_ref="mt5-partial-close-deal:7004",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            reservation = await session.scalar(
+                select(PortfolioReservation).where(
+                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-78:9002"
+                )
+            )
+            assert reservation.risk_r == 0.6
+            assert reservation.status == "ACTIVE"
+            assert await reconcile_closed_position(
+                session,
+                portfolio_key="Exness:123:magic-78",
+                broker_position_id="9002",
+                broker_deal_id="7005",
+                evidence_ref="mt5-position-closed:7005",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            reservation = await session.scalar(
+                select(PortfolioReservation).where(
+                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-78:9002"
+                )
+            )
+            assert reservation.status == "RELEASED"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_pending_order_is_adopted_and_only_released_with_terminal_broker_evidence():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            request_id, heat, over_limit = await sync_pending_order(
+                session,
+                portfolio_key="Broker:777:magic-9",
+                request_id="pending:Broker:777:magic-9:4567",
+                broker_order_id="4567",
+                symbol="GBPUSD",
+                direction="SELL",
+                risk_r=0.8,
+                volatility=0.7,
+                factors={},
+                evidence_ref="mt5-order-snapshot:4567",
+            )
+            assert request_id == "pending:Broker:777:magic-9:4567"
+            assert heat == 0.8
+            assert not over_limit
+            await session.commit()
+
+        async with factory() as session:
+            assert await reconcile_terminal_order(
+                session,
+                portfolio_key="Broker:777:magic-9",
+                broker_order_id="4567",
+                terminal_state="CANCELLED",
+                evidence_ref="mt5-history-order:4567:CANCELED",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            reservation = await session.scalar(
+                select(PortfolioReservation).where(
+                    PortfolioReservation.request_id == "pending:Broker:777:magic-9:4567"
+                )
+            )
+            assert reservation.status == "RELEASED"
     finally:
         await engine.dispose()
