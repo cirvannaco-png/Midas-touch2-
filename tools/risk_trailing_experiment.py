@@ -22,11 +22,27 @@ ROLES = (
     "A_current_baseline", "B_trailing_off", "C_trailing_candidate",
     "D_tight_risk", "E_calibrated_risk",
 )
-RISK_KEYS = {
+LEGACY_RISK_KEYS = {
     "InpRiskPercentPerTrade", "InpMaxOpenTrades", "InpMaxDailyLossPercent",
     "InpMaxDrawdownPercent", "InpDeriskStartPercent", "InpDeriskFloor",
     "InpMaxPortfolioRiskPercent", "InpMaxPositionsPerSymbol", "InpMaxPositionsPerGroup",
 }
+SMALL_ACCOUNT_RISK_KEYS = {
+    "InpSmallRiskPercentPerTrade", "InpSmallMaxOpenTrades", "InpSmallMaxDailyLossPercent",
+    "InpSmallMaxDrawdownPercent", "InpSmallDeriskStartPercent", "InpSmallDeriskFloor",
+    "InpSmallMaxPortfolioRiskPercent", "InpSmallMaxPositionsPerSymbol", "InpSmallMaxPositionsPerGroup",
+}
+PROP_FIRM_RISK_KEYS = {
+    "InpPropRiskPercentPerTrade", "InpPropMaxOpenTrades", "InpPropMaxDailyLossPercent",
+    "InpPropMaxDrawdownPercent", "InpPropDeriskStartPercent", "InpPropDeriskFloor",
+    "InpPropMaxPortfolioRiskPercent", "InpPropMaxPositionsPerSymbol", "InpPropMaxPositionsPerGroup",
+}
+PROFILE_RISK_KEYS = {
+    "small_account": SMALL_ACCOUNT_RISK_KEYS,
+    "prop_firm": PROP_FIRM_RISK_KEYS,
+}
+RISK_KEYS = LEGACY_RISK_KEYS | SMALL_ACCOUNT_RISK_KEYS | PROP_FIRM_RISK_KEYS
+
 TRAILING_KEYS = {
     "InpEnableDynamicStop", "InpDynamicStopActivateAtR", "InpDynamicStopBreakevenAtR",
     "InpDynamicStopATRMult", "InpDynamicStopMinImprovementPoints",
@@ -193,8 +209,82 @@ def _bool_setting(p: dict[str, str], key: str, role: str) -> bool:
     return value == "true"
 
 
-def _validate_presets(presets: dict[str, dict[str, str]]) -> None:
+def _validate_risk_values(p: dict[str, str], keys: set[str], role: str) -> None:
+    def key(suffix: str) -> str:
+        if suffix in keys:
+            return suffix
+        prefix = "InpSmall" if keys == SMALL_ACCOUNT_RISK_KEYS else "InpProp" if keys == PROP_FIRM_RISK_KEYS else ""
+        return prefix + suffix.removeprefix("Inp")
+
+    risk = _float_setting(p, key("InpRiskPercentPerTrade"), role)
+    open_trades = _float_setting(p, key("InpMaxOpenTrades"), role)
+    daily = _float_setting(p, key("InpMaxDailyLossPercent"), role)
+    drawdown = _float_setting(p, key("InpMaxDrawdownPercent"), role)
+    derisk = _float_setting(p, key("InpDeriskStartPercent"), role)
+    floor = _float_setting(p, key("InpDeriskFloor"), role)
+    portfolio = _float_setting(p, key("InpMaxPortfolioRiskPercent"), role)
+    per_symbol = _float_setting(p, key("InpMaxPositionsPerSymbol"), role)
+    per_group = _float_setting(p, key("InpMaxPositionsPerGroup"), role)
+
+    for label, value in (("risk per trade", risk), ("daily loss cap", daily),
+                         ("hard drawdown cap", drawdown), ("portfolio risk cap", portfolio)):
+        if value <= 0:
+            raise ExperimentError(f"{role} {label} must be positive")
+    if not (risk < daily < drawdown):
+        raise ExperimentError(f"{role} requires risk per trade < daily loss cap < hard drawdown cap")
+    if derisk < 0 or derisk >= drawdown:
+        raise ExperimentError(f"{role} de-risk start must be non-negative and below hard drawdown cap")
+    if not 0 < floor <= 1:
+        raise ExperimentError(f"{role} de-risk floor must be in (0, 1]")
+    if portfolio < risk:
+        raise ExperimentError(f"{role} portfolio risk cap must be at least per-trade risk")
+    for label, value in (("max open trades", open_trades), ("max positions per symbol", per_symbol),
+                         ("max positions per group", per_group)):
+        if value < 1 or not value.is_integer():
+            raise ExperimentError(f"{role} {label} must be a positive integer")
+
+
+def _profile_selector_value(profile: str) -> str:
+    # These enum values are pinned to ENUM_ACCOUNT_RISK_PROFILE in the MQL5 EA.
+    return {"small_account": "1", "prop_firm": "2"}[profile]
+
+
+def _risk_is_no_looser(candidate: dict[str, str], baseline: dict[str, str], keys: set[str], role: str) -> bool:
+    def value(p: dict[str, str], suffix: str) -> float:
+        if suffix in keys:
+            k = suffix
+        else:
+            prefix = "InpSmall" if keys == SMALL_ACCOUNT_RISK_KEYS else "InpProp" if keys == PROP_FIRM_RISK_KEYS else ""
+            k = prefix + suffix.removeprefix("Inp")
+        return _float_setting(p, k, role)
+
+    # Lower limits mean no more exposure; an earlier de-risk trigger and lower floor
+    # mean the account is de-risked sooner/more strongly.
+    comparisons = (
+        ("InpRiskPercentPerTrade", "<="),
+        ("InpMaxOpenTrades", "<="),
+        ("InpMaxDailyLossPercent", "<="),
+        ("InpMaxDrawdownPercent", "<="),
+        ("InpDeriskStartPercent", "<="),
+        ("InpDeriskFloor", "<="),
+        ("InpMaxPortfolioRiskPercent", "<="),
+        ("InpMaxPositionsPerSymbol", "<="),
+        ("InpMaxPositionsPerGroup", "<="),
+    )
+    for suffix, _op in comparisons:
+        if value(candidate, suffix) > value(baseline, suffix):
+            return False
+    return True
+
+
+def _validate_presets(presets: dict[str, dict[str, str]], account_profile: str) -> None:
     base = presets["A_current_baseline"]
+    if account_profile not in PROFILE_RISK_KEYS:
+        raise ExperimentError("unsupported account profile for matched risk comparison")
+    active_risk_keys = PROFILE_RISK_KEYS[account_profile]
+    if base.get("InpAccountRiskProfile") != _profile_selector_value(account_profile):
+        raise ExperimentError("baseline InpAccountRiskProfile does not match test_context.account_profile")
+
     for role, p in presets.items():
         if set(p) != set(base):
             raise ExperimentError(f"{role} preset key set differs from A")
@@ -202,11 +292,19 @@ def _validate_presets(presets: dict[str, dict[str, str]]) -> None:
             missing = group - set(p)
             if missing:
                 raise ExperimentError(f"{role} preset missing {name} settings: {sorted(missing)}")
+        if p.get("InpAccountRiskProfile") != _profile_selector_value(account_profile):
+            raise ExperimentError(f"{role}.InpAccountRiskProfile does not match the matched account profile")
         if any(p[k] != base[k] for k in COST_KEYS):
             raise ExperimentError("execution-cost inputs must remain identical in every arm")
         for key in COST_KEYS:
             if _float_setting(p, key, role) <= 0:
                 raise ExperimentError(f"{role}.{key} must be positive")
+        # Validate every independently configurable profile so malformed inactive
+        # profiles cannot silently enter the exported preset; only the selected
+        # profile is allowed to differ across experiment arms.
+        _validate_risk_values(p, LEGACY_RISK_KEYS, role)
+        _validate_risk_values(p, SMALL_ACCOUNT_RISK_KEYS, role)
+        _validate_risk_values(p, PROP_FIRM_RISK_KEYS, role)
 
     non_policy = set(base) - RISK_KEYS - TRAILING_KEYS
     for role, p in presets.items():
@@ -231,25 +329,39 @@ def _validate_presets(presets: dict[str, dict[str, str]]) -> None:
     if not c_changed or not c_changed <= TRAILING_KEYS or c_changed == {"InpEnableDynamicStop"}:
         raise ExperimentError("C must vary at least one trailing parameter other than the enable toggle")
 
-    tight = {
-        "InpRiskPercentPerTrade": "0.35", "InpMaxOpenTrades": "2",
-        "InpMaxDailyLossPercent": "2", "InpMaxDrawdownPercent": "8",
-        "InpDeriskStartPercent": "3", "InpDeriskFloor": "0.15",
-        "InpMaxPortfolioRiskPercent": "1.5", "InpMaxPositionsPerSymbol": "2",
-        "InpMaxPositionsPerGroup": "2",
-    }
+    # D is the previously proposed tight small-account candidate. Prop-firm
+    # limits differ by contract, so use a stricter predeclared candidate relative
+    # to the selected firm's baseline; never assume generic numbers satisfy a firm.
     d = presets["D_tight_risk"]
-    if any(d[k] != v for k, v in tight.items()):
-        raise ExperimentError("D_tight_risk must use the predeclared tighter-risk candidate")
     changed_d = {k for k in base if d[k] != base[k]}
-    if not changed_d or not changed_d <= RISK_KEYS or any(d[k] != base[k] for k in TRAILING_KEYS):
-        raise ExperimentError("D may change risk settings only and must retain A's trailing/partial settings")
+    if not changed_d or not changed_d <= active_risk_keys:
+        raise ExperimentError("D may change only the active profile's risk inputs")
+    if any(d[k] != base[k] for k in TRAILING_KEYS):
+        raise ExperimentError("D must retain A's trailing/partial settings")
+    if account_profile == "small_account":
+        tight = {
+            "InpSmallRiskPercentPerTrade": "0.35", "InpSmallMaxOpenTrades": "2",
+            "InpSmallMaxDailyLossPercent": "2", "InpSmallMaxDrawdownPercent": "8",
+            "InpSmallDeriskStartPercent": "3", "InpSmallDeriskFloor": "0.15",
+            "InpSmallMaxPortfolioRiskPercent": "1.5", "InpSmallMaxPositionsPerSymbol": "2",
+            "InpSmallMaxPositionsPerGroup": "2",
+        }
+        if any(d[k] != v for k, v in tight.items()):
+            raise ExperimentError("D_tight_risk must use the predeclared small-account tight-risk candidate")
+    else:
+        if not _risk_is_no_looser(d, base, active_risk_keys, "D_tight_risk") or all(d[k] == base[k] for k in active_risk_keys):
+            raise ExperimentError("prop-firm D must be strictly no looser than its verified firm-specific baseline")
+
     e = presets["E_calibrated_risk"]
     changed_e = {k for k in base if e[k] != base[k]}
-    if not changed_e or not changed_e <= RISK_KEYS or any(e[k] != base[k] for k in TRAILING_KEYS):
-        raise ExperimentError("E may change risk settings only and must retain A's trailing/partial settings")
-    if all(e[k] == d[k] for k in RISK_KEYS):
-        raise ExperimentError("E must not duplicate D's tight-risk settings")
+    if not changed_e or not changed_e <= active_risk_keys:
+        raise ExperimentError("E may change only the active profile's risk inputs")
+    if any(e[k] != base[k] for k in TRAILING_KEYS):
+        raise ExperimentError("E must retain A's trailing/partial settings")
+    if not _risk_is_no_looser(e, base, active_risk_keys, "E_calibrated_risk"):
+        raise ExperimentError("E may not loosen the selected account profile's baseline protection")
+    if all(e[k] == d[k] for k in active_risk_keys):
+        raise ExperimentError("E must not duplicate D's risk settings")
 
     numeric_trailing = {
         "InpDynamicStopActivateAtR", "InpDynamicStopBreakevenAtR", "InpDynamicStopATRMult",
@@ -271,17 +383,6 @@ def _validate_presets(presets: dict[str, dict[str, str]]) -> None:
         lo, hi = _float_setting(p, "InpDynamicStopMinATR", role), _float_setting(p, "InpDynamicStopMaxATR", role)
         if lo > 0 and hi > 0 and lo > hi:
             raise ExperimentError(f"{role} minimum ATR exceeds maximum ATR")
-        for key in ("InpRiskPercentPerTrade", "InpMaxDailyLossPercent", "InpMaxDrawdownPercent", "InpMaxPortfolioRiskPercent"):
-            if _float_setting(p, key, role) <= 0:
-                raise ExperimentError(f"{role}.{key} must be positive")
-        for key in ("InpMaxOpenTrades", "InpMaxPositionsPerSymbol", "InpMaxPositionsPerGroup"):
-            value = _float_setting(p, key, role)
-            if value < 1 or not value.is_integer():
-                raise ExperimentError(f"{role}.{key} must be a positive integer")
-        if not 0 < _float_setting(p, "InpDeriskFloor", role) <= 1:
-            raise ExperimentError(f"{role}.InpDeriskFloor must be in (0, 1]")
-
-
 def _read_open(path: Path) -> list[dict[str, str]]:
     try:
         with path.open(newline="", encoding="utf-8-sig") as stream:
@@ -478,7 +579,7 @@ def compare_manifest(manifest_path: str | Path, *, simulations: int = 2000, seed
     missing = sorted(set(ROLES) - set(role_data))
     if missing:
         raise ExperimentError(f"missing required experiment roles: {', '.join(missing)}")
-    _validate_presets(presets)
+    _validate_presets(presets, ctx["account_profile"])
 
     start, end = ctx["locked_oos_start"], ctx["locked_oos_end"]
     results: dict[str, Any] = {}
