@@ -80,7 +80,7 @@ double CPositionManager::CurrentExitPrice(string symbol,bool isBuy)
 bool CPositionManager::PartialVolumeForPosition(string symbol,double currentVolume,double &closeVolume)
   {
    closeVolume=0.0;
-   if(symbol==\"\" || !MathIsValidNumber(currentVolume) || currentVolume<=0.0 ||
+   if(symbol=="" || !MathIsValidNumber(currentVolume) || currentVolume<=0.0 ||
       !MathIsValidNumber(m_partialFraction) || m_partialFraction<=0.0 || m_partialFraction>=1.0)
       return false;
 
