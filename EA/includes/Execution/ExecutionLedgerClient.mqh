@@ -129,10 +129,12 @@ public:
 
    bool SyncPosition(const ulong positionIdentifier,const ulong orderId,const ulong dealId,
                      const string symbol,const string direction,const double riskR,
-                     const double volatility,const string evidenceRef)
+                     const double volatility,const string evidenceRef,
+                     const string requestIdOverride="")
      {
       if(!m_ready || positionIdentifier==0 || riskR<=0.0 || !MathIsValidNumber(riskR)) return false;
-      string requestId=RequestIdForPosition(positionIdentifier);
+      string requestId=requestIdOverride;
+      if(StringLen(requestId)==0) requestId=RequestIdForPosition(positionIdentifier);
       string payload=StringFormat(
          "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_order_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),positionIdentifier,orderId,dealId,
@@ -170,6 +172,21 @@ public:
          "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"evidence_ref\":\"%s\"}",
          JsonSafe(m_portfolioKey),positionIdentifier,closingDealId,JsonSafe(evidenceRef));
       return PostJson("/execution-ledger/position-closed",payload);
+     }
+
+
+   bool SyncClosedPosition(const ulong positionIdentifier,const ulong closingDealId,const string evidenceRef)
+     {
+      if(!m_ready || positionIdentifier==0 || closingDealId==0) return false;
+      string payload=StringFormat(
+         "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"evidence_ref\":\"%s\"}",
+         JsonSafe(m_portfolioKey),positionIdentifier,closingDealId,JsonSafe(evidenceRef));
+      return PostJson("/execution-ledger/sync-closed-position",payload);
+     }
+
+   bool RecoverExpired()
+     {
+      return PostJson("/execution-ledger/recover-expired","{}");
      }
 
    bool TerminalOrder(const ulong orderTicket,const string state,const string evidenceRef)
