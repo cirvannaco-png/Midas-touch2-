@@ -22,7 +22,7 @@ def test_restored_research_and_execution_tables_are_registered():
 
 def test_execution_ledger_has_idempotency_and_reconciliation_fields():
     table = Base.metadata.tables["execution_ledger"]
-    assert {"request_id", "signal_id", "state", "request_json", "result_json",
+    assert {"request_id", "portfolio_key", "signal_id", "state", "request_json", "result_json",
             "broker_order_id", "broker_deal_id", "broker_position_id",
             "checked_at", "sent_at", "reconciled_at", "lease_until",
             "latency_ms"}.issubset(table.columns.keys())
@@ -33,7 +33,7 @@ def test_execution_ledger_has_idempotency_and_reconciliation_fields():
 
 def test_portfolio_reservations_preserve_risk_and_lease_state():
     table = Base.metadata.tables["portfolio_reservations"]
-    assert {"request_id", "symbol", "direction", "risk_r", "volatility",
+    assert {"request_id", "portfolio_key", "symbol", "direction", "risk_r", "volatility",
             "factor_exposure", "status", "lease_until"}.issubset(table.columns.keys())
     assert table.columns["request_id"].unique is True
     assert table.columns["lease_until"].nullable is False
@@ -93,3 +93,13 @@ def test_signal_outcomes_keep_signed_cashflows_separate_from_cost_magnitudes():
     assert {"commission_cashflow", "swap_cashflow", "broker_fee_cashflow"}.issubset(
         table.columns.keys()
     )
+
+
+def test_portfolio_scope_migration_follows_outcome_completeness_migration():
+    bridge_root = Path(__file__).parents[1]
+    migration = bridge_root / "migrations" / "versions" / "0019_scope_execution_portfolios.py"
+    source = migration.read_text(encoding="utf-8")
+    assert 'revision = "0019"' in source
+    assert 'down_revision = "0018"' in source
+    assert 'server_default=sa.text("' + "'legacy-unscoped'" + '")' in source
+    assert '"portfolio_key"' in source
