@@ -165,22 +165,24 @@ public:
       return PostJson("/execution-ledger/position-risk",payload);
      }
 
-   bool ClosePosition(const ulong positionIdentifier,const ulong closingDealId,const string evidenceRef)
+   bool ClosePosition(const ulong positionIdentifier,const ulong closingDealId,const string evidenceRef,
+                      const string requestIdOverride="")
      {
       if(!m_ready || positionIdentifier==0 || closingDealId==0) return false;
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"evidence_ref\":\"%s\"}",
-         JsonSafe(m_portfolioKey),positionIdentifier,closingDealId,JsonSafe(evidenceRef));
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"evidence_ref\":\"%s\"}",
+         JsonSafe(m_portfolioKey),JsonSafe(requestIdOverride),positionIdentifier,closingDealId,JsonSafe(evidenceRef));
       return PostJson("/execution-ledger/position-closed",payload);
      }
 
 
-   bool SyncClosedPosition(const ulong positionIdentifier,const ulong closingDealId,const string evidenceRef)
+   bool SyncClosedPosition(const ulong positionIdentifier,const ulong closingDealId,const string evidenceRef,
+                           const string requestIdOverride="")
      {
       if(!m_ready || positionIdentifier==0 || closingDealId==0) return false;
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"evidence_ref\":\"%s\"}",
-         JsonSafe(m_portfolioKey),positionIdentifier,closingDealId,JsonSafe(evidenceRef));
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"evidence_ref\":\"%s\"}",
+         JsonSafe(m_portfolioKey),JsonSafe(requestIdOverride),positionIdentifier,closingDealId,JsonSafe(evidenceRef));
       return PostJson("/execution-ledger/sync-closed-position",payload);
      }
 
