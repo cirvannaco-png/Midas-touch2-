@@ -278,6 +278,33 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
     }
 
 
+def reject_reserved_oos_entries(deals: list[dict]) -> None:
+    """Prevent the standard ledger CLI from printing outcomes for the locked holdout."""
+    reservation_path = Path(__file__).resolve().parents[1] / "docs" / "LOCKED_OOS_RESERVATION_2026-09-01_TO_2026-10-01.json"
+    try:
+        reservation = json.loads(reservation_path.read_text(encoding="utf-8"))
+        if reservation.get("status") != "reserved_unscored":
+            return
+        start = datetime.fromisoformat(reservation["locked_oos_start"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        end = datetime.fromisoformat(reservation["locked_oos_end"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        if not start < end:
+            raise ValueError("invalid reservation interval")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise LedgerError(f"cannot validate locked-OOS reservation file: {reservation_path}") from exc
+    for deal in deals:
+        if deal.get("entry") in IN or deal.get("entry") in INOUT:
+            trade_time = deal.get("time")
+            if isinstance(trade_time, datetime):
+                if trade_time.tzinfo is None or trade_time.utcoffset() is None:
+                    raise LedgerError("deal timestamps must be timezone-aware to enforce locked-OOS protection")
+                trade_time = trade_time.astimezone(timezone.utc)
+                if start <= trade_time < end:
+                    raise LedgerError(
+                        "deal CSV includes entries from the registered locked-OOS window; "
+                        "standard ledger CLI withholds these outcomes. Use the one-shot evaluator after freeze."
+                    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("deals_csv")
@@ -286,7 +313,9 @@ def main():
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
-        positions, ignored = reconstruct_positions(read_deals(args.deals_csv), read_open_ids(args.open_positions))
+        deals = read_deals(args.deals_csv)
+        reject_reserved_oos_entries(deals)
+        positions, ignored = reconstruct_positions(deals, read_open_ids(args.open_positions))
         report = calculate_metrics(positions, args.initial_balance, ignored)
     except (OSError, LedgerError) as exc:
         print(f"position_ledger_metrics: {exc}", file=sys.stderr)
