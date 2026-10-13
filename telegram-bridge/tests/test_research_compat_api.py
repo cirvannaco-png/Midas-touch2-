@@ -1,5 +1,6 @@
 from app.api.research_compat import canonical_hash
 
+
 def experiment_payload(experiment_id: str) -> dict:
     return {
         "experiment_id": experiment_id,
