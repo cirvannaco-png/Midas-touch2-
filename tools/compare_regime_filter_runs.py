@@ -273,14 +273,17 @@ def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict)
         positions, ignored = reconstruct_positions(deals, opens)
     except (OSError, LedgerError) as exc:
         raise MatchedTrailingError(f"{role} deal-ledger validation failed: {exc}") from exc
-    pstart, pend = context["period_start"], context["period_end"]
-    ostart, oend = context["locked_oos_start"], context["locked_oos_end"]
-    period_entries = [p for p in positions if pstart <= p["opened_at"] < pend and p["closed_at"] < pend]
-    oos_entries = [p for p in positions if ostart <= p["opened_at"] < oend and p["closed_at"] < pend]
-    censored_period = _count_censored(positions, deals, opens, pstart, pend, pend)
-    # The OOS window is defined by entry time; eligible positions can mature
-    # through context.period_end. Cross-cut positions remain censored.
-    censored_oos = _count_censored(positions, deals, opens, ostart, oend, pend)
+    pstart, _pend = context["period_start"], context["period_end"]
+    ostart = context["locked_oos_start"]
+    # Filter comparisons are for development-fold selection only. The locked
+    # OOS outcome is intentionally not emitted by this ordinary report path.
+    development_entries = [p for p in positions if pstart <= p["opened_at"] < ostart and p["closed_at"] < ostart]
+    censored_development = _count_censored(positions, deals, opens, pstart, ostart, ostart)
+    metrics = {
+        "development": _metrics(development_entries, context["initial_balance"]),
+        "development_censoring": censored_development,
+        "ledger_ignored_groups": ignored,
+    }
     return {
         "role": role,
         "run_id": raw["run_id"],
@@ -292,13 +295,7 @@ def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict)
             "deals_csv": {"path": str(deals_path), "sha256": _sha256(deals_path)},
             "open_positions_csv": {"path": str(open_path), "sha256": _sha256(open_path)},
         },
-        "metrics": {
-            "full_period": _metrics(period_entries, context["initial_balance"]),
-            "locked_oos": _metrics(oos_entries, context["initial_balance"]),
-            "full_period_censoring": censored_period,
-            "locked_oos_censoring": censored_oos,
-            "ledger_ignored_groups": ignored,
-        },
+        "metrics": metrics,
         "_positions": positions,
     }
 
@@ -315,7 +312,7 @@ def _deltas(off: dict, on: dict) -> dict:
         "max_closed_position_drawdown_pct",
     )
     out = {}
-    for scope in ("full_period", "locked_oos"):
+    for scope in ("development",):
         a, b = off["metrics"][scope], on["metrics"][scope]
         changes = {}
         for key in metric_keys:
@@ -391,6 +388,7 @@ def compare_manifest(manifest_path: str | Path) -> dict:
         "only_effective_set_difference": TOGGLE,
         "variants": {role: _public_variant(data) for role, data in loaded.items()},
         "on_minus_off_deltas": _deltas(off, on),
+        "locked_oos_status": "withheld; choose filter settings on development folds, then use the one-shot gate",
         "guardrail": "Metrics are calculated from completed positions only and use deal profit + commission + swap + fee. They are not a substitute for native MT5 equity drawdown or stop-modification/restart safety logs; this tool does not run MT5 or approve promotion.",
     }
     return report
@@ -409,7 +407,7 @@ def main() -> int:
             "output": str(args.output),
             "experiment_id": report["experiment_id"],
             "sha256": hashlib.sha256(args.output.read_bytes()).hexdigest(),
-            "locked_oos": "reported once when this command is run",
+            "locked_oos": "withheld; only the registered one-shot gate may evaluate it",
         }, indent=2))
         return 0
     except (MatchedTrailingError, LedgerError, OSError, ValueError) as exc:
