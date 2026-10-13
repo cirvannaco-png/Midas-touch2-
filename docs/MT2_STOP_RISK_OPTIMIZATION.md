@@ -20,11 +20,11 @@ Use the same symbol, timeframe, immutable tick snapshot, account balance/currenc
 |---|---|---|
 | A_current_baseline | Current reference | None; dynamic trailing enabled |
 | B_trailing_off | Causal ablation | InpEnableDynamicStop=false only |
-| C_trailing_candidate | Test one trailing candidate | Trailing/position-management parameters only; trailing remains enabled |
+| C_trailing_candidate | Test one trailing candidate | `InpDynamicStop*` parameters only; trailing remains enabled. Partial target/fraction, break-even and simulator exit inputs stay identical to A |
 | D_tight_risk | Proposed restrictive settings | Risk settings only |
 | E_calibrated_risk | Profile-specific risk candidate | Risk settings only; must not duplicate D |
 
-D is the previously proposed restrictive candidate, not a recommendation: risk per trade 0.35%; maximum open trades 2; daily loss cap 2%; hard drawdown cap 8%; de-risk start 3%; de-risk floor 0.15; portfolio open-risk cap 1.5%; maximum positions per symbol 2; maximum positions per group 2. E must be predeclared based on profile-specific constraints and evidence, and preserve A's exact trailing/partial settings. If D conflicts with binding rules, do not run it; adapt the experiment contract and validator deliberately rather than bypassing a guard.
+C may tune only the live dynamic-stop controls; do not change `InpPartialAtR`, `InpPartialFraction`, `InpBreakEvenAtR`, or legacy simulator exit inputs in that arm because they would confound trailing attribution. D is the previously proposed restrictive candidate, not a recommendation: risk per trade 0.35%; maximum open trades 2; daily loss cap 2%; hard drawdown cap 8%; de-risk start 3%; de-risk floor 0.15; portfolio open-risk cap 1.5%; maximum positions per symbol 2; maximum positions per group 2. E must be predeclared based on profile-specific constraints and evidence, and preserve A's exact trailing/partial settings. If D conflicts with binding rules, do not run it; adapt the experiment contract and validator deliberately rather than bypassing a guard.
 
 Every arm needs identical preset cost inputs and must declare costs actually applied inside Strategy Tester: variable spread and widening stress (multiplier at least 1.01), non-zero commission, slippage and swaps. For real-tick spread, record spread_points=null rather than inventing a fixed quote. Do not subtract spread/slippage twice if their effects already appear in executed fills. Net position cashflow sums deal profit + commission + swap + fee.
 
