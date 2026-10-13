@@ -249,6 +249,395 @@ void MarkLedgerSubmissionAmbiguous(const string requestId);
 bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,const double volatility,const string evidenceRef);
 bool IsOrderBuyDirection(const ENUM_ORDER_TYPE orderType);
 
+bool RiskRFromMoney(double riskMoney,double &riskR)
+  {
+   riskR=0.0;
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   double baseRiskUnit=equity*InpRiskPercentPerTrade/100.0;
+   if(equity<=0.0 || baseRiskUnit<=0.0 || riskMoney<=0.0 ||
+      !MathIsValidNumber(riskMoney) || !MathIsValidNumber(baseRiskUnit))
+      return false;
+   riskR=riskMoney/baseRiskUnit;
+   return (riskR>0.0 && MathIsValidNumber(riskR));
+  }
+
+bool ParseManagedOrderComment(const string comment,long &decisionId,int &legIndex)
+  {
+   decisionId=0;
+   legIndex=0;
+   int marker=StringFind(comment,"MT#");
+   if(marker<0) return false;
+   string tail=StringSubstr(comment,marker+3);
+   int legMarker=StringFind(tail,":L");
+   string idText=(legMarker>=0)?StringSubstr(tail,0,legMarker):tail;
+   decisionId=StringToInteger(idText);
+   if(legMarker>=0)
+      legIndex=(int)StringToInteger(StringSubstr(tail,legMarker+2));
+   return (decisionId>0 && legIndex>=0);
+  }
+
+bool IsOrderBuyDirection(const ENUM_ORDER_TYPE orderType)
+  {
+   return (orderType==ORDER_TYPE_BUY || orderType==ORDER_TYPE_BUY_LIMIT ||
+           orderType==ORDER_TYPE_BUY_STOP || orderType==ORDER_TYPE_BUY_STOP_LIMIT);
+  }
+
+bool IsPositionIdentifierOpen(const ulong positionIdentifier)
+  {
+   if(positionIdentifier==0) return false;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionIdentifier)
+         return true;
+     }
+   return false;
+  }
+
+bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legIndex,
+                            const double riskMoney,const double volatility,string &requestId)
+  {
+   requestId="";
+   if(!g_executionLedger.Ready())
+      return !InpRequireExecutionLedger;
+
+   double riskR=0.0;
+   if(!RiskRFromMoney(riskMoney,riskR))
+     {
+      g_execAudit.Log("EXECUTION_LEDGER_RISK_INVALID",
+                      "risk could not be normalized to the configured base risk unit",
+                      decision.decision_id);
+      return false;
+     }
+   string direction=(decision.setup.type==ORDER_TYPE_BUY)?"BUY":"SELL";
+   string signalId="MT#"+IntegerToString(decision.decision_id);
+   if(!g_executionLedger.Reserve(decision.decision_id,legIndex,signalId,_Symbol,direction,
+                                 riskR,MathMax(0.0,volatility),requestId))
+     {
+      g_execAudit.Log("EXECUTION_LEDGER_RESERVATION_BLOCKED",
+                      "bridge did not confirm an idempotent portfolio-risk reservation",
+                      decision.decision_id,0,0.0,0.0,0.0,0.0);
+      return false;
+     }
+   // Write-ahead intent: persist SENT before the broker call. If MT5 crashes
+   // after this point, recovery treats the outcome as ambiguous rather than
+   // releasing the reservation and risking a duplicate order.
+   if(!g_executionLedger.Transition(requestId,"CHECKED","{}"))
+     {
+      g_executionLedgerHealthy=false;
+      g_execAudit.Log("EXECUTION_LEDGER_CHECKED_FAILED",
+                      "risk reserved but CHECKED transition was not acknowledged; broker call suppressed",
+                      decision.decision_id);
+      return false;
+     }
+   if(!g_executionLedger.Transition(requestId,"SENT","{\"ea_send_intent\":true}"))
+     {
+      g_executionLedgerHealthy=false;
+      g_execAudit.Log("EXECUTION_LEDGER_SENT_FAILED",
+                      "risk reserved but SENT transition was not acknowledged; broker call suppressed",
+                      decision.decision_id);
+      return false;
+     }
+   return true;
+  }
+
+void MarkLedgerSubmissionAccepted(const string requestId)
+  {
+   if(StringLen(requestId)==0 || !g_executionLedger.Ready()) return;
+   ulong orderId=g_broker.LastBrokerOrderId();
+   ulong dealId=g_broker.LastBrokerDealId();
+   ulong positionId=g_broker.LastBrokerPositionId();
+
+   if(orderId>0)
+     {
+      string ack=StringFormat(
+         "{\"broker_acknowledged\":true,\"broker_order_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"broker_position_id\":\"%I64u\"}",
+         orderId,dealId,positionId);
+      if(!g_executionLedger.Transition(requestId,"ACKED",ack))
+        {
+         g_executionLedgerHealthy=false;
+         PrintFormat("Midas: broker accepted order #%I64u but ACKED persistence failed; startup reconciliation required.",orderId);
+         return;
+        }
+     }
+
+   if(dealId>0 && positionId>0)
+     {
+      string fill=StringFormat(
+         "{\"broker_confirmed_fill\":true,\"broker_order_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"broker_position_id\":\"%I64u\",\"evidence_ref\":\"mt5-deal:%I64u\"}",
+         orderId,dealId,positionId,dealId);
+      if(!g_executionLedger.Transition(requestId,"FILLED",fill))
+        {
+         g_executionLedgerHealthy=false;
+         PrintFormat("Midas: broker fill #%I64u could not be durably marked; risk reservation must remain in recovery.",dealId);
+        }
+     }
+   else if(orderId==0)
+     {
+      MarkLedgerSubmissionAmbiguous(requestId);
+     }
+  }
+
+void MarkLedgerSubmissionAmbiguous(const string requestId)
+  {
+   if(StringLen(requestId)==0 || !g_executionLedger.Ready()) return;
+   if(!g_executionLedger.Transition(requestId,"RECOVERING",
+                                    "{\"submission_result\":\"ambiguous\",\"evidence_ref\":\"ea-submit-result\"}"))
+     {
+      g_executionLedgerHealthy=false;
+      Print("Midas: submission result could not be reconciled with the bridge; new entries are blocked until recovery.");
+     }
+  }
+
+bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,
+                                 const double volatility,const string evidenceRef)
+  {
+   if(!g_executionLedger.Ready()) return !InpRequireExecutionLedger;
+   ulong ticket=g_broker.PositionTicketForIdentifier(_Symbol,positionIdentifier);
+   if(ticket==0 || !PositionSelectByTicket(ticket)) return false;
+   double sl=PositionGetDouble(POSITION_SL);
+   double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+   double volume=PositionGetDouble(POSITION_VOLUME);
+   if(sl<=0.0 || entry<=0.0 || volume<=0.0) return false;
+   double riskMoney=g_risk.RiskAmountForLots(_Symbol,volume,entry,sl);
+   double riskR=0.0;
+   if(!RiskRFromMoney(riskMoney,riskR)) return false;
+   return g_executionLedger.UpdatePositionRisk(positionIdentifier,direction,riskR,
+                                                MathMax(0.0,volatility),evidenceRef);
+  }
+
+bool ReconcileBrokerStateSnapshot()
+  {
+   g_lastLedgerReconcileAttempt=TimeCurrent();
+   if(!g_executionLedger.Ready()) return false;
+   bool allOk=true;
+   if(!g_executionLedger.RecoverExpired())
+     {
+      g_execAudit.Log("LEDGER_RECOVERY_API_FAILED","could not request expired execution lease recovery");
+      allOk=false;
+     }
+
+   double baseRiskUnit=AccountInfoDouble(ACCOUNT_EQUITY)*InpRiskPercentPerTrade/100.0;
+   if(baseRiskUnit<=0.0)
+     {
+      g_execAudit.Log("LEDGER_STARTUP_BLOCKED","base risk unit is non-positive; existing exposure cannot be normalized");
+      return false;
+     }
+
+   // Import every live position for this strategy magic, across symbols.
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) continue;
+
+      string symbol=PositionGetString(POSITION_SYMBOL);
+      ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      double volume=PositionGetDouble(POSITION_VOLUME);
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl=PositionGetDouble(POSITION_SL);
+      if(positionId==0 || sl<=0.0 || entry<=0.0 || volume<=0.0)
+        {
+         g_execAudit.Log("LEDGER_POSITION_RISK_UNKNOWN",
+                         "startup reconciliation found an EA position without computable stop risk",
+                         0,ticket,volume,entry,sl,0.0);
+         allOk=false;
+         continue;
+        }
+      double riskMoney=g_risk.RiskAmountForLots(symbol,volume,entry,sl);
+      double riskR=0.0;
+      if(!RiskRFromMoney(riskMoney,riskR))
+        {
+         allOk=false;
+         continue;
+        }
+
+      ulong openingOrder=0;
+      ulong openingDeal=0;
+      long commentDecisionId=0;
+      int commentLegIndex=0;
+      string requestIdOverride="";
+      if(HistorySelectByPosition(positionId))
+        {
+         for(int d=0;d<HistoryDealsTotal();d++)
+           {
+            ulong deal=HistoryDealGetTicket(d);
+            if(deal==0) continue;
+            if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY)!=DEAL_ENTRY_IN) continue;
+            if((ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=InpMagicNumber) continue;
+            openingOrder=(ulong)HistoryDealGetInteger(deal,DEAL_ORDER);
+            openingDeal=deal;
+            break;
+           }
+        }
+      if(openingOrder>0 && HistoryOrderSelect(openingOrder))
+        {
+         string comment=HistoryOrderGetString(openingOrder,ORDER_COMMENT);
+         if(ParseManagedOrderComment(comment,commentDecisionId,commentLegIndex))
+            requestIdOverride=g_executionLedger.RequestIdForDecision(commentDecisionId,commentLegIndex);
+        }
+
+      string direction=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY)?"BUY":"SELL";
+      string evidence=StringFormat("mt5-oninit-position:%I64u:%I64u",positionId,TimeCurrent());
+      if(!g_executionLedger.SyncPosition(positionId,openingOrder,openingDeal,symbol,direction,
+                                         riskR,0.0,evidence,requestIdOverride))
+        {
+         g_execAudit.Log("LEDGER_POSITION_SYNC_FAILED",
+                         "live broker position could not be imported into the persistent portfolio risk book",
+                         commentDecisionId,ticket,volume,entry,sl,0.0);
+         allOk=false;
+        }
+     }
+
+   // Import live pending orders too: their risk remains reserved even if no
+   // position has filled yet. Unknown SL risk fails closed rather than guessed.
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      ulong orderTicket=OrderGetTicket(i);
+      if(orderTicket==0 || !OrderSelect(orderTicket)) continue;
+      if((ulong)OrderGetInteger(ORDER_MAGIC)!=InpMagicNumber) continue;
+      ENUM_ORDER_TYPE orderType=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(orderType!=ORDER_TYPE_BUY_LIMIT && orderType!=ORDER_TYPE_SELL_LIMIT &&
+         orderType!=ORDER_TYPE_BUY_STOP && orderType!=ORDER_TYPE_SELL_STOP &&
+         orderType!=ORDER_TYPE_BUY_STOP_LIMIT && orderType!=ORDER_TYPE_SELL_STOP_LIMIT)
+         continue;
+
+      string symbol=OrderGetString(ORDER_SYMBOL);
+      double volume=OrderGetDouble(ORDER_VOLUME_CURRENT);
+      if(volume<=0.0) volume=OrderGetDouble(ORDER_VOLUME_INITIAL);
+      double entry=OrderGetDouble(ORDER_PRICE_OPEN);
+      double sl=OrderGetDouble(ORDER_SL);
+      if(sl<=0.0 || entry<=0.0 || volume<=0.0)
+        {
+         g_execAudit.Log("LEDGER_PENDING_RISK_UNKNOWN",
+                         "startup found a pending EA order without computable stop risk",
+                         0,orderTicket,volume,entry,sl,0.0);
+         allOk=false;
+         continue;
+        }
+      double riskMoney=g_risk.RiskAmountForLots(symbol,volume,entry,sl);
+      double riskR=0.0;
+      if(!RiskRFromMoney(riskMoney,riskR))
+        {
+         allOk=false;
+         continue;
+        }
+      long decisionId=0;
+      int legIndex=0;
+      string requestIdOverride="";
+      if(ParseManagedOrderComment(OrderGetString(ORDER_COMMENT),decisionId,legIndex))
+         requestIdOverride=g_executionLedger.RequestIdForDecision(decisionId,legIndex);
+      string direction=IsOrderBuyDirection(orderType)?"BUY":"SELL";
+      string evidence=StringFormat("mt5-oninit-order:%I64u:%I64u",orderTicket,TimeCurrent());
+      if(!g_executionLedger.SyncPendingOrder(orderTicket,symbol,direction,riskR,0.0,evidence,requestIdOverride))
+        {
+         g_execAudit.Log("LEDGER_ORDER_SYNC_FAILED",
+                         "live broker pending order could not be imported into portfolio risk book",
+                         decisionId,orderTicket,volume,entry,sl,0.0);
+         allOk=false;
+        }
+     }
+
+   if(!SyncHistoricalClosedPositions())
+      allOk=false;
+   return allOk;
+  }
+
+bool SyncHistoricalClosedPositions()
+  {
+   if(!g_executionLedger.Ready()) return !InpRequireExecutionLedger;
+   // A netting reversal can reuse the same position identity for a new side;
+   // never infer terminal closure from volume arithmetic in that mode.
+   if(IsNettingOrExchangeAccount()) return true;
+   if(!HistorySelect(0,TimeCurrent())) return false;
+
+   ulong candidateIds[];
+   for(int i=0;i<HistoryDealsTotal();i++)
+     {
+      ulong deal=HistoryDealGetTicket(i);
+      if(deal==0) continue;
+      ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+      if(entry!=DEAL_ENTRY_OUT && entry!=DEAL_ENTRY_OUT_BY) continue;
+      ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+      if(positionId==0 || IsPositionIdentifierOpen(positionId)) continue;
+      bool known=false;
+      for(int j=0;j<ArraySize(candidateIds);j++)
+         if(candidateIds[j]==positionId) { known=true; break; }
+      if(!known)
+        {
+         int size=ArraySize(candidateIds);
+         ArrayResize(candidateIds,size+1);
+         candidateIds[size]=positionId;
+        }
+     }
+
+   bool allOk=true;
+   for(int p=0;p<ArraySize(candidateIds);p++)
+     {
+      ulong positionId=candidateIds[p];
+      if(IsPositionIdentifierOpen(positionId) || !HistorySelectByPosition(positionId)) continue;
+      double openedVolume=0.0;
+      double closedVolume=0.0;
+      bool hasManagedEntry=false;
+      bool foreignEntry=false;
+      bool ambiguous=false;
+      ulong lastCloseDeal=0;
+      ulong openingOrder=0;
+      long decisionId=0;
+      int legIndex=0;
+
+      for(int d=0;d<HistoryDealsTotal();d++)
+        {
+         ulong deal=HistoryDealGetTicket(d);
+         if(deal==0) continue;
+         if((ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)!=positionId) continue;
+         ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+         double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
+         ulong dealMagic=(ulong)HistoryDealGetInteger(deal,DEAL_MAGIC);
+         if(entry==DEAL_ENTRY_IN)
+           {
+            if(dealMagic==InpMagicNumber)
+              {
+               hasManagedEntry=true;
+               openedVolume+=volume;
+               if(openingOrder==0)
+                  openingOrder=(ulong)HistoryDealGetInteger(deal,DEAL_ORDER);
+              }
+            else foreignEntry=true;
+           }
+         else if(entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY)
+           {
+            closedVolume+=volume;
+            lastCloseDeal=deal;
+           }
+         else if(entry==DEAL_ENTRY_INOUT) ambiguous=true;
+        }
+
+      double tolerance=MathMax(1e-6,openedVolume*1e-5);
+      if(!hasManagedEntry || foreignEntry || ambiguous || lastCloseDeal==0 ||
+         openedVolume<=0.0 || closedVolume+tolerance<openedVolume)
+         continue;
+
+      string requestIdOverride="";
+      if(openingOrder>0 && HistoryOrderSelect(openingOrder))
+        {
+         string comment=HistoryOrderGetString(openingOrder,ORDER_COMMENT);
+         if(ParseManagedOrderComment(comment,decisionId,legIndex))
+            requestIdOverride=g_executionLedger.RequestIdForDecision(decisionId,legIndex);
+        }
+      string evidence=StringFormat("mt5-oninit-closed-history:%I64u:%I64u",positionId,lastCloseDeal);
+      if(!g_executionLedger.SyncClosedPosition(positionId,lastCloseDeal,evidence,requestIdOverride))
+        {
+         g_execAudit.Log("LEDGER_CLOSED_HISTORY_SYNC_FAILED",
+                         "closed position history could not be replayed into persistent execution state",
+                         decisionId,positionId,0.0,0.0,0.0,0.0);
+         allOk=false;
+        }
+     }
+   return allOk;
+  }
+
 int OnInit()
   {
    g_pool.Configure(_Symbol,InpMaxHistoryBars,InpSwingStrength,InpFVGMinSizeATR,InpInternalLiqThresholdATR,InpRVOLLookback,InpVALookbackBars,InpVANumBins,InpVAPercent/100.0,InpOBDisplacementATRMult,InpOBMinBodyRatio);g_chartCtx=g_pool.Get(_Period);g_trendCtx=g_pool.Get(InpTrendTF);g_bosCtx=g_pool.Get(InpBOSTF);g_liqCtx=g_pool.Get(InpLiquidityTF);g_fvgCtx=g_pool.Get(InpFVGTF);g_htfObCtx=g_pool.Get(InpHtfObTF);if(g_chartCtx==NULL||g_trendCtx==NULL||g_bosCtx==NULL||g_liqCtx==NULL||g_fvgCtx==NULL||g_htfObCtx==NULL)return INIT_FAILED;
