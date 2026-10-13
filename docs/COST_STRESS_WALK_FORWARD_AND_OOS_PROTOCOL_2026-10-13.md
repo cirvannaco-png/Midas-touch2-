@@ -55,3 +55,18 @@ No metrics, charts, per-trade outcomes, or filtered subsets from this interval m
 ## 8. Minimum promotion evidence
 
 All must be satisfied before a demo-forward test is considered: cost-complete positive expectancy; robust out-of-sample PF greater than 1 across more than one market regime; transparent trade/censoring counts; acceptable native MT5 equity drawdown and Monte Carlo P95 drawdown/streak risk; no unexplained deal-history/accounting differences; reproducible matched .set/build/data hashes; successful stop safety/restart/reconciliation tests; and a locked OOS interval evaluated only once. A green pipeline is an engineering prerequisite, not profitability evidence.
+
+
+## 9. Locked OOS one-shot gate
+
+The repository records the proposed reservation in docs/LOCKED_OOS_RESERVATION_2026-09-01_TO_2026-10-01.json. It is registered as unscored, but repository history cannot establish whether someone used the interval outside this repository. The operator must verify the external history and explicitly attest to freshness. If that attestation is not defensible, mark the interval spoiled and reserve a later untouched interval instead.
+
+Before evaluating OOS, complete docs/LOCKED_OOS_FREEZE_TEMPLATE_2026-10-13.json as a separate immutable freeze manifest. Fill the final matched-run manifest SHA-256, a real point-value-per-lot taken from the exact instrument/account specification, the source file path and its SHA-256, freeze timestamp, final promotion criteria, and the explicit oos_previously_inspected=false attestation. Do not use the synthetic symbol-spec values in unit tests. Finalize both .set files so only InpDynamicStopUseHTFReferenceLevels differs, preserve InpRequireTrendingRegime identically in both, and keep the master HTF toggle default off.
+
+After the cost assumptions, development-fold results and strategy settings are frozen, invoke the evaluator once:
+
+    python tools/evaluate_locked_oos_once.py --reservation docs/LOCKED_OOS_RESERVATION_2026-09-01_TO_2026-10-01.json --manifest artifacts/mt5/htf-pair/manifest.json --frozen-config artifacts/mt5/htf-pair/frozen-config.json --consumption-lock artifacts/mt5/locked-oos/consumed.lock --output artifacts/mt5/locked-oos/report.json --attest-untouched
+
+Use real file paths, not those examples. The lock file is created atomically before result metrics are emitted. A second call using the same lock path is rejected. Keep the consumption lock and report in persistent, versioned or immutable storage; local file-system locking does not stop someone from bypassing it with another workspace. If the evaluator fails after acquiring the lock, the interval is still considered consumed; don't delete the lock and rerun after seeing any performance content. Fix the tooling and reserve a new OOS period if another scored attempt is needed.
+
+The evaluator reports the same OOS entry window for trade inclusion but allows those positions to mature through 2026-10-14T00:00:00Z. Positions still open or closing at/after that cut are censored. It emits the predeclared cost-stress grid, drawdown/loss-streak Monte Carlo, and fixed-configuration walk-forward folds on the pre-OOS development segment in that single report. It does not tune parameters or auto-approve deployment.
