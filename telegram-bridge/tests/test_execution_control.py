@@ -462,3 +462,52 @@ async def test_pending_order_is_adopted_and_only_released_with_terminal_broker_e
             assert reservation.status == "RELEASED"
     finally:
         await engine.dispose()
+
+@pytest.mark.asyncio
+async def test_sent_intent_releases_risk_only_with_proof_no_broker_call_was_attempted():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            assert await reserve_execution(
+                session,
+                request_id="local-nonsend",
+                signal_id="local-nonsend-signal",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=0.5,
+                volatility=0.3,
+                factors={},
+                portfolio_key="broker:account:magic",
+            )
+            assert await transition_execution(
+                session, request_id="local-nonsend", state="CHECKED"
+            )
+            assert await transition_execution(
+                session,
+                request_id="local-nonsend",
+                state="SENT",
+                result={"ea_send_intent": True},
+            )
+            assert not await transition_execution(
+                session, request_id="local-nonsend", state="REJECTED"
+            )
+            assert await transition_execution(
+                session,
+                request_id="local-nonsend",
+                state="REJECTED",
+                result={
+                    "submission_attempted": False,
+                    "evidence_ref": "ea-local-preflight:decision-1",
+                },
+            )
+            await session.commit()
+
+        async with factory() as session:
+            reservation = await session.scalar(
+                select(PortfolioReservation).where(
+                    PortfolioReservation.request_id == "local-nonsend"
+                )
+            )
+            assert reservation.status == "RELEASED"
+    finally:
+        await engine.dispose()
