@@ -69,3 +69,104 @@ def test_recovery_journal_rejects_non_finite_and_overfills(tmp_path):
     with pytest.raises(ValueError, match="exceeds requested_quantity"):
         journal.mark_fill("bounded-order", 1.1, 100.0)
     assert journal.get("bounded-order").filled_quantity == 0.0
+
+def test_duplicate_fill_replay_after_journal_restart_does_not_double_count(tmp_path):
+    path = str(tmp_path / "restart-duplicate-fill.db")
+    first = ExecutionRecoveryJournal(path)
+    first.begin_submission(
+        "restart-fill", client_order_id="restart-fill-client",
+        requested_quantity=2.0,
+    )
+    first.mark_working("restart-fill", "venue-restart-fill")
+    original = first.mark_fill(
+        "restart-fill", 1.0, 100.0, fill_id="stable-deal-1", now=10.0,
+    )
+
+    restarted = ExecutionRecoveryJournal(path)
+    replay = restarted.mark_fill(
+        "restart-fill", 1.0, 100.0, fill_id="stable-deal-1", now=11.0,
+    )
+
+    assert replay.filled_quantity == original.filled_quantity == 1.0
+    assert replay.filled_notional == original.filled_notional == 100.0
+    assert len(restarted.fill_ledger("restart-fill")) == 1
+    assert [row["fill_id"] for row in restarted.fill_ledger("restart-fill")] == [
+        "stable-deal-1"
+    ]
+
+
+def test_broker_history_missing_a_previously_recorded_fill_fails_closed(tmp_path):
+    journal = ExecutionRecoveryJournal(str(tmp_path / "broker-history-conflict.db"))
+    journal.begin_submission("history-conflict", requested_quantity=3.0)
+    journal.mark_working("history-conflict", "venue-history-conflict")
+    journal.mark_fill(
+        "history-conflict", 1.0, 100.0, fill_id="deal-already-recorded",
+    )
+    journal.mark_unknown("history-conflict", "broker connection lost")
+
+    with pytest.raises(ValueError, match="conflicts with an already recorded fill"):
+        journal.recover_unknown(
+            "history-conflict",
+            "venue-history-conflict",
+            "FILLED",
+            filled_quantity=3.0,
+            filled_notional=302.0,
+            fills=[
+                {"fill_id": "broker-deal-a", "quantity": 1.0, "price": 101.0},
+                {"fill_id": "broker-deal-b", "quantity": 2.0, "price": 100.5},
+            ],
+        )
+
+    record = journal.get("history-conflict")
+    assert record.state == "UNKNOWN"
+    assert record.filled_quantity == 1.0
+    assert [row["fill_id"] for row in journal.fill_ledger("history-conflict")] == [
+        "deal-already-recorded"
+    ]
+    assert [row.order_id for row in journal.unresolved_records()] == [
+        "history-conflict"
+    ]
+
+
+def test_concurrent_broker_recovery_never_adopts_the_same_order_twice(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    journal = ExecutionRecoveryJournal(str(tmp_path / "recovery-race.db"))
+    journal.begin_submission(
+        "recovery-race", client_order_id="recovery-race-client",
+        requested_quantity=1.0,
+    )
+    journal.mark_unknown("recovery-race", "submit acknowledgement timed out")
+
+    def attempt_recovery():
+        try:
+            return journal.recover_unknown(
+                "recovery-race",
+                "venue-recovery-race",
+                "FILLED",
+                filled_quantity=1.0,
+                filled_notional=100.0,
+                fills=[{
+                    "fill_id": "race-deal-1",
+                    "quantity": 1.0,
+                    "price": 100.0,
+                    "created_at": 12.0,
+                }],
+            )
+        except (RuntimeError, ValueError) as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: attempt_recovery(), range(2)))
+
+    adopted = [result for result in results if not isinstance(result, Exception)]
+    rejected = [result for result in results if isinstance(result, Exception)]
+    assert len(adopted) == 1
+    assert len(rejected) == 1
+    assert "recovery race" in str(rejected[0]) or "only UNKNOWN" in str(rejected[0])
+
+    final = journal.get("recovery-race")
+    assert final.state == "FILLED"
+    assert final.filled_quantity == 1.0
+    assert final.filled_notional == 100.0
+    assert len(journal.fill_ledger("recovery-race")) == 1
