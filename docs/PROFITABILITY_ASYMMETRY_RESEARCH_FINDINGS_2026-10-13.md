@@ -157,4 +157,11 @@ The next actual-EA experiment must be run in MT5 with identical input presets ex
 - Second holdout baseline: run `db4160ad-f930-4d2c-ab7f-4a98df55b02d`, record `zxe8ktn1bvuq67z5a84ttnqd`.
 - Second holdout exit candidate: run `6477849d-326a-49e1-b5fe-71c594abc220`, record `eq7rpg394rlvygq8a86gpvdm`.
 
+- Strict-lane matched baseline, 2026-07-01 to 2026-09-01: run `51c99075-bf42-43e3-8750-d7de68e8245d`, record `bccom0zeaqmk5hzsftvzwgf3`.
+- Strict-lane asymmetric proxy, 2026-07-01 to 2026-09-01: run `093dfbc5-9f75-4910-8677-228b5cb3af2f`, record `fkh8y8o7y86d3zuurm24uz3r`.
+- Strict-lane baseline, 2026-09-01 to 2026-10-01: run `517cde11-0f8f-4d63-8b5d-55ad472ea9ad`, record `vyaeul2pzb0lrjmeuovctd9a`.
+- Strict-lane aggressive proxy, 2026-09-01 to 2026-10-01: run `f1a406a9-2a45-46ea-b5b5-581fc263895c`, record `br51akapy6biw9kt3s1vox0k`.
+- Strict-lane hybrid proxy (TP1 0.75R / TP2 2.5R), 2026-09-01 to 2026-10-01: run `2cc3b5ec-567a-4e3f-bd37-744421c8d0cc`, record `gizdy1zwdpblk3tbhf5jcwwe`.
+- Strict-lane baseline exits with two-lot / 0.50% portfolio-risk cap, 2026-09-01 to 2026-10-01: run `1813dfd7-14a6-4609-b03e-8efa08281ec0`, record `oc1llqbs7265d7nbyzlc4kz8`.
+
 These identifiers preserve the audit trail; they are not evidence that the actual EA has been validated.
