@@ -32,6 +32,37 @@ class CostStressError(ValueError):
     """Input data cannot support a cost-complete stress report."""
 
 
+def reserved_oos_window() -> tuple[datetime, datetime] | None:
+    """Read the repository's registered holdout; fail closed if it is malformed."""
+    reservation_path = Path(__file__).resolve().parents[1] / "docs" / "LOCKED_OOS_RESERVATION_2026-09-01_TO_2026-10-01.json"
+    try:
+        reservation = json.loads(reservation_path.read_text(encoding="utf-8"))
+        if reservation.get("status") != "reserved_unscored":
+            return None
+        start, end = _dt(reservation.get("locked_oos_start"), "reservation.locked_oos_start"), _dt(
+            reservation.get("locked_oos_end"), "reservation.locked_oos_end"
+        )
+        if not start < end:
+            raise CostStressError("registered locked-OOS window has invalid boundaries")
+        return start, end
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CostStressError(f"cannot read registered locked-OOS reservation: {reservation_path}") from exc
+
+
+def reject_reserved_oos_overlap(start: datetime, end: datetime) -> None:
+    reserved = reserved_oos_window()
+    if reserved is None:
+        return
+    reserved_start, reserved_end = reserved
+    if start < reserved_end and end > reserved_start:
+        raise CostStressError(
+            "requested analysis overlaps the registered locked-OOS entry window "
+            f"[{reserved_start.isoformat()}, {reserved_end.isoformat()}); "
+            "standard cost-stress CLI withholds it. Use the one-shot evaluator only "
+            "after the strategy/cost assumptions are frozen and untouched status is attested."
+        )
+
+
 def _norm(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
@@ -302,6 +333,7 @@ def main() -> int:
         start, end = _dt(args.start, "start"), _dt(args.end, "end")
         if not start < end:
             raise CostStressError("start must precede end")
+        reject_reserved_oos_overlap(start, end)
         if not math.isfinite(args.point_value_per_lot) or args.point_value_per_lot <= 0:
             raise CostStressError("point-value-per-lot must be finite and > 0")
         if not math.isfinite(args.initial_balance) or args.initial_balance <= 0:
