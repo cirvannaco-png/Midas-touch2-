@@ -17,6 +17,8 @@ private:
    ulong             m_lastBrokerOrderId;
    ulong             m_lastBrokerDealId;
    ulong             m_lastBrokerPositionId;
+   bool              m_lastRequestAttempted;
+   uint              m_lastRetcode;
 
    void              CaptureBrokerIdentifiers(string symbol);
    bool              LastRequestOk(string action);
@@ -34,6 +36,23 @@ public:
    ulong             LastBrokerOrderId() const { return m_lastBrokerOrderId; }
    ulong             LastBrokerDealId() const { return m_lastBrokerDealId; }
    ulong             LastBrokerPositionId() const { return m_lastBrokerPositionId; }
+   bool              LastRequestAttempted() const { return m_lastRequestAttempted; }
+   uint              LastRetcode() const { return m_lastRetcode; }
+   bool              LastRequestAmbiguous() const
+     {
+      return m_lastRequestAttempted &&
+             (m_lastRetcode==TRADE_RETCODE_TIMEOUT ||
+              m_lastRetcode==TRADE_RETCODE_CONNECTION ||
+              m_lastRetcode==TRADE_RETCODE_ERROR);
+     }
+   void              ResetLastRequestStatus()
+     {
+      m_lastRequestAttempted=false;
+      m_lastRetcode=0;
+      m_lastBrokerOrderId=0;
+      m_lastBrokerDealId=0;
+      m_lastBrokerPositionId=0;
+     }
    bool              MarketBuy(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "");
    bool              MarketSell(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "");
    bool              PlaceLimit(string symbol, ENUM_ORDER_TYPE type, double volume, double price,
@@ -57,6 +76,8 @@ void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs)
    m_lastBrokerOrderId = 0;
    m_lastBrokerDealId = 0;
    m_lastBrokerPositionId = 0;
+   m_lastRequestAttempted = false;
+   m_lastRetcode = 0;
   }
 //+------------------------------------------------------------------+
 void CBrokerAdapter::CaptureBrokerIdentifiers(string symbol)
@@ -82,9 +103,9 @@ bool CBrokerAdapter::IsRetryable(uint retcode)
       case TRADE_RETCODE_REQUOTE:
       case TRADE_RETCODE_PRICE_CHANGED:
       case TRADE_RETCODE_PRICE_OFF:
-      case TRADE_RETCODE_CONNECTION:
-      case TRADE_RETCODE_TIMEOUT:
-         return true;
+      // A timeout/connection loss can occur after the broker accepted the
+      // request. Retrying those codes can create duplicate exposure.
+         return false;
       default:
          return false;
      }
@@ -98,9 +119,6 @@ int CBrokerAdapter::DelayForRetcode(uint retcode)
       case TRADE_RETCODE_PRICE_CHANGED:
       case TRADE_RETCODE_PRICE_OFF:
          return MathMin(m_retryDelayMs,50);
-      case TRADE_RETCODE_CONNECTION:
-      case TRADE_RETCODE_TIMEOUT:
-         return MathMax(m_retryDelayMs,500);
       default:
          return m_retryDelayMs;
      }
@@ -263,22 +281,25 @@ ulong CBrokerAdapter::ResolvePositionTicket(string symbol)
 bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
   {
    ticketOut=0; fillPriceOut=0.0;
-   m_lastBrokerOrderId=0; m_lastBrokerDealId=0; m_lastBrokerPositionId=0;
+   ResetLastRequestStatus();
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,true)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,true,"MarketBuy")) { m_lastLatencyUs=0; return false; }
    ulong t0=GetMicrosecondCount();
    for(int i=0;i<m_maxRetries;i++)
      {
-      if(m_trade.Buy(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketBuy"))
+      bool requestOk=m_trade.Buy(volume,symbol,0.0,sl,tp,comment);
+      m_lastRequestAttempted=true;
+      m_lastRetcode=m_trade.ResultRetcode();
+      CaptureBrokerIdentifiers(symbol);
+      if(requestOk && LastRequestOk("MarketBuy"))
         {
-         CaptureBrokerIdentifiers(symbol);
          ticketOut=ResolvePositionTicket(symbol);
          fillPriceOut=m_trade.ResultPrice();
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
         }
-      uint code=m_trade.ResultRetcode();
+      uint code=m_lastRetcode;
       if(!IsRetryable(code)) break;
       Sleep(DelayForRetcode(code));
      }
@@ -289,22 +310,25 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
 bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
   {
    ticketOut=0; fillPriceOut=0.0;
-   m_lastBrokerOrderId=0; m_lastBrokerDealId=0; m_lastBrokerPositionId=0;
+   ResetLastRequestStatus();
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,false)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_BID);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,false,"MarketSell")) { m_lastLatencyUs=0; return false; }
    ulong t0=GetMicrosecondCount();
    for(int i=0;i<m_maxRetries;i++)
      {
-      if(m_trade.Sell(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketSell"))
+      bool requestOk=m_trade.Sell(volume,symbol,0.0,sl,tp,comment);
+      m_lastRequestAttempted=true;
+      m_lastRetcode=m_trade.ResultRetcode();
+      CaptureBrokerIdentifiers(symbol);
+      if(requestOk && LastRequestOk("MarketSell"))
         {
-         CaptureBrokerIdentifiers(symbol);
          ticketOut=ResolvePositionTicket(symbol);
          fillPriceOut=m_trade.ResultPrice();
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
         }
-      uint code=m_trade.ResultRetcode();
+      uint code=m_lastRetcode;
       if(!IsRetryable(code)) break;
       Sleep(DelayForRetcode(code));
      }
@@ -315,7 +339,7 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
 bool CBrokerAdapter::PlaceLimit(string symbol,ENUM_ORDER_TYPE type,double volume,double price,double sl,double tp,ulong &ticketOut,string comment)
   {
    ticketOut=0;
-   m_lastBrokerOrderId=0; m_lastBrokerDealId=0; m_lastBrokerPositionId=0;
+   ResetLastRequestStatus();
    if(type!=ORDER_TYPE_BUY_LIMIT && type!=ORDER_TYPE_SELL_LIMIT) return false;
    bool isBuy=(type==ORDER_TYPE_BUY_LIMIT);
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,isBuy)) { m_lastLatencyUs=0; return false; }
@@ -326,14 +350,16 @@ bool CBrokerAdapter::PlaceLimit(string symbol,ENUM_ORDER_TYPE type,double volume
       bool ok=isBuy
                ? m_trade.BuyLimit(volume,price,symbol,sl,tp,ORDER_TIME_GTC,0,comment)
                : m_trade.SellLimit(volume,price,symbol,sl,tp,ORDER_TIME_GTC,0,comment);
+      m_lastRequestAttempted=true;
+      m_lastRetcode=m_trade.ResultRetcode();
+      CaptureBrokerIdentifiers(symbol);
       if(ok && LastRequestOk("PlaceLimit"))
         {
-         CaptureBrokerIdentifiers(symbol);
          ticketOut=m_trade.ResultOrder();
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
         }
-      uint code=m_trade.ResultRetcode();
+      uint code=m_lastRetcode;
       if(!IsRetryable(code)) break;
       Sleep(DelayForRetcode(code));
      }
