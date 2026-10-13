@@ -330,9 +330,16 @@ bool AcquireAccountProfileLock(string &reasonOut)
       return true;
      }
    double stored=GlobalVariableGet(key);
-   if(MathIsValidNumber(stored) && MathAbs(stored-selected)<0.1) return true;
-   ENUM_MIDAS_ACCOUNT_PROFILE lockedProfile=(ENUM_MIDAS_ACCOUNT_PROFILE)((int)MathRound(stored));
-   bool storedProfileKnown=(lockedProfile==MIDAS_PROFILE_PROP_FIRM || lockedProfile==MIDAS_PROFILE_MICRO_RESEARCH);
+   bool storedNumericValid=MathIsValidNumber(stored);
+   if(storedNumericValid && MathAbs(stored-selected)<0.1) return true;
+   ENUM_MIDAS_ACCOUNT_PROFILE lockedProfile=MIDAS_PROFILE_PROP_FIRM;
+   bool storedProfileKnown=false;
+   // Never cast NaN/Inf or an arbitrary persisted value to the profile enum.
+   if(storedNumericValid)
+     {
+      lockedProfile=(ENUM_MIDAS_ACCOUNT_PROFILE)((int)MathRound(stored));
+      storedProfileKnown=(lockedProfile==MIDAS_PROFILE_PROP_FIRM || lockedProfile==MIDAS_PROFILE_MICRO_RESEARCH);
+     }
    if(AccountHasAnyPositionOrOrder())
      {
       // Never abandon position management on a profile change during exposure.
