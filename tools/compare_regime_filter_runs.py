@@ -282,7 +282,6 @@ def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict)
     metrics = {
         "development": _metrics(development_entries, context["initial_balance"]),
         "development_censoring": censored_development,
-        "ledger_ignored_groups": ignored,
     }
     return {
         "role": role,
