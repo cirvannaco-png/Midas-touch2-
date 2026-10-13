@@ -105,3 +105,34 @@ def test_non_finite_fill_and_exit_values_fail_closed_before_money_accounting():
     assert exit_body.index("MathIsValidNumber(netPnl)") < exit_body.index("p.realizedPnL=nextPnL")
     assert "p.outcomeHistoryComplete=false;" in exit_body
     assert "p.cashflowsKnown=false;" in exit_body
+
+
+
+def test_partial_closes_reduce_remaining_volume_and_only_finalize_when_flat():
+    tracker = TRACKER.read_text(encoding="utf-8")
+    start = tracker.index("bool MarkClosed(")
+    end = tracker.index("void Update(", start)
+    closed = tracker[start:end]
+
+    # Each broker deal is idempotent; a replay cannot charge P&L or volume twice.
+    assert closed.index("if(DealAlreadyProcessed(dealTicket)) return true;") < closed.index("double nextPnL=")
+
+    # Partial exits reduce the live remainder, while over-closes or missing
+    # volume evidence make the history ineligible for calibration.
+    assert "if(closedVolume>0.0)" in closed
+    assert "closedVolume>p.remainingLots+1e-8" in closed
+    assert "double left=p.remainingLots-closedVolume;" in closed
+    assert "p.remainingLots=(MathIsValidNumber(left) ? MathMax(0.0,left) : 0.0);" in closed
+    assert "if(!stillOpen && p.remainingLots>1e-8)" in closed
+    assert "p.outcomeHistoryComplete=false;" in closed
+
+    # A still-open position must retain its parent record. The final outcome
+    # is emitted only after the caller reports that exposure is flat.
+    assert closed.index("if(stillOpen) return true;") < closed.index("Finalize(i,outcome,exitPrice,t);")
+
+    # Partial-exit cashflows are accumulated in the same net-P&L ledger and
+    # signed cost telemetry remains separate for audit/reconciliation.
+    assert "double nextPnL=p.realizedPnL+netPnl;" in closed
+    assert "double nextCommissionCashflow=p.totalCommissionCashflow+commission;" in closed
+    assert "double nextSwapCashflow=p.totalSwapCashflow+swap;" in closed
+    assert "double nextFeeCashflow=p.totalBrokerFeeCashflow+fee;" in closed
