@@ -14,7 +14,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import ExecutionDealEvent
 from app.execution_control import (
     MAX_PORTFOLIO_HEAT_R,
     reconcile_closed_position,
@@ -26,6 +25,7 @@ from app.execution_control import (
     transition_execution,
     update_position_risk,
 )
+from app.models import ExecutionDealEvent
 from app.routes import verify_api_key
 
 router = APIRouter(prefix="/execution-ledger", tags=["execution-ledger"])
