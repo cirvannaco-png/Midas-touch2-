@@ -46,7 +46,7 @@ def test_shadow_simulator_uses_canonical_dynamic_stop_parameters():
 
 def test_candidate_has_distinct_version_lineage():
     ea = EA.read_text(encoding="utf-8")
-    assert '#property version   "2.82"' in ea
-    assert 'InpStrategyVersion="strategy-v2.82-payoff-precision-candidate"' in ea
-    assert 'InpCalibrationVersion="calibration-v2.82-candidate"' in ea
-    assert 'InpWeightSetVersion="v2.82-payoff-precision-candidate"' in ea
+    assert '#property version   "2.83"' in ea
+    assert 'InpStrategyVersion="strategy-v2.83-payoff-precision-htf-trail-candidate"' in ea
+    assert 'InpCalibrationVersion="calibration-v2.83-htf-trail-candidate"' in ea
+    assert 'InpWeightSetVersion="v2.83-payoff-precision-htf-trail-candidate"' in ea
