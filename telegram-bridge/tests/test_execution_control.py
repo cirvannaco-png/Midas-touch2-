@@ -217,3 +217,41 @@ async def test_expired_lease_requires_reconciliation_and_keeps_risk_reserved():
             )
     finally:
         await engine.dispose()
+
+
+def test_execution_ledger_route_requires_api_key(client):
+    payload = {
+        "request_id": "route-auth-test",
+        "signal_id": "route-auth-signal",
+        "symbol": "EURUSD",
+        "direction": "BUY",
+        "risk_r": 0.25,
+        "volatility": 0.5,
+        "factors": {"usd": 1.0},
+    }
+    missing = client.post("/execution-ledger/reserve", json=payload)
+    assert missing.status_code == 422
+    wrong = client.post(
+        "/execution-ledger/reserve",
+        json=payload,
+        headers={"X-API-Key": "wrong-key"},
+    )
+    assert wrong.status_code == 401
+
+
+def test_execution_ledger_api_is_mounted_and_rejects_duplicate_requests(client, auth_headers):
+    payload = {
+        "request_id": "route-idempotency-test",
+        "signal_id": "route-idempotency-signal",
+        "symbol": "EURUSD",
+        "direction": "BUY",
+        "risk_r": 0.25,
+        "volatility": 0.5,
+        "factors": {"usd": 1.0},
+    }
+    first = client.post("/execution-ledger/reserve", json=payload, headers=auth_headers)
+    assert first.status_code == 200
+    assert first.json()["state"] == "RESERVED"
+
+    duplicate = client.post("/execution-ledger/reserve", json=payload, headers=auth_headers)
+    assert duplicate.status_code == 409
