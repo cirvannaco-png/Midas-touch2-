@@ -244,7 +244,7 @@ def _count_censored(positions: list[dict], deals: list[dict], opens: set[str],
     }
 
 
-def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict) -> dict:
+def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict, *, include_locked_oos: bool = False) -> dict:
     role = raw.get("role")
     if role not in ROLES:
         raise MatchedTrailingError(f"variant role must be one of {ROLES}")
@@ -277,12 +277,21 @@ def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict)
         raise MatchedTrailingError(f"{role} deal-ledger validation failed: {exc}") from exc
     pstart, pend = context["period_start"], context["period_end"]
     ostart, oend = context["locked_oos_start"], context["locked_oos_end"]
-    period_entries = [p for p in positions if pstart <= p["opened_at"] < pend and p["closed_at"] < pend]
-    oos_entries = [p for p in positions if ostart <= p["opened_at"] < oend and p["closed_at"] < pend]
-    censored_period = _count_censored(positions, deals, opens, pstart, pend, pend)
-    # The OOS window is defined by entry time; eligible positions can mature
-    # through context.period_end. Cross-cut positions remain censored.
-    censored_oos = _count_censored(positions, deals, opens, ostart, oend, pend)
+    # Ordinary comparison commands expose development data only. The locked
+    # interval is scored only when the one-shot gate opts in after freezing.
+    development_entries = [p for p in positions if pstart <= p["opened_at"] < ostart and p["closed_at"] < ostart]
+    censored_development = _count_censored(positions, deals, opens, pstart, ostart, ostart)
+    metrics = {
+        "development": _metrics(development_entries, context["initial_balance"]),
+        "development_censoring": censored_development,
+        "ledger_ignored_groups": ignored,
+    }
+    if include_locked_oos:
+        # OOS entry time is constrained to the reserved window; qualifying
+        # positions may mature through period_end, not just locked_oos_end.
+        oos_entries = [p for p in positions if ostart <= p["opened_at"] < oend and p["closed_at"] < pend]
+        metrics["locked_oos"] = _metrics(oos_entries, context["initial_balance"])
+        metrics["locked_oos_censoring"] = _count_censored(positions, deals, opens, ostart, oend, pend)
     return {
         "role": role,
         "run_id": raw["run_id"],
@@ -294,13 +303,7 @@ def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict)
             "deals_csv": {"path": str(deals_path), "sha256": _sha256(deals_path)},
             "open_positions_csv": {"path": str(open_path), "sha256": _sha256(open_path)},
         },
-        "metrics": {
-            "full_period": _metrics(period_entries, context["initial_balance"]),
-            "locked_oos": _metrics(oos_entries, context["initial_balance"]),
-            "full_period_censoring": censored_period,
-            "locked_oos_censoring": censored_oos,
-            "ledger_ignored_groups": ignored,
-        },
+        "metrics": metrics,
         "_positions": positions,
     }
 
@@ -309,7 +312,7 @@ def _public_variant(data: dict) -> dict:
     return {key: value for key, value in data.items() if key != "_positions"}
 
 
-def _deltas(off: dict, on: dict) -> dict:
+def _deltas(off: dict, on: dict, scopes: tuple[str, ...] = ("development",)) -> dict:
     metric_keys = (
         "completed_positions", "net_pnl", "account_return_pct", "profit_factor",
         "net_expectancy_per_completed_position", "average_win", "average_loss",
@@ -317,7 +320,7 @@ def _deltas(off: dict, on: dict) -> dict:
         "max_closed_position_drawdown_pct",
     )
     out = {}
-    for scope in ("full_period", "locked_oos"):
+    for scope in scopes:
         a, b = off["metrics"][scope], on["metrics"][scope]
         changes = {}
         for key in metric_keys:
@@ -330,7 +333,7 @@ def _deltas(off: dict, on: dict) -> dict:
     return out
 
 
-def compare_manifest(manifest_path: str | Path) -> dict:
+def compare_manifest(manifest_path: str | Path, *, include_locked_oos: bool = False) -> dict:
     path = Path(manifest_path).expanduser().resolve()
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -354,7 +357,7 @@ def compare_manifest(manifest_path: str | Path) -> dict:
     for raw in raw_variants:
         if not isinstance(raw, dict):
             raise MatchedTrailingError("each variant must be a JSON object")
-        data = _load_variant(manifest, path, raw, context)
+        data = _load_variant(manifest, path, raw, context, include_locked_oos=include_locked_oos)
         role = data["role"]
         if role in loaded:
             raise MatchedTrailingError(f"duplicate role: {role}")
@@ -395,7 +398,8 @@ def compare_manifest(manifest_path: str | Path) -> dict:
         "dataset": {"path": str(dataset), "sha256": dataset_digest},
         "only_effective_set_difference": TOGGLE,
         "variants": {role: _public_variant(data) for role, data in loaded.items()},
-        "on_minus_off_deltas": _deltas(off, on),
+        "on_minus_off_deltas": _deltas(off, on, ("development", "locked_oos") if include_locked_oos else ("development",)),
+        "locked_oos_status": "scored only by the one-shot gate" if not include_locked_oos else "included under explicit one-shot gate invocation",
         "guardrail": "Metrics are calculated from completed positions only and use deal profit + commission + swap + fee. They are not a substitute for native MT5 equity drawdown or stop-modification/restart safety logs; this tool does not run MT5 or approve promotion.",
     }
     return report
@@ -414,7 +418,7 @@ def main() -> int:
             "output": str(args.output),
             "experiment_id": report["experiment_id"],
             "sha256": hashlib.sha256(args.output.read_bytes()).hexdigest(),
-            "locked_oos": "reported once when this command is run",
+            "locked_oos": "withheld by default; use evaluate_locked_oos_once.py only after configuration freeze",
         }, indent=2))
         return 0
     except (MatchedTrailingError, LedgerError, OSError, ValueError) as exc:
