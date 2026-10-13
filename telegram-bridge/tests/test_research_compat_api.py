@@ -1,5 +1,6 @@
 from app.api.research_compat import canonical_hash
 from app.canonical_config import canonical_json
+import pytest
 
 
 def experiment_payload(experiment_id: str) -> dict:
@@ -106,7 +107,5 @@ def test_canonical_config_hash_matches_source_float_and_unicode_normalization():
 
 
 def test_canonical_config_hash_rejects_non_finite_numbers():
-    import pytest
-
     with pytest.raises(ValueError, match="non-finite"):
         canonical_hash({"risk": float("nan")})
