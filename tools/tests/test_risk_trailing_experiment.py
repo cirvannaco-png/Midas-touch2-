@@ -16,12 +16,27 @@ ROLES = (
 
 
 def _base_preset() -> dict[str, str]:
+    # Every actual MT5 input is present. The selected small-account profile and
+    # the legacy/prop-firm profiles deliberately start at the preserved baseline;
+    # candidates change only the active profile whose account context is declared.
     return {
+        "InpAccountRiskProfile": "1",
         "InpRiskPercentPerTrade": "0.5", "InpMaxOpenTrades": "3",
         "InpMaxDailyLossPercent": "3", "InpMaxDrawdownPercent": "10",
         "InpDeriskStartPercent": "5", "InpDeriskFloor": "0.25",
         "InpMaxPortfolioRiskPercent": "3", "InpMaxPositionsPerSymbol": "3",
-        "InpMaxPositionsPerGroup": "3", "InpEnableDynamicStop": "true",
+        "InpMaxPositionsPerGroup": "3",
+        "InpSmallRiskPercentPerTrade": "0.5", "InpSmallMaxOpenTrades": "3",
+        "InpSmallMaxDailyLossPercent": "3", "InpSmallMaxDrawdownPercent": "10",
+        "InpSmallDeriskStartPercent": "5", "InpSmallDeriskFloor": "0.25",
+        "InpSmallMaxPortfolioRiskPercent": "3", "InpSmallMaxPositionsPerSymbol": "3",
+        "InpSmallMaxPositionsPerGroup": "3",
+        "InpPropRiskPercentPerTrade": "0.5", "InpPropMaxOpenTrades": "3",
+        "InpPropMaxDailyLossPercent": "3", "InpPropMaxDrawdownPercent": "10",
+        "InpPropDeriskStartPercent": "5", "InpPropDeriskFloor": "0.25",
+        "InpPropMaxPortfolioRiskPercent": "3", "InpPropMaxPositionsPerSymbol": "3",
+        "InpPropMaxPositionsPerGroup": "3",
+        "InpEnableDynamicStop": "true",
         "InpDynamicStopActivateAtR": "0.75", "InpDynamicStopBreakevenAtR": "1",
         "InpDynamicStopATRMult": "1.5", "InpDynamicStopMinImprovementPoints": "2",
         "InpDynamicStopMaxSpreadPoints": "0", "InpDynamicStopMinATR": "0",
@@ -77,16 +92,17 @@ def _manifest(folder: Path) -> Path:
     presets["B_trailing_off"]["InpEnableDynamicStop"] = "false"
     presets["C_trailing_candidate"]["InpDynamicStopATRMult"] = "1.75"
     presets["D_tight_risk"].update({
-        "InpRiskPercentPerTrade": "0.35", "InpMaxOpenTrades": "2",
-        "InpMaxDailyLossPercent": "2", "InpMaxDrawdownPercent": "8",
-        "InpDeriskStartPercent": "3", "InpDeriskFloor": "0.15",
-        "InpMaxPortfolioRiskPercent": "1.5", "InpMaxPositionsPerSymbol": "2",
-        "InpMaxPositionsPerGroup": "2",
+        "InpSmallRiskPercentPerTrade": "0.35", "InpSmallMaxOpenTrades": "2",
+        "InpSmallMaxDailyLossPercent": "2", "InpSmallMaxDrawdownPercent": "8",
+        "InpSmallDeriskStartPercent": "3", "InpSmallDeriskFloor": "0.15",
+        "InpSmallMaxPortfolioRiskPercent": "1.5", "InpSmallMaxPositionsPerSymbol": "2",
+        "InpSmallMaxPositionsPerGroup": "2",
     })
     presets["E_calibrated_risk"].update({
-        "InpRiskPercentPerTrade": "0.45", "InpMaxDailyLossPercent": "2.5",
-        "InpMaxDrawdownPercent": "9", "InpDeriskStartPercent": "4",
-        "InpDeriskFloor": "0.2", "InpMaxPortfolioRiskPercent": "2.5",
+        "InpSmallRiskPercentPerTrade": "0.45", "InpSmallMaxOpenTrades": "3",
+        "InpSmallMaxDailyLossPercent": "2.5", "InpSmallMaxDrawdownPercent": "9",
+        "InpSmallDeriskStartPercent": "4", "InpSmallDeriskFloor": "0.2",
+        "InpSmallMaxPortfolioRiskPercent": "2.5",
     })
     variants = []
     for i, role in enumerate(ROLES):
