@@ -5,7 +5,6 @@ a configuration; Midas's configuration registry and evaluation gates remain auth
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timezone
 
@@ -15,16 +14,12 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.canonical_config import canonical_hash
 from app.database import get_session
 from app.models import ExperimentObservation, ResearchExperiment, ValidationRun
 from app.routes import verify_api_key
 
 router = APIRouter(prefix="/research", tags=["research"])
-
-
-def canonical_hash(value: dict) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _require_aware(value: datetime, field: str) -> datetime:
