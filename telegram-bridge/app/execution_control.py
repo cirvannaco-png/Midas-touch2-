@@ -136,6 +136,17 @@ async def transition_execution(
     if state not in ALLOWED_TRANSITIONS.get(row.state, set()):
         return False
 
+    if state == "ACKED":
+        if not result or result.get("broker_acknowledged") is not True:
+            return False
+        if not (result.get("broker_order_id") or row.broker_order_id):
+            return False
+    if state == "FILLED":
+        if not result or result.get("broker_confirmed_fill") is not True:
+            return False
+        if not any(result.get(key) for key in ("broker_order_id", "broker_deal_id", "broker_position_id")):
+            return False
+
     # Broker-facing terminal states must carry explicit evidence. A timeout or
     # a local cancel request is not proof that the broker did not fill an order.
     if row.state in {"SENT", "ACKED", "RECOVERING"} and state in {"REJECTED", "CANCELLED"}:
