@@ -141,15 +141,13 @@ def test_losing_streak_is_scoped_to_lane_and_flats_break_a_streak() -> None:
     assert report["by_lane"]["SINGLE"]["max_consecutive_losses"] == 2
 
 
-    def test_standard_ledger_refuses_reserved_oos_entries(self):
-        rows = [
-            deal(900, "2026-09-15T10:00:00", "in", 1.0, commission=-1.0),
-        ]
-        with self.assertRaisesRegex(LedgerError, "registered locked-OOS window"):
-            reject_reserved_oos_entries(rows)
-
-    def test_standard_ledger_allows_development_only_deals(self):
-        rows = [
-            deal(901, "2026-08-31T10:00:00", "in", 1.0, commission=-1.0),
-        ]
+def test_standard_ledger_refuses_reserved_oos_entries():
+    rows = [deal(900, "2026-09-15T10:00:00", "in", 1.0, commission=-1.0)]
+    import pytest
+    with pytest.raises(LedgerError, match="registered locked-OOS window"):
         reject_reserved_oos_entries(rows)
+
+
+def test_standard_ledger_allows_development_only_deals():
+    rows = [deal(901, "2026-08-31T10:00:00", "in", 1.0, commission=-1.0)]
+    reject_reserved_oos_entries(rows)
