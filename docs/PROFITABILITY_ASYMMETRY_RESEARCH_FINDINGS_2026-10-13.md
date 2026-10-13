@@ -118,7 +118,7 @@ The hybrid configuration modestly reduced this month's loss relative to baseline
 
 ### Trade-level finding: delayed partials amplify adverse clusters
 
-On 2026-09-04, the same three long entry groups were stopped at the same observed price of 4427.55, well beyond their recorded stop levels near 4459.9. With baseline exits, the third entry group partially exited earlier and booked about $5.58; with the 2.2R proxy partial trigger, the full group remained open and closed for approximately -$141.34. Two other concurrent long groups lost roughly $65.62 and $70.08. This illustrates two risks that must be treated separately:
+On 2026-09-04, three same-direction long entry groups overlapped. Two were closed at the same observed price of 4427.55, well beyond their recorded stop levels near 4459.9, and lost roughly $65.62 and $70.08. The third group closed profitably under baseline partial logic (total +$5.58); with the 2.2R proxy partial trigger, it remained full size until the same 4427.55 exit and lost approximately $141.34. This illustrates two risks that must be treated separately:
 
 1. Raising the first partial trigger can remove small, early realized winners in choppy conditions and leave the full size exposed until the stop is reached.
 2. A stop level does not guarantee the fill price when the next available quote is beyond the stop. The example is a historical quote-stream gap/overshoot in the proxy, not a commission/slippage model and not evidence of identical Exness behavior.
