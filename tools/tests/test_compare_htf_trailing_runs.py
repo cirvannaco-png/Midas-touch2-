@@ -66,7 +66,13 @@ def _make_manifest(folder: Path, *, add_setting_difference=None, omit_swap=False
             "InpRiskPercentPerTrade=0.5||0.1||0.1||1.0||N",
         ]
         if add_setting_difference and role == add_setting_difference[0]:
-            settings.append(f"{add_setting_difference[1]}={add_setting_difference[2]}||N")
+            key, value = add_setting_difference[1], add_setting_difference[2]
+            settings = [
+                f"{key}={value}||N" if line.startswith(key + "=") else line
+                for line in settings
+            ]
+            if not any(line.startswith(key + "=") for line in settings):
+                settings.append(f"{key}={value}||N")
         preset.write_text("\n".join(settings) + "\n", encoding="utf-8")
         report = folder / f"{role}.html"
         report.write_text(f"synthetic fixture report {role}\n", encoding="utf-8")
@@ -135,7 +141,7 @@ def test_missing_weekly_or_monthly_reference_is_rejected(tmp_path):
     payload = json.loads(path.read_text(encoding="utf-8"))
     on_path = tmp_path / payload["variants"][1]["input_preset"]
     on_path.write_text(on_path.read_text(encoding="utf-8").replace("InpDynamicStopUseWeeklyReference=true", "InpDynamicStopUseWeeklyReference=false"), encoding="utf-8")
-    with pytest.raises(MatchedTrailingError, match="InpDynamicStopUseWeeklyReference must be true"):
+    with pytest.raises(MatchedTrailingError, match="requires InpDynamicStopUseWeeklyReference=true"):
         compare_manifest(path)
 
 
