@@ -41,7 +41,7 @@ class ReserveRequest(BaseModel):
 
 class TransitionRequest(BaseModel):
     request_id: str = Field(min_length=1, max_length=128)
-    state: Literal["CHECKED", "SENT", "ACKED", "FILLED", "REJECTED", "CANCELLED", "RECONCILED"]
+    state: Literal["CHECKED", "SENT", "ACKED", "FILLED", "RECOVERING", "REJECTED", "CANCELLED", "RECONCILED"]
     result: dict | None = None
 
 
