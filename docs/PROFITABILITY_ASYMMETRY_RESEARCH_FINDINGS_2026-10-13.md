@@ -35,6 +35,16 @@ All windows ran to their requested end dates in this proxy environment. A separa
 
 The exit hypothesis materially increased average winner relative to average loser and reduced the loss, but did **not** produce positive expectancy or a profit factor above 1 in this development window. The loss streak worsened substantially.
 
+Two intermediate exit variants were also tested in this same development window only; neither was carried into the holdout periods:
+
+| Exit-only variant | Fully closed opening fills | Net P&L on complete fills | Position-level PF | Win rate | Average win / loss | Expectancy per fill | Max loss streak | Platform max DD |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| TP1 0.75R / TP2 1.8R | 202 | -$384.89 | 0.683 | 48.0% | 0.739 | -$1.91 | 8 | $459.63 |
+| TP1 1.0R / TP2 2.0R | 193 | -$409.84 | 0.679 | 43.0% | 0.900 | -$2.12 | 10 | $498.55 |
+
+Both intermediate variants remained unprofitable in development. This weakens the case that simply moving the partial and runner targets to a moderate R multiple will solve the payoff issue. The aggressive 2.2R/2.5R test gave the best win/loss asymmetry of these tested exit-only variants, but still failed positive expectancy on development and the later holdout. No intermediate variant was selected based on OOS results.
+
+
 ### First inspected holdout window — 2026-05-01 to 2026-07-01
 
 | Metric | Baseline | Exit candidate |
