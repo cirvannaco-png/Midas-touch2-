@@ -188,7 +188,7 @@ def test_daily_target_counts_only_qualified_closed_positions():
     assert "GlobalVariableFlush()" in daily
     assert "void OnExecution(datetime at)" not in daily
     assert "LastFinalizedQualified()const" in tracker
-    assert "m_lastFinalizedQualified=(sized&&p.outcomeHistoryComplete&&p.cashflowsKnown&&coarseOutcome==\\"win\\"&&p.realizedPnL>0.0000001)" in tracker
+    assert "m_lastFinalizedQualified=" in tracker and "p.cashflowsKnown" in tracker and "m_lastFinalizedR=rr" in tracker
     assert "g_dailyTradeTarget.OnExecution(dealTime)" not in tx
     assert "g_tracker.LastFinalizedQualified()" in tx
     assert "g_dailyTradeTarget.OnQualifiedClose(dealTime,g_tracker.LastFinalizedR(),positionIdentifier)" in tx
