@@ -171,3 +171,26 @@ def test_execution_audit_is_separated_from_chart_presentation():
     assert "class CExecutionAudit" not in panel
     assert "class CExecutionAudit" in audit
     assert '#include "includes/Execution/ExecutionAudit.mqh"' in ea
+
+
+
+def test_daily_target_counts_only_qualified_closed_positions():
+    daily = read(ROOT / "EA" / "includes" / "Trading" / "DailyTradeTarget.mqh")
+    ea = read(EA)
+    tracker = read(ROOT / "EA" / "includes" / "Trading" / "OutcomeTrackerLive.mqh")
+    tx_start = ea.index("void OnTradeTransaction(")
+    tx = ea[tx_start:]
+
+    assert "void OnQualifiedClose(datetime at,double realizedR,ulong positionId)" in daily
+    assert "m_minQualifiedR(0.25)" in daily
+    assert "realizedR+1e-9<m_minQualifiedR" in daily
+    assert "day_of_week>=1 && t.day_of_week<=5" in daily
+    assert "GlobalVariableFlush()" in daily
+    assert "void OnExecution(datetime at)" not in daily
+    assert "LastFinalizedQualified()const" in tracker
+    assert "m_lastFinalizedQualified=(sized&&p.outcomeHistoryComplete&&p.cashflowsKnown&&coarseOutcome==\\"win\\"&&p.realizedPnL>0.0000001)" in tracker
+    assert "g_dailyTradeTarget.OnExecution(dealTime)" not in tx
+    assert "g_tracker.LastFinalizedQualified()" in tx
+    assert "g_dailyTradeTarget.OnQualifiedClose(dealTime,g_tracker.LastFinalizedR(),positionIdentifier)" in tx
+    assert "InpMinimumQualifiedTradeR=0.25" in ea
+    assert "qualifiedTradeTrackingSupported=InpTrackOutcomes && InpEnableExecution" in ea
