@@ -332,6 +332,7 @@ async def sync_closed_position(
             broker_position_id=body.broker_position_id,
             broker_deal_id=body.broker_deal_id,
             evidence_ref=body.evidence_ref,
+            request_id=body.request_id,
         )
         await session.commit()
     except ValueError as exc:
