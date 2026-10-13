@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 
 def _deal_payload() -> dict:
     return {
@@ -130,7 +132,7 @@ def test_deal_event_rejects_non_finite_values(client):
     payload["profit_cashflow"] = float("nan")
     response = client.post(
         "/execution-ledger/deal-event",
-        json=payload,
-        headers={"X-API-Key": "test-secret-key"},
+        content=json.dumps(payload, allow_nan=True),
+        headers={"X-API-Key": "test-secret-key", "Content-Type": "application/json"},
     )
     assert response.status_code == 422
