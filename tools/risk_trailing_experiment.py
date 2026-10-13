@@ -261,7 +261,14 @@ def _profile_selector_value(profile: str) -> str:
     return {"small_account": "1", "prop_firm": "2"}[profile]
 
 
-def _risk_is_no_looser(candidate: dict[str, str], baseline: dict[str, str], keys: set[str], role: str) -> bool:
+def _risk_is_no_looser(
+    candidate: dict[str, str],
+    baseline: dict[str, str],
+    keys: set[str],
+    role: str,
+    *,
+    allow_more_slots: bool = False,
+) -> bool:
     def value(p: dict[str, str], suffix: str) -> float:
         if suffix in keys:
             k = suffix
@@ -270,22 +277,21 @@ def _risk_is_no_looser(candidate: dict[str, str], baseline: dict[str, str], keys
             k = prefix + suffix.removeprefix("Inp")
         return _float_setting(p, k, role)
 
-    # Lower limits mean no more exposure; an earlier de-risk trigger and lower floor
-    # mean the account is de-risked sooner/more strongly.
-    comparisons = (
-        ("InpRiskPercentPerTrade", "<="),
-        ("InpMaxOpenTrades", "<="),
-        ("InpMaxDailyLossPercent", "<="),
-        ("InpMaxDrawdownPercent", "<="),
-        ("InpDeriskStartPercent", "<="),
-        ("InpDeriskFloor", "<="),
-        ("InpMaxPortfolioRiskPercent", "<="),
-        ("InpMaxPositionsPerSymbol", "<="),
-        ("InpMaxPositionsPerGroup", "<="),
+    # Core money-loss limits must never be looser in a calibrated candidate.
+    core_limits = (
+        "InpRiskPercentPerTrade", "InpMaxDailyLossPercent", "InpMaxDrawdownPercent",
+        "InpDeriskStartPercent", "InpDeriskFloor", "InpMaxPortfolioRiskPercent",
     )
-    for suffix, _op in comparisons:
-        if value(candidate, suffix) > value(baseline, suffix):
-            return False
+    if any(value(candidate, key) > value(baseline, key) for key in core_limits):
+        return False
+
+    # The small-account experiment may test whether wider opportunity capacity
+    # helps, but only while per-trade risk, daily/hard loss controls, de-risking,
+    # and the aggregate portfolio open-risk cap remain no looser than A.
+    # Actual portfolio admission remains authoritative at execution time.
+    slot_limits = ("InpMaxOpenTrades", "InpMaxPositionsPerSymbol", "InpMaxPositionsPerGroup")
+    if not allow_more_slots and any(value(candidate, key) > value(baseline, key) for key in slot_limits):
+        return False
     return True
 
 
@@ -370,8 +376,11 @@ def _validate_presets(presets: dict[str, dict[str, str]], account_profile: str) 
         raise ExperimentError("E may change only the active profile's risk inputs")
     if any(e[k] != base[k] for k in TRAILING_KEYS):
         raise ExperimentError("E must retain A's trailing/partial settings")
-    if not _risk_is_no_looser(e, base, active_risk_keys, "E_calibrated_risk"):
-        raise ExperimentError("E may not loosen the selected account profile's baseline protection")
+    allow_more_slots = account_profile == "small_account"
+    if not _risk_is_no_looser(
+        e, base, active_risk_keys, "E_calibrated_risk", allow_more_slots=allow_more_slots
+    ):
+        raise ExperimentError("E may not loosen core loss limits; prop-firm slot limits must also stay within baseline")
     if all(e[k] == d[k] for k in active_risk_keys):
         raise ExperimentError("E must not duplicate D's risk settings")
 
