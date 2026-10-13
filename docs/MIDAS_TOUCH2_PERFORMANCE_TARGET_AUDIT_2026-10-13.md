@@ -74,3 +74,29 @@ A candidate may be promoted only when evidence is attached to the exact candidat
 - Execution-ledger/reconciliation draft: PR #81
 - Runtime account-profile draft: PR #82
 - Payoff-asymmetry/exit research draft: PR #76
+
+
+## Post-audit remediation status — 2026-10-13
+
+The following source-level fixes have since been merged to `main`:
+
+- **PR #85** — this audit and the explicit strategy-promotion gates.
+- **PR #87** — removed the baked-in 87% account-return label from ledger metrics. Return targets are now optional, passed explicitly as `--target-return-pct`, and scaled to the supplied initial balance.
+- **PR #90** — validated partial-close volumes against broker volume steps/minimums; corrected the weekday-success objective to count only fully closed, reconciled, positive-net positions meeting the configured realized-R threshold (default +0.25R). Entry fills no longer count as wins.
+- **PR #91** — portfolio exposure now includes active pending orders, including their price, stop, current volume, per-symbol and correlation-group capacity. Missing or invalid pending-order protection fails closed. Positions with a stop at/beyond entry no longer create a false "unknown risk" block; their planned stop-price loss is zero, while gap/slippage/cost risk remains possible.
+
+### Verified source checks
+
+The exact source trees were tested before merge on the corresponding PR heads:
+
+- **PR #90:** Midas Touch CI run #1068 passed all six jobs; MetaEditor run #288 reported **0 errors, 0 warnings**.
+- **PR #91:** Midas Touch CI run #1074 passed all six jobs; MetaEditor run #294 reported **0 errors, 0 warnings**.
+- The added regression tests cover optional return targets, broker-valid partial-close requests, complete closed-trade qualification, weekday filtering, persisted deduplication, and pending-order portfolio exposure.
+
+These results establish source/CI and compiler readiness for those changes. They do **not** establish trading profitability or live readiness.
+
+### Outstanding live-trading gates
+
+As of this update, no verified evidence is attached for an actual MT5 Strategy Tester run of the EA using broker-representative ticks plus commission, variable spread, swaps, and slippage; a locked out-of-sample period; walk-forward and Monte Carlo validation; or an Exness demo-forward run covering startup/restart, partial fills/closes, stop modifications, and broker/database reconciliation. The repository integration does not independently prove production bridge secrets or live broker/service health.
+
+**Release decision: compile-ready, not yet certified live-trading-ready.** Keep research/runtime candidates gated and do not infer a 90% win rate or 600% return from the green compiler/CI. Those goals require empirical evidence from the validation gates above. Keep the execution-ledger and account-profile work in draft until its outstanding reconciliation and external-validation blockers are resolved.
