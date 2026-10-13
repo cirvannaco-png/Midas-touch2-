@@ -213,18 +213,34 @@ def _metrics(positions: list[dict], balance: float) -> dict:
 
 def _count_censored(positions: list[dict], deals: list[dict], opens: set[str],
                     start: datetime, end: datetime) -> dict:
+    """Report opened-in-window positions excluded because outcomes are censored."""
     grouped: dict[str, list[dict]] = {}
     for row in deals:
         grouped.setdefault(str(row["position_id"]), []).append(row)
-    completed_ids = {str(p["position_id"]) for p in positions}
     entry_ids = set()
     for pid, rows in grouped.items():
-        entries = [r for r in rows if r["entry"] in {"in", "deal_entry_in", "entry_in", "0", "inout", "in_out", "deal_entry_inout", "entry_inout", "2"}]
+        entries = [r for r in rows if r["entry"] in {
+            "in", "deal_entry_in", "entry_in", "0",
+            "inout", "in_out", "deal_entry_inout", "entry_inout", "2",
+        }]
         if any(start <= row["time"] < end for row in entries):
             entry_ids.add(pid)
+
+    complete_in_window = {
+        str(p["position_id"]) for p in positions
+        if start <= p["opened_at"] < end and p["closed_at"] < end
+    }
+    closed_after_boundary = {
+        str(p["position_id"]) for p in positions
+        if start <= p["opened_at"] < end and p["closed_at"] >= end
+    }
+    open_at_export = entry_ids & {str(pid) for pid in opens}
     return {
         "positions_listed_open_at_export": len(opens),
-        "entry_groups_in_window_not_counted_complete": len(entry_ids - completed_ids),
+        "complete_positions_in_window": len(complete_in_window),
+        "closed_after_window_boundary": len(closed_after_boundary),
+        "opened_positions_still_open_at_export": len(open_at_export),
+        "entry_groups_in_window_not_counted_complete": len(entry_ids - complete_in_window),
     }
 
 
