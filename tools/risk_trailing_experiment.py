@@ -409,12 +409,13 @@ def _metrics(positions: list[dict[str, Any]], ctx: dict[str, Any], simulations: 
 
 
 def _max_streak(pnls: list[float]) -> int:
+    """Count consecutive losing positions; a scratch or win breaks the streak."""
     best = current = 0
     for v in pnls:
         if v < 0:
             current += 1
             best = max(best, current)
-        elif v > 0:
+        else:
             current = 0
     return best
 
