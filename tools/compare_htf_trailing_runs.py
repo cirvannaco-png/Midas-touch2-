@@ -212,8 +212,9 @@ def _metrics(positions: list[dict], balance: float) -> dict:
 
 
 def _count_censored(positions: list[dict], deals: list[dict], opens: set[str],
-                    start: datetime, end: datetime) -> dict:
-    """Report opened-in-window positions excluded because outcomes are censored."""
+                    entry_start: datetime, entry_end: datetime,
+                    maturity_cut: datetime) -> dict:
+    """Report incomplete and boundary-censored cohorts by entry window."""
     grouped: dict[str, list[dict]] = {}
     for row in deals:
         grouped.setdefault(str(row["position_id"]), []).append(row)
@@ -223,24 +224,23 @@ def _count_censored(positions: list[dict], deals: list[dict], opens: set[str],
             "in", "deal_entry_in", "entry_in", "0",
             "inout", "in_out", "deal_entry_inout", "entry_inout", "2",
         }]
-        if any(start <= row["time"] < end for row in entries):
+        if any(entry_start <= row["time"] < entry_end for row in entries):
             entry_ids.add(pid)
-
-    complete_in_window = {
+    complete_ids = {
         str(p["position_id"]) for p in positions
-        if start <= p["opened_at"] < end and p["closed_at"] < end
+        if entry_start <= p["opened_at"] < entry_end and p["closed_at"] < maturity_cut
     }
-    closed_after_boundary = {
+    closed_after_cut_ids = {
         str(p["position_id"]) for p in positions
-        if start <= p["opened_at"] < end and p["closed_at"] >= end
+        if entry_start <= p["opened_at"] < entry_end and p["closed_at"] >= maturity_cut
     }
-    open_at_export = entry_ids & {str(pid) for pid in opens}
+    open_ids_in_window = entry_ids & {str(pid) for pid in opens}
     return {
         "positions_listed_open_at_export": len(opens),
-        "complete_positions_in_window": len(complete_in_window),
-        "closed_after_window_boundary": len(closed_after_boundary),
-        "opened_positions_still_open_at_export": len(open_at_export),
-        "entry_groups_in_window_not_counted_complete": len(entry_ids - complete_in_window),
+        "complete_positions_in_window": len(complete_ids),
+        "closed_after_maturity_cut": len(closed_after_cut_ids),
+        "opened_positions_still_open_at_export": len(open_ids_in_window),
+        "entry_groups_in_window_not_counted_complete": len(entry_ids - complete_ids),
     }
 
 
@@ -278,9 +278,11 @@ def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict)
     pstart, pend = context["period_start"], context["period_end"]
     ostart, oend = context["locked_oos_start"], context["locked_oos_end"]
     period_entries = [p for p in positions if pstart <= p["opened_at"] < pend and p["closed_at"] < pend]
-    oos_entries = [p for p in positions if ostart <= p["opened_at"] < oend and p["closed_at"] < oend]
-    censored_period = _count_censored(positions, deals, opens, pstart, pend)
-    censored_oos = _count_censored(positions, deals, opens, ostart, oend)
+    oos_entries = [p for p in positions if ostart <= p["opened_at"] < oend and p["closed_at"] < pend]
+    censored_period = _count_censored(positions, deals, opens, pstart, pend, pend)
+    # The OOS window is defined by entry time; eligible positions can mature
+    # through context.period_end. Cross-cut positions remain censored.
+    censored_oos = _count_censored(positions, deals, opens, ostart, oend, pend)
     return {
         "role": role,
         "run_id": raw["run_id"],
