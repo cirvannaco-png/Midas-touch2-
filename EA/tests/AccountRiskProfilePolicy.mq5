@@ -65,6 +65,18 @@ int OnInit()
       legacy,smallAccount,propFirm,selected,reason),
       "profile fails closed when one trade can equal or exceed the daily-loss cap");
 
+   reason="";
+   SetLimits(smallAccount,0.40,3,2.0,8.0,3.0,0.20,2.5,3,3);
+   AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
+      legacy,smallAccount,propFirm,selected,reason),
+      "profile fails closed when portfolio open risk exceeds daily-loss cap");
+
+   reason="";
+   SetLimits(smallAccount,0.40,2,2.0,8.0,3.0,0.20,1.5,3,2);
+   AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
+      legacy,smallAccount,propFirm,selected,reason),
+      "profile fails closed when per-symbol positions exceed max open trades");
+
    PrintFormat("AccountRiskProfilePolicy tests: %d failure(s)",failures);
    return failures==0 ? INIT_SUCCEEDED : INIT_FAILED;
   }
