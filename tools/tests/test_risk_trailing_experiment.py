@@ -152,6 +152,16 @@ def test_risk_and_trailing_ablation_must_be_isolated(tmp_path):
         compare_manifest(path, simulations=10)
 
 
+def test_trailing_candidate_cannot_change_partial_exit_rules(tmp_path):
+    path = _manifest(tmp_path)
+    payload = json.loads(path.read_text())
+    preset = tmp_path / payload["variants"][2]["input_preset"]
+    preset.write_text(preset.read_text().replace("InpPartialAtR=2\n", "InpPartialAtR=1.5\n"))
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ExperimentError, match="changes non-risk/trailing settings"):
+        compare_manifest(path, simulations=10)
+
+
 def test_missing_role_is_rejected(tmp_path):
     path = _manifest(tmp_path)
     payload = json.loads(path.read_text())
