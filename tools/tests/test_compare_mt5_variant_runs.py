@@ -202,3 +202,41 @@ def test_open_or_incomplete_locked_oos_entries_are_censored_not_outcomes(tmp_pat
     assert diagnostics["locked_oos_open_incomplete_or_ambiguous_entries"] == 1
     assert diagnostics["locked_oos_censored_or_unresolved_entries"] == 1
     assert diagnostics["ignored_groups"]["incomplete_volume"] == 1
+
+
+def test_cost_columns_must_be_explicit_even_when_the_values_are_zero(tmp_path):
+    manifest_path = _make_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    deals_path = manifest_path.parent / manifest["variants"][0]["deals_csv"]
+    with deals_path.open("r", newline="", encoding="utf-8") as source:
+        reader = csv.DictReader(source)
+        rows = list(reader)
+        fieldnames = [name for name in reader.fieldnames if name != "swap"]
+    with deals_path.open("w", newline="", encoding="utf-8") as target:
+        writer = csv.DictWriter(target, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows({key: value for key, value in row.items() if key in fieldnames} for row in rows)
+    with pytest.raises(ComparisonError, match="explicitly export commission, swap, and fee"):
+        compare_manifest(manifest_path)
+
+
+def test_spread_model_must_be_reproducible(tmp_path):
+    manifest_path = _make_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["test_context"]["spread_model"] = "unknown"
+    for variant in manifest["variants"]:
+        variant["observed_context"]["spread_model"] = "unknown"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ComparisonError, match="spread_model must be real_ticks or fixed_points"):
+        compare_manifest(manifest_path)
+
+
+def test_fixed_spread_model_requires_a_positive_point_value(tmp_path):
+    manifest_path = _make_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["test_context"]["spread_model"] = "fixed_points"
+    for variant in manifest["variants"]:
+        variant["observed_context"]["spread_model"] = "fixed_points"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ComparisonError, match="requires spread_points > 0"):
+        compare_manifest(manifest_path)
