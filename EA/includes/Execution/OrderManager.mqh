@@ -281,6 +281,8 @@ bool COrderManager::IsBrokerVolumeValid(string symbol,double volume)
 bool COrderManager::Submit(const TradeDecisionRecord &decision,double volume,bool useMarket,double maxEntryDeviation,ulong &ticketOut,int legIndex)
   {
    ticketOut=0;
+   if(m_broker==NULL) return false;
+   m_broker.ResetLastRequestStatus();
    if(decision.action!=POLICY_EXECUTE_ONLY && decision.action!=POLICY_EXECUTE_AND_SIGNAL) return false;
    if(decision.decision_id<=0 ||
       (decision.setup.type!=ORDER_TYPE_BUY && decision.setup.type!=ORDER_TYPE_SELL)) return false;

@@ -16,13 +16,14 @@ def test_restored_research_and_execution_tables_are_registered():
         "promotion_decision_audit",
         "execution_ledger",
         "portfolio_reservations",
+        "execution_deal_events",
     }
     assert expected.issubset(Base.metadata.tables)
 
 
 def test_execution_ledger_has_idempotency_and_reconciliation_fields():
     table = Base.metadata.tables["execution_ledger"]
-    assert {"request_id", "signal_id", "state", "request_json", "result_json",
+    assert {"request_id", "portfolio_key", "signal_id", "state", "request_json", "result_json",
             "broker_order_id", "broker_deal_id", "broker_position_id",
             "checked_at", "sent_at", "reconciled_at", "lease_until",
             "latency_ms"}.issubset(table.columns.keys())
@@ -33,7 +34,7 @@ def test_execution_ledger_has_idempotency_and_reconciliation_fields():
 
 def test_portfolio_reservations_preserve_risk_and_lease_state():
     table = Base.metadata.tables["portfolio_reservations"]
-    assert {"request_id", "symbol", "direction", "risk_r", "volatility",
+    assert {"request_id", "portfolio_key", "symbol", "direction", "risk_r", "volatility",
             "factor_exposure", "status", "lease_until"}.issubset(table.columns.keys())
     assert table.columns["request_id"].unique is True
     assert table.columns["lease_until"].nullable is False
@@ -60,7 +61,8 @@ def test_midas_specific_models_remain_registered():
 
 
 def test_migration_is_additive_and_follows_current_head():
-    migration = Path(__file__).parents[1] / "migrations" / "versions" / "0017_restore_durable_execution_research_schema.py"
+    bridge_root = Path(__file__).parents[1]
+    migration = bridge_root / "migrations" / "versions" / "0017_restore_durable_execution_research_schema.py"
     source = migration.read_text(encoding="utf-8")
     assert 'revision = "0017"' in source
     assert 'down_revision = "0016"' in source
@@ -78,14 +80,13 @@ def test_migration_is_additive_and_follows_current_head():
         assert f'"{table}"' in source
 
 
-def test_alembic_graph_has_one_head_at_0018():
+def test_alembic_graph_has_one_head_at_0020():
     bridge_root = Path(__file__).parents[1]
     config = Config(str(bridge_root / "alembic.ini"))
     config.set_main_option("script_location", str(bridge_root / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_current_head() == "0018"
-    assert scripts.get_heads() == ["0018"]
-
+    assert scripts.get_current_head() == "0020"
+    assert scripts.get_heads() == ["0020"]
 
 
 def test_signal_outcomes_keep_signed_cashflows_separate_from_cost_magnitudes():
@@ -93,3 +94,54 @@ def test_signal_outcomes_keep_signed_cashflows_separate_from_cost_magnitudes():
     assert {"commission_cashflow", "swap_cashflow", "broker_fee_cashflow"}.issubset(
         table.columns.keys()
     )
+
+
+def test_portfolio_scope_migration_follows_outcome_completeness_migration():
+    bridge_root = Path(__file__).parents[1]
+    migration = bridge_root / "migrations" / "versions" / "0019_scope_execution_portfolios.py"
+    source = migration.read_text(encoding="utf-8")
+    assert 'revision = "0019"' in source
+    assert 'down_revision = "0018"' in source
+    assert 'server_default=sa.text("' + "'legacy-unscoped'" + '")' in source
+    assert '"portfolio_key"' in source
+
+
+def test_execution_deal_events_are_deduplicated_by_account_and_broker_deal():
+    table = Base.metadata.tables["execution_deal_events"]
+    assert {
+        "portfolio_key",
+        "broker_deal_id",
+        "broker_order_id",
+        "broker_position_id",
+        "entry_type",
+        "deal_type",
+        "volume",
+        "price",
+        "profit_cashflow",
+        "commission_cashflow",
+        "swap_cashflow",
+        "fee_cashflow",
+        "cashflows_known",
+        "event_fingerprint",
+        "payload_json",
+    }.issubset(table.columns.keys())
+    constraints = [
+        constraint
+        for constraint in table.constraints
+        if constraint.__class__.__name__ == "UniqueConstraint"
+    ]
+    assert any(
+        set(constraint.columns.keys()) == {"portfolio_key", "broker_deal_id"}
+        for constraint in constraints
+    )
+
+
+def test_deal_event_migration_follows_portfolio_scope():
+    bridge_root = Path(__file__).parents[1]
+    migration = bridge_root / "migrations" / "versions" / "0020_execution_deal_events.py"
+    source = migration.read_text(encoding="utf-8")
+    assert 'revision = "0020"' in source
+    assert 'down_revision = "0019"' in source
+    assert '"execution_deal_events"' in source
+    assert "def upgrade()" in source
+    assert "def downgrade()" in source

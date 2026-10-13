@@ -387,9 +387,16 @@ class PromotionDecisionAudit(Base):
 
 class ExecutionLedger(Base):
     __tablename__ = "execution_ledger"
-    __table_args__ = (Index("ix_exec_ledger_state", "state"),)
+    __table_args__ = (
+        Index("ix_exec_ledger_state", "state"),
+        Index("ix_execution_ledger_portfolio_key", "portfolio_key"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_key = Column(
+        String, nullable=False, default="legacy-unscoped",
+        server_default=sa.text("'legacy-unscoped'"),
+    )
     request_id = Column(String, unique=True, nullable=False, index=True)
     signal_id = Column(String, nullable=True, index=True)
     symbol = Column(String, nullable=False)
@@ -409,8 +416,13 @@ class ExecutionLedger(Base):
 
 class PortfolioReservation(Base):
     __tablename__ = "portfolio_reservations"
+    __table_args__ = (Index("ix_portfolio_reservations_portfolio_key", "portfolio_key"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_key = Column(
+        String, nullable=False, default="legacy-unscoped",
+        server_default=sa.text("'legacy-unscoped'"),
+    )
     request_id = Column(String, unique=True, nullable=False, index=True)
     symbol = Column(String, nullable=False)
     direction = Column(String, nullable=False)
@@ -420,3 +432,45 @@ class PortfolioReservation(Base):
     status = Column(String, nullable=False, index=True)
     lease_until = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ExecutionDealEvent(Base):
+    """Immutable, idempotent broker-deal evidence used for restart reconciliation."""
+
+    __tablename__ = "execution_deal_events"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "portfolio_key",
+            "broker_deal_id",
+            name="uq_execution_deal_portfolio_deal",
+        ),
+        Index(
+            "ix_execution_deal_events_position",
+            "portfolio_key",
+            "broker_position_id",
+        ),
+        Index(
+            "ix_execution_deal_events_order",
+            "portfolio_key",
+            "broker_order_id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_key = Column(String, nullable=False)
+    broker_deal_id = Column(String, nullable=False)
+    broker_order_id = Column(String, nullable=True)
+    broker_position_id = Column(String, nullable=False)
+    symbol = Column(String, nullable=False)
+    entry_type = Column(String, nullable=False)
+    deal_type = Column(String, nullable=False)
+    volume = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    profit_cashflow = Column(Float, nullable=False)
+    commission_cashflow = Column(Float, nullable=False)
+    swap_cashflow = Column(Float, nullable=False)
+    fee_cashflow = Column(Float, nullable=False)
+    cashflows_known = sa.Column(sa.Boolean, nullable=False)
+    event_fingerprint = Column(String(64), nullable=False)
+    payload_json = Column(JSON, nullable=False)
+    received_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
