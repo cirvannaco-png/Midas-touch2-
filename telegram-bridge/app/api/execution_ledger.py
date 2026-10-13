@@ -142,6 +142,7 @@ class PositionRiskUpdateRequest(BaseModel):
 
 class ClosedPositionRequest(BaseModel):
     portfolio_key: str = Field(min_length=1, max_length=128)
+    request_id: str | None = Field(default=None, max_length=128)
     broker_position_id: str = Field(min_length=1, max_length=100)
     broker_deal_id: str = Field(min_length=1, max_length=100)
     evidence_ref: str = Field(min_length=1, max_length=256)
@@ -243,6 +244,7 @@ async def position_closed(
             broker_position_id=body.broker_position_id,
             broker_deal_id=body.broker_deal_id,
             evidence_ref=body.evidence_ref,
+            request_id=body.request_id,
         )
         if not reconciled:
             await session.rollback()
