@@ -17,6 +17,10 @@ input double InpDynamicStopMaxATR = 0.0;        // 0 = no volatility ceiling
 input int    InpDynamicStopModifyIntervalSec = 5; // minimum seconds between successful SL changes per ticket
 input bool   InpDynamicStopUseStructuralAnchor = true; // prefer an explicit structure-derived anchor when supplied
 input double InpDynamicStopStructuralBufferATR = 0.10; // buffer beyond the structural anchor, in ATR
+input bool   InpDynamicStopUseHTFReferenceLevels = false; // research candidate; keep off until matched MT5 validation passes
+input bool   InpDynamicStopUseWeeklyReference = true; // use previous completed W1 low for BUY / high for SELL
+input bool   InpDynamicStopUseMonthlyReference = true; // use previous completed MN1 low for BUY / high for SELL
+input double InpDynamicStopHTFMaxDistanceATR = 4.0; // reject stale/distant HTF levels; 0 disables HTF anchors
 
 #endif
 //+------------------------------------------------------------------+
