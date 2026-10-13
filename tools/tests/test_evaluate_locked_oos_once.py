@@ -91,6 +91,9 @@ def _make_fixture(root: Path):
         "maturity_end": "2026-01-01T00:00:00Z",
         "external_freshness_attestation_required": True,
     }, indent=2), encoding="utf-8")
+    point_spec = root / "symbol-spec.json"
+    point_spec.write_text("synthetic symbol specification used only by unit tests\n", encoding="utf-8")
+    point_spec_sha = hashlib.sha256(point_spec.read_bytes()).hexdigest()
     freeze = root / "frozen-config.json"
     freeze.write_text(json.dumps({
         "schema_version": 1,
@@ -98,6 +101,8 @@ def _make_fixture(root: Path):
         "frozen_at": "2026-10-13T00:00:00Z",
         "matched_manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
         "point_value_per_lot": 1.0,
+        "point_value_source_path": point_spec.name,
+        "point_value_source_sha256": point_spec_sha,
         "spread_widening_points": [0],
         "slippage_points_per_fill": [0],
         "simulations": 100,
