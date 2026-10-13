@@ -361,12 +361,12 @@ def compare_manifest(manifest_path: str | Path) -> dict:
         run_ids.add(data["run_id"])
         preset_hash = data["artifacts"]["input_preset"]["sha256"]
         if preset_hash in preset_hashes:
-            raise MatchedTrailingError("HTF on/off .set files must differ")
+            raise MatchedTrailingError("regime-filter off/on .set files must differ")
         preset_hashes.add(preset_hash)
         loaded[role] = data
     if set(loaded) != set(ROLES):
-        raise MatchedTrailingError("both htf_trailing_off and htf_trailing_on roles are required")
-    off, on = loaded["htf_trailing_off"], loaded["htf_trailing_on"]
+        raise MatchedTrailingError("both regime_filter_off and regime_filter_on roles are required")
+    off, on = loaded["regime_filter_off"], loaded["regime_filter_on"]
     off_settings, on_settings = off["settings"], on["settings"]
     if set(off_settings) != set(on_settings):
         missing_off = sorted(set(on_settings) - set(off_settings))
@@ -379,9 +379,6 @@ def compare_manifest(manifest_path: str | Path) -> dict:
         )
     if off_settings[TOGGLE].strip().lower() not in {"false", "0"} or on_settings[TOGGLE].strip().lower() not in {"true", "1"}:
         raise MatchedTrailingError("regime filter .set toggles have incorrect effective values")
-    for name in (WEEKLY, MONTHLY):
-        if off_settings[name].strip().lower() not in {"true", "1"} or on_settings[name].strip().lower() not in {"true", "1"}:
-            raise MatchedTrailingError(f"{name} must be true in both matched variants")
     # The historical dataset artifact must be the one common to both declared contexts.
     report = {
         "schema_version": 1,
