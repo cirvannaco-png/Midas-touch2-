@@ -178,9 +178,23 @@ async def transition_execution(
     # Broker-facing terminal states must carry explicit evidence. A timeout or
     # a local cancel request is not proof that the broker did not fill an order.
     if row.state in {"SENT", "ACKED", "RECOVERING"} and state in {"REJECTED", "CANCELLED"}:
-        if not result or result.get("broker_confirmed_terminal") is not True:
-            return False
-        if not isinstance(result.get("evidence_ref"), str) or not result["evidence_ref"].strip():
+        evidence_ref = result.get("evidence_ref") if result else None
+        # A durable local assertion that no broker API call was attempted is
+        # sufficient only for that narrow case. Once a send was attempted,
+        # release still requires broker-confirmed terminal evidence.
+        proven_not_submitted = (
+            result is not None
+            and result.get("submission_attempted") is False
+            and isinstance(evidence_ref, str)
+            and bool(evidence_ref.strip())
+        )
+        broker_terminal_confirmed = (
+            result is not None
+            and result.get("broker_confirmed_terminal") is True
+            and isinstance(evidence_ref, str)
+            and bool(evidence_ref.strip())
+        )
+        if not proven_not_submitted and not broker_terminal_confirmed:
             return False
     if state == "RECONCILED":
         if not result or result.get("broker_reconciled") is not True:
