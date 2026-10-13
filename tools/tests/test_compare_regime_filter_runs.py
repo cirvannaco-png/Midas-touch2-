@@ -78,8 +78,10 @@ def test_regime_filter_pair_is_matched_and_cost_inclusive(tmp_path):
     assert report["only_effective_set_difference"] == "InpRequireTrendingRegime"
     assert report["matched_context_verified"] is True
     assert report["promotion_recommendation"] is None
-    assert report["variants"]["regime_filter_off"]["metrics"]["locked_oos"]["completed_positions"] == 2
-    assert report["on_minus_off_deltas"]["locked_oos"]["net_pnl"] == 0
+    assert report["variants"]["regime_filter_off"]["metrics"]["development"]["completed_positions"] == 1
+    assert report["on_minus_off_deltas"]["development"]["net_pnl"] == 0
+    assert "locked_oos" not in report["variants"]["regime_filter_off"]["metrics"]
+    assert report["locked_oos_status"].startswith("withheld")
 
 
 def test_regime_pair_rejects_any_second_setting_change(tmp_path):
