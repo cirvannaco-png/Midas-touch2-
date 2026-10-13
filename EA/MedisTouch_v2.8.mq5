@@ -1022,6 +1022,55 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    RefreshTradeControlPanel();
   }
 
+bool SendLedgerDealEvent(const ulong dealTicket,const ulong positionIdentifier)
+  {
+   if(!g_executionLedger.Ready()) return !InpRequireExecutionLedger;
+   if(dealTicket==0 || positionIdentifier==0 || !HistoryDealSelect(dealTicket)) return false;
+
+   string symbol=HistoryDealGetString(dealTicket,DEAL_SYMBOL);
+   if(symbol=="") return false;
+   ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
+   ENUM_DEAL_TYPE dealType=(ENUM_DEAL_TYPE)HistoryDealGetInteger(dealTicket,DEAL_TYPE);
+   string entryType="IN";
+   if(entry==DEAL_ENTRY_OUT) entryType="OUT";
+   else if(entry==DEAL_ENTRY_OUT_BY) entryType="OUT_BY";
+   else if(entry==DEAL_ENTRY_INOUT) entryType="INOUT";
+   string dealSide=(dealType==DEAL_TYPE_BUY)?"BUY":"SELL";
+
+   bool positionOpen=IsPositionIdentifierOpen(positionIdentifier);
+   double remainingVolume=0.0;
+   double riskR=0.0;
+   string positionDirection=(entry==DEAL_ENTRY_IN)?dealSide:((dealSide=="BUY")?"SELL":"BUY");
+   if(entry==DEAL_ENTRY_INOUT) positionDirection=dealSide;
+   if(positionOpen)
+     {
+      ulong positionTicket=g_broker.PositionTicketForIdentifier(symbol,positionIdentifier);
+      if(positionTicket==0 || !PositionSelectByTicket(positionTicket)) return false;
+      long positionType=PositionGetInteger(POSITION_TYPE);
+      positionDirection=(positionType==POSITION_TYPE_BUY)?"BUY":"SELL";
+      remainingVolume=PositionGetDouble(POSITION_VOLUME);
+      double stop=PositionGetDouble(POSITION_SL);
+      double openPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+      if(stop<=0.0 || openPrice<=0.0 || remainingVolume<=0.0) return false;
+      double riskMoney=g_risk.RiskAmountForLots(symbol,remainingVolume,openPrice,stop);
+      if(!RiskRFromMoney(riskMoney,riskR)) return false;
+     }
+
+   double volume=HistoryDealGetDouble(dealTicket,DEAL_VOLUME);
+   double price=HistoryDealGetDouble(dealTicket,DEAL_PRICE);
+   double profit=HistoryDealGetDouble(dealTicket,DEAL_PROFIT);
+   double commission=HistoryDealGetDouble(dealTicket,DEAL_COMMISSION);
+   double swap=HistoryDealGetDouble(dealTicket,DEAL_SWAP);
+   double fee=HistoryDealGetDouble(dealTicket,DEAL_FEE);
+   ulong orderId=(ulong)HistoryDealGetInteger(dealTicket,DEAL_ORDER);
+   string evidence=StringFormat("mt5-deal:%I64u",dealTicket);
+   string requestId=g_executionLedger.RequestIdForPosition(positionIdentifier);
+   return g_executionLedger.DealEvent(requestId,dealTicket,orderId,positionIdentifier,
+                                      symbol,entryType,dealSide,positionDirection,
+                                      volume,price,profit,commission,swap,fee,true,
+                                      positionOpen,remainingVolume,riskR,0.0,evidence);
+  }
+
 void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result)
   {
    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD || trans.deal==0) return;
@@ -1032,6 +1081,18 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
    ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
    ulong positionIdentifier=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
    if(positionIdentifier==0) return;
+
+   // Persist every broker deal before local outcome shortcuts can return.
+   // A failed event write marks the ledger unhealthy; new entries remain blocked
+   // until startup/history reconciliation successfully replays broker evidence.
+   if(!SendLedgerDealEvent(trans.deal,positionIdentifier))
+     {
+      g_executionLedgerHealthy=false;
+      g_execAudit.Log("LEDGER_DEAL_EVENT_FAILED",
+                      "broker deal evidence could not be persisted; execution admission remains blocked",
+                      0,positionIdentifier,HistoryDealGetDouble(trans.deal,DEAL_VOLUME),
+                      HistoryDealGetDouble(trans.deal,DEAL_PRICE));
+     }
 
    datetime dealTime=(datetime)HistoryDealGetInteger(trans.deal,DEAL_TIME);
    double price=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
