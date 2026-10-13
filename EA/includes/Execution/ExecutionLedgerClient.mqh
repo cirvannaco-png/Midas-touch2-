@@ -135,18 +135,22 @@ public:
       if(!m_ready || positionIdentifier==0 || riskR<=0.0 || !MathIsValidNumber(riskR)) return false;
       string requestId=requestIdOverride;
       if(StringLen(requestId)==0) requestId=RequestIdForPosition(positionIdentifier);
+      string orderIdJson=(orderId>0)?StringFormat("\"%I64u\"",orderId):"null";
+      string dealIdJson=(dealId>0)?StringFormat("\"%I64u\"",dealId):"null";
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_order_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
-         JsonSafe(m_portfolioKey),JsonSafe(requestId),positionIdentifier,orderId,dealId,
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_order_id\":%s,\"broker_deal_id\":%s,\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
+         JsonSafe(m_portfolioKey),JsonSafe(requestId),positionIdentifier,orderIdJson,dealIdJson,
          JsonSafe(symbol),JsonSafe(direction),riskR,MathMax(0.0,volatility),JsonSafe(evidenceRef));
       return PostJson("/execution-ledger/sync-position",payload);
      }
 
    bool SyncPendingOrder(const ulong orderTicket,const string symbol,const string direction,
-                         const double riskR,const double volatility,const string evidenceRef)
+                         const double riskR,const double volatility,const string evidenceRef,
+                         const string requestIdOverride="")
      {
       if(!m_ready || orderTicket==0 || riskR<=0.0 || !MathIsValidNumber(riskR)) return false;
-      string requestId=RequestIdForPendingOrder(orderTicket);
+      string requestId=requestIdOverride;
+      if(StringLen(requestId)==0) requestId=RequestIdForPendingOrder(orderTicket);
       string payload=StringFormat(
          "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_order_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),orderTicket,
