@@ -238,10 +238,14 @@ def _validate_risk_values(p: dict[str, str], keys: set[str], role: str) -> None:
         raise ExperimentError(f"{role} de-risk floor must be in (0, 1]")
     if portfolio < risk:
         raise ExperimentError(f"{role} portfolio risk cap must be at least per-trade risk")
+    if portfolio > daily:
+        raise ExperimentError(f"{role} portfolio open-risk cap must not exceed the daily-loss cap")
     for label, value in (("max open trades", open_trades), ("max positions per symbol", per_symbol),
                          ("max positions per group", per_group)):
         if value < 1 or not value.is_integer():
             raise ExperimentError(f"{role} {label} must be a positive integer")
+    if per_symbol > open_trades or per_group > open_trades:
+        raise ExperimentError(f"{role} per-symbol and per-group limits cannot exceed max open trades")
 
 
 def _profile_selector_value(profile: str) -> str:
