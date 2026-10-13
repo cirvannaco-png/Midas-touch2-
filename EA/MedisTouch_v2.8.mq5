@@ -241,6 +241,8 @@ void RefreshTradeControlPanel();
 bool RiskRFromMoney(double riskMoney,double &riskR);
 bool ReconcileBrokerStateSnapshot();
 bool SyncHistoricalClosedPositions();
+bool SyncHistoricalDealEvents();
+bool SendLedgerDealEvent(const ulong dealTicket,const ulong positionIdentifier);
 bool IsPositionIdentifierOpen(const ulong positionIdentifier);
 bool ParseManagedOrderComment(const string comment,long &decisionId,int &legIndex);
 bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legIndex,const double riskMoney,const double volatility,string &requestId);
@@ -540,8 +542,46 @@ bool ReconcileBrokerStateSnapshot()
         }
      }
 
+   // Replay broker deal history before declaring the ledger healthy. This repairs
+   // missed callbacks after terminal restarts and is idempotent by broker deal ID.
+   if(!SyncHistoricalDealEvents())
+      allOk=false;
    if(!SyncHistoricalClosedPositions())
       allOk=false;
+   return allOk;
+  }
+
+bool SyncHistoricalDealEvents()
+  {
+   if(!g_executionLedger.Ready()) return !InpRequireExecutionLedger;
+   if(!HistorySelect(0,TimeCurrent())) return false;
+   ulong deals[];
+   int total=HistoryDealsTotal();
+   ArrayResize(deals,total);
+   for(int i=0;i<total;i++) deals[i]=HistoryDealGetTicket(i);
+
+   bool allOk=true;
+   for(int i=0;i<ArraySize(deals);i++)
+     {
+      ulong deal=deals[i];
+      if(deal==0 || !HistoryDealSelect(deal)) { allOk=false; continue; }
+      if((ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=InpMagicNumber) continue;
+      ENUM_DEAL_TYPE type=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
+      if(type!=DEAL_TYPE_BUY && type!=DEAL_TYPE_SELL) continue;
+      ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+      if(entry!=DEAL_ENTRY_IN && entry!=DEAL_ENTRY_OUT &&
+         entry!=DEAL_ENTRY_OUT_BY && entry!=DEAL_ENTRY_INOUT) continue;
+      ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+      if(positionId==0) { allOk=false; continue; }
+      if(!SendLedgerDealEvent(deal,positionId))
+        {
+         g_execAudit.Log("LEDGER_HISTORY_DEAL_REPLAY_FAILED",
+                         "historical broker deal could not be durably replayed",
+                         0,positionId,HistoryDealGetDouble(deal,DEAL_VOLUME),
+                         HistoryDealGetDouble(deal,DEAL_PRICE));
+         allOk=false;
+        }
+     }
    return allOk;
   }
 
