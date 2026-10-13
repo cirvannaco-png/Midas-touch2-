@@ -122,7 +122,16 @@ async def test_transition_order_is_enforced_and_terminal_state_cannot_resurrect(
                 select(PortfolioReservation).where(PortfolioReservation.request_id == "req-3")
             )
             assert reservation.status == "ACTIVE"
-            assert await transition_execution(session, request_id="req-3", state="RECONCILED")
+            assert await transition_execution(
+                session,
+                request_id="req-3",
+                state="RECONCILED",
+                result={
+                    "broker_reconciled": True,
+                    "broker_deal_id": "789",
+                    "evidence_ref": "deal-history:789",
+                },
+            )
             await session.commit()
 
         async with factory() as session:
@@ -171,7 +180,21 @@ async def test_expired_lease_requires_reconciliation_and_keeps_risk_reserved():
             assert row.state == "RECOVERING"
             assert reservation.status == "ACTIVE"
             # A recovered/ambiguous broker request cannot be silently resent.
-            assert await reserve_execution(
+            assert not await transition_execution(
+                session, request_id="req-4", state="RECONCILED"
+            )
+            assert await transition_execution(
+                session,
+                request_id="req-4",
+                state="RECONCILED",
+                result={
+                    "broker_reconciled": True,
+                    "broker_order_found": False,
+                    "evidence_ref": "broker-history-window:2026-10-13",
+                },
+            )
+            await session.commit()
+            assert not await reserve_execution(
                 session,
                 request_id="req-4",
                 signal_id="sig-4",
@@ -180,6 +203,6 @@ async def test_expired_lease_requires_reconciliation_and_keeps_risk_reserved():
                 risk_r=0.75,
                 volatility=1.2,
                 factors={"gold": 1.0},
-            ) is False
+            )
     finally:
         await engine.dispose()
