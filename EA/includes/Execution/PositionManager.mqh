@@ -26,6 +26,7 @@ private:
    datetime              m_lastModifyTimes[];
 
    double CurrentExitPrice(string symbol,bool isBuy);
+   bool   PartialVolumeForPosition(string symbol,double currentVolume,double &closeVolume);
    double RMultiple(const TradeDecisionRecord &dec,double entry,double price);
    bool   CanModifyNow(ulong ticket);
    void   RecordModification(ulong ticket);
@@ -76,6 +77,38 @@ double CPositionManager::CurrentExitPrice(string symbol,bool isBuy)
    return isBuy ? tick.bid : tick.ask;
   }
 
+bool CPositionManager::PartialVolumeForPosition(string symbol,double currentVolume,double &closeVolume)
+  {
+   closeVolume=0.0;
+   if(symbol=="" || !MathIsValidNumber(currentVolume) || currentVolume<=0.0 ||
+      !MathIsValidNumber(m_partialFraction) || m_partialFraction<=0.0 || m_partialFraction>=1.0)
+      return false;
+
+   double step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+   double minVolume=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+   if(!MathIsValidNumber(step) || !MathIsValidNumber(minVolume) || step<=0.0 || minVolume<=0.0)
+      return false;
+
+   int volumeDigits=0;
+   for(int d=0;d<=8;d++)
+      if(MathAbs(step-NormalizeDouble(step,d))<1e-9) { volumeDigits=d; break; }
+
+   // Round down to the broker's volume step and validate both sides of the
+   // partial close. A legal close amount that leaves an illegal remainder
+   // is not a legal partial close. Never silently turn it into a full close.
+   closeVolume=NormalizeDouble(MathFloor((currentVolume*m_partialFraction+1e-10)/step)*step,volumeDigits);
+   double remainingVolume=NormalizeDouble(currentVolume-closeVolume,volumeDigits);
+   double tolerance=step*0.25;
+   if(closeVolume<minVolume-tolerance || remainingVolume<minVolume-tolerance ||
+      closeVolume>=currentVolume-tolerance)
+     {
+      closeVolume=0.0;
+      return false;
+     }
+   return true;
+  }
+
+//+------------------------------------------------------------------+
 double CPositionManager::RMultiple(const TradeDecisionRecord &dec,double entry,double price)
   {
    bool isBuy=(dec.setup.type==ORDER_TYPE_BUY);
@@ -179,9 +212,13 @@ void CPositionManager::OnTick(double currentAtr)
       ENUM_TRADE_STATE stateAfterStop=m_orders.StateAt(i);
       if(stateAfterStop==TS_PROTECTED && r>=m_partialAtR)
         {
-         double vol=m_orders.VolumeAt(i)*m_partialFraction;
-         double minVol=SymbolInfoDouble(dec.symbol,SYMBOL_VOLUME_MIN);
-         if(vol>=minVol && m_broker.ClosePartial(ticket,vol))
+         double currentVolume=PositionGetDouble(POSITION_VOLUME);
+         double closeVolume=0.0;
+         // Skip locally when broker volume constraints make a partial close
+         // impossible. This avoids repeating a predictably invalid request
+         // on every tick while trailing-stop management continues normally.
+         if(PartialVolumeForPosition(dec.symbol,currentVolume,closeVolume) &&
+            m_broker.ClosePartial(ticket,closeVolume))
             m_orders.TransitionAt(i,TS_PARTIAL);
         }
       if(m_orders.StateAt(i)==TS_PARTIAL)
