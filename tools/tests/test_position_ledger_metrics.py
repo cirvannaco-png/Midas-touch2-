@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from tools.position_ledger_metrics import calculate_metrics, reconstruct_positions
+from tools.position_ledger_metrics import LedgerError, calculate_metrics, reconstruct_positions, reject_reserved_oos_entries
 
 
 def deal(pid, stamp, entry, volume, profit=0.0, commission=0.0, risk_cash=0.0, lane="A", row=2):
@@ -139,3 +139,17 @@ def test_losing_streak_is_scoped_to_lane_and_flats_break_a_streak() -> None:
     report = calculate_metrics(positions, 10000.0, ignored)
     assert report["by_lane"]["STRICT"]["max_consecutive_losses"] == 2
     assert report["by_lane"]["SINGLE"]["max_consecutive_losses"] == 2
+
+
+    def test_standard_ledger_refuses_reserved_oos_entries(self):
+        rows = [
+            deal(900, "2026-09-15T10:00:00", "in", 1.0, commission=-1.0),
+        ]
+        with self.assertRaisesRegex(LedgerError, "registered locked-OOS window"):
+            reject_reserved_oos_entries(rows)
+
+    def test_standard_ledger_allows_development_only_deals(self):
+        rows = [
+            deal(901, "2026-08-31T10:00:00", "in", 1.0, commission=-1.0),
+        ]
+        reject_reserved_oos_entries(rows)
