@@ -351,9 +351,10 @@ void MarkLedgerSubmissionAccepted(const string requestId)
 
    if(orderId>0)
      {
-      string ack=StringFormat(
-         "{\"broker_acknowledged\":true,\"broker_order_id\":\"%I64u\",\"broker_deal_id\":\"%I64u\",\"broker_position_id\":\"%I64u\"}",
-         orderId,dealId,positionId);
+      string ack=StringFormat("{\"broker_acknowledged\":true,\"broker_order_id\":\"%I64u\"",orderId);
+      if(dealId>0) ack+=StringFormat(",\"broker_deal_id\":\"%I64u\"",dealId);
+      if(positionId>0) ack+=StringFormat(",\"broker_position_id\":\"%I64u\"",positionId);
+      ack+="}";
       if(!g_executionLedger.Transition(requestId,"ACKED",ack))
         {
          g_executionLedgerHealthy=false;
