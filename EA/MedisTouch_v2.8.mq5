@@ -332,9 +332,9 @@ bool AcquireAccountProfileLock(string &reasonOut)
       PrintFormat("MedisTouch: %s",reasonOut);
       return true;
      }
-   if(!storedProfileKnown)
+   if(!storedProfileKnown && !InpConfirmAccountProfileChange)
      {
-      reasonOut="persisted account profile identifier is unknown; confirm recovery/review before switching profiles";
+      reasonOut="persisted account profile identifier is unknown; set InpConfirmAccountProfileChange=true after review and while the account is flat";
       return false;
      }
    if(!InpConfirmAccountProfileChange)
@@ -380,6 +380,7 @@ int OnInit()
                g_effectiveProfile.maxPositionsPerSymbol,g_effectiveProfile.maxPositionsPerGroup,g_effectiveProfile.maxDailyLossPercent,
                g_effectiveProfile.maxDrawdownPercent,g_effectiveProfile.deriskStartPercent,g_effectiveProfile.deriskFloor,
                InpConfirmMicroResearchExecution ? "true" : "false",configSignature);
+   PrintFormat("MedisTouch PROFILE_SELECTION: requested=%d effective=%s pending_switch=%s",(int)InpAccountProfile,g_effectiveProfile.profileName,g_profileSwitchBlocked ? "true" : "false");
    if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH)
       Print("MedisTouch WARNING: MICRO_RESEARCH uses an aggressive experimental risk envelope. StrategyTune filters and adaptive loss-streak logic are not ported by this profile. Use Strategy Tester or demo only; no profitability claim is made.");
    g_pool.Configure(_Symbol,InpMaxHistoryBars,InpSwingStrength,InpFVGMinSizeATR,InpInternalLiqThresholdATR,InpRVOLLookback,InpVALookbackBars,InpVANumBins,InpVAPercent/100.0,InpOBDisplacementATRMult,InpOBMinBodyRatio);g_chartCtx=g_pool.Get(_Period);g_trendCtx=g_pool.Get(InpTrendTF);g_bosCtx=g_pool.Get(InpBOSTF);g_liqCtx=g_pool.Get(InpLiquidityTF);g_fvgCtx=g_pool.Get(InpFVGTF);g_htfObCtx=g_pool.Get(InpHtfObTF);if(g_chartCtx==NULL||g_trendCtx==NULL||g_bosCtx==NULL||g_liqCtx==NULL||g_fvgCtx==NULL||g_htfObCtx==NULL)return INIT_FAILED;
