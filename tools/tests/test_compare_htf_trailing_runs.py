@@ -110,7 +110,7 @@ def _make_manifest(folder: Path, *, add_setting_difference=None, omit_swap=False
 
 
 def test_valid_matched_pair_hashes_files_and_reports_cost_inclusive_metrics(tmp_path):
-    report = compare_manifest(_make_manifest(tmp_path))
+    report = compare_manifest(_make_manifest(tmp_path), include_locked_oos=True)
     assert report["matched_context_verified"] is True
     assert report["dataset_digest_verified"] is True
     assert report["only_effective_set_difference"] == "InpDynamicStopUseHTFReferenceLevels"
@@ -153,3 +153,10 @@ def test_missing_cost_column_is_rejected(tmp_path):
     path = _make_manifest(tmp_path, omit_swap=True)
     with pytest.raises(MatchedTrailingError, match="explicitly export commission, swap, and fee"):
         compare_manifest(path)
+
+
+def test_default_comparison_withholds_locked_oos_metrics(tmp_path):
+    report = compare_manifest(_make_manifest(tmp_path))
+    assert "locked_oos" not in report["variants"]["htf_trailing_off"]["metrics"]
+    assert "development" in report["variants"]["htf_trailing_off"]["metrics"]
+    assert report["locked_oos_status"] == "scored only by the one-shot gate"
