@@ -78,7 +78,9 @@ def test_automated_and_manual_orders_use_effective_profile_limits():
 
 def test_micro_profile_cannot_execute_without_second_explicit_acknowledgement():
     source = EA.read_text()
-    guard = source[source.index("bool IsProfileExecutionAllowed"):source.index("int OnInit()")]
+    guard_start = source.index("bool IsProfileExecutionAllowed(string &reasonOut)\n  {")
+    guard_end = source.index("int OnInit()", guard_start)
+    guard = source[guard_start:guard_end]
     manual_start = source.index("void ManualMarketEntry(bool isBuy)")
     manual_end = source.index("void OnChartEvent(", manual_start)
     tick_start = source.index("void OnTick()")
@@ -93,8 +95,8 @@ def test_micro_profile_cannot_execute_without_second_explicit_acknowledgement():
 
 def test_profile_identity_is_persistent_and_switch_fails_closed_with_exposure():
     source = EA.read_text()
-    lock_start = source.index("bool AcquireAccountProfileLock")
-    lock_end = source.index("bool IsProfileExecutionAllowed", lock_start)
+    lock_start = source.index("bool AcquireAccountProfileLock(string &reasonOut)\n  {")
+    lock_end = source.index("bool IsProfileExecutionAllowed(string &reasonOut)\n  {", lock_start)
     lock = source[lock_start:lock_end]
     assert "MedisTouch_AccountProfile_" in source
     assert "GlobalVariableSet(key,selected)" in lock
