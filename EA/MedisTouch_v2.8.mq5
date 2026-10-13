@@ -29,6 +29,7 @@
 #include "includes/Signals/ConfigSync.mqh"
 #include "includes/Monitoring/ProductionMonitor.mqh"
 #include "includes/Execution/ExecutionAudit.mqh"
+#include "includes/Execution/ExecutionLedgerClient.mqh"
 #include "includes/UI/TradeControlPanel.mqh"
 
 input group "General"
@@ -196,6 +197,9 @@ input double InpMultiTradeTripleLeg2RiskFraction=0.20;
 input group "Signal Transport"
 input int InpWebRequestTimeoutMs=5000;
 input string InpBridgeApiKey="";
+input string InpExecutionLedgerBaseUrl=""; // Bridge root URL, e.g. https://your-service.onrender.com
+input bool InpRequireExecutionLedger=true; // Fail closed for new EA entries until the broker-side ledger is reachable
+input int InpExecutionLedgerRetrySeconds=30;
 input string InpWeightSetVersion="v2.10-baseline";
 input group "Decision Lineage"
 input string InpDecisionSchemaVersion="decision-v1";
@@ -226,7 +230,7 @@ input bool InpSession3Enabled=false;
 input string InpSession3Start="19:00";
 input string InpSession3End="22:00";
 
-CTFContextPool g_pool;CScoringEngine g_scoring;CSessionFilter g_operatorSessionFilter;CTradeDecision g_decision;CRiskEngine g_risk;CSignalLogger g_logger;COutcomeTrackerLive g_tracker;CEnvironmentStrategyMemory g_environmentMemory;CDecisionEngine g_router;CBrokerAdapter g_broker;COrderManager g_orders;CPositionManager g_positions;CRecoveryEngine g_recovery;CPortfolioManager g_portfolio;CMultiTradeEngine g_multiTrade;CRiskGuard g_riskGuard;CNewsFilter g_newsFilter;CSubscriberPlatform g_subscribers;CSignalPublisher g_publisher;CDailyTradeTarget g_dailyTradeTarget;CConfigSync g_configSync;CProductionMonitor g_monitor;CTradeControlPanel g_controlPanel;CExecutionAudit g_execAudit;bool g_emergencyStop=false;datetime g_lastSessionBlockLog=0;CTFContext* g_chartCtx=NULL;CTFContext* g_trendCtx=NULL;CTFContext* g_bosCtx=NULL;CTFContext* g_liqCtx=NULL;CTFContext* g_fvgCtx=NULL;CTFContext* g_htfObCtx=NULL;
+CTFContextPool g_pool;CScoringEngine g_scoring;CSessionFilter g_operatorSessionFilter;CTradeDecision g_decision;CRiskEngine g_risk;CSignalLogger g_logger;COutcomeTrackerLive g_tracker;CEnvironmentStrategyMemory g_environmentMemory;CDecisionEngine g_router;CBrokerAdapter g_broker;COrderManager g_orders;CPositionManager g_positions;CRecoveryEngine g_recovery;CPortfolioManager g_portfolio;CMultiTradeEngine g_multiTrade;CRiskGuard g_riskGuard;CNewsFilter g_newsFilter;CSubscriberPlatform g_subscribers;CSignalPublisher g_publisher;CDailyTradeTarget g_dailyTradeTarget;CConfigSync g_configSync;CExecutionLedgerClient g_executionLedger;CProductionMonitor g_monitor;CTradeControlPanel g_controlPanel;CExecutionAudit g_execAudit;bool g_emergencyStop=false;bool g_executionLedgerHealthy=false;datetime g_lastLedgerReconcileAttempt=0;datetime g_lastConfigSyncPoll=0;datetime g_lastSessionBlockLog=0;CTFContext* g_chartCtx=NULL;CTFContext* g_trendCtx=NULL;CTFContext* g_bosCtx=NULL;CTFContext* g_liqCtx=NULL;CTFContext* g_fvgCtx=NULL;CTFContext* g_htfObCtx=NULL;
 datetime g_lastLoggedTime=0,g_lastBarTime=0;long g_lifecycleDecisionId=0;datetime g_lifecycleCreationTime=0;TradeSetup g_lifecycleSetup;string g_lifecycleStatus="valid";bool g_panelInitialized=false;
 
 string EmergencyStopGlobalKey();
@@ -234,6 +238,16 @@ bool IsConfiguredSessionAllowed();
 bool IsNettingOrExchangeAccount();
 bool HasAnyChartSymbolExposure();
 void RefreshTradeControlPanel();
+bool RiskRFromMoney(double riskMoney,double &riskR);
+bool ReconcileBrokerStateSnapshot();
+bool SyncHistoricalClosedPositions();
+bool IsPositionIdentifierOpen(const ulong positionIdentifier);
+bool ParseManagedOrderComment(const string comment,long &decisionId,int &legIndex);
+bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legIndex,const double riskMoney,const double volatility,string &requestId);
+void MarkLedgerSubmissionAccepted(const string requestId);
+void MarkLedgerSubmissionAmbiguous(const string requestId);
+bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,const double volatility,const string evidenceRef);
+bool IsOrderBuyDirection(const ENUM_ORDER_TYPE orderType);
 
 int OnInit()
   {
