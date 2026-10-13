@@ -131,6 +131,29 @@ jobs:
             Write-Warning "Compilation succeeded with $warnings warning(s); review the uploaded compiler log."
           }
 
+      - name: Compile partial-exit policy test with MetaEditor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $testSource = Join-Path $env:GITHUB_WORKSPACE 'EA/tests/PositionManagementPolicy.mq5'
+          $expertTestDir = Join-Path $env:MT5_MQL5_ROOT 'Experts/MidasTouch/tests'
+          New-Item -ItemType Directory -Path $expertTestDir -Force | Out-Null
+          $stagedTest = Join-Path $expertTestDir 'PositionManagementPolicy.mq5'
+          Copy-Item -Path $testSource -Destination $stagedTest -Force
+          $arguments = "/compile:`"$stagedTest`" /include:`"$env:MT5_MQL5_ROOT`" /log"
+          $process = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList $arguments -Wait -PassThru
+          $testLog = Join-Path $expertTestDir 'PositionManagementPolicy.log'
+          if (!(Test-Path $testLog)) { throw 'MetaEditor did not produce the partial-exit policy test compile log.' }
+          $log = Get-Content -Path $testLog -Raw
+          Write-Host $log
+          $result = [regex]::Match($log, '(?im)(\d+)\s+errors?,\s*(\d+)\s+warnings?')
+          if (!$result.Success) { throw 'Could not parse policy-test compile summary.' }
+          $errors = [int]$result.Groups[1].Value
+          $warnings = [int]$result.Groups[2].Value
+          if ($errors -gt 0) { throw "PositionManagementPolicy test has $errors compile errors and $warnings warnings." }
+          if (!(Test-Path (Join-Path $expertTestDir 'PositionManagementPolicy.ex5'))) { throw 'Policy-test EX5 artifact was not produced.' }
+          "PositionManagementPolicy test compiled: errors=$errors warnings=$warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
       - name: Upload MetaEditor compile log
         if: always()
         uses: actions/upload-artifact@v4
