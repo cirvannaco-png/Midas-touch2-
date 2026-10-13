@@ -184,6 +184,18 @@ def _normalize_context(value: object, name: str) -> dict[str, Any]:
         raise ComparisonError(f"{name}.spread_points must be null or a finite non-negative number")
     else:
         normalized["spread_points"] = float(raw_spread)
+
+    # Only declared, reproducible spread models are acceptable. With real ticks,
+    # spread is already reflected in fill profit; point widening is assessed by
+    # the separate cost-stress report and must never be charged twice here.
+    if normalized["spread_model"] not in {"real_ticks", "fixed_points"}:
+        raise ComparisonError("spread_model must be real_ticks or fixed_points")
+    if normalized["spread_model"] == "real_ticks" and normalized["spread_points"] is not None:
+        raise ComparisonError("spread_points must be null when spread_model is real_ticks")
+    if normalized["spread_model"] == "fixed_points" and (
+        normalized["spread_points"] is None or normalized["spread_points"] <= 0
+    ):
+        raise ComparisonError("fixed_points spread_model requires spread_points > 0")
     return normalized
 
 
@@ -227,6 +239,21 @@ def _lane_header_exists(header: list[str]) -> bool:
     aliases = {"lane", "risklane", "entrylane"}
     canonical = {re.sub(r"[^a-z0-9]", "", name.lower()) for name in header}
     return bool(canonical & aliases)
+
+
+def _require_cost_headers(path: Path) -> None:
+    canonical = {re.sub(r"[^a-z0-9]", "", name.lower()) for name in _read_header(path)}
+    aliases = {
+        "commission": {"commission", "dealcommission"},
+        "swap": {"swap", "dealswap"},
+        "fee": {"fee", "dealfee"},
+    }
+    missing = [key for key, candidates in aliases.items() if not (canonical & candidates)]
+    if missing:
+        raise ComparisonError(
+            f"{path.name} must explicitly export commission, swap, and fee columns; "
+            f"missing: {', '.join(missing)}"
+        )
 
 
 def _metric_delta(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
@@ -382,6 +409,7 @@ def compare_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], dict[st
             )
 
         try:
+            _require_cost_headers(deals_path)
             try:
                 deals = read_deals(deals_path)
             except LedgerError as exc:
