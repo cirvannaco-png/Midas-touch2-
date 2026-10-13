@@ -98,14 +98,14 @@ void CBrokerAdapter::CaptureBrokerIdentifiers(string symbol)
 // ambiguous, or permanent outcomes fail closed to prevent duplicate exposure.
 bool CBrokerAdapter::IsRetryable(uint retcode)
   {
+   // Retry only explicit price responses that guarantee the trade was not
+   // executed. TIMEOUT, CONNECTION and generic ERROR remain ambiguous.
    switch(retcode)
      {
       case TRADE_RETCODE_REQUOTE:
       case TRADE_RETCODE_PRICE_CHANGED:
       case TRADE_RETCODE_PRICE_OFF:
-      // A timeout/connection loss can occur after the broker accepted the
-      // request. Retrying those codes can create duplicate exposure.
-         return false;
+         return true;
       default:
          return false;
      }
