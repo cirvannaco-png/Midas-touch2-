@@ -14,7 +14,11 @@ private:
    int               m_maxRetries;
    int               m_retryDelayMs;
    ulong             m_lastLatencyUs;
+   ulong             m_lastBrokerOrderId;
+   ulong             m_lastBrokerDealId;
+   ulong             m_lastBrokerPositionId;
 
+   void              CaptureBrokerIdentifiers(string symbol);
    bool              LastRequestOk(string action);
    bool              LastExecutionCompleted(string action,bool allowPartial=false,bool allowNoChanges=false);
    ulong             ResolvePositionTicket(string symbol);
@@ -27,6 +31,9 @@ private:
 public:
    void              Init(ulong magic, int maxRetries = 3, int retryDelayMs = 300);
    double            LastLatencyMs() { return (double)m_lastLatencyUs / 1000.0; }
+   ulong             LastBrokerOrderId() const { return m_lastBrokerOrderId; }
+   ulong             LastBrokerDealId() const { return m_lastBrokerDealId; }
+   ulong             LastBrokerPositionId() const { return m_lastBrokerPositionId; }
    bool              MarketBuy(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "");
    bool              MarketSell(string symbol, double volume, double sl, double tp, ulong &ticketOut, double &fillPriceOut, string comment = "");
    bool              PlaceLimit(string symbol, ENUM_ORDER_TYPE type, double volume, double price,
@@ -47,6 +54,23 @@ void CBrokerAdapter::Init(ulong magic, int maxRetries, int retryDelayMs)
    m_maxRetries = MathMax(1,maxRetries);
    m_retryDelayMs = MathMax(0,retryDelayMs);
    m_lastLatencyUs = 0;
+   m_lastBrokerOrderId = 0;
+   m_lastBrokerDealId = 0;
+   m_lastBrokerPositionId = 0;
+  }
+//+------------------------------------------------------------------+
+void CBrokerAdapter::CaptureBrokerIdentifiers(string symbol)
+  {
+   m_lastBrokerOrderId=(ulong)m_trade.ResultOrder();
+   m_lastBrokerDealId=(ulong)m_trade.ResultDeal();
+   m_lastBrokerPositionId=0;
+   if(m_lastBrokerDealId>0 && HistoryDealSelect(m_lastBrokerDealId))
+      m_lastBrokerPositionId=(ulong)HistoryDealGetInteger(m_lastBrokerDealId,DEAL_POSITION_ID);
+   // For accepted pending orders the order ID is the durable broker reference;
+   // for market fills the position ID comes from the actual deal history.
+   if(m_lastBrokerPositionId==0 && m_lastBrokerDealId>0)
+      PrintFormat("MidasTouch BrokerAdapter: deal #%I64u accepted but stable position identity is not yet observable for %s; reconciliation remains required.",
+                  m_lastBrokerDealId,symbol);
   }
 //+------------------------------------------------------------------+
 // Retry only broker outcomes that are explicitly transient. Unknown,
@@ -239,6 +263,7 @@ ulong CBrokerAdapter::ResolvePositionTicket(string symbol)
 bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
   {
    ticketOut=0; fillPriceOut=0.0;
+   m_lastBrokerOrderId=0; m_lastBrokerDealId=0; m_lastBrokerPositionId=0;
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,true)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,true,"MarketBuy")) { m_lastLatencyUs=0; return false; }
@@ -247,6 +272,7 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
      {
       if(m_trade.Buy(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketBuy"))
         {
+         CaptureBrokerIdentifiers(symbol);
          ticketOut=ResolvePositionTicket(symbol);
          fillPriceOut=m_trade.ResultPrice();
          m_lastLatencyUs=GetMicrosecondCount()-t0;
@@ -263,6 +289,7 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
 bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
   {
    ticketOut=0; fillPriceOut=0.0;
+   m_lastBrokerOrderId=0; m_lastBrokerDealId=0; m_lastBrokerPositionId=0;
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,false)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_BID);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,false,"MarketSell")) { m_lastLatencyUs=0; return false; }
@@ -271,6 +298,7 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
      {
       if(m_trade.Sell(volume,symbol,0.0,sl,tp,comment) && LastRequestOk("MarketSell"))
         {
+         CaptureBrokerIdentifiers(symbol);
          ticketOut=ResolvePositionTicket(symbol);
          fillPriceOut=m_trade.ResultPrice();
          m_lastLatencyUs=GetMicrosecondCount()-t0;
@@ -287,6 +315,7 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
 bool CBrokerAdapter::PlaceLimit(string symbol,ENUM_ORDER_TYPE type,double volume,double price,double sl,double tp,ulong &ticketOut,string comment)
   {
    ticketOut=0;
+   m_lastBrokerOrderId=0; m_lastBrokerDealId=0; m_lastBrokerPositionId=0;
    if(type!=ORDER_TYPE_BUY_LIMIT && type!=ORDER_TYPE_SELL_LIMIT) return false;
    bool isBuy=(type==ORDER_TYPE_BUY_LIMIT);
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,isBuy)) { m_lastLatencyUs=0; return false; }
@@ -299,6 +328,7 @@ bool CBrokerAdapter::PlaceLimit(string symbol,ENUM_ORDER_TYPE type,double volume
                : m_trade.SellLimit(volume,price,symbol,sl,tp,ORDER_TIME_GTC,0,comment);
       if(ok && LastRequestOk("PlaceLimit"))
         {
+         CaptureBrokerIdentifiers(symbol);
          ticketOut=m_trade.ResultOrder();
          m_lastLatencyUs=GetMicrosecondCount()-t0;
          return ticketOut>0;
