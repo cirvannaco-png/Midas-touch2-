@@ -1,4 +1,4 @@
-# Payoff Asymmetry and Entry-Precision Candidate (v2.82)
+# Payoff Asymmetry, Entry Precision, and HTF Trailing Candidate (v2.83)
 
 ## Why this candidate exists
 
@@ -19,6 +19,12 @@ This is a mechanical hypothesis explaining the observed asymmetry, not a claim t
 ## What remains an approximation
 
 The shadow outcome simulator is bar-OHLC based. It does not reproduce every tick-level broker fill, the live dynamic stop's +0.75R activation, confirmed structural-stop anchoring, or all multi-leg execution effects. Its outcomes are diagnostic evidence, not a replacement for MT5 Strategy Tester deal history. The costs used in tests must reflect the actual account and symbol.
+
+
+
+## Higher-timeframe trailing extension (v2.83)
+
+This candidate also adds optional previous-completed-week and previous-completed-month reference levels to the dynamic stop anchor. BUY positions can use the prior W1/MN1 low; SELL positions can use the prior W1/MN1 high. The feature is opt-in and defaults off until matched MT5 validation is complete. See `docs/WEEKLY_MONTHLY_TRAILING_CANDIDATE.md` for the exact rules and acceptance matrix.
 
 ## Required validation before promotion
 
