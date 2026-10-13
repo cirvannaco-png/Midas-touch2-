@@ -234,21 +234,21 @@ input string InpSession3Start="19:00";
 input string InpSession3End="22:00";
 
 CTFContextPool g_pool;CScoringEngine g_scoring;CSessionFilter g_operatorSessionFilter;CTradeDecision g_decision;CRiskEngine g_risk;CSignalLogger g_logger;COutcomeTrackerLive g_tracker;CEnvironmentStrategyMemory g_environmentMemory;CDecisionEngine g_router;CBrokerAdapter g_broker;COrderManager g_orders;CPositionManager g_positions;CRecoveryEngine g_recovery;CPortfolioManager g_portfolio;CMultiTradeEngine g_multiTrade;CRiskGuard g_riskGuard;CNewsFilter g_newsFilter;CSubscriberPlatform g_subscribers;CSignalPublisher g_publisher;CDailyTradeTarget g_dailyTradeTarget;CConfigSync g_configSync;CProductionMonitor g_monitor;CTradeControlPanel g_controlPanel;CExecutionAudit g_execAudit;bool g_emergencyStop=false;datetime g_lastSessionBlockLog=0;CTFContext* g_chartCtx=NULL;CTFContext* g_trendCtx=NULL;CTFContext* g_bosCtx=NULL;CTFContext* g_liqCtx=NULL;CTFContext* g_fvgCtx=NULL;CTFContext* g_htfObCtx=NULL;
-datetime g_lastLoggedTime=0,g_lastBarTime=0;long g_lifecycleDecisionId=0;datetime g_lifecycleCreationTime=0;TradeSetup g_lifecycleSetup;string g_lifecycleStatus="valid";bool g_panelInitialized=false;MidasAccountProfileConfig g_effectiveProfile;bool g_profileReady=false;
+datetime g_lastLoggedTime=0,g_lastBarTime=0;long g_lifecycleDecisionId=0;datetime g_lifecycleCreationTime=0;TradeSetup g_lifecycleSetup;string g_lifecycleStatus="valid";bool g_panelInitialized=false;MidasAccountProfileConfig g_effectiveProfile;bool g_profileReady=false;bool g_profileSwitchBlocked=false;ENUM_MIDAS_ACCOUNT_PROFILE g_activeProfile=MIDAS_PROFILE_PROP_FIRM;
 
 string EmergencyStopGlobalKey();
 bool IsConfiguredSessionAllowed();
 bool IsNettingOrExchangeAccount();
 bool HasAnyChartSymbolExposure();
 void RefreshTradeControlPanel();
-bool BuildEffectiveAccountProfile();
+bool BuildEffectiveAccountProfile(ENUM_MIDAS_ACCOUNT_PROFILE selectedProfile);
 bool AcquireAccountProfileLock(string &reasonOut);
 bool AccountHasAnyPositionOrOrder();
 bool IsProfileExecutionAllowed(string &reasonOut);
 
-bool BuildEffectiveAccountProfile()
+bool BuildEffectiveAccountProfile(ENUM_MIDAS_ACCOUNT_PROFILE selectedProfile)
   {
-   if(InpAccountProfile==MIDAS_PROFILE_PROP_FIRM)
+   if(selectedProfile==MIDAS_PROFILE_PROP_FIRM)
      {
       g_effectiveProfile.profileName="PROP_FIRM";
       g_effectiveProfile.riskPercentPerTrade=InpRiskPercentPerTrade;
@@ -263,7 +263,7 @@ bool BuildEffectiveAccountProfile()
       // Retain legacy input compatibility but never bypass minimum-lot risk rejection.
       g_effectiveProfile.allowMinLotOverride=false;
      }
-   else if(InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH)
+   else if(selectedProfile==MIDAS_PROFILE_MICRO_RESEARCH)
      {
       g_effectiveProfile.profileName="MICRO_RESEARCH";
       g_effectiveProfile.riskPercentPerTrade=8.0;
@@ -288,6 +288,7 @@ bool BuildEffectiveAccountProfile()
       PrintFormat("MedisTouch: invalid effective profile %s: %s; refusing initialization.",g_effectiveProfile.profileName,validationReason);
       return false;
      }
+   g_activeProfile=selectedProfile;
    return true;
   }
 
@@ -316,14 +317,29 @@ bool AcquireAccountProfileLock(string &reasonOut)
      }
    double stored=GlobalVariableGet(key);
    if(MathIsValidNumber(stored) && MathAbs(stored-selected)<0.1) return true;
-   if(!InpConfirmAccountProfileChange)
-     {
-      reasonOut=StringFormat("account profile mismatch: terminal lock is %.0f, selected profile is %s. Confirm a profile change only after review and after all account positions/orders are closed.",stored,g_effectiveProfile.profileName);
-      return false;
-     }
+   ENUM_MIDAS_ACCOUNT_PROFILE lockedProfile=(ENUM_MIDAS_ACCOUNT_PROFILE)((int)MathRound(stored));
+   bool storedProfileKnown=(lockedProfile==MIDAS_PROFILE_PROP_FIRM || lockedProfile==MIDAS_PROFILE_MICRO_RESEARCH);
    if(AccountHasAnyPositionOrOrder())
      {
-      reasonOut="profile switch refused while any account position or pending order exists; resolve exposure first";
+      // Never abandon position management on a profile change during exposure.
+      // Continue under the persisted profile and block all new entries until
+      // the account is flat and the EA is reinitialized after confirmation.
+      if(!storedProfileKnown) lockedProfile=MIDAS_PROFILE_PROP_FIRM;
+      if(!BuildEffectiveAccountProfile(lockedProfile))
+        { reasonOut="persisted account profile is invalid and fallback configuration could not be validated"; return false; }
+      g_profileSwitchBlocked=true;
+      reasonOut=StringFormat("profile change to %s is pending; continuing position management under persisted profile %s, with new entries disabled until the account is flat and the EA is reinitialized",InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH ? "MICRO_RESEARCH" : "PROP_FIRM",g_effectiveProfile.profileName);
+      PrintFormat("MedisTouch: %s",reasonOut);
+      return true;
+     }
+   if(!storedProfileKnown)
+     {
+      reasonOut="persisted account profile identifier is unknown; confirm recovery/review before switching profiles";
+      return false;
+     }
+   if(!InpConfirmAccountProfileChange)
+     {
+      reasonOut=StringFormat("account profile mismatch: terminal lock is %.0f, selected profile is %s. Set InpConfirmAccountProfileChange=true to switch while flat.",stored,g_effectiveProfile.profileName);
       return false;
      }
    GlobalVariableSet(key,selected);
@@ -337,9 +353,11 @@ bool IsProfileExecutionAllowed(string &reasonOut)
    reasonOut="";
    if(!g_profileReady)
      { reasonOut="effective account profile is not ready"; return false; }
-   if(InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH && !InpConfirmMicroResearchExecution)
+   if(g_profileSwitchBlocked)
+     { reasonOut="profile change is pending; existing exposure is being managed under the persisted profile and new entries are blocked"; return false; }
+   if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH && !InpConfirmMicroResearchExecution)
      { reasonOut="MICRO_RESEARCH is research-only; enable InpConfirmMicroResearchExecution only for controlled Strategy Tester or demo validation"; return false; }
-   if(InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH && !MQLInfoInteger(MQL_TESTER) &&
+   if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH && !MQLInfoInteger(MQL_TESTER) &&
       (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE)==ACCOUNT_TRADE_MODE_REAL)
      { reasonOut="MICRO_RESEARCH order execution is prohibited on real-money accounts"; return false; }
    return true;
@@ -347,7 +365,7 @@ bool IsProfileExecutionAllowed(string &reasonOut)
 
 int OnInit()
   {
-   if(!BuildEffectiveAccountProfile()) return INIT_PARAMETERS_INCORRECT;
+   if(!BuildEffectiveAccountProfile(InpAccountProfile)) return INIT_PARAMETERS_INCORRECT;
    g_profileReady=true;
    string profileLockReason;
    if(!AcquireAccountProfileLock(profileLockReason))
@@ -362,7 +380,7 @@ int OnInit()
                g_effectiveProfile.maxPositionsPerSymbol,g_effectiveProfile.maxPositionsPerGroup,g_effectiveProfile.maxDailyLossPercent,
                g_effectiveProfile.maxDrawdownPercent,g_effectiveProfile.deriskStartPercent,g_effectiveProfile.deriskFloor,
                InpConfirmMicroResearchExecution ? "true" : "false",configSignature);
-   if(InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH)
+   if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH)
       Print("MedisTouch WARNING: MICRO_RESEARCH uses an aggressive experimental risk envelope. StrategyTune filters and adaptive loss-streak logic are not ported by this profile. Use Strategy Tester or demo only; no profitability claim is made.");
    g_pool.Configure(_Symbol,InpMaxHistoryBars,InpSwingStrength,InpFVGMinSizeATR,InpInternalLiqThresholdATR,InpRVOLLookback,InpVALookbackBars,InpVANumBins,InpVAPercent/100.0,InpOBDisplacementATRMult,InpOBMinBodyRatio);g_chartCtx=g_pool.Get(_Period);g_trendCtx=g_pool.Get(InpTrendTF);g_bosCtx=g_pool.Get(InpBOSTF);g_liqCtx=g_pool.Get(InpLiquidityTF);g_fvgCtx=g_pool.Get(InpFVGTF);g_htfObCtx=g_pool.Get(InpHtfObTF);if(g_chartCtx==NULL||g_trendCtx==NULL||g_bosCtx==NULL||g_liqCtx==NULL||g_fvgCtx==NULL||g_htfObCtx==NULL)return INIT_FAILED;
    g_scoring.Init(g_trendCtx,g_bosCtx,g_liqCtx,g_fvgCtx,g_chartCtx,&g_chartCtx.candles);g_scoring.ConfigureInducement(InpImpulseLookbackBars,InpImpulseATRMult,InpImpulseBodyRatio,InpEqualTolATR,InpMaxLegExtend,InpRequirePremiumDiscount,InpRequireDistributionPhase,InpPhaseRangeLookback,InpPhaseCompressionATRMult);g_scoring.ConfigureVolumeFibonacci(InpRequireVolumeConfirmation,InpRVOLThreshold,InpRequireFibonacciZone,InpFibZoneMinPct,InpFibZoneMaxPct);g_scoring.ConfigureValueArea(InpRequireValueAreaLocation,InpBlockValueAreaContradictions);g_scoring.ConfigureHtfOrderBlock(g_htfObCtx,InpRequireHtfOB,InpOBDistATRMax);g_scoring.ConfigureVolatilityRegime(InpBlockLowVolRegime,InpVolRegimeLookback,InpVolRegimeLowPct,InpVolRegimeHighPct);g_scoring.ConfigureSessionFilter(InpUseSessionFilter,InpAllowTokyoSession,InpAllowLondonSession,InpAllowNewYorkSession,InpAllowLondonNYOverlap);g_operatorSessionFilter.Configure(InpUseSessionFilter,InpAllowTokyoSession,InpAllowLondonSession,InpAllowNewYorkSession,InpAllowLondonNYOverlap);g_scoring.ConfigureSweepQuality(InpRequireMinSweepGrade,(ENUM_SWEEP_GRADE)InpMinSweepGrade,InpRequireFreshSetup,InpMaxBarsSinceBOS);g_scoring.ConfigureChaseFilter(InpRequireChaseFilter,InpMaxChaseDistATR);g_scoring.ConfigureFVGProximity(InpFVGMaxDistATR);g_scoring.ConfigureLearnedDiagnostics(InpDiagContradictionWeight,InpDiagEnvWeight,InpDiagExecWeight);g_scoring.ConfigureStrategyDiagnostics(InpMomentumBreakoutRecencyBars,InpBreakoutLiqOverlapBars,InpBreakoutExtensionLookbackBars,InpBreakoutExhaustionATRMult,InpMomentumLookbackBars);g_scoring.ConfigureMeanReversionDiagnostics(InpReversionMinStretchATR,InpReversionSRZoneATRTolerance,InpReversionWickRejectionRatio,InpReversionLiqRecencyBars,InpReversionTrendConflictRecencyBars,InpReversionTrendConflictMinStrength);g_scoring.ConfigureKeyLevelDiagnostics(InpKeyLevelLookbackBars,InpKeyLevelSearchATRMax,InpKeyLevelTouchToleranceATRMult,InpKeyLevelAbsorptionMinTouches,InpKeyLevelWickRejectionRatio,InpKeyLevelRoundStep);g_scoring.ConfigureStrategySelection(InpMinSelectionScore);
