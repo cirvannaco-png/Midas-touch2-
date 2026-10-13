@@ -102,11 +102,14 @@ def _manifest(folder: Path) -> Path:
         "InpSmallMaxPortfolioRiskPercent": "1.5", "InpSmallMaxPositionsPerSymbol": "2",
         "InpSmallMaxPositionsPerGroup": "2",
     })
+    # Opportunity-capacity challenger: same per-trade, daily, hard-DD,
+    # de-risk and aggregate open-risk budget as A; only more slots are allowed.
     presets["E_calibrated_risk"].update({
-        "InpSmallRiskPercentPerTrade": "0.45", "InpSmallMaxOpenTrades": "3",
-        "InpSmallMaxDailyLossPercent": "2.5", "InpSmallMaxDrawdownPercent": "9",
-        "InpSmallDeriskStartPercent": "4", "InpSmallDeriskFloor": "0.2",
-        "InpSmallMaxPortfolioRiskPercent": "2.5",
+        "InpSmallRiskPercentPerTrade": "0.5", "InpSmallMaxOpenTrades": "5",
+        "InpSmallMaxDailyLossPercent": "3", "InpSmallMaxDrawdownPercent": "10",
+        "InpSmallDeriskStartPercent": "5", "InpSmallDeriskFloor": "0.25",
+        "InpSmallMaxPortfolioRiskPercent": "3",
+        "InpSmallMaxPositionsPerSymbol": "4", "InpSmallMaxPositionsPerGroup": "4",
     })
     variants = []
     for i, role in enumerate(ROLES):
@@ -252,3 +255,16 @@ def test_walk_forward_slices_are_chronological_and_censor_boundary_positions():
     assert all(row["parameters_frozen"] for row in folds)
     assert all(datetime.fromisoformat(row["test_end"].replace("Z", "+00:00")) <= ctx["locked_oos_start"]
                for row in folds)
+
+
+def test_small_account_calibrated_candidate_can_test_more_slots_without_more_money_risk(tmp_path):
+    manifest = _manifest(tmp_path)
+    report = compare_manifest(manifest, simulations=10)
+    baseline = report["variants"]["A_current_baseline"]["preset"]
+    calibrated = report["variants"]["E_calibrated_risk"]["preset"]
+    assert calibrated["InpSmallRiskPercentPerTrade"] == baseline["InpSmallRiskPercentPerTrade"]
+    assert calibrated["InpSmallMaxDailyLossPercent"] == baseline["InpSmallMaxDailyLossPercent"]
+    assert calibrated["InpSmallMaxDrawdownPercent"] == baseline["InpSmallMaxDrawdownPercent"]
+    assert calibrated["InpSmallMaxPortfolioRiskPercent"] == baseline["InpSmallMaxPortfolioRiskPercent"]
+    assert float(calibrated["InpSmallMaxOpenTrades"]) > float(baseline["InpSmallMaxOpenTrades"])
+    assert float(calibrated["InpSmallMaxPositionsPerSymbol"]) > float(baseline["InpSmallMaxPositionsPerSymbol"])
