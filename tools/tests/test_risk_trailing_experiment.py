@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from tools.risk_trailing_experiment import ExperimentError, _max_streak, compare_manifest
+from datetime import datetime, timezone
+
+from tools.risk_trailing_experiment import ExperimentError, _max_streak, _walk_forward_slices, compare_manifest
 
 ROLES = (
     "A_current_baseline", "B_trailing_off", "C_trailing_candidate",
@@ -189,3 +191,55 @@ def test_missing_role_is_rejected(tmp_path):
     path.write_text(json.dumps(payload))
     with pytest.raises(ExperimentError, match="missing required experiment roles"):
         compare_manifest(path, simulations=10)
+
+
+
+def test_risk_candidate_cannot_change_inactive_profile_or_profile_selector(tmp_path):
+    path = _manifest(tmp_path)
+    payload = json.loads(path.read_text())
+    payload["variants"][3]["observed_context"]["account_profile"] = "small_account"
+    preset = tmp_path / payload["variants"][3]["input_preset"]
+    preset.write_text(preset.read_text().replace("InpPropRiskPercentPerTrade=0.5", "InpPropRiskPercentPerTrade=0.4"))
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ExperimentError, match="may change only the active profile"):
+        compare_manifest(path, simulations=10)
+
+
+def test_profile_selector_must_match_the_exported_account_context(tmp_path):
+    path = _manifest(tmp_path)
+    payload = json.loads(path.read_text())
+    preset = tmp_path / payload["variants"][0]["input_preset"]
+    preset.write_text(preset.read_text().replace("InpAccountRiskProfile=1", "InpAccountRiskProfile=2"))
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ExperimentError, match="InpAccountRiskProfile"):
+        compare_manifest(path, simulations=10)
+
+
+def test_walk_forward_slices_are_chronological_and_censor_boundary_positions():
+    def stamp(value: str) -> datetime:
+        return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+
+    ctx = {
+        "period_start": stamp("2025-01-01T00:00:00"),
+        "locked_oos_start": stamp("2025-03-01T00:00:00"),
+        "initial_balance": 10000.0,
+    }
+    positions = [
+        {"position_id": "p1", "entry_time": stamp("2025-01-20T10:00:00"),
+         "exit_time": stamp("2025-01-21T10:00:00"), "net_pnl": 100.0, "realized_r": 1.0},
+        {"position_id": "p2", "entry_time": stamp("2025-02-05T10:00:00"),
+         "exit_time": stamp("2025-02-06T10:00:00"), "net_pnl": -50.0, "realized_r": -0.5},
+        {"position_id": "p3", "entry_time": stamp("2025-02-22T10:00:00"),
+         "exit_time": stamp("2025-02-23T10:00:00"), "net_pnl": 75.0, "realized_r": 0.75},
+        {"position_id": "p4", "entry_time": stamp("2025-01-25T10:00:00"),
+         "exit_time": stamp("2025-02-03T10:00:00"), "net_pnl": 500.0, "realized_r": 5.0},
+    ]
+    folds = _walk_forward_slices(positions, ctx, simulations=20, seed=11)
+    assert len(folds) == 3
+    assert [row["test"]["completed_positions"] for row in folds] == [1, 1, 1]
+    assert folds[0]["positions_censored_at_test_boundary"] == 1
+    assert folds[0]["test_end"] <= folds[1]["test_start"]
+    assert folds[1]["test_end"] <= folds[2]["test_start"]
+    assert all(row["parameters_frozen"] for row in folds)
+    assert all(datetime.fromisoformat(row["test_end"].replace("Z", "+00:00")) <= ctx["locked_oos_start"]
+               for row in folds)
