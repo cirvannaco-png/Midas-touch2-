@@ -260,8 +260,8 @@ def test_walk_forward_slices_are_chronological_and_censor_boundary_positions():
 def test_small_account_calibrated_candidate_can_test_more_slots_without_more_money_risk(tmp_path):
     manifest = _manifest(tmp_path)
     report = compare_manifest(manifest, simulations=10)
-    baseline = report["variants"]["A_current_baseline"]["preset"]
-    calibrated = report["variants"]["E_calibrated_risk"]["preset"]
+    baseline = report["variants"]["A_current_baseline"]["input_parameters"]
+    calibrated = report["variants"]["E_calibrated_risk"]["input_parameters"]
     assert calibrated["InpSmallRiskPercentPerTrade"] == baseline["InpSmallRiskPercentPerTrade"]
     assert calibrated["InpSmallMaxDailyLossPercent"] == baseline["InpSmallMaxDailyLossPercent"]
     assert calibrated["InpSmallMaxDrawdownPercent"] == baseline["InpSmallMaxDrawdownPercent"]
