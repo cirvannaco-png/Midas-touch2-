@@ -213,7 +213,7 @@ public:
          return false;
       if(positionOpen && (remainingVolume<=0.0 || riskR<=0.0)) return false;
       string payload=StringFormat(
-         "{\\"portfolio_key\\":\\"%s\\",\\"request_id\\":\\"%s\\",\\"broker_deal_id\\":\\"%I64u\\",\\"broker_order_id\\":\\"%I64u\\",\\"broker_position_id\\":\\"%I64u\\",\\"symbol\\":\\"%s\\",\\"entry_type\\":\\"%s\\",\\"deal_type\\":\\"%s\\",\\"direction\\":\\"%s\\",\\"volume\\":%.8f,\\"price\\":%.8f,\\"profit_cashflow\\":%.8f,\\"commission_cashflow\\":%.8f,\\"swap_cashflow\\":%.8f,\\"fee_cashflow\\":%.8f,\\"cashflows_known\\":%s,\\"position_open\\":%s,\\"remaining_volume\\":%.8f,\\"risk_r\\":%.8f,\\"volatility\\":%.8f,\\"factors\\":{},\\"evidence_ref\\":\\"%s\\"}",
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_deal_id\":\"%I64u\",\"broker_order_id\":\"%I64u\",\"broker_position_id\":\"%I64u\",\"symbol\":\"%s\",\"entry_type\":\"%s\",\"deal_type\":\"%s\",\"direction\":\"%s\",\"volume\":%.8f,\"price\":%.8f,\"profit_cashflow\":%.8f,\"commission_cashflow\":%.8f,\"swap_cashflow\":%.8f,\"fee_cashflow\":%.8f,\"cashflows_known\":%s,\"position_open\":%s,\"remaining_volume\":%.8f,\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),dealId,orderId,positionIdentifier,
          JsonSafe(symbol),JsonSafe(entryType),JsonSafe(dealType),JsonSafe(positionDirection),
          volume,price,profitCashflow,commissionCashflow,swapCashflow,feeCashflow,
