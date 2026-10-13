@@ -8,6 +8,7 @@ from starlette.responses import JSONResponse, Response
 from app.api.backtest_evidence import router as backtest_evidence_router
 from app.api.config_sync import router as config_sync_router
 from app.api.execution_ledger import router as execution_ledger_router
+from app.api.research_compat import router as research_compat_router
 from app.bot import init_bot, shutdown_bot
 from app.config import APP_VERSION, settings
 from app.logger import logger
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
     # full environment, lineage, and execution-cost contract.
     app.include_router(config_sync_router)
     app.include_router(execution_ledger_router)
+    app.include_router(research_compat_router)
     app.include_router(backtest_evidence_router)
     app.include_router(router)
 
