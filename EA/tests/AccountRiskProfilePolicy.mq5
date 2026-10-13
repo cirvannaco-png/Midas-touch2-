@@ -1,0 +1,70 @@
+#property strict
+#include "../includes/Portfolio/AccountRiskProfilePolicy.mqh"
+
+int failures=0;
+
+void AssertTrue(bool value,string label)
+  {
+   if(value) PrintFormat("PASS: %s",label);
+   else { PrintFormat("FAIL: %s",label); failures++; }
+  }
+
+void SetLimits(AccountRiskLimits &v,double risk,int openTrades,double daily,double drawdown,
+               double derisk,double floor,double portfolio,int perSymbol,int perGroup)
+  {
+   v.profile=ACCOUNT_RISK_PROFILE_LEGACY_INPUTS;
+   v.profileName="fixture";
+   v.riskPercentPerTrade=risk;
+   v.maxOpenTrades=openTrades;
+   v.maxDailyLossPercent=daily;
+   v.maxDrawdownPercent=drawdown;
+   v.deriskStartPercent=derisk;
+   v.deriskFloor=floor;
+   v.maxPortfolioRiskPercent=portfolio;
+   v.maxPositionsPerSymbol=perSymbol;
+   v.maxPositionsPerGroup=perGroup;
+  }
+
+int OnInit()
+  {
+   AccountRiskLimits legacy,smallAccount,propFirm,selected;
+   SetLimits(legacy,0.50,3,3.0,10.0,5.0,0.25,3.0,3,3);
+   SetLimits(smallAccount,0.45,5,2.5,9.0,4.0,0.20,2.5,3,3);
+   SetLimits(propFirm,0.25,3,1.5,5.0,2.0,0.25,1.0,2,2);
+   string reason="";
+
+   AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_LEGACY_INPUTS,
+      legacy,smallAccount,propFirm,selected,reason),"legacy profile resolves");
+   AssertTrue(selected.riskPercentPerTrade==0.50 && selected.maxOpenTrades==3 &&
+      selected.maxDrawdownPercent==10.0,"legacy profile preserves its independent limits");
+
+   reason="";
+   AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
+      legacy,smallAccount,propFirm,selected,reason),"small-account profile resolves");
+   AssertTrue(selected.profileName=="small_account" && selected.riskPercentPerTrade==0.45 &&
+      selected.maxOpenTrades==5 && selected.maxPortfolioRiskPercent==2.5,
+      "small-account values are selected without inheriting legacy values");
+
+   reason="";
+   AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_PROP_FIRM,
+      legacy,smallAccount,propFirm,selected,reason),"prop-firm profile resolves");
+   AssertTrue(selected.profileName=="prop_firm" && selected.riskPercentPerTrade==0.25 &&
+      selected.maxDrawdownPercent==5.0 && selected.maxPositionsPerSymbol==2,
+      "prop-firm values are isolated from the small-account profile");
+
+   reason="";
+   smallAccount.deriskStartPercent=smallAccount.maxDrawdownPercent;
+   AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
+      legacy,smallAccount,propFirm,selected,reason),
+      "profile fails closed when de-risking starts at or after hard drawdown");
+   AssertTrue(StringLen(reason)>0,"invalid profile returns a diagnostic reason");
+
+   reason="";
+   SetLimits(smallAccount,0.50,3,0.25,5.0,2.0,0.20,1.0,2,2);
+   AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
+      legacy,smallAccount,propFirm,selected,reason),
+      "profile fails closed when one trade can equal or exceed the daily-loss cap");
+
+   PrintFormat("AccountRiskProfilePolicy tests: %d failure(s)",failures);
+   return failures==0 ? INIT_SUCCEEDED : INIT_FAILED;
+  }
