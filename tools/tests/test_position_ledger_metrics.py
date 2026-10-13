@@ -53,7 +53,10 @@ class PositionLedgerMetricsTests(unittest.TestCase):
         self.assertEqual(report["payoff_ratio_R"], 2.0)
         self.assertAlmostEqual(report["break_even_win_rate_pct_from_avg_R"], 33.33, places=2)
         self.assertEqual(report["max_closed_position_drawdown_cash"], 25)
-        self.assertIsNone(report["target_reached"])
+        # Signal-accuracy goals must never be mislabeled as account-return targets.
+        self.assertNotIn("target_reached", report)
+        self.assertNotIn("target_account_return_pct", report)
+        self.assertNotIn("target_profit_from_10000", report)
 
     def test_missing_risk_amount_does_not_fabricate_r_metrics(self):
         rows = [
