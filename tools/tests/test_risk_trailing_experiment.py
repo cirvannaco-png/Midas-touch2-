@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.risk_trailing_experiment import ExperimentError, compare_manifest
+from tools.risk_trailing_experiment import ExperimentError, _max_streak, compare_manifest
 
 ROLES = (
     "A_current_baseline", "B_trailing_off", "C_trailing_candidate",
@@ -160,6 +160,10 @@ def test_trailing_candidate_cannot_change_partial_exit_rules(tmp_path):
     path.write_text(json.dumps(payload))
     with pytest.raises(ExperimentError, match="changes non-risk/trailing settings"):
         compare_manifest(path, simulations=10)
+
+
+def test_scratch_breaks_consecutive_loss_streak():
+    assert _max_streak([-1.0, -2.0, 0.0, -3.0, -4.0, 1.0, -5.0]) == 2
 
 
 def test_missing_role_is_rejected(tmp_path):
