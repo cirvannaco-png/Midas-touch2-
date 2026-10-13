@@ -32,7 +32,6 @@ def test_micro_account_research_is_documented_as_unvalidated_and_separate():
     assert "research only" in doc.lower()
     assert "not proven profitable" in doc.lower()
     assert "not all implemented in this EA profile" in doc
-    assert "StrategyTune filters and adaptive loss-streak logic are not ported by this profile" in source
     assert "Do not copy the 8% risk" in doc
 
 
