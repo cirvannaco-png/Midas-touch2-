@@ -115,9 +115,9 @@ def test_valid_matched_pair_hashes_files_and_reports_cost_inclusive_metrics(tmp_
     assert report["dataset_digest_verified"] is True
     assert report["only_effective_set_difference"] == "InpDynamicStopUseHTFReferenceLevels"
     assert report["promotion_recommendation"] is None
-    off = report["variants"]["htf_trailing_off"]["metrics"]["full_period"]
-    assert off["completed_positions"] == 3
-    assert off["net_pnl"] == -11.0  # realized P&L includes commissions on all three positions
+    off = report["variants"]["htf_trailing_off"]["metrics"]["development"]
+    assert off["completed_positions"] == 1
+    assert off["net_pnl"] == 3.0  # development result excludes the registered OOS entry window
     oos = report["variants"]["htf_trailing_off"]["metrics"]["locked_oos"]
     assert oos["completed_positions"] == 2  # P3 closes after the entry-window end but before maturity
     assert oos["net_pnl"] == -14.0
