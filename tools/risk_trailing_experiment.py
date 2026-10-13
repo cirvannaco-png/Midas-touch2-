@@ -509,6 +509,61 @@ def _metrics(positions: list[dict[str, Any]], ctx: dict[str, Any], simulations: 
     }
 
 
+def _walk_forward_slices(
+    positions: list[dict[str, Any]],
+    ctx: dict[str, Any],
+    *,
+    simulations: int,
+    seed: int,
+    folds: int = 3,
+) -> list[dict[str, Any]]:
+    """Chronological fixed-parameter forward validation before the locked OOS window.
+
+    The in-sample interval is split into (folds + 1) equal chronological blocks.
+    Each test block is evaluated against an expanding, fully matured history.
+    No parameters are fitted here; this evaluates the frozen MT5 variants over
+    sequential forward windows and deliberately does not read locked-OOS returns.
+    """
+    if folds < 1:
+        raise ExperimentError("walk-forward folds must be positive")
+    start = ctx["period_start"]
+    boundary = ctx["locked_oos_start"]
+    span = (boundary - start).total_seconds()
+    if span <= 0:
+        return []
+
+    slices: list[dict[str, Any]] = []
+    blocks = folds + 1
+    for index in range(folds):
+        test_start = start + timedelta(seconds=span * (index + 1) / blocks)
+        test_end = start + timedelta(seconds=span * (index + 2) / blocks)
+        if index == folds - 1:
+            test_end = boundary
+
+        train = [
+            p for p in positions
+            if start <= p["entry_time"] < test_start and p["exit_time"] < test_start
+        ]
+        test = [
+            p for p in positions
+            if test_start <= p["entry_time"] < test_end and p["exit_time"] < test_end
+        ]
+        censored = sum(
+            1 for p in positions
+            if test_start <= p["entry_time"] < test_end and p["exit_time"] >= test_end
+        )
+        slices.append({
+            "fold": index + 1,
+            "test_start": _iso(test_start),
+            "test_end": _iso(test_end),
+            "training_reference": _metrics(train, ctx, simulations, seed + index * 2),
+            "test": _metrics(test, ctx, simulations, seed + index * 2 + 1),
+            "positions_censored_at_test_boundary": censored,
+            "parameters_frozen": True,
+        })
+    return slices
+
+
 def _max_streak(pnls: list[float]) -> int:
     """Count consecutive losing positions; a scratch or win breaks the streak."""
     best = current = 0
@@ -592,6 +647,9 @@ def compare_manifest(manifest_path: str | Path, *, simulations: int = 2000, seed
             "artifacts": artifacts[role], "incomplete_positions_excluded": record["incomplete"],
             "open_positions_at_test_end": record["open_count"],
             "full_period": _metrics(all_positions, ctx, simulations, seed),
+            "walk_forward_fixed_parameter_slices": _walk_forward_slices(
+                all_positions, ctx, simulations=simulations, seed=seed
+            ),
             "locked_oos": _metrics(oos, ctx, simulations, seed),
         }
 
