@@ -105,6 +105,12 @@ async def test_transition_order_is_enforced_and_terminal_state_cannot_resurrect(
             assert await transition_execution(
                 session, request_id="req-3", state="SENT", result={"broker_order_id": "123"}
             )
+            assert not await transition_execution(
+                session, request_id="req-3", state="REJECTED"
+            )
+            assert not await transition_execution(
+                session, request_id="req-3", state="FILLED"
+            )
             assert await transition_execution(
                 session, request_id="req-3", state="ACKED", result={"broker_acknowledged": True, "broker_position_id": "456"}
             )
