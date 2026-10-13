@@ -311,6 +311,20 @@ bool AcquireAccountProfileLock(string &reasonOut)
    double selected=(double)InpAccountProfile;
    if(!GlobalVariableCheck(key))
      {
+      if(AccountHasAnyPositionOrOrder())
+        {
+         // No trustworthy prior profile identity exists while exposure is open.
+         // Persist an unknown sentinel, manage using the compatibility baseline,
+         // and prevent new entries until flat and explicitly initialized.
+         GlobalVariableSet(key,-1.0);
+         GlobalVariablesFlush();
+         if(!BuildEffectiveAccountProfile(MIDAS_PROFILE_PROP_FIRM))
+           { reasonOut="could not validate the compatibility profile for existing account exposure"; return false; }
+         g_profileSwitchBlocked=true;
+         reasonOut="account profile identity was not initialized before existing exposure; continuing management under PROP_FIRM compatibility settings and blocking new entries until flat and explicitly initialized";
+         PrintFormat("MedisTouch: %s",reasonOut);
+         return true;
+        }
       GlobalVariableSet(key,selected);
       GlobalVariablesFlush();
       return true;
