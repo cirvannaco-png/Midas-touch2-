@@ -274,8 +274,6 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
         "average_realized_R": round(sum(r_values) / len(r_values), 4) if r_values else None,
         "positions_with_risk_cash": len(r_values), "by_lane": lanes, "ignored_groups": ignored or {},
         "drawdown_basis": "closed-position settlement sequence, not tick-level equity",
-        "target_account_return_pct": 87.0, "target_profit_from_10000": 8700.0,
-        "target_reached": pnl >= 8700.0 if abs(initial_balance - 10000.0) < 0.01 else None,
         "equity_curve": equity,
     }
 
@@ -303,7 +301,7 @@ def main():
         print(f"Win rate (exclude flats): {report['win_rate_pct_excluding_flats']}% | Profit factor: {report['profit_factor']}")
         print(f"Average win/loss: {report['average_win']} / {report['average_loss']}")
         print(f"Closed-position drawdown: {report['max_closed_position_drawdown_cash']:.2f} ({report['max_closed_position_drawdown_pct']:.2f}%)")
-        print(f"87% account-return target reached: {report['target_reached']}")
+        print("No accuracy or return target is inferred by this ledger; use the reported realized metrics.")
         print("Warning: drawdown is closed-position based, not tick-level equity drawdown.")
     return 0 if positions else 1
 
