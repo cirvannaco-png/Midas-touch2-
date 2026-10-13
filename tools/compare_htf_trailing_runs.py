@@ -284,7 +284,6 @@ def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict,
     metrics = {
         "development": _metrics(development_entries, context["initial_balance"]),
         "development_censoring": censored_development,
-        "ledger_ignored_groups": ignored,
     }
     if include_locked_oos:
         # OOS entry time is constrained to the reserved window; qualifying
@@ -292,6 +291,7 @@ def _load_variant(manifest: dict, manifest_path: Path, raw: dict, context: dict,
         oos_entries = [p for p in positions if ostart <= p["opened_at"] < oend and p["closed_at"] < pend]
         metrics["locked_oos"] = _metrics(oos_entries, context["initial_balance"])
         metrics["locked_oos_censoring"] = _count_censored(positions, deals, opens, ostart, oend, pend)
+        metrics["ledger_ignored_groups"] = ignored
     return {
         "role": role,
         "run_id": raw["run_id"],
