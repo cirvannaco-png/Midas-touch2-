@@ -56,7 +56,7 @@ private:
      }
 
 public:
-   void Init(const string baseUrl,const string apiKey,const ulong magic,int timeoutMs=5000)
+   void Init(const string baseUrl,const string apiKey,const ulong magicNumber,int timeoutMs=5000)
      {
       m_baseUrl=baseUrl;
       while(StringLen(m_baseUrl)>0 && StringSubstr(m_baseUrl,StringLen(m_baseUrl)-1,1)=="/")
@@ -74,9 +74,9 @@ public:
 
       string server=JsonSafe(AccountInfoString(ACCOUNT_SERVER));
       string login=IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN));
-      string magic=IntegerToString((long)magic);
+      string magicText=IntegerToString((long)magicNumber);
       // Account + broker server + strategy magic defines an isolated risk book.
-      m_portfolioKey=server+":"+login+":"+magic;
+      m_portfolioKey=server+":"+login+":"+magicText;
       if(StringLen(m_portfolioKey)>128)
         {
          Print("Midas execution ledger: generated portfolio key exceeds API limit.");
