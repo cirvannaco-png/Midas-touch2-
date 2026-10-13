@@ -28,5 +28,7 @@
     "Native MT5 tick-level equity drawdown remains under the project’s frozen risk limit; closed-position drawdown alone is insufficient.",
     "No promotion based only on compile/CI, in-sample results, or Monte Carlo; demo-forward validation remains required."
   ],
-  "oos_previously_inspected": null
+  "oos_previously_inspected": null,
+  "point_value_source_path": null,
+  "point_value_source_sha256": null
 }
