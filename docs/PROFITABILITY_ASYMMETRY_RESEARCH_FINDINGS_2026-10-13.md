@@ -10,6 +10,7 @@
 - Instrument/data: IC Markets `Gold`, M15, account currency USD, starting balance USD 10,000; recorded bid/ask price stream (spread reflected in fills).
 - Baseline: script defaults; strict, single-swing, continuation and micro-momentum lanes enabled.
 - Exit candidate: same entry settings, but both standard and opportunity exits changed to TP1 2.2R, TP2 2.5R, min runner RR 2.2R, TP1 fraction 50%, TP2 fraction 20%.
+- **Parameter-parity limitation found during follow-up audit:** in the MT5 EA, `InpMinRiskReward` is a setup-validation floor on `setup.tp1` versus stop distance (`CRiskEngine::ValidateSetupAtEntry`), while `InpPartialAtR` is the live partial-close trigger (`CPositionManager::OnTick`). The StrategyTune proxy's `tp1RR` is a realized partial-exit trigger, not a setup-validation floor. Therefore, its `tp1RR=2.2` experiment is not a parameter-faithful simulation of the EA's simultaneous `InpMinRiskReward=2.2` and `InpPartialAtR=2.5` changes. Results below are exploratory diagnostics, not a verdict on the exact MT5 candidate; a dedicated proxy entry-quality gate would be needed for tighter behavioral parity.
 - Cost limitation: StrategyTune does not apply commission or slippage and this strategy does not model swaps. Results are therefore **not net-of-all-trading-costs**.
 - Unit: completed opening-fill groups, with partial closes combined. Max consecutive losses is computed on fully closed opening-fill groups sorted by last close time. P&L uses the platform's row data.
 - Maximum drawdown below is the platform's reported account drawdown; the platform result may include account-state effects that differ from the grouped completed-fill metric.
@@ -78,6 +79,57 @@ This period favoured the exit candidate, but the candidate also had a much longe
 | Platform-reported max drawdown | $370.00 | $505.29 |
 
 This later window rejects the idea that the exit-only hypothesis is consistently profitable: the candidate lost more than baseline, profit factor stayed well below 1, and the losing streak reached 18. The second window had fixed parameters before this test session, but it cannot be represented as globally untouched because prior exploratory research may have examined the dates.
+
+## Follow-up: strict-lane ablation and partial-exit stress test — 2026-10-13
+
+To isolate the exit effect, additional paired runs disabled the proxy's single-swing, continuation, and micro-momentum lanes. This changes the experimental question: it is a **strict-lane diagnostic**, not a replication of the all-lanes report above. The same StrategyTune Gold M15 data stream and account settings were used within each date window. Results below group saved trade rows by `openingFillId`, combine partial closes, and exclude any entry with an open remainder.
+
+### Strict lane — 2026-07-01 to 2026-09-01
+
+| Metric | Baseline exits | Aggressive proxy exits (2.2R / 2.5R) |
+|---|---:|---:|
+| Fully closed opening fills | 22 | 19 |
+| Net P&L on closed opening fills | -$191.85 | +$24.95 |
+| Profit factor, grouped by opening fill | 0.289 | 1.081 |
+| Win rate | 50.0% | 31.6% |
+| Average winner | $7.08 | $55.45 |
+| Average loser (absolute) | $24.52 | $23.67 |
+| Expectancy per completed opening fill | -$8.72 | +$1.31 |
+| Maximum consecutive losses | 6 | 6 |
+| Platform-reported maximum drawdown | $226.21 | $181.31 |
+
+The aggressive variant had **one open entry group at the end** with approximately $17.90 floating P&L; that is excluded from its +$24.95 realized P&L. This one window is directionally better for the aggressive proxy exits, but the sample is small and the same proxy's custom accounting flags remain invalid. It is not proof of durable profitability.
+
+### Strict lane — 2026-09-01 to 2026-10-01
+
+| Metric | Baseline exits | Aggressive proxy exits (2.2R / 2.5R) | Hybrid proxy exits (0.75R / 2.5R) | Baseline exits + tighter concurrency/risk cap |
+|---|---:|---:|---:|---:|
+| Fully closed opening fills | 12 | 12 | 12 | 10 |
+| Net realized P&L | -$289.32 | -$486.22 | -$274.83 | -$270.15 |
+| Grouped profit factor | 0.051 | 0.000 | 0.099 | 0.036 |
+| Win rate | 25.0% | 0.0% | 25.0% | 20.0% |
+| Average winner | $5.21 | — | $10.04 | $5.03 |
+| Average loser (absolute) | $33.88 | $40.52 | $33.88 | $35.03 |
+| Expectancy per completed opening fill | -$24.11 | -$40.52 | -$22.90 | -$27.01 |
+| Maximum consecutive losses | 8 | 12 | 8 | 7 |
+| Platform-reported maximum drawdown | $299.88 | $517.06 | $321.68 | $280.71 |
+
+The hybrid configuration modestly reduced this month's loss relative to baseline but remained deeply unprofitable. Limiting the proxy to 2 concurrent lots and 0.50% portfolio risk reduced the number of entries but did not resolve negative expectancy. **No configuration passed a profitability gate.**
+
+### Trade-level finding: delayed partials amplify adverse clusters
+
+On 2026-09-04, the same three long entry groups were stopped at the same observed price of 4427.55, well beyond their recorded stop levels near 4459.9. With baseline exits, the third entry group partially exited earlier and booked about $5.58; with the 2.2R proxy partial trigger, the full group remained open and closed for approximately -$141.34. Two other concurrent long groups lost roughly $65.62 and $70.08. This illustrates two risks that must be treated separately:
+
+1. Raising the first partial trigger can remove small, early realized winners in choppy conditions and leave the full size exposed until the stop is reached.
+2. A stop level does not guarantee the fill price when the next available quote is beyond the stop. The example is a historical quote-stream gap/overshoot in the proxy, not a commission/slippage model and not evidence of identical Exness behavior.
+
+This makes exact position sizing, concurrent same-direction exposure controls, gap/slippage stress, and true broker/tick-ledger reconciliation mandatory before using any R-target change in the EA.
+
+## Parameter-parity correction
+
+The MT5 source confirms that `InpMinRiskReward` is used by `CRiskEngine::ValidateSetupAtEntry` to reject a setup when the planned setup TP1's reward distance is below the configured multiple of stop distance. The live partial-close threshold is separately supplied by `InpPartialAtR` to `CPositionManager`. The StrategyTune experiment changed `tp1RR`, which makes the proxy wait longer to take a partial; it did **not** implement the same setup-validation gate as the EA. Consequently, the proxy experiments show that delayed partials can fail badly in some windows, but they do **not** provide a faithful A/B measurement of the exact EA changes in PR #76.
+
+The next actual-EA experiment must be run in MT5 with identical input presets except for clearly isolated toggles: baseline setup R:R floor, candidate setup R:R floor, baseline partial threshold, and candidate partial threshold. First test the setup gate independently from the partial-exit threshold, then test the combined candidate. Capture the exact .set files, build hash, real-tick tester reports, deal rows including all costs, and open/censored positions. Until that exists, keep the EA behavior unchanged and PR #76 draft.
 
 ## Assessment against the requested evidence
 
