@@ -2,6 +2,10 @@
 
 These endpoints only persist admission/state. They do not place or retry broker orders.
 """
+import hashlib
+import json
+import math
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.models import ExecutionDealEvent
 from app.execution_control import (
     MAX_PORTFOLIO_HEAT_R,
     reconcile_closed_position,
@@ -342,4 +347,172 @@ async def sync_closed_position(
         "found": reconciled,
         "reconciled": reconciled,
         "broker_position_id": body.broker_position_id,
+    }
+
+
+class DealEventRequest(BaseModel):
+    portfolio_key: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+    broker_deal_id: str = Field(min_length=1, max_length=100)
+    broker_order_id: str | None = Field(default=None, max_length=100)
+    broker_position_id: str = Field(min_length=1, max_length=100)
+    symbol: str = Field(min_length=1, max_length=32)
+    entry_type: Literal["IN", "OUT", "OUT_BY", "INOUT"]
+    deal_type: Literal["BUY", "SELL"]
+    direction: Literal["BUY", "SELL"]  # direction of the position, not the closing deal
+    volume: float = Field(gt=0)
+    price: float = Field(gt=0)
+    profit_cashflow: float
+    commission_cashflow: float
+    swap_cashflow: float
+    fee_cashflow: float
+    cashflows_known: bool
+    position_open: bool
+    remaining_volume: float = Field(ge=0)
+    risk_r: float = Field(ge=0)
+    volatility: float = Field(ge=0)
+    factors: dict[str, float] = Field(default_factory=dict)
+    evidence_ref: str = Field(min_length=1, max_length=256)
+
+
+@router.post("/deal-event")
+async def ingest_deal_event(
+    body: DealEventRequest,
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Persist each broker deal once and reconcile the latest observed position.
+
+    The event fingerprint includes immutable broker-reported fields only. A
+    duplicate delivery can therefore update the position snapshot as it moves
+    from partially open to fully closed without creating a second deal event.
+    """
+    numeric_values = (
+        body.volume,
+        body.price,
+        body.profit_cashflow,
+        body.commission_cashflow,
+        body.swap_cashflow,
+        body.fee_cashflow,
+        body.remaining_volume,
+        body.risk_r,
+        body.volatility,
+        *body.factors.values(),
+    )
+    if any(not math.isfinite(value) for value in numeric_values):
+        raise HTTPException(status_code=422, detail="deal event values must be finite")
+    if body.position_open and (body.remaining_volume <= 0 or body.risk_r <= 0):
+        raise HTTPException(
+            status_code=422,
+            detail="an open position requires positive remaining volume and risk",
+        )
+
+    immutable_event = {
+        "portfolio_key": body.portfolio_key,
+        "broker_deal_id": body.broker_deal_id,
+        "broker_order_id": body.broker_order_id,
+        "broker_position_id": body.broker_position_id,
+        "symbol": body.symbol,
+        "entry_type": body.entry_type,
+        "deal_type": body.deal_type,
+        "volume": body.volume,
+        "price": body.price,
+        "profit_cashflow": body.profit_cashflow,
+        "commission_cashflow": body.commission_cashflow,
+        "swap_cashflow": body.swap_cashflow,
+        "fee_cashflow": body.fee_cashflow,
+        "cashflows_known": body.cashflows_known,
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            immutable_event,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    existing = await session.scalar(
+        select(ExecutionDealEvent)
+        .where(
+            ExecutionDealEvent.portfolio_key == body.portfolio_key,
+            ExecutionDealEvent.broker_deal_id == body.broker_deal_id,
+        )
+        .with_for_update()
+    )
+    if existing is not None and existing.event_fingerprint != fingerprint:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="broker deal ID already exists with conflicting immutable data",
+        )
+    duplicate = existing is not None
+    if not duplicate:
+        session.add(
+            ExecutionDealEvent(
+                portfolio_key=body.portfolio_key,
+                broker_deal_id=body.broker_deal_id,
+                broker_order_id=body.broker_order_id,
+                broker_position_id=body.broker_position_id,
+                symbol=body.symbol,
+                entry_type=body.entry_type,
+                deal_type=body.deal_type,
+                volume=body.volume,
+                price=body.price,
+                profit_cashflow=body.profit_cashflow,
+                commission_cashflow=body.commission_cashflow,
+                swap_cashflow=body.swap_cashflow,
+                fee_cashflow=body.fee_cashflow,
+                cashflows_known=body.cashflows_known,
+                event_fingerprint=fingerprint,
+                payload_json=immutable_event,
+                received_at=datetime.now(timezone.utc),
+            )
+        )
+
+    reconciled = False
+    over_heat_limit = False
+    portfolio_heat_r = None
+    try:
+        if body.position_open:
+            _, portfolio_heat_r, over_heat_limit = await reconcile_open_position(
+                session,
+                portfolio_key=body.portfolio_key,
+                request_id=body.request_id,
+                broker_position_id=body.broker_position_id,
+                broker_order_id=body.broker_order_id,
+                broker_deal_id=body.broker_deal_id,
+                symbol=body.symbol,
+                direction=body.direction,
+                risk_r=body.risk_r,
+                volatility=body.volatility,
+                factors=body.factors,
+                evidence_ref=body.evidence_ref,
+            )
+            reconciled = True
+        elif body.entry_type in {"OUT", "OUT_BY", "INOUT"}:
+            reconciled = await reconcile_closed_position(
+                session,
+                portfolio_key=body.portfolio_key,
+                broker_position_id=body.broker_position_id,
+                broker_deal_id=body.broker_deal_id,
+                evidence_ref=body.evidence_ref,
+                request_id=body.request_id,
+            )
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="broker deal persistence conflict") from exc
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "stored": True,
+        "duplicate": duplicate,
+        "reconciled": reconciled,
+        "broker_deal_id": body.broker_deal_id,
+        "portfolio_heat_r": portfolio_heat_r,
+        "over_heat_limit": over_heat_limit,
     }
