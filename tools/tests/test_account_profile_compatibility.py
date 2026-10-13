@@ -87,6 +87,8 @@ def test_micro_profile_cannot_execute_without_second_explicit_acknowledgement():
     tick_end = source.index("// Persistent per-symbol/per-magic emergency latch", tick_start)
     assert "InpConfirmMicroResearchExecution=false;" in source
     assert "MIDAS_PROFILE_MICRO_RESEARCH && !InpConfirmMicroResearchExecution" in guard
+    assert "ACCOUNT_TRADE_MODE_REAL" in guard
+    assert "MQLInfoInteger(MQL_TESTER)" in guard
     assert "IsProfileExecutionAllowed(profileBlockReason)" in source[manual_start:manual_end]
     assert "profileExecutionAllowed" in source[tick_start:tick_end]
     assert "PROFILE_EXECUTION_BLOCKED" in source
