@@ -42,6 +42,8 @@ def _write_deals(path: Path):
         ["P1", "2025-09-05T11:00:00Z", "out", 1.0, 5.0, -1.0, 0.0, 0.0],
         ["P2", "2025-10-05T10:00:00Z", "in", 1.0, 0.0, -1.0, 0.0, 0.0],
         ["P2", "2025-10-05T11:00:00Z", "out", 1.0, -20.0, -1.0, 0.0, 0.0],
+        ["P3", "2025-11-30T10:00:00Z", "in", 1.0, 0.0, -1.0, 0.0, 0.0],
+        ["P3", "2025-12-03T11:00:00Z", "out", 1.0, 10.0, -1.0, 0.0, 0.0],
     ]
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
@@ -114,10 +116,12 @@ def test_valid_matched_pair_hashes_files_and_reports_cost_inclusive_metrics(tmp_
     assert report["only_effective_set_difference"] == "InpDynamicStopUseHTFReferenceLevels"
     assert report["promotion_recommendation"] is None
     off = report["variants"]["htf_trailing_off"]["metrics"]["full_period"]
-    assert off["completed_positions"] == 2
-    assert off["net_pnl"] == -19.0  # -2 commission on P1 plus -2 on P2
+    assert off["completed_positions"] == 3
+    assert off["net_pnl"] == -11.0  # realized P&L includes commissions on all three positions
     oos = report["variants"]["htf_trailing_off"]["metrics"]["locked_oos"]
-    assert oos["completed_positions"] == 1
+    assert oos["completed_positions"] == 2  # P3 closes after the entry-window end but before maturity
+    assert oos["net_pnl"] == -14.0
+    assert report["variants"]["htf_trailing_off"]["metrics"]["locked_oos_censoring"]["closed_after_maturity_cut"] == 0
     assert report["on_minus_off_deltas"]["locked_oos"]["net_pnl"] == 0
 
 
