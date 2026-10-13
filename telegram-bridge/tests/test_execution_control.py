@@ -221,6 +221,7 @@ async def test_expired_lease_requires_reconciliation_and_keeps_risk_reserved():
 
 def test_execution_ledger_route_requires_api_key(client):
     payload = {
+        "portfolio_key": "account:test:magic:test",
         "request_id": "route-auth-test",
         "signal_id": "route-auth-signal",
         "symbol": "EURUSD",
@@ -241,6 +242,7 @@ def test_execution_ledger_route_requires_api_key(client):
 
 def test_execution_ledger_api_is_mounted_and_rejects_duplicate_requests(client, auth_headers):
     payload = {
+        "portfolio_key": "account:test:magic:test",
         "request_id": "route-idempotency-test",
         "signal_id": "route-idempotency-signal",
         "symbol": "EURUSD",
@@ -255,3 +257,38 @@ def test_execution_ledger_api_is_mounted_and_rejects_duplicate_requests(client, 
 
     duplicate = client.post("/execution-ledger/reserve", json=payload, headers=auth_headers)
     assert duplicate.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_portfolio_heat_isolated_by_portfolio_key():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            assert await reserve_execution(
+                session,
+                portfolio_key="server-A:login-1:magic-7",
+                request_id="account-a-request",
+                signal_id="signal-a",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=2.5,
+                volatility=0.8,
+                factors={"usd": 1.0},
+            )
+            await session.commit()
+
+        async with factory() as session:
+            assert await reserve_execution(
+                session,
+                portfolio_key="server-B:login-2:magic-7",
+                request_id="account-b-request",
+                signal_id="signal-b",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=2.5,
+                volatility=0.8,
+                factors={"usd": 1.0},
+            )
+            await session.commit()
+    finally:
+        await engine.dispose()
