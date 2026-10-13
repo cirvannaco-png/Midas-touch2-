@@ -59,8 +59,10 @@ def _context(dataset_hash: str) -> dict:
         "dataset_sha256": dataset_hash, "ea_source_sha": "a" * 40,
         "ea_build": "build-1", "terminal_build": "terminal-1", "data_vendor": "Exness",
         "spread_model": "real_ticks_plus_stress", "spread_widening_multiplier": 1.5,
-        "spread_points": None, "commission_per_lot": 7.0, "slippage_points": 2.0,
-        "swap_included": True, "fill_policy": "real_ticks", "costs_applied_in_tester": True,
+        "spread_points": None, "baseline_spread_points": 20.0, "cash_per_point_per_lot": 1.0,
+        "commission_per_lot": 7.0, "slippage_points": 2.0,
+        "swap_included": True, "fill_policy": "real_ticks",
+        "base_costs_applied_in_tester": True, "stress_costs_applied_in_analysis": True,
         "initial_balance": 10000.0, "account_currency": "USD", "leverage": "1:500",
     }
 
@@ -136,7 +138,14 @@ def test_matched_cost_inclusive_five_arm_report_is_reproducible(tmp_path):
     assert report["promotion_recommendation"] is None
     assert report["variants"]["A_current_baseline"]["full_period"]["completed_positions"] == 4
     assert report["variants"]["A_current_baseline"]["locked_oos"]["completed_positions"] == 2
-    assert report["variants"]["A_current_baseline"]["full_period"]["net_pnl"] == pytest.approx(105.5)
+    assert report["variants"]["A_current_baseline"]["full_period"]["net_pnl"] == pytest.approx(49.5)
+    full = report["variants"]["A_current_baseline"]["full_period"]
+    assert full["gross_price_pnl_cash"] == pytest.approx(135.0)
+    assert full["commission_cashflow"] == pytest.approx(-28.0)
+    assert full["swap_cashflow"] == pytest.approx(-1.5)
+    assert full["spread_widening_stress_cost_cash"] == pytest.approx(40.0)
+    assert full["slippage_stress_cost_cash"] == pytest.approx(16.0)
+    assert "historic spread is not charged twice" in report["cost_model"]["net_pnl_source"]
     first = report["variants"]["A_current_baseline"]["locked_oos"]["monte_carlo_trade_order_drawdown"]
     again, _ = compare_manifest(manifest, simulations=100, seed=123)
     assert first == again["variants"]["A_current_baseline"]["locked_oos"]["monte_carlo_trade_order_drawdown"]
