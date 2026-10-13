@@ -69,8 +69,9 @@ This is a meaningful integration, but not yet proof of full runtime correctness.
 ## Validation evidence and limits
 
 - MetaEditor compile run `38411210552` succeeded for commit `970347e0764284dc1543560e5dcba7ab2f861741`: **0 errors, 0 warnings**. The follow-up compile run `38411471533` also reported **0 errors, 0 warnings**. Artifact logs were uploaded by CI.
-- CI exposed and led to fixes for an MQL5 object-pointer call syntax error and a missing SQLAlchemy `select` import. The research-tool invariant tests were also updated to reflect the EA's current timer and explicit-transient-only retry policy; the newest CI run is still required to confirm those test changes.
-- PostgreSQL migration upgrade/downgrade/re-upgrade and the bridge security job passed on commit `970347e0764284dc1543560e5dcba7ab2f861741`; research-tool tests failed on stale invariant expectations and were corrected in a later commit.
+- CI exposed and led to fixes for an MQL5 object-pointer call syntax error, a missing SQLAlchemy `select` import, and stale research-tool invariant expectations.
+- Latest full CI run `38411769359` on commit `efaca75a81ed04e6026e313ce69cc529459dcafa` passed: Python bridge tests, research-tool tests, PostgreSQL migration upgrade/downgrade/re-upgrade, bridge quality/security, handbook tests, and MQL5 structural validation.
+- Latest MetaEditor compile run `38411769270` on the same commit passed with **0 errors and 0 warnings**.
 - CI's MQL5 structural validator is separate from the successful MetaEditor compiler.
 - No MT5 Strategy Tester report, Exness demo-broker order/close test, or live terminal restart/fault-injection evidence has been produced yet. These require a controlled tester dataset and an authorized demo account; the GitHub compiler runner alone cannot establish them.
 
