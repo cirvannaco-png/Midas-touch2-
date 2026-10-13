@@ -60,6 +60,8 @@ def _make_fixture(root: Path):
             writer.writerow(["P1", "2025-09-05T11:00:00Z", "out", 1.0, 5.0, -1.0, 0.0, 0.0])
             writer.writerow(["P2", "2025-10-05T10:00:00Z", "in", 1.0, 0.0, -1.0, 0.0, 0.0])
             writer.writerow(["P2", "2025-10-05T11:00:00Z", "out", 1.0, -20.0, -1.0, 0.0, 0.0])
+            writer.writerow(["P3", "2025-11-30T10:00:00Z", "in", 1.0, 0.0, -1.0, 0.0, 0.0])
+            writer.writerow(["P3", "2025-12-03T11:00:00Z", "out", 1.0, 10.0, -1.0, 0.0, 0.0])
         opens = root / f"{role}_open.csv"
         opens.write_text("position_id\n", encoding="utf-8")
         variants.append({
@@ -125,7 +127,8 @@ def test_one_shot_oos_scores_both_variants_once_and_writes_consumption_lock(tmp_
     assert result["status"] == "consumed_evaluation_complete"
     assert lock_payload["status"] == "consumed_evaluation_complete"
     assert payload["one_shot"]["operator_untouched_attestation_required_and_received"] is True
-    assert payload["matched_htf_trailing_comparison"]["variants"]["htf_trailing_off"]["locked_oos_cost_inclusive_metrics"]["completed_positions"] == 1
+    assert payload["matched_htf_trailing_comparison"]["variants"]["htf_trailing_off"]["locked_oos_cost_inclusive_metrics"]["completed_positions"] == 2
+    assert payload["predeclared_cost_stress_and_monte_carlo"]["htf_trailing_off"]["locked_oos"]["counts"]["completed_positions"] == 2
     assert len(payload["predeclared_cost_stress_and_monte_carlo"]["htf_trailing_off"]["locked_oos"]["cost_stress_monte_carlo"]) == 1
 
 
