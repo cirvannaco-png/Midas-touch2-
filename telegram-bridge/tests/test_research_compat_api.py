@@ -1,6 +1,7 @@
+import pytest
+
 from app.api.research_compat import canonical_hash
 from app.canonical_config import canonical_json
-import pytest
 
 
 def experiment_payload(experiment_id: str) -> dict:
