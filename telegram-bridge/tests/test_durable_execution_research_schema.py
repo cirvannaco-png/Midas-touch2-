@@ -60,7 +60,8 @@ def test_midas_specific_models_remain_registered():
 
 
 def test_migration_is_additive_and_follows_current_head():
-    migration = Path(__file__).parents[1] / "migrations" / "versions" / "0017_restore_durable_execution_research_schema.py"
+    bridge_root = Path(__file__).parents[1]
+    migration = bridge_root / "migrations" / "versions" / "0017_restore_durable_execution_research_schema.py"
     source = migration.read_text(encoding="utf-8")
     assert 'revision = "0017"' in source
     assert 'down_revision = "0016"' in source
@@ -78,14 +79,13 @@ def test_migration_is_additive_and_follows_current_head():
         assert f'"{table}"' in source
 
 
-def test_alembic_graph_has_one_head_at_0018():
+def test_alembic_graph_has_one_head_at_0019():
     bridge_root = Path(__file__).parents[1]
     config = Config(str(bridge_root / "alembic.ini"))
     config.set_main_option("script_location", str(bridge_root / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_current_head() == "0018"
-    assert scripts.get_heads() == ["0018"]
-
+    assert scripts.get_current_head() == "0019"
+    assert scripts.get_heads() == ["0019"]
 
 
 def test_signal_outcomes_keep_signed_cashflows_separate_from_cost_magnitudes():
