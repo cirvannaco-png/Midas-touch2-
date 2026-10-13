@@ -48,8 +48,13 @@ bool ValidateAccountRiskLimits(const AccountRiskLimits &limits,string &reason)
    if(!MathIsValidNumber(limits.maxPortfolioRiskPercent) ||
       limits.maxPortfolioRiskPercent<limits.riskPercentPerTrade)
       { reason="portfolio open-risk cap must be at least one base trade risk"; return false; }
+   if(limits.maxPortfolioRiskPercent>limits.maxDailyLossPercent)
+      { reason="portfolio open-risk cap must not exceed the daily-loss cap"; return false; }
    if(limits.maxPositionsPerSymbol<1 || limits.maxPositionsPerGroup<1)
       { reason="per-symbol and per-group position limits must be at least one"; return false; }
+   if(limits.maxPositionsPerSymbol>limits.maxOpenTrades ||
+      limits.maxPositionsPerGroup>limits.maxOpenTrades)
+      { reason="per-symbol and per-group limits must not exceed the account-wide open-trade cap"; return false; }
    return true;
   }
 
