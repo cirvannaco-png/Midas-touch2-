@@ -369,6 +369,12 @@ bool IsProfileExecutionAllowed(string &reasonOut)
      { reasonOut="effective account profile is not ready"; return false; }
    if(g_profileSwitchBlocked)
      { reasonOut="profile change is pending; existing exposure is being managed under the persisted profile and new entries are blocked"; return false; }
+   string lockKey=AccountProfileGlobalKey();
+   if(!GlobalVariableCheck(lockKey))
+     { reasonOut="account-wide profile identity is missing; refusing new entries"; return false; }
+   double lockedProfile=GlobalVariableGet(lockKey);
+   if(!MathIsValidNumber(lockedProfile) || MathAbs(lockedProfile-(double)g_activeProfile)>=0.1)
+     { reasonOut="this chart's effective profile differs from the persisted account-wide profile; reinitialize it under the active profile before allowing new entries"; return false; }
    if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH && !InpConfirmMicroResearchExecution)
      { reasonOut="MICRO_RESEARCH is research-only; enable InpConfirmMicroResearchExecution only for controlled Strategy Tester or demo validation"; return false; }
    if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH && !MQLInfoInteger(MQL_TESTER) &&
