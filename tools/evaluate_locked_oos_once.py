@@ -295,7 +295,7 @@ def evaluate_once(reservation_path: Path, manifest_path: Path, freeze_path: Path
     try:
         # All results from the locked interval are produced in this single call;
         # never rerun on the same window after reading them.
-        matched = compare_manifest(manifest_path)
+        matched = compare_manifest(manifest_path, include_locked_oos=True)
         context, freeze = info["context"], info["freeze"]
         dev_start = context["period_start"]
         oos_start = context["locked_oos_start"]
