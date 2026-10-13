@@ -3,6 +3,7 @@
 #property strict
 
 #include "includes/Core/Config.mqh"
+#include "includes/Core/AccountProfile.mqh"
 #include "includes/Core/CandleData.mqh"
 #include "includes/Core/SessionFilter.mqh" // direct dependency for operator-initiated session gating
 #include "includes/Core/SignalLogger.mqh"
@@ -151,6 +152,12 @@ input double InpMinConfidenceExecute=68.0;
 input double InpMinConfidenceSignal=58.0;
 input double InpFullRiskConfidence=85.0;
 input int InpMaxSpreadPoints=0;
+input group "Account Risk Profile"
+input ENUM_MIDAS_ACCOUNT_PROFILE InpAccountProfile=MIDAS_PROFILE_PROP_FIRM;
+// MICRO_RESEARCH is blocked from order execution unless explicitly acknowledged.
+input bool InpConfirmMicroResearchExecution=false;
+// Profile changes require confirmation and no positions or pending orders on the account.
+input bool InpConfirmAccountProfileChange=false;
 input group "Execution"
 input bool InpUseMarketOrders=true;
 input double InpRiskPercentPerTrade=0.5;
@@ -227,25 +234,191 @@ input string InpSession3Start="19:00";
 input string InpSession3End="22:00";
 
 CTFContextPool g_pool;CScoringEngine g_scoring;CSessionFilter g_operatorSessionFilter;CTradeDecision g_decision;CRiskEngine g_risk;CSignalLogger g_logger;COutcomeTrackerLive g_tracker;CEnvironmentStrategyMemory g_environmentMemory;CDecisionEngine g_router;CBrokerAdapter g_broker;COrderManager g_orders;CPositionManager g_positions;CRecoveryEngine g_recovery;CPortfolioManager g_portfolio;CMultiTradeEngine g_multiTrade;CRiskGuard g_riskGuard;CNewsFilter g_newsFilter;CSubscriberPlatform g_subscribers;CSignalPublisher g_publisher;CDailyTradeTarget g_dailyTradeTarget;CConfigSync g_configSync;CProductionMonitor g_monitor;CTradeControlPanel g_controlPanel;CExecutionAudit g_execAudit;bool g_emergencyStop=false;datetime g_lastSessionBlockLog=0;CTFContext* g_chartCtx=NULL;CTFContext* g_trendCtx=NULL;CTFContext* g_bosCtx=NULL;CTFContext* g_liqCtx=NULL;CTFContext* g_fvgCtx=NULL;CTFContext* g_htfObCtx=NULL;
-datetime g_lastLoggedTime=0,g_lastBarTime=0;long g_lifecycleDecisionId=0;datetime g_lifecycleCreationTime=0;TradeSetup g_lifecycleSetup;string g_lifecycleStatus="valid";bool g_panelInitialized=false;
+datetime g_lastLoggedTime=0,g_lastBarTime=0;long g_lifecycleDecisionId=0;datetime g_lifecycleCreationTime=0;TradeSetup g_lifecycleSetup;string g_lifecycleStatus="valid";bool g_panelInitialized=false;MidasAccountProfileConfig g_effectiveProfile;bool g_profileReady=false;bool g_profileSwitchBlocked=false;ENUM_MIDAS_ACCOUNT_PROFILE g_activeProfile=MIDAS_PROFILE_PROP_FIRM;
 
 string EmergencyStopGlobalKey();
 bool IsConfiguredSessionAllowed();
 bool IsNettingOrExchangeAccount();
 bool HasAnyChartSymbolExposure();
 void RefreshTradeControlPanel();
+bool BuildEffectiveAccountProfile(ENUM_MIDAS_ACCOUNT_PROFILE selectedProfile);
+bool AcquireAccountProfileLock(string &reasonOut);
+bool AccountHasAnyPositionOrOrder();
+bool IsProfileExecutionAllowed(string &reasonOut);
+
+bool BuildEffectiveAccountProfile(ENUM_MIDAS_ACCOUNT_PROFILE selectedProfile)
+  {
+   if(selectedProfile==MIDAS_PROFILE_PROP_FIRM)
+     {
+      g_effectiveProfile.profileName="PROP_FIRM";
+      g_effectiveProfile.riskPercentPerTrade=InpRiskPercentPerTrade;
+      g_effectiveProfile.maxOpenTrades=InpMaxOpenTrades;
+      g_effectiveProfile.maxPortfolioRiskPercent=InpMaxPortfolioRiskPercent;
+      g_effectiveProfile.maxPositionsPerSymbol=InpMaxPositionsPerSymbol;
+      g_effectiveProfile.maxPositionsPerGroup=InpMaxPositionsPerGroup;
+      g_effectiveProfile.maxDailyLossPercent=InpMaxDailyLossPercent;
+      g_effectiveProfile.maxDrawdownPercent=InpMaxDrawdownPercent;
+      g_effectiveProfile.deriskStartPercent=InpDeriskStartPercent;
+      g_effectiveProfile.deriskFloor=InpDeriskFloor;
+      // Retain legacy input compatibility but never bypass minimum-lot risk rejection.
+      g_effectiveProfile.allowMinLotOverride=false;
+     }
+   else if(selectedProfile==MIDAS_PROFILE_MICRO_RESEARCH)
+     {
+      g_effectiveProfile.profileName="MICRO_RESEARCH";
+      g_effectiveProfile.riskPercentPerTrade=8.0;
+      g_effectiveProfile.maxOpenTrades=1;
+      g_effectiveProfile.maxPortfolioRiskPercent=8.5;
+      g_effectiveProfile.maxPositionsPerSymbol=1;
+      g_effectiveProfile.maxPositionsPerGroup=1;
+      g_effectiveProfile.maxDailyLossPercent=18.0;
+      g_effectiveProfile.maxDrawdownPercent=35.0;
+      g_effectiveProfile.deriskStartPercent=10.0;
+      g_effectiveProfile.deriskFloor=0.25;
+      g_effectiveProfile.allowMinLotOverride=false;
+     }
+   else
+     {
+      PrintFormat("MedisTouch: invalid account profile enum %d; refusing initialization.",(int)InpAccountProfile);
+      return false;
+     }
+   string validationReason;
+   if(!ValidateMidasAccountProfile(g_effectiveProfile,validationReason))
+     {
+      PrintFormat("MedisTouch: invalid effective profile %s: %s; refusing initialization.",g_effectiveProfile.profileName,validationReason);
+      return false;
+     }
+   g_activeProfile=selectedProfile;
+   return true;
+  }
+
+bool AccountHasAnyPositionOrOrder()
+  {
+   // The lock is account-wide, so manual trades and other EAs count too.
+   if(PositionsTotal()>0 || OrdersTotal()>0) return true;
+   return false;
+  }
+
+string AccountProfileGlobalKey()
+  {
+   return "MedisTouch_AccountProfile_"+IntegerToString((int)AccountInfoInteger(ACCOUNT_LOGIN));
+  }
+
+bool AcquireAccountProfileLock(string &reasonOut)
+  {
+   reasonOut="";
+   string key=AccountProfileGlobalKey();
+   double selected=(double)InpAccountProfile;
+   if(!GlobalVariableCheck(key))
+     {
+      if(AccountHasAnyPositionOrOrder())
+        {
+         // No trustworthy prior profile identity exists while exposure is open.
+         // Persist an unknown sentinel, manage using the compatibility baseline,
+         // and prevent new entries until flat and explicitly initialized.
+         GlobalVariableSet(key,-1.0);
+         GlobalVariablesFlush();
+         if(!BuildEffectiveAccountProfile(MIDAS_PROFILE_PROP_FIRM))
+           { reasonOut="could not validate the compatibility profile for existing account exposure"; return false; }
+         g_profileSwitchBlocked=true;
+         reasonOut="account profile identity was not initialized before existing exposure; continuing management under PROP_FIRM compatibility settings and blocking new entries until flat and explicitly initialized";
+         PrintFormat("MedisTouch: %s",reasonOut);
+         return true;
+        }
+      GlobalVariableSet(key,selected);
+      GlobalVariablesFlush();
+      return true;
+     }
+   double stored=GlobalVariableGet(key);
+   bool storedNumericValid=MathIsValidNumber(stored);
+   if(storedNumericValid && MathAbs(stored-selected)<0.1) return true;
+   ENUM_MIDAS_ACCOUNT_PROFILE lockedProfile=MIDAS_PROFILE_PROP_FIRM;
+   bool storedProfileKnown=false;
+   // Never cast NaN/Inf or an arbitrary persisted value to the profile enum.
+   if(storedNumericValid)
+     {
+      lockedProfile=(ENUM_MIDAS_ACCOUNT_PROFILE)((int)MathRound(stored));
+      storedProfileKnown=(lockedProfile==MIDAS_PROFILE_PROP_FIRM || lockedProfile==MIDAS_PROFILE_MICRO_RESEARCH);
+     }
+   if(AccountHasAnyPositionOrOrder())
+     {
+      // Never abandon position management on a profile change during exposure.
+      // Continue under the persisted profile and block all new entries until
+      // the account is flat and the EA is reinitialized after confirmation.
+      if(!storedProfileKnown) lockedProfile=MIDAS_PROFILE_PROP_FIRM;
+      if(!BuildEffectiveAccountProfile(lockedProfile))
+        { reasonOut="persisted account profile is invalid and fallback configuration could not be validated"; return false; }
+      g_profileSwitchBlocked=true;
+      reasonOut=StringFormat("profile change to %s is pending; continuing position management under persisted profile %s, with new entries disabled until the account is flat and the EA is reinitialized",InpAccountProfile==MIDAS_PROFILE_MICRO_RESEARCH ? "MICRO_RESEARCH" : "PROP_FIRM",g_effectiveProfile.profileName);
+      PrintFormat("MedisTouch: %s",reasonOut);
+      return true;
+     }
+   if(!storedProfileKnown && !InpConfirmAccountProfileChange)
+     {
+      reasonOut="persisted account profile identifier is unknown; set InpConfirmAccountProfileChange=true after review and while the account is flat";
+      return false;
+     }
+   if(!InpConfirmAccountProfileChange)
+     {
+      reasonOut=StringFormat("account profile mismatch: terminal lock is %.0f, selected profile is %s. Set InpConfirmAccountProfileChange=true to switch while flat.",stored,g_effectiveProfile.profileName);
+      return false;
+     }
+   GlobalVariableSet(key,selected);
+   GlobalVariablesFlush();
+   PrintFormat("MedisTouch: account profile lock changed explicitly to %s; persisted daily baseline, peak equity, hard-halt, and emergency-stop variables were not reset.",g_effectiveProfile.profileName);
+   return true;
+  }
+
+bool IsProfileExecutionAllowed(string &reasonOut)
+  {
+   reasonOut="";
+   if(!g_profileReady)
+     { reasonOut="effective account profile is not ready"; return false; }
+   if(g_profileSwitchBlocked)
+     { reasonOut="profile change is pending; existing exposure is being managed under the persisted profile and new entries are blocked"; return false; }
+   string lockKey=AccountProfileGlobalKey();
+   if(!GlobalVariableCheck(lockKey))
+     { reasonOut="account-wide profile identity is missing; refusing new entries"; return false; }
+   double lockedProfile=GlobalVariableGet(lockKey);
+   if(!MathIsValidNumber(lockedProfile) || MathAbs(lockedProfile-(double)g_activeProfile)>=0.1)
+     { reasonOut="this chart's effective profile differs from the persisted account-wide profile; reinitialize it under the active profile before allowing new entries"; return false; }
+   if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH && !InpConfirmMicroResearchExecution)
+     { reasonOut="MICRO_RESEARCH is research-only; enable InpConfirmMicroResearchExecution only for controlled Strategy Tester or demo validation"; return false; }
+   if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH && !MQLInfoInteger(MQL_TESTER) &&
+      (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE)==ACCOUNT_TRADE_MODE_REAL)
+     { reasonOut="MICRO_RESEARCH order execution is prohibited on real-money accounts"; return false; }
+   return true;
+  }
 
 int OnInit()
   {
+   if(!BuildEffectiveAccountProfile(InpAccountProfile)) return INIT_PARAMETERS_INCORRECT;
+   g_profileReady=true;
+   string profileLockReason;
+   if(!AcquireAccountProfileLock(profileLockReason))
+     { PrintFormat("MedisTouch: %s; refusing initialization.",profileLockReason); g_profileReady=false; return INIT_FAILED; }
+   string configSignature=StringFormat("%s|%.2f|%d|%.2f|%d|%d|%.2f|%.2f|%.2f|%.2f",g_effectiveProfile.profileName,
+                                      g_effectiveProfile.riskPercentPerTrade,g_effectiveProfile.maxOpenTrades,g_effectiveProfile.maxPortfolioRiskPercent,
+                                      g_effectiveProfile.maxPositionsPerSymbol,g_effectiveProfile.maxPositionsPerGroup,g_effectiveProfile.maxDailyLossPercent,
+                                      g_effectiveProfile.maxDrawdownPercent,g_effectiveProfile.deriskStartPercent,g_effectiveProfile.deriskFloor);
+   PrintFormat("MedisTouch PROFILE: name=%s account=%I64d margin_mode=%d risk_pct=%.2f max_open=%d portfolio_cap_pct=%.2f per_symbol=%d per_group=%d daily_loss_pct=%.2f hard_dd_pct=%.2f derisk_start_pct=%.2f derisk_floor=%.2f micro_execution_ack=%s config_signature=%s",
+               g_effectiveProfile.profileName,AccountInfoInteger(ACCOUNT_LOGIN),(int)AccountInfoInteger(ACCOUNT_MARGIN_MODE),
+               g_effectiveProfile.riskPercentPerTrade,g_effectiveProfile.maxOpenTrades,g_effectiveProfile.maxPortfolioRiskPercent,
+               g_effectiveProfile.maxPositionsPerSymbol,g_effectiveProfile.maxPositionsPerGroup,g_effectiveProfile.maxDailyLossPercent,
+               g_effectiveProfile.maxDrawdownPercent,g_effectiveProfile.deriskStartPercent,g_effectiveProfile.deriskFloor,
+               InpConfirmMicroResearchExecution ? "true" : "false",configSignature);
+   PrintFormat("MedisTouch PROFILE_SELECTION: requested=%d effective=%s pending_switch=%s",(int)InpAccountProfile,g_effectiveProfile.profileName,g_profileSwitchBlocked ? "true" : "false");
+   if(g_activeProfile==MIDAS_PROFILE_MICRO_RESEARCH)
+      Print("MedisTouch WARNING: MICRO_RESEARCH uses an aggressive experimental risk envelope. StrategyTune filters and adaptive loss-streak logic are not ported by this profile. Use Strategy Tester or demo only; no profitability claim is made.");
    g_pool.Configure(_Symbol,InpMaxHistoryBars,InpSwingStrength,InpFVGMinSizeATR,InpInternalLiqThresholdATR,InpRVOLLookback,InpVALookbackBars,InpVANumBins,InpVAPercent/100.0,InpOBDisplacementATRMult,InpOBMinBodyRatio);g_chartCtx=g_pool.Get(_Period);g_trendCtx=g_pool.Get(InpTrendTF);g_bosCtx=g_pool.Get(InpBOSTF);g_liqCtx=g_pool.Get(InpLiquidityTF);g_fvgCtx=g_pool.Get(InpFVGTF);g_htfObCtx=g_pool.Get(InpHtfObTF);if(g_chartCtx==NULL||g_trendCtx==NULL||g_bosCtx==NULL||g_liqCtx==NULL||g_fvgCtx==NULL||g_htfObCtx==NULL)return INIT_FAILED;
    g_scoring.Init(g_trendCtx,g_bosCtx,g_liqCtx,g_fvgCtx,g_chartCtx,&g_chartCtx.candles);g_scoring.ConfigureInducement(InpImpulseLookbackBars,InpImpulseATRMult,InpImpulseBodyRatio,InpEqualTolATR,InpMaxLegExtend,InpRequirePremiumDiscount,InpRequireDistributionPhase,InpPhaseRangeLookback,InpPhaseCompressionATRMult);g_scoring.ConfigureVolumeFibonacci(InpRequireVolumeConfirmation,InpRVOLThreshold,InpRequireFibonacciZone,InpFibZoneMinPct,InpFibZoneMaxPct);g_scoring.ConfigureValueArea(InpRequireValueAreaLocation,InpBlockValueAreaContradictions);g_scoring.ConfigureHtfOrderBlock(g_htfObCtx,InpRequireHtfOB,InpOBDistATRMax);g_scoring.ConfigureVolatilityRegime(InpBlockLowVolRegime,InpVolRegimeLookback,InpVolRegimeLowPct,InpVolRegimeHighPct);g_scoring.ConfigureSessionFilter(InpUseSessionFilter,InpAllowTokyoSession,InpAllowLondonSession,InpAllowNewYorkSession,InpAllowLondonNYOverlap);g_operatorSessionFilter.Configure(InpUseSessionFilter,InpAllowTokyoSession,InpAllowLondonSession,InpAllowNewYorkSession,InpAllowLondonNYOverlap);g_scoring.ConfigureSweepQuality(InpRequireMinSweepGrade,(ENUM_SWEEP_GRADE)InpMinSweepGrade,InpRequireFreshSetup,InpMaxBarsSinceBOS);g_scoring.ConfigureChaseFilter(InpRequireChaseFilter,InpMaxChaseDistATR);g_scoring.ConfigureFVGProximity(InpFVGMaxDistATR);g_scoring.ConfigureLearnedDiagnostics(InpDiagContradictionWeight,InpDiagEnvWeight,InpDiagExecWeight);g_scoring.ConfigureStrategyDiagnostics(InpMomentumBreakoutRecencyBars,InpBreakoutLiqOverlapBars,InpBreakoutExtensionLookbackBars,InpBreakoutExhaustionATRMult,InpMomentumLookbackBars);g_scoring.ConfigureMeanReversionDiagnostics(InpReversionMinStretchATR,InpReversionSRZoneATRTolerance,InpReversionWickRejectionRatio,InpReversionLiqRecencyBars,InpReversionTrendConflictRecencyBars,InpReversionTrendConflictMinStrength);g_scoring.ConfigureKeyLevelDiagnostics(InpKeyLevelLookbackBars,InpKeyLevelSearchATRMax,InpKeyLevelTouchToleranceATRMult,InpKeyLevelAbsorptionMinTouches,InpKeyLevelWickRejectionRatio,InpKeyLevelRoundStep);g_scoring.ConfigureStrategySelection(InpMinSelectionScore);
-   g_environmentMemory.Init(_Symbol,InpEnvironmentMemoryMinSample,InpEnvironmentMemoryBonus,InpEnvironmentMemoryPenalty);g_decision.Init(&g_chartCtx.candles,g_fvgCtx,g_liqCtx,&g_scoring,InpSLBufferATR,InpMinStopSpreadMult,InpFVGMaxDistATR,InpMinSelectionScore,g_chartCtx,g_bosCtx,GetPointer(g_environmentMemory));g_logger.Init(_Symbol,InpSessionGMTOffsetOverride);g_tracker.Init(&g_logger,_Symbol,_Period,InpMaxTrackingBars,InpFillPolicy,InpReplayTF);g_tracker.ConfigureEnvironmentMemory(GetPointer(g_environmentMemory));g_tracker.ConfigureSimulation(InpRiskPercentPerTrade,InpAllowMinLotOverride,InpBreakEvenAtR,InpPartialAtR,InpPartialFraction,InpTrailATRMult,InpSimCommissionPerLot,InpSimSpreadPoints,InpSimSlippagePoints);g_tracker.ConfigureCalibration(InpTrackOutcomes,InpCalibrationMinSample);g_tracker.ConfigureConfidenceDecay(InpDiagDecayHalfLifeBars);g_router.Init(_Symbol,InpEnableExecution,InpEnableSignals,InpMinConfidenceExecute,InpMinConfidenceSignal,InpFullRiskConfidence,InpMaxSpreadPoints);g_multiTrade.Init(InpEnableMultiTrade,InpMultiTradeDualProbability,InpMultiTradeTripleProbability,InpMultiTradeMinRawConfidence,InpMultiTradeMinCalibrationSample,InpMultiTradeDualLeg0RiskFraction,InpMultiTradeDualLeg1RiskFraction,InpMultiTradeTripleLeg0RiskFraction,InpMultiTradeTripleLeg1RiskFraction,InpMultiTradeTripleLeg2RiskFraction,InpRequireHedgingForMultiTrade);g_broker.Init(InpMagicNumber);g_monitor.Init(_Symbol,InpHeartbeatIntervalSec,InpMaxDrawdownAlertPercent);g_orders.Init(&g_broker,InpMaxOpenTrades,&g_monitor);g_positions.Init(&g_orders,&g_broker,InpBreakEvenAtR,InpPartialAtR,InpPartialFraction,InpTrailATRMult,0,0.0,0.0,5,&g_chartCtx.swings);g_store.Init(_Symbol);g_execAudit.Init(_Symbol,InpMagicNumber);g_emergencyStop=(GlobalVariableCheck(EmergencyStopGlobalKey()) && GlobalVariableGet(EmergencyStopGlobalKey())>0.5);if(InpShowTradeControlPanel || g_emergencyStop){g_panelInitialized=g_controlPanel.Init(ChartID(),_Symbol,InpMagicNumber);if(!g_panelInitialized)Print("MedisTouch: trade control panel could not create every chart object.");}g_execAudit.Log("INIT",StringFormat("version=2.81 magic=%I64u emergency_latched=%s account_margin_mode=%d",InpMagicNumber,g_emergencyStop?"true":"false",(int)AccountInfoInteger(ACCOUNT_MARGIN_MODE)));if((ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING){g_execAudit.Log("ACCOUNT_MODE_WARNING","MT5 netting/exchange mode aggregates same-symbol exposure; isolate manual/other-EA activity before using close-all");Print("MedisTouch: WARNING — netting/exchange account may aggregate this symbol with other trade sources.");}g_dailyTradeTarget.Init(InpMinimumQualifiedTradesPerDay);g_subscribers.Init();g_publisher.Init(_Symbol,&g_subscribers,InpWebRequestTimeoutMs,InpBridgeApiKey);g_publisher.SetWeightVersion(InpWeightSetVersion);
-   if(StringLen(InpConfigSyncEndpoint)>0){g_configSync.Init(_Symbol,InpConfigSyncEndpoint,InpBridgeApiKey,InpWeightSetVersion,InpWebRequestTimeoutMs);EventSetTimer(MathMax(60,InpConfigSyncPollMinutes*60));}g_tracker.ConfigurePublishing(&g_publisher,InpWeightSetVersion);g_portfolio.Init(InpMaxPortfolioRiskPercent,InpMaxPositionsPerSymbol,InpMaxPositionsPerGroup,InpMagicNumber,&g_risk);g_riskGuard.Init(_Symbol,InpMaxDailyLossPercent,InpMaxDrawdownPercent,InpDeriskStartPercent,InpDeriskFloor);if(InpUseNewsFilter)g_newsFilter.Load(InpNewsFilterFile,InpNewsMinutesBefore,InpNewsMinutesAfter);g_scoring.ConfigureNewsAwareness(GetPointer(g_newsFilter),InpNewsWarnMinutesBefore,InpNewsWarnMinutesAfter,InpNewsWarnMultiplier);g_recovery.Init(&g_store,&g_orders,InpMagicNumber,_Symbol);int restored=g_recovery.Recover();if(restored>0)PrintFormat("MedisTouch EA: recovery restored %d live trade(s).",restored);TradeDecisionRecord prior[];int n=g_store.LoadAll(prior);long maxId=0;for(int i=0;i<n;i++)if(prior[i].decision_id>maxId)maxId=prior[i].decision_id;if(maxId>0)g_router.SeedNextId(maxId+1);return INIT_SUCCEEDED;
+   g_environmentMemory.Init(_Symbol,InpEnvironmentMemoryMinSample,InpEnvironmentMemoryBonus,InpEnvironmentMemoryPenalty);g_decision.Init(&g_chartCtx.candles,g_fvgCtx,g_liqCtx,&g_scoring,InpSLBufferATR,InpMinStopSpreadMult,InpFVGMaxDistATR,InpMinSelectionScore,g_chartCtx,g_bosCtx,GetPointer(g_environmentMemory));g_logger.Init(_Symbol,InpSessionGMTOffsetOverride);g_tracker.Init(&g_logger,_Symbol,_Period,InpMaxTrackingBars,InpFillPolicy,InpReplayTF);g_tracker.ConfigureEnvironmentMemory(GetPointer(g_environmentMemory));g_tracker.ConfigureSimulation(g_effectiveProfile.riskPercentPerTrade,g_effectiveProfile.allowMinLotOverride,InpBreakEvenAtR,InpPartialAtR,InpPartialFraction,InpTrailATRMult,InpSimCommissionPerLot,InpSimSpreadPoints,InpSimSlippagePoints);g_tracker.ConfigureCalibration(InpTrackOutcomes,InpCalibrationMinSample);g_tracker.ConfigureConfidenceDecay(InpDiagDecayHalfLifeBars);g_router.Init(_Symbol,InpEnableExecution,InpEnableSignals,InpMinConfidenceExecute,InpMinConfidenceSignal,InpFullRiskConfidence,InpMaxSpreadPoints);g_multiTrade.Init(InpEnableMultiTrade,InpMultiTradeDualProbability,InpMultiTradeTripleProbability,InpMultiTradeMinRawConfidence,InpMultiTradeMinCalibrationSample,InpMultiTradeDualLeg0RiskFraction,InpMultiTradeDualLeg1RiskFraction,InpMultiTradeTripleLeg0RiskFraction,InpMultiTradeTripleLeg1RiskFraction,InpMultiTradeTripleLeg2RiskFraction,InpRequireHedgingForMultiTrade);g_broker.Init(InpMagicNumber);g_monitor.Init(_Symbol,InpHeartbeatIntervalSec,InpMaxDrawdownAlertPercent);g_orders.Init(&g_broker,g_effectiveProfile.maxOpenTrades,&g_monitor);g_positions.Init(&g_orders,&g_broker,InpBreakEvenAtR,InpPartialAtR,InpPartialFraction,InpTrailATRMult,0,0.0,0.0,5,&g_chartCtx.swings);g_store.Init(_Symbol);g_execAudit.Init(_Symbol,InpMagicNumber);g_emergencyStop=(GlobalVariableCheck(EmergencyStopGlobalKey()) && GlobalVariableGet(EmergencyStopGlobalKey())>0.5);if(InpShowTradeControlPanel || g_emergencyStop){g_panelInitialized=g_controlPanel.Init(ChartID(),_Symbol,InpMagicNumber);if(!g_panelInitialized)Print("MedisTouch: trade control panel could not create every chart object.");}g_execAudit.Log("INIT",StringFormat("version=2.81 magic=%I64u emergency_latched=%s account_margin_mode=%d",InpMagicNumber,g_emergencyStop?"true":"false",(int)AccountInfoInteger(ACCOUNT_MARGIN_MODE)));if((ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING){g_execAudit.Log("ACCOUNT_MODE_WARNING","MT5 netting/exchange mode aggregates same-symbol exposure; isolate manual/other-EA activity before using close-all");Print("MedisTouch: WARNING — netting/exchange account may aggregate this symbol with other trade sources.");}g_dailyTradeTarget.Init(InpMinimumQualifiedTradesPerDay);g_subscribers.Init();g_publisher.Init(_Symbol,&g_subscribers,InpWebRequestTimeoutMs,InpBridgeApiKey);g_publisher.SetWeightVersion(InpWeightSetVersion);
+   if(StringLen(InpConfigSyncEndpoint)>0){g_configSync.Init(_Symbol,InpConfigSyncEndpoint,InpBridgeApiKey,InpWeightSetVersion,InpWebRequestTimeoutMs);EventSetTimer(MathMax(60,InpConfigSyncPollMinutes*60));}g_tracker.ConfigurePublishing(&g_publisher,InpWeightSetVersion);g_portfolio.Init(g_effectiveProfile.maxPortfolioRiskPercent,g_effectiveProfile.maxPositionsPerSymbol,g_effectiveProfile.maxPositionsPerGroup,InpMagicNumber,&g_risk);g_riskGuard.Init(_Symbol,g_effectiveProfile.maxDailyLossPercent,g_effectiveProfile.maxDrawdownPercent,g_effectiveProfile.deriskStartPercent,g_effectiveProfile.deriskFloor);if(InpUseNewsFilter)g_newsFilter.Load(InpNewsFilterFile,InpNewsMinutesBefore,InpNewsMinutesAfter);g_scoring.ConfigureNewsAwareness(GetPointer(g_newsFilter),InpNewsWarnMinutesBefore,InpNewsWarnMinutesAfter,InpNewsWarnMultiplier);g_recovery.Init(&g_store,&g_orders,InpMagicNumber,_Symbol);int restored=g_recovery.Recover();if(restored>0)PrintFormat("MedisTouch EA: recovery restored %d live trade(s).",restored);TradeDecisionRecord prior[];int n=g_store.LoadAll(prior);long maxId=0;for(int i=0;i<n;i++)if(prior[i].decision_id>maxId)maxId=prior[i].decision_id;if(maxId>0)g_router.SeedNextId(maxId+1);return INIT_SUCCEEDED;
   }
 void OnDeinit(const int reason){if(StringLen(InpConfigSyncEndpoint)>0)EventKillTimer();g_execAudit.Log("DEINIT",StringFormat("reason=%d",reason));if(g_panelInitialized)g_controlPanel.Destroy();g_publisher.Deinit();g_subscribers.Deinit();g_store.Deinit();}
 void OnTimer(){if(StringLen(InpConfigSyncEndpoint)>0)g_configSync.Poll();}
 void CheckSignalLifecycle(double atr){if(g_lifecycleDecisionId==0)return;bool filled;double fillPrice;datetime fillTime;int barsToFill;if(!g_tracker.GetFillState(g_lifecycleCreationTime,g_lifecycleDecisionId,filled,fillPrice,fillTime,barsToFill)){g_lifecycleDecisionId=0;return;}if(filled){g_lifecycleDecisionId=0;return;}bool buy=g_lifecycleSetup.type==ORDER_TYPE_BUY;int barsSince=iBarShift(_Symbol,_Period,g_lifecycleCreationTime,false);if(barsSince>=InpSignalExpiryBars){if(g_lifecycleStatus!="expired"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"expired",StringFormat("Unfilled for %d execution bars",barsSince));g_lifecycleStatus="expired";}g_lifecycleDecisionId=0;return;}double opposite=g_scoring.CalculateConfidence(!buy);if(opposite>=InpInvalidateOpposingConfidence){if(g_lifecycleStatus!="invalidated"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"invalidated",StringFormat("Opposing confidence %.0f",opposite));g_lifecycleStatus="invalidated";}g_lifecycleDecisionId=0;return;}if(atr>0){double entry=ResolveExecutionEntry(g_lifecycleSetup);double price=buy?SymbolInfoDouble(_Symbol,SYMBOL_ASK):SymbolInfoDouble(_Symbol,SYMBOL_BID);double drift=MathAbs(price-entry)/atr;bool wrong=buy?(price>entry):(price<entry);if(wrong&&drift>=InpSignalStaleChaseATR){if(g_lifecycleStatus!="stale"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"stale",StringFormat("Price drifted %.2f ATR past entry",drift));g_lifecycleStatus="stale";}}else if(g_lifecycleStatus=="stale"&&drift<InpSignalStaleChaseATR*0.5){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"valid","Price returned toward entry");g_lifecycleStatus="valid";}}}
-void OnTick(){g_monitor.OnTickCheck();g_dailyTradeTarget.OnTick();g_pool.DetectAll();if(g_chartCtx==NULL||!g_chartCtx.candles.IsReady())return;double atr=g_chartCtx.candles.GetATR(0);g_positions.OnTick(atr);g_orders.Prune();g_riskGuard.OnTick();RefreshTradeControlPanel();if(g_emergencyStop)return;if(InpPublishLifecycleUpdates)CheckSignalLifecycle(atr);datetime barTime=iTime(_Symbol,_Period,0);bool isNewBar=(barTime!=g_lastBarTime);g_lastBarTime=barTime;if(!isNewBar)return;if(InpTrackOutcomes)g_tracker.Update(g_chartCtx);string haltReason;if(g_riskGuard.IsHardHalted(haltReason))return;if(g_riskGuard.IsDailyLossLimitHit(haltReason))return;string newsReason;if(InpUseNewsFilter&&g_newsFilter.IsLocked(newsReason))return;if(!IsConfiguredSessionAllowed()){if(TimeCurrent()-g_lastSessionBlockLog>=900){g_execAudit.Log("SESSION_BLOCK","new automated entries suppressed outside configured session windows");g_lastSessionBlockLog=TimeCurrent();}return;}TradeSetup buySetup=g_decision.GenerateBuySetup();TradeSetup sellSetup=g_decision.GenerateSellSetup();TradeSetup chosen;ZeroMemory(chosen);double delta=buySetup.confidence-sellSetup.confidence;if(buySetup.active&&sellSetup.active){if(delta>=InpMinDirectionalAdvantage){if(g_risk.ValidateSetup(buySetup,InpMinRiskReward,InpMaxSLDistanceATR,atr))chosen=buySetup;}else if(-delta>=InpMinDirectionalAdvantage){if(g_risk.ValidateSetup(sellSetup,InpMinRiskReward,InpMaxSLDistanceATR,atr))chosen=sellSetup;}}else if(buySetup.active){if(g_risk.ValidateSetup(buySetup,InpMinRiskReward,InpMaxSLDistanceATR,atr))chosen=buySetup;}else if(sellSetup.active){if(g_risk.ValidateSetup(sellSetup,InpMinRiskReward,InpMaxSLDistanceATR,atr))chosen=sellSetup;}if(!chosen.active||chosen.creation_time==g_lastLoggedTime)return;g_lastLoggedTime=chosen.creation_time;chosen.calibrated_probability=g_tracker.GetCalibratedProbability(chosen.confidence,chosen.calibration_sample,chosen.calibration_has_enough_data);if(InpLogSignals){ENUM_TREND_STATE t=g_trendCtx.trend.GetCurrentTrend();g_logger.LogSetup(chosen,_Symbol,InpFVGTF,EnumToString(t));}TradeDecisionRecord decision=g_router.Decide(chosen);g_execAudit.Log("DECISION",StringFormat("automated candidate action=%s confidence=%.1f reason=%s",TradePolicyToString(decision.action),decision.confidence,decision.reason),decision.decision_id,0,0.0,ResolveExecutionEntry(chosen),chosen.stop_loss,chosen.final_tp);decision.timeframe=_Period;decision.decision_schema_version=InpDecisionSchemaVersion;decision.strategy_version=InpStrategyVersion;decision.model_version=InpModelVersion;decision.calibration_version=InpCalibrationVersion;decision.feature_schema_version=InpFeatureSchemaVersion;decision.environment_schema_version=InpEnvironmentSchemaVersion;decision.weight_version=InpWeightSetVersion;decision.environment_key=g_environmentMemory.Key(chosen.reasons);decision.spread_points=chosen.reasons.spread_points;decision.decision_fingerprint=DecisionFingerprintFor(decision);if(InpTrackOutcomes)g_tracker.AddSetup(chosen,decision.decision_id,decision.decision_fingerprint);if(!decision.valid||decision.action==POLICY_IGNORE)return;if(!g_store.Save(decision)){PrintFormat("MedisTouch EA: decision #%I64d rejected — durable DecisionStore write failed.",decision.decision_id);return;}if(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL){if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure()){g_execAudit.Log("AUTOMATED_BLOCKED_NETTING_EXPOSURE",StringFormat("decision #%I64d suppressed: same-symbol position or pending order already exists on netting/exchange account",decision.decision_id),decision.decision_id);}else{int availableSlots=InpMaxOpenTrades-g_orders.OpenCount();if(availableSlots<0)availableSlots=0;MultiTradePlan plan;bool planOk=g_multiTrade.Build(decision.setup,availableSlots,plan);if(!planOk){PrintFormat("MedisTouch EA: decision #%I64d rejected — multi-trade plan construction failed.",decision.decision_id);return;}double entry=ResolveExecutionEntry(chosen);double legLots[3];double legRisk[3];for(int leg=0;leg<3;leg++){legLots[leg]=0.0;legRisk[leg]=0.0;}bool sizingOk=true;for(int leg=0;leg<plan.legCount;leg++){double fraction=plan.riskFraction[leg];bool exceeded=false;legLots[leg]=g_risk.CalculateLotSize(_Symbol,InpRiskPercentPerTrade*fraction,entry,chosen.stop_loss,decision.reduce_risk,InpAllowMinLotOverride,exceeded,g_riskGuard.SizeMultiplier());if(legLots[leg]<=0.0){sizingOk=false;break;}legRisk[leg]=g_risk.RiskAmountForLots(_Symbol,legLots[leg],entry,chosen.stop_loss);}if(!sizingOk){PrintFormat("MedisTouch EA: decision #%I64d skipped — one or more execution legs cannot satisfy broker lot/risk constraints.",decision.decision_id);return;}double totalProposedRisk=0.0;for(int leg=0;leg<plan.legCount;leg++)totalProposedRisk+=legRisk[leg];string block;if(!g_portfolio.AllowNewTradeBatch(_Symbol,totalProposedRisk,plan.legCount,block)){PrintFormat("MedisTouch EA: decision #%I64d blocked — %s",decision.decision_id,block);return;}ulong tickets[3];bool submittedAny=false;double maxDeviation=InpMaxEntryDeviationATR*atr;for(int leg=0;leg<plan.legCount;leg++){TradeDecisionRecord legDecision=decision;legDecision.setup.final_tp=plan.target[leg];legDecision.reason+=StringFormat("; multi-trade leg %d/%d (%s)",leg+1,plan.legCount,plan.label[leg]);ulong ticket=0;if(g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,ticket,leg)){submittedAny=true;tickets[leg]=ticket;if(!g_store.SaveExecution(decision.decision_id,legLots[leg],ticket,leg,plan.target[leg])){PrintFormat("CRITICAL: decision #%I64d leg %d executed but execution record was not durably persisted.",decision.decision_id,leg);g_execAudit.Log("CRITICAL_EXECUTION_RECORD_FAILURE","automated order submitted but execution persistence failed",decision.decision_id,ticket,legLots[leg],entry,chosen.stop_loss,plan.target[leg]);}else g_execAudit.Log("ORDER_SUBMITTED",StringFormat("automated leg %d/%d",leg+1,plan.legCount),decision.decision_id,ticket,legLots[leg],entry,chosen.stop_loss,plan.target[leg]);}else{g_monitor.NotifyBrokerReject();g_execAudit.Log("ORDER_REJECTED","automated broker/order-manager submission failed",decision.decision_id,0,legLots[leg],entry,chosen.stop_loss,plan.target[leg]);}}if(!submittedAny)PrintFormat("MedisTouch EA: decision #%I64d rejected by broker on every requested execution leg.",decision.decision_id);}}if(decision.action==POLICY_SIGNAL_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL){g_publisher.Publish(decision);g_lifecycleDecisionId=decision.decision_id;g_lifecycleCreationTime=chosen.creation_time;g_lifecycleSetup=chosen;g_lifecycleStatus="valid";}}
+void OnTick(){g_monitor.OnTickCheck();g_dailyTradeTarget.OnTick();g_pool.DetectAll();if(g_chartCtx==NULL||!g_chartCtx.candles.IsReady())return;double atr=g_chartCtx.candles.GetATR(0);g_positions.OnTick(atr);g_orders.Prune();g_riskGuard.OnTick();RefreshTradeControlPanel();if(g_emergencyStop)return;if(InpPublishLifecycleUpdates)CheckSignalLifecycle(atr);datetime barTime=iTime(_Symbol,_Period,0);bool isNewBar=(barTime!=g_lastBarTime);g_lastBarTime=barTime;if(!isNewBar)return;if(InpTrackOutcomes)g_tracker.Update(g_chartCtx);string haltReason;if(g_riskGuard.IsHardHalted(haltReason))return;if(g_riskGuard.IsDailyLossLimitHit(haltReason))return;string newsReason;if(InpUseNewsFilter&&g_newsFilter.IsLocked(newsReason))return;if(!IsConfiguredSessionAllowed()){if(TimeCurrent()-g_lastSessionBlockLog>=900){g_execAudit.Log("SESSION_BLOCK","new automated entries suppressed outside configured session windows");g_lastSessionBlockLog=TimeCurrent();}return;}TradeSetup buySetup=g_decision.GenerateBuySetup();TradeSetup sellSetup=g_decision.GenerateSellSetup();TradeSetup chosen;ZeroMemory(chosen);double delta=buySetup.confidence-sellSetup.confidence;if(buySetup.active&&sellSetup.active){if(delta>=InpMinDirectionalAdvantage){if(g_risk.ValidateSetup(buySetup,InpMinRiskReward,InpMaxSLDistanceATR,atr))chosen=buySetup;}else if(-delta>=InpMinDirectionalAdvantage){if(g_risk.ValidateSetup(sellSetup,InpMinRiskReward,InpMaxSLDistanceATR,atr))chosen=sellSetup;}}else if(buySetup.active){if(g_risk.ValidateSetup(buySetup,InpMinRiskReward,InpMaxSLDistanceATR,atr))chosen=buySetup;}else if(sellSetup.active){if(g_risk.ValidateSetup(sellSetup,InpMinRiskReward,InpMaxSLDistanceATR,atr))chosen=sellSetup;}if(!chosen.active||chosen.creation_time==g_lastLoggedTime)return;g_lastLoggedTime=chosen.creation_time;chosen.calibrated_probability=g_tracker.GetCalibratedProbability(chosen.confidence,chosen.calibration_sample,chosen.calibration_has_enough_data);if(InpLogSignals){ENUM_TREND_STATE t=g_trendCtx.trend.GetCurrentTrend();g_logger.LogSetup(chosen,_Symbol,InpFVGTF,EnumToString(t));}TradeDecisionRecord decision=g_router.Decide(chosen);g_execAudit.Log("DECISION",StringFormat("automated candidate action=%s confidence=%.1f reason=%s",TradePolicyToString(decision.action),decision.confidence,decision.reason),decision.decision_id,0,0.0,ResolveExecutionEntry(chosen),chosen.stop_loss,chosen.final_tp);decision.timeframe=_Period;decision.decision_schema_version=InpDecisionSchemaVersion;decision.strategy_version=InpStrategyVersion;decision.model_version=InpModelVersion;decision.calibration_version=InpCalibrationVersion;decision.feature_schema_version=InpFeatureSchemaVersion;decision.environment_schema_version=InpEnvironmentSchemaVersion;decision.weight_version=InpWeightSetVersion;decision.environment_key=g_environmentMemory.Key(chosen.reasons);decision.spread_points=chosen.reasons.spread_points;decision.decision_fingerprint=DecisionFingerprintFor(decision);if(InpTrackOutcomes)g_tracker.AddSetup(chosen,decision.decision_id,decision.decision_fingerprint);if(!decision.valid||decision.action==POLICY_IGNORE)return;if(!g_store.Save(decision)){PrintFormat("MedisTouch EA: decision #%I64d rejected — durable DecisionStore write failed.",decision.decision_id);return;}string profileExecutionReason;bool profileExecutionAllowed=IsProfileExecutionAllowed(profileExecutionReason);if((decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)&&!profileExecutionAllowed)g_execAudit.Log("PROFILE_EXECUTION_BLOCKED",profileExecutionReason,decision.decision_id);if((decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)&&profileExecutionAllowed){if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure()){g_execAudit.Log("AUTOMATED_BLOCKED_NETTING_EXPOSURE",StringFormat("decision #%I64d suppressed: same-symbol position or pending order already exists on netting/exchange account",decision.decision_id),decision.decision_id);}else{int availableSlots=g_effectiveProfile.maxOpenTrades-g_orders.OpenCount();if(availableSlots<0)availableSlots=0;MultiTradePlan plan;bool planOk=g_multiTrade.Build(decision.setup,availableSlots,plan);if(!planOk){PrintFormat("MedisTouch EA: decision #%I64d rejected — multi-trade plan construction failed.",decision.decision_id);return;}double entry=ResolveExecutionEntry(chosen);double legLots[3];double legRisk[3];for(int leg=0;leg<3;leg++){legLots[leg]=0.0;legRisk[leg]=0.0;}bool sizingOk=true;for(int leg=0;leg<plan.legCount;leg++){double fraction=plan.riskFraction[leg];bool exceeded=false;legLots[leg]=g_risk.CalculateLotSize(_Symbol,g_effectiveProfile.riskPercentPerTrade*fraction,entry,chosen.stop_loss,decision.reduce_risk,g_effectiveProfile.allowMinLotOverride,exceeded,g_riskGuard.SizeMultiplier());if(legLots[leg]<=0.0){sizingOk=false;break;}legRisk[leg]=g_risk.RiskAmountForLots(_Symbol,legLots[leg],entry,chosen.stop_loss);}if(!sizingOk){PrintFormat("MedisTouch EA: decision #%I64d skipped — one or more execution legs cannot satisfy broker lot/risk constraints.",decision.decision_id);return;}double totalProposedRisk=0.0;for(int leg=0;leg<plan.legCount;leg++)totalProposedRisk+=legRisk[leg];string block;if(!g_portfolio.AllowNewTradeBatch(_Symbol,totalProposedRisk,plan.legCount,block)){PrintFormat("MedisTouch EA: decision #%I64d blocked — %s",decision.decision_id,block);return;}ulong tickets[3];bool submittedAny=false;double maxDeviation=InpMaxEntryDeviationATR*atr;for(int leg=0;leg<plan.legCount;leg++){TradeDecisionRecord legDecision=decision;legDecision.setup.final_tp=plan.target[leg];legDecision.reason+=StringFormat("; multi-trade leg %d/%d (%s)",leg+1,plan.legCount,plan.label[leg]);ulong ticket=0;if(g_orders.Submit(legDecision,legLots[leg],InpUseMarketOrders,maxDeviation,ticket,leg)){submittedAny=true;tickets[leg]=ticket;if(!g_store.SaveExecution(decision.decision_id,legLots[leg],ticket,leg,plan.target[leg])){PrintFormat("CRITICAL: decision #%I64d leg %d executed but execution record was not durably persisted.",decision.decision_id,leg);g_execAudit.Log("CRITICAL_EXECUTION_RECORD_FAILURE","automated order submitted but execution persistence failed",decision.decision_id,ticket,legLots[leg],entry,chosen.stop_loss,plan.target[leg]);}else g_execAudit.Log("ORDER_SUBMITTED",StringFormat("automated leg %d/%d",leg+1,plan.legCount),decision.decision_id,ticket,legLots[leg],entry,chosen.stop_loss,plan.target[leg]);}else{g_monitor.NotifyBrokerReject();g_execAudit.Log("ORDER_REJECTED","automated broker/order-manager submission failed",decision.decision_id,0,legLots[leg],entry,chosen.stop_loss,plan.target[leg]);}}if(!submittedAny)PrintFormat("MedisTouch EA: decision #%I64d rejected by broker on every requested execution leg.",decision.decision_id);}}if(decision.action==POLICY_SIGNAL_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL){g_publisher.Publish(decision);g_lifecycleDecisionId=decision.decision_id;g_lifecycleCreationTime=chosen.creation_time;g_lifecycleSetup=chosen;g_lifecycleStatus="valid";}}
 // Persistent per-symbol/per-magic emergency latch. A normal terminal restart
 // does not silently re-enable order entry after the operator presses STOP.
 string EmergencyStopGlobalKey()
@@ -331,7 +504,7 @@ void RefreshTradeControlPanel()
       count++;
       floating+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
      }
-   g_controlPanel.Refresh(count,floating,InpEnableDynamicStop,g_emergencyStop,ControlPanelSessionStatus());
+   g_controlPanel.Refresh(count,floating,InpEnableDynamicStop,g_emergencyStop,StringFormat("%s | %s",g_effectiveProfile.profileName,ControlPanelSessionStatus()));
   }
 
 void CloseAllManagedExposure(const string reason)
@@ -461,6 +634,8 @@ void ManualMarketEntry(bool isBuy)
   {
    string side=isBuy ? "BUY" : "SELL";
    if(g_emergencyStop) { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: emergency stop is latched"); return; }
+   string profileBlockReason;
+   if(!IsProfileExecutionAllowed(profileBlockReason)) { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected by account profile: "+profileBlockReason); return; }
    if(!InpEnableExecution) { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: InpEnableExecution=false"); return; }
    if(IsNettingOrExchangeAccount() && HasAnyChartSymbolExposure())
      { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: netting/exchange account already has same-symbol position or pending order; resolve it before another manual entry"); return; }
@@ -472,7 +647,7 @@ void ManualMarketEntry(bool isBuy)
    string newsReason;
    if(InpUseNewsFilter && g_newsFilter.IsLocked(newsReason))
      { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected by news filter: "+newsReason); return; }
-   if(g_orders.OpenCount()>=InpMaxOpenTrades)
+   if(g_orders.OpenCount()>=g_effectiveProfile.maxOpenTrades)
      { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: maximum open trade count reached"); return; }
 
    MqlTick tick;
@@ -533,8 +708,8 @@ void ManualMarketEntry(bool isBuy)
    decision.decision_fingerprint=DecisionFingerprintFor(decision);
 
    bool exceededMinLot=false;
-   double lots=g_risk.CalculateLotSize(_Symbol,InpRiskPercentPerTrade,entry,setup.stop_loss,
-                                      decision.reduce_risk,InpAllowMinLotOverride,exceededMinLot,
+   double lots=g_risk.CalculateLotSize(_Symbol,g_effectiveProfile.riskPercentPerTrade,entry,setup.stop_loss,
+                                      decision.reduce_risk,g_effectiveProfile.allowMinLotOverride,exceededMinLot,
                                       g_riskGuard.SizeMultiplier());
    if(lots<=0.0)
      { g_execAudit.Log("MANUAL_BLOCKED",side+" rejected: broker lot/risk sizing returned zero",decision.decision_id,0,0.0,entry,setup.stop_loss,setup.final_tp); return; }
