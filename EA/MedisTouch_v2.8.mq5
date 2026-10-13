@@ -455,7 +455,7 @@ void RefreshTradeControlPanel()
       count++;
       floating+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
      }
-   g_controlPanel.Refresh(count,floating,InpEnableDynamicStop,g_emergencyStop,ControlPanelSessionStatus());
+   g_controlPanel.Refresh(count,floating,InpEnableDynamicStop,g_emergencyStop,StringFormat("%s | %s",g_effectiveProfile.profileName,ControlPanelSessionStatus()));
   }
 
 void CloseAllManagedExposure(const string reason)
