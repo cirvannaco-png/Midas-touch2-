@@ -1,4 +1,5 @@
 from app.api.research_compat import canonical_hash
+from app.canonical_config import canonical_json
 
 
 def experiment_payload(experiment_id: str) -> dict:
@@ -95,3 +96,17 @@ def test_research_api_requires_authentication(client):
         json=experiment_payload("research-api-auth-test"),
     )
     assert response.status_code == 422
+
+
+
+def test_canonical_config_hash_matches_source_float_and_unicode_normalization():
+    value = {"b": 1.2345678901234567, "a": "café"}
+    assert canonical_json(value) == '{"a":"caf\\u00e9","b":1.23456789012346}'
+    assert canonical_hash(value) == canonical_hash({"a": "café", "b": 1.2345678901234567})
+
+
+def test_canonical_config_hash_rejects_non_finite_numbers():
+    import pytest
+
+    with pytest.raises(ValueError, match="non-finite"):
+        canonical_hash({"risk": float("nan")})
