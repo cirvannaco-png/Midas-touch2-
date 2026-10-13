@@ -92,6 +92,7 @@ private:
    double            m_obDistATRMax;         // how far price may sit from an OB's midpoint and still count
    CVolatilityRegime m_volRegime;
    bool              m_blockLowVolRegime;    // OFF by default
+   bool              m_requireTrendingRegime; // experimental trend-vs-chop entry gate, OFF by default
    CSessionFilter    m_sessionFilter;        // ON by default (see Init()) — direct fix for
                                               // "trading time is across all sessions"
 
@@ -202,7 +203,8 @@ public:
    // discipline as above; the regime read itself is always populated in
    // EvaluateReasons() for diagnostics regardless of this flag.
    void              ConfigureVolatilityRegime(bool blockLowVolRegime, int lookback = 100,
-                                                double lowPct = 0.25, double highPct = 0.75);
+                                                 double lowPct = 0.25, double highPct = 0.75);
+   void              ConfigureRegimeFilter(bool requireTrendingRegime);
    // v2.8 addition. ON by default — this is the direct fix for "EA trades
    // every session uniformly": by default allows London, New York, and
    // the London/NY overlap; blocks Tokyo-only and dead hours. Pass
@@ -310,7 +312,7 @@ CScoringEngine::CScoringEngine() : m_trendCtx(NULL), m_bosCtx(NULL), m_liqCtx(NU
                                     m_requireFibonacciZone(false), m_fibZoneMinPct(50.0), m_fibZoneMaxPct(61.8),
                                     m_requireValueAreaLocation(false), m_blockValueAreaContradictions(true),
                                     m_htfObCtx(NULL), m_requireHtfOB(false), m_obDistATRMax(2.0),
-                                    m_blockLowVolRegime(false),
+                                    m_blockLowVolRegime(false), m_requireTrendingRegime(false),
                                     m_fvgMaxDistATR(1.25), m_requireChaseFilter(false), m_maxChaseDistATR(0.75),
                                     m_newsFilter(NULL), m_newsWarningMultiplier(0.85),
                                     m_contradictionWeight(0.25), m_envWeight(1.0), m_execWeight(1.0)
@@ -420,6 +422,11 @@ void CScoringEngine::ConfigureVolatilityRegime(bool blockLowVolRegime, int lookb
    m_blockLowVolRegime = blockLowVolRegime;
    if(m_bosCtx != NULL)
       m_volRegime.Init(&m_bosCtx.candles, lookback, lowPct, highPct);
+  }
+//+------------------------------------------------------------------+
+void CScoringEngine::ConfigureRegimeFilter(bool requireTrendingRegime)
+  {
+   m_requireTrendingRegime = requireTrendingRegime;
   }
 //+------------------------------------------------------------------+
 void CScoringEngine::ConfigureSessionFilter(bool enabled, bool allowTokyo, bool allowLondon,
@@ -592,6 +599,12 @@ double CScoringEngine::CalculateConfidence(bool forBuy)
    // v2.8: session gate runs first and cheapest — no point evaluating the
    // rest of the pipeline for a bar that's going to be rejected anyway.
    if(!m_sessionFilter.IsAllowed())
+      return 0.0;
+
+   // Experimental only: block non-trending/undefined regimes to study whether
+   // a trend-vs-chop gate controls the candidate's loss streak. The classifier
+   // uses completed candles; the default input keeps existing behavior unchanged.
+   if(m_requireTrendingRegime && m_regimeDetector.Classify(1) != REGIME_TRENDING)
       return 0.0;
 
    InducementResult ind = m_inducement.Validate(forBuy);
