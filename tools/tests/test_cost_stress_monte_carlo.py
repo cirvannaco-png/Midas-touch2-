@@ -1,6 +1,7 @@
 """Regression tests for cost-stress, temporal folds, and Monte Carlo diagnostics."""
 import csv
 from pathlib import Path
+from datetime import datetime, timezone
 
 import pytest
 
@@ -11,6 +12,7 @@ try:
         monte_carlo_drawdown,
         performance_metrics,
         require_explicit_cost_columns,
+        reject_reserved_oos_overlap,
     )
 except ImportError:
     from cost_stress_monte_carlo import (  # type: ignore[no-redef]
@@ -19,6 +21,7 @@ except ImportError:
         monte_carlo_drawdown,
         performance_metrics,
         require_explicit_cost_columns,
+        reject_reserved_oos_overlap,
     )
 
 
@@ -66,3 +69,16 @@ def test_monte_carlo_is_reproducible_and_reports_ranges():
 def test_monte_carlo_requires_at_least_100_simulations():
     with pytest.raises(CostStressError, match="at least 100"):
         monte_carlo_drawdown([1.0, -1.0], 100.0, 99, 1)
+
+
+def test_standard_cost_stress_cli_refuses_reserved_oos_overlap():
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    end = datetime(2026, 9, 20, tzinfo=timezone.utc)
+    with pytest.raises(CostStressError, match="overlaps the registered locked-OOS entry window"):
+        reject_reserved_oos_overlap(start, end)
+
+
+def test_development_cost_stress_ending_at_oos_start_is_allowed():
+    start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    reject_reserved_oos_overlap(start, end)
