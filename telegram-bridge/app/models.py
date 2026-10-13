@@ -387,9 +387,16 @@ class PromotionDecisionAudit(Base):
 
 class ExecutionLedger(Base):
     __tablename__ = "execution_ledger"
-    __table_args__ = (Index("ix_exec_ledger_state", "state"),)
+    __table_args__ = (
+        Index("ix_exec_ledger_state", "state"),
+        Index("ix_execution_ledger_portfolio_key", "portfolio_key"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_key = Column(
+        String, nullable=False, default="legacy-unscoped",
+        server_default=sa.text("'legacy-unscoped'"),
+    )
     request_id = Column(String, unique=True, nullable=False, index=True)
     signal_id = Column(String, nullable=True, index=True)
     symbol = Column(String, nullable=False)
@@ -409,8 +416,13 @@ class ExecutionLedger(Base):
 
 class PortfolioReservation(Base):
     __tablename__ = "portfolio_reservations"
+    __table_args__ = (Index("ix_portfolio_reservations_portfolio_key", "portfolio_key"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_key = Column(
+        String, nullable=False, default="legacy-unscoped",
+        server_default=sa.text("'legacy-unscoped'"),
+    )
     request_id = Column(String, unique=True, nullable=False, index=True)
     symbol = Column(String, nullable=False)
     direction = Column(String, nullable=False)
