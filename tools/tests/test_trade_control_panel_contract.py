@@ -185,7 +185,7 @@ def test_daily_target_counts_only_qualified_closed_positions():
     assert "m_minQualifiedR(0.25)" in daily
     assert "realizedR+1e-9<m_minQualifiedR" in daily
     assert "day_of_week>=1 && t.day_of_week<=5" in daily
-    assert "GlobalVariableFlush()" in daily
+    assert "GlobalVariablesFlush()" in daily
     assert "void OnExecution(datetime at)" not in daily
     assert "LastFinalizedQualified()const" in tracker
     assert "m_lastFinalizedQualified=" in tracker and "p.cashflowsKnown" in tracker and "m_lastFinalizedR=rr" in tracker
