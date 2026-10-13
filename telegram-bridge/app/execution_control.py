@@ -132,9 +132,7 @@ async def transition_execution(
         return False
     if row.state == state:
         # Retries of the same state are idempotent only if the payload agrees.
-        if result is None or result == row.result_json:
-            return True
-        return False
+        return bool(result is None or result == row.result_json)
     if state not in ALLOWED_TRANSITIONS.get(row.state, set()):
         return False
 
