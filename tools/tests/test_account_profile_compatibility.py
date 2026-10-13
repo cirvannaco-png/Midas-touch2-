@@ -101,7 +101,9 @@ def test_profile_identity_is_persistent_and_switch_fails_closed_with_exposure():
     lock_end = source.index("bool IsProfileExecutionAllowed(string &reasonOut)\n  {", lock_start)
     lock = source[lock_start:lock_end]
     assert "MedisTouch_AccountProfile_" in source
+    assert "GlobalVariableSet(key,-1.0)" in lock
     assert "GlobalVariableSet(key,selected)" in lock
+    assert "account profile identity was not initialized before existing exposure" in lock
     assert "GlobalVariablesFlush()" in lock
     assert "if(!InpConfirmAccountProfileChange)" in lock
     assert "AccountHasAnyPositionOrOrder()" in lock
