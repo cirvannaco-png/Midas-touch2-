@@ -87,5 +87,32 @@ bool ResolveAccountRiskLimits(ENUM_ACCOUNT_RISK_PROFILE selected,
    return true;
   }
 
+
+// Non-legacy profiles have separately editable inputs whose shipped values are
+// placeholders copied from legacy settings. Fail closed until the operator has
+// explicitly marked each profile configured against the intended account rules.
+bool ResolveConfiguredAccountRiskLimits(ENUM_ACCOUNT_RISK_PROFILE selected,
+                                        const AccountRiskLimits &legacy,
+                                        const AccountRiskLimits &smallAccount,
+                                        const AccountRiskLimits &propFirm,
+                                        bool smallProfileConfigured,
+                                        bool propProfileConfigured,
+                                        AccountRiskLimits &out,
+                                        string &reason)
+  {
+   reason="";
+   if(selected==ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT && !smallProfileConfigured)
+     {
+      reason="small-account risk inputs must be configured before selecting this profile";
+      return false;
+     }
+   if(selected==ACCOUNT_RISK_PROFILE_PROP_FIRM && !propProfileConfigured)
+     {
+      reason="exact prop-firm limits must be configured before selecting this profile";
+      return false;
+     }
+   return ResolveAccountRiskLimits(selected,legacy,smallAccount,propFirm,out,reason);
+  }
+
 #endif
 //+------------------------------------------------------------------+

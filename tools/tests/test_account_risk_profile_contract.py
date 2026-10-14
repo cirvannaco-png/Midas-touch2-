@@ -36,7 +36,7 @@ def test_profile_resolver_has_explicit_legacy_small_and_prop_firm_mappings() -> 
     policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
     assert "InpSmallRiskPercentPerTrade" in ea and "InpSmallMaxPortfolioRiskPercent" in ea
     assert "InpPropRiskPercentPerTrade" in ea and "InpPropMaxPortfolioRiskPercent" in ea
-    assert "ResolveAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
+    assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
     assert "ValidateAccountRiskLimits(out,reason)" in policy
     assert 'reason="unknown account risk profile"' in policy
 
@@ -50,3 +50,14 @@ def test_startup_ledger_reconciliation_uses_selected_profile_risk() -> None:
     reconciliation = ea[start:end]
     assert "g_activeRiskLimits.riskPercentPerTrade" in reconciliation
     assert "InpRiskPercentPerTrade" not in reconciliation
+
+
+def test_nonlegacy_profiles_require_explicit_configuration_acknowledgement() -> None:
+    root = Path(__file__).resolve().parents[2]
+    ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
+    policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
+    assert "InpSmallAccountProfileConfigured=false" in ea
+    assert "InpPropFirmProfileConfigured=false" in ea
+    assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
+    assert "small-account risk inputs must be configured before selecting this profile" in policy
+    assert "exact prop-firm limits must be configured before selecting this profile" in policy

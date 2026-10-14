@@ -53,6 +53,39 @@ int OnInit()
       "prop-firm values are isolated from the small-account profile");
 
    reason="";
+   AssertTrue(ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_LEGACY_INPUTS,
+      legacy,smallAccount,propFirm,false,false,selected,reason),
+      "legacy profile remains available without non-legacy setup flags");
+
+   reason="";
+   AssertTrue(!ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
+      legacy,smallAccount,propFirm,false,false,selected,reason),
+      "small-account profile fails closed before its settings are configured");
+   AssertTrue(StringFind(reason,"must be configured")>=0,
+      "unconfigured small-account profile reports explicit remediation");
+
+   reason="";
+   AssertTrue(!ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_PROP_FIRM,
+      legacy,smallAccount,propFirm,true,false,selected,reason),
+      "prop-firm profile fails closed before exact firm rules are configured");
+   AssertTrue(StringFind(reason,"exact prop-firm limits")>=0,
+      "unconfigured prop-firm profile reports explicit remediation");
+
+   reason="";
+   AssertTrue(ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
+      legacy,smallAccount,propFirm,true,false,selected,reason),
+      "configured small-account profile resolves normally");
+   AssertTrue(selected.profileName=="small_account" && selected.riskPercentPerTrade==0.45,
+      "configured small-account profile retains its own selected values");
+
+   reason="";
+   AssertTrue(ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_PROP_FIRM,
+      legacy,smallAccount,propFirm,true,true,selected,reason),
+      "configured prop-firm profile resolves normally");
+   AssertTrue(selected.profileName=="prop_firm" && selected.riskPercentPerTrade==0.25,
+      "configured prop-firm profile retains its own selected values");
+
+   reason="";
    smallAccount.deriskStartPercent=smallAccount.maxDrawdownPercent;
    AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
       legacy,smallAccount,propFirm,selected,reason),

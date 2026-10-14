@@ -200,6 +200,7 @@ input double InpSmallDeriskFloor=0.25;
 input double InpSmallMaxPortfolioRiskPercent=3.0;
 input int    InpSmallMaxPositionsPerSymbol=3;
 input int    InpSmallMaxPositionsPerGroup=3;
+input bool   InpSmallAccountProfileConfigured=false; // Set true only after reviewing these limits for the intended small account
 
 input group "Risk Profile — Prop Firm (configure exact firm rules)"
 input double InpPropRiskPercentPerTrade=0.5;
@@ -211,6 +212,7 @@ input double InpPropDeriskFloor=0.25;
 input double InpPropMaxPortfolioRiskPercent=3.0;
 input int    InpPropMaxPositionsPerSymbol=3;
 input int    InpPropMaxPositionsPerGroup=3;
+input bool   InpPropFirmProfileConfigured=false; // Set true only after entering and checking the exact firm's rules above
 
 input group "Portfolio — High-Probability Multi-Trade"
 input bool InpEnableMultiTrade=true;
@@ -750,8 +752,9 @@ bool ResolveSelectedAccountRiskProfile()
       InpPropMaxPortfolioRiskPercent,InpPropMaxPositionsPerSymbol,InpPropMaxPositionsPerGroup);
 
    string reason="";
-   if(!ResolveAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm,
-                                g_activeRiskLimits,reason))
+   if(!ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm,
+                                            InpSmallAccountProfileConfigured,InpPropFirmProfileConfigured,
+                                            g_activeRiskLimits,reason))
      {
       PrintFormat("MedisTouch: invalid account risk profile (%s): %s",
                   EnumToString(InpAccountRiskProfile),reason);
