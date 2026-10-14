@@ -86,6 +86,15 @@ private:
       double point=(MathIsValidNumber(pointOverride) && pointOverride>0.0)
                    ? pointOverride : SymbolInfoDouble(symbol,SYMBOL_POINT);
       if(point<=0.0) return false;
+
+      // A protective stop must be strictly on the loss side of the live
+      // executable quote even when this broker reports zero stop/freeze
+      // distance. With a zero/missing ATR, the fallback candidate can equal
+      // the market price; reject it here rather than sending a predictably
+      // invalid modification to the broker adapter.
+      bool wrongSide=isBuy ? (candidate>=currentPrice) : (candidate<=currentPrice);
+      if(wrongSide) return false;
+
       long stops=(long)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
       long freeze=(long)SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
       long required=MathMax(stops,freeze);
