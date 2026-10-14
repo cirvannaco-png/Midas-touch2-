@@ -98,15 +98,16 @@ public:
    void Configure(const DynamicStopConfig &cfg) { m_cfg=cfg; }
    DynamicStopConfig Config() const { return m_cfg; }
 
+private:
    // structuralAnchor is supplied by the caller from a confirmed market
    // structure point. Zero means "no anchor available" and causes a
    // deterministic ATR fallback rather than inventing structure.
-   DynamicStopDecision Evaluate(string symbol,bool isBuy,double entry,
+   DynamicStopDecision EvaluateInternal(string symbol,bool isBuy,double entry,
                                 double structuralSL,double currentSL,
                                 double currentPrice,double atr,
-                                double spreadPoints=0.0,
-                                double structuralAnchor=0.0,
-                                double pointOverride=0.0) const
+                                double spreadPoints,
+                                double structuralAnchor,
+                                double pointOverride) const
      {
       DynamicStopDecision d;
       d.stage=DSE_STRUCTURAL;
@@ -177,6 +178,30 @@ public:
          d.reason="improvement below modification threshold";
       return d;
      }
+public:
+   // Production entry point: always uses real terminal symbol metadata.
+   DynamicStopDecision Evaluate(string symbol,bool isBuy,double entry,
+                                double structuralSL,double currentSL,
+                                double currentPrice,double atr,
+                                double spreadPoints=0.0,
+                                double structuralAnchor=0.0) const
+     {
+      return EvaluateInternal(symbol,isBuy,entry,structuralSL,currentSL,
+                              currentPrice,atr,spreadPoints,structuralAnchor,0.0);
+     }
+
+#ifdef MIDAS_DYNAMIC_STOP_TESTING
+   // Test-only geometry injection is not compiled into the production EA.
+   DynamicStopDecision EvaluateForTest(string symbol,bool isBuy,double entry,
+                                       double structuralSL,double currentSL,
+                                       double currentPrice,double atr,
+                                       double spreadPoints,double structuralAnchor,
+                                       double pointOverride) const
+     {
+      return EvaluateInternal(symbol,isBuy,entry,structuralSL,currentSL,
+                              currentPrice,atr,spreadPoints,structuralAnchor,pointOverride);
+     }
+#endif
   };
 #endif
 //+------------------------------------------------------------------+
