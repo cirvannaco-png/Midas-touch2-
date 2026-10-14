@@ -6,6 +6,9 @@
 #include "../includes/Execution/DynamicStopEngine.mqh"
 
 int failures=0;
+string g_traceSummary="";
+double g_testPoint=0.0;
+int g_testStops=0,g_testFreeze=0,g_testDigits=0,g_testSelected=0,g_testSymbolError=0;
 
 void AssertTrue(bool condition,string name)
   {
@@ -19,21 +22,19 @@ void AssertNear(double actual,double expected,double tolerance,string name)
 
 void TraceDecision(const string &label,const DynamicStopDecision &d)
   {
-   PrintFormat("TRACE %s modify=%d stage=%d proposedSL=%.10f reason=%s point=%.10f stops=%d freeze=%d",
-               label,(int)d.modify,(int)d.stage,d.proposedSL,d.reason,
-               SymbolInfoDouble(_Symbol,SYMBOL_POINT),
-               (int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL),
-               (int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL));
+   g_traceSummary+=StringFormat("%s[m=%d stage=%d sl=%.10f reason=%s];",
+                                label,(int)d.modify,(int)d.stage,d.proposedSL,d.reason);
   }
 
 void TestDynamicStop()
   {
-   bool selected=SymbolSelect(_Symbol,true);
-   PrintFormat("SYMBOL_DIAG symbol=%s selected=%d point=%.10f digits=%d stops=%d freeze=%d error=%d",
-               _Symbol,(int)selected,SymbolInfoDouble(_Symbol,SYMBOL_POINT),
-               (int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS),
-               (int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL),
-               (int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL),GetLastError());
+   ResetLastError();
+   g_testSelected=(int)SymbolSelect(_Symbol,true);
+   g_testPoint=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   g_testDigits=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   g_testStops=(int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   g_testFreeze=(int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+   g_testSymbolError=GetLastError();
    CDynamicStopEngine engine;
    DynamicStopConfig cfg; cfg.SetDefaults();
    cfg.minImprovementPts=0.0;
@@ -115,6 +116,8 @@ void TestDynamicStop()
 int OnInit()
   {
    TestDynamicStop();
-   PrintFormat("DynamicStopEngine tests: %d failure(s)",failures);
+   PrintFormat("DynamicStopEngine tests: %d failure(s) | symbol=%s selected=%d point=%.10f digits=%d stops=%d freeze=%d error=%d | trace=%s",
+               failures,_Symbol,g_testSelected,g_testPoint,g_testDigits,g_testStops,g_testFreeze,
+               g_testSymbolError,g_traceSummary);
    return failures==0 ? INIT_SUCCEEDED : INIT_FAILED;
   }
