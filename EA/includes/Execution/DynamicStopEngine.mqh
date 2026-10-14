@@ -75,10 +75,14 @@ private:
    // Rejecting here avoids repeatedly generating modifications that the
    // broker is guaranteed to reject while the price is inside the freeze
    // band. BrokerAdapter still performs the authoritative final check.
-   bool BrokerDistanceSafe(string symbol,bool isBuy,double candidate,double currentPrice) const
+   bool BrokerDistanceSafe(string symbol,bool isBuy,double candidate,double currentPrice,
+                           double pointOverride=0.0) const
      {
       if(candidate<=0.0 || currentPrice<=0.0) return false;
-      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      // A positive explicit point is a deterministic unit-test seam; production
+      // calls leave it at zero and must obtain symbol metadata from the terminal.
+      double point=(MathIsValidNumber(pointOverride) && pointOverride>0.0)
+                   ? pointOverride : SymbolInfoDouble(symbol,SYMBOL_POINT);
       if(point<=0.0) return false;
       long stops=(long)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
       long freeze=(long)SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
@@ -99,7 +103,8 @@ public:
                                 double structuralSL,double currentSL,
                                 double currentPrice,double atr,
                                 double spreadPoints=0.0,
-                                double structuralAnchor=0.0) const
+                                double structuralAnchor=0.0,
+                                double pointOverride=0.0) const
      {
       DynamicStopDecision d;
       d.stage=DSE_STRUCTURAL;
@@ -151,7 +156,7 @@ public:
             d.stage=(atr>0.0 ? DSE_TRAILING : DSE_BREAKEVEN);
         }
 
-      if(!BrokerDistanceSafe(symbol,isBuy,candidate,currentPrice))
+      if(!BrokerDistanceSafe(symbol,isBuy,candidate,currentPrice,pointOverride))
         {
          d.reason="broker stops/freeze distance protection";
          return d;
