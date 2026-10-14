@@ -45,6 +45,8 @@ def test_profile_resolver_has_explicit_legacy_small_and_prop_firm_mappings() -> 
 def test_startup_ledger_reconciliation_uses_selected_profile_risk() -> None:
     root = Path(__file__).resolve().parents[2]
     ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
-    reconciliation = ea[ea.index("bool ReconcileBrokerStateSnapshot()"):ea.index("void", ea.index("bool ReconcileBrokerStateSnapshot()"))]
+    start = ea.rindex("bool ReconcileBrokerStateSnapshot()")
+    end = ea.index("bool SyncHistoricalClosedPositions()", start)
+    reconciliation = ea[start:end]
     assert "g_activeRiskLimits.riskPercentPerTrade" in reconciliation
     assert "InpRiskPercentPerTrade" not in reconciliation
