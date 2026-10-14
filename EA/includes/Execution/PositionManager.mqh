@@ -204,7 +204,15 @@ void CPositionManager::OnTick(double currentAtr)
                                                         curSL,price,currentAtr,spreadPoints,structuralAnchor);
          if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
            {
-            m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,ds.proposedSL,price,r,ds.reason);
+            // Audit the broker-applied stop, which may be directionally rounded
+            // to the symbol's tick grid by BrokerAdapter.
+            double appliedSL=ds.proposedSL;
+            if(PositionSelectByTicket(ticket))
+              {
+               double observedSL=PositionGetDouble(POSITION_SL);
+               if(observedSL>0.0) appliedSL=observedSL;
+              }
+            m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,appliedSL,price,r,ds.reason);
             RecordModification(ticket);
             if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);
            }
