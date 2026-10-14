@@ -61,9 +61,11 @@ private:
       return isBuy ? candidate>current : candidate<current;
      }
 
-   bool ImprovementLargeEnough(string symbol,double candidate,double current) const
+   bool ImprovementLargeEnough(string symbol,double candidate,double current,
+                               double pointOverride=0.0) const
      {
-      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      double point=(MathIsValidNumber(pointOverride) && pointOverride>0.0)
+                   ? pointOverride : SymbolInfoDouble(symbol,SYMBOL_POINT);
       if(point<=0.0) return true;
       return MathAbs(candidate-current)>=m_cfg.minImprovementPts*point;
      }
@@ -162,7 +164,7 @@ public:
          return d;
         }
 
-      if(IsTighter(isBuy,candidate,currentSL) && ImprovementLargeEnough(symbol,candidate,currentSL))
+      if(IsTighter(isBuy,candidate,currentSL) && ImprovementLargeEnough(symbol,candidate,currentSL,pointOverride))
         {
          d.proposedSL=candidate;
          d.modify=true;
