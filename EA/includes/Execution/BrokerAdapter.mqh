@@ -5,6 +5,7 @@
 #define BROKERADAPTER_MQH
 
 #include <Trade\Trade.mqh>
+#include "PriceGridNormalizer.mqh"
 
 class CBrokerAdapter
   {
@@ -392,11 +393,50 @@ bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
       PrintFormat("MedisTouch BrokerAdapter: ModifySLTP refused for foreign magic position #%I64u.",ticket);
       return false;
      }
+
    string symbol=PositionGetString(POSITION_SYMBOL);
    bool isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
    double refPrice=isBuy ? SymbolInfoDouble(symbol,SYMBOL_BID) : SymbolInfoDouble(symbol,SYMBOL_ASK);
-   if(!ValidateStopDistance(symbol,refPrice,sl,tp,isBuy,"ModifySLTP")) return false;
-   bool submitted=m_trade.PositionModify(ticket,sl,tp);
+   double currentSL=PositionGetDouble(POSITION_SL);
+   double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   if(tickSize<=0.0) tickSize=point;
+   if(tickSize<=0.0 || digits<0 || digits>8)
+     {
+      PrintFormat("MedisTouch BrokerAdapter: ModifySLTP refused — missing/invalid tick geometry for %s.",symbol);
+      return false;
+     }
+
+   double adjustedSL=sl;
+   double adjustedTP=tp;
+   // Round protective prices away from the market, never toward it:
+   // BUY SL down / BUY TP up; SELL SL up / SELL TP down.
+   if(sl>0.0 && !NormalizePriceToTickGrid(sl,tickSize,digits,!isBuy,adjustedSL))
+     {
+      PrintFormat("MedisTouch BrokerAdapter: ModifySLTP refused — invalid SL tick normalization for %s.",symbol);
+      return false;
+     }
+   if(tp>0.0 && !NormalizePriceToTickGrid(tp,tickSize,digits,isBuy,adjustedTP))
+     {
+      PrintFormat("MedisTouch BrokerAdapter: ModifySLTP refused — invalid TP tick normalization for %s.",symbol);
+      return false;
+     }
+
+   if(sl>0.0 && currentSL>0.0 &&
+      (isBuy ? adjustedSL<=currentSL : adjustedSL>=currentSL))
+     {
+      PrintFormat("MedisTouch BrokerAdapter: ModifySLTP refused — tick-normalized SL would not tighten existing stop for %s.",symbol);
+      return false;
+     }
+   if(sl<=0.0 && currentSL>0.0)
+     {
+      PrintFormat("MedisTouch BrokerAdapter: ModifySLTP refused — will not remove a live protective stop for %s.",symbol);
+      return false;
+     }
+
+   if(!ValidateStopDistance(symbol,refPrice,adjustedSL,adjustedTP,isBuy,"ModifySLTP")) return false;
+   bool submitted=m_trade.PositionModify(ticket,adjustedSL,adjustedTP);
    if(!submitted)
      {
       LastExecutionCompleted("ModifySLTP",false,true);
@@ -404,6 +444,7 @@ bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
      }
    return LastExecutionCompleted("ModifySLTP",false,true);
   }
+
 //+------------------------------------------------------------------+
 bool CBrokerAdapter::ClosePartial(ulong ticket,double volume)
   {
