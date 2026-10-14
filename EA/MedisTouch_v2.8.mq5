@@ -474,7 +474,7 @@ bool ReconcileBrokerStateSnapshot()
       allOk=false;
      }
 
-   double baseRiskUnit=AccountInfoDouble(ACCOUNT_EQUITY)*InpRiskPercentPerTrade/100.0;
+   double baseRiskUnit=AccountInfoDouble(ACCOUNT_EQUITY)*g_activeRiskLimits.riskPercentPerTrade/100.0;
    if(baseRiskUnit<=0.0)
      {
       g_execAudit.Log("LEDGER_STARTUP_BLOCKED","base risk unit is non-positive; existing exposure cannot be normalized");
