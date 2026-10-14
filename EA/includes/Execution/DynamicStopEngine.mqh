@@ -105,7 +105,7 @@ private:
    DynamicStopDecision EvaluateInternal(string symbol,bool isBuy,double entry,
                                 double structuralSL,double currentSL,
                                 double currentPrice,double atr,
-                                double spreadPoints=0.0,
+                                double spreadPoints,
                                 double structuralAnchor,
                                 double pointOverride) const
      {
