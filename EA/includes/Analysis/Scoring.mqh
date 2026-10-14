@@ -71,6 +71,7 @@ private:
    CTFContext*       m_srCtx;
    CCandleData*      m_priceRef;   // chart-TF candles, used only for "current price"
    bool              m_requireMtfStructureAlignment; // opt-in until matched backtests validate the gate
+   int               m_mtfMaxBosAgeBars; // freshness is measured in each context's own bars
 
    CInducement       m_inducement;
    bool              m_requirePremiumDiscount;
@@ -145,6 +146,7 @@ private:
    double            OBScore(bool forBuy);
 
    double            TrendScore(bool forBuy);
+   bool              ContextMTFStructureAligned(CTFContext* ctx, bool forBuy);
    bool              MTFStructureAligned(bool forBuy);
    double            FVGScore(bool forBuy);
    double            SRScore(bool forBuy);
@@ -165,7 +167,14 @@ public:
    void              Init(CTFContext* trendCtx, CTFContext* bosCtx, CTFContext* liqCtx,
                           CTFContext* fvgCtx, CTFContext* srCtx, CCandleData* priceRef);
    // MTF structure gate is opt-in until matched MT5 ablation tests prove its effect.
-   void              ConfigureMTFStructureAlignment(bool required) { m_requireMtfStructureAlignment = required; }
+   // maxBosAgeBars is interpreted separately in every context's own timeframe.
+   void              ConfigureMTFStructureAlignment(bool required, int maxBosAgeBars = 20)
+     {
+      m_requireMtfStructureAlignment = required;
+      m_mtfMaxBosAgeBars = maxBosAgeBars;
+      if(m_mtfMaxBosAgeBars < 1) m_mtfMaxBosAgeBars = 1;
+      if(m_mtfMaxBosAgeBars > 500) m_mtfMaxBosAgeBars = 500;
+     }
    void              ConfigureInducement(int lookbackBars, double impulseATRMult, double impulseBodyRatio,
                                          double equalTolATR, int maxLegExtend,
                                          bool requirePremiumDiscount, bool requireDistribution,
@@ -310,7 +319,7 @@ public:
 CScoringEngine::CScoringEngine() : m_trendCtx(NULL), m_bosCtx(NULL), m_liqCtx(NULL),
                                     m_fvgCtx(NULL), m_srCtx(NULL), m_priceRef(NULL),
                                     m_requirePremiumDiscount(true), m_requireDistribution(false),
-                                    m_requireMtfStructureAlignment(false),
+                                    m_requireMtfStructureAlignment(false), m_mtfMaxBosAgeBars(20),
                                     m_requireVolumeConfirmation(false), m_rvolThreshold(1.5),
                                     m_requireFibonacciZone(false), m_fibZoneMinPct(50.0), m_fibZoneMaxPct(61.8),
                                     m_requireValueAreaLocation(false), m_blockValueAreaContradictions(true),
@@ -465,23 +474,68 @@ double CScoringEngine::CurrentPrice()
    return m_priceRef.GetCandle(0).close;
   }
 //+------------------------------------------------------------------+
+bool CScoringEngine::ContextMTFStructureAligned(CTFContext* ctx, bool forBuy)
+  {
+   // Fail closed only when this opt-in gate is enabled: the context, trend,
+   // confirmed BOS and candle-to-event lineage must all be available.
+   if(ctx == NULL || !ctx.candles.IsReady() || ctx.candles.Total() < 2)
+      return false;
+
+   ENUM_TREND_STATE trend = ctx.trend.GetCurrentTrend();
+   bool trendAligned = forBuy
+                       ? (trend == TREND_BULL || trend == TREND_BULL_STRONG)
+                       : (trend == TREND_BEAR || trend == TREND_BEAR_STRONG);
+   if(!trendAligned || ctx.bos.Count() <= 0)
+      return false;
+
+   // CBOS::Detect() emits only completed-bar events; GetBOS(0) is the
+   // newest event. Require that it supports this direction and is fresh
+   // relative to this context's own candle series, not the chart timeframe.
+   BOSEvent latestBOS = ctx.bos.GetBOS(0);
+   if(latestBOS.time <= 0 || latestBOS.is_bullish != forBuy)
+      return false;
+   if(latestBOS.bar_index < 1 || latestBOS.bar_index >= ctx.candles.Total())
+      return false;
+
+   CandleData latestClosed = ctx.candles.GetCandle(1);
+   CandleData bosCandle = ctx.candles.GetCandle(latestBOS.bar_index);
+   if(latestClosed.time <= 0 || bosCandle.time != latestBOS.time)
+      return false; // reject stale/misaligned event provenance
+   if(latestBOS.time > latestClosed.time)
+      return false; // no forming/future-bar evidence
+
+   int barsSinceBOS = latestBOS.bar_index - 1;
+   if(barsSinceBOS < 0 || barsSinceBOS > m_mtfMaxBosAgeBars)
+      return false;
+
+   // A more recent opposing CHoCH means the BOS direction has been
+   // challenged. Older CHoCH events are historical and must not override
+   // a subsequently confirmed BOS. CHoCH timestamps are completed-bar times.
+   if(ctx.choch.Count() > 0)
+     {
+      CHOCHPoint latestCHOCH = ctx.choch.Get(0);
+      if(latestCHOCH.time > latestClosed.time)
+         return false;
+      if(latestCHOCH.time > latestBOS.time && latestCHOCH.bullish != forBuy)
+         return false;
+     }
+
+   return true;
+  }
+//+------------------------------------------------------------------+
 bool CScoringEngine::MTFStructureAligned(bool forBuy)
   {
-   // Fail closed when explicitly enabled: unknown/neutral structure is not alignment.
-   if(m_trendCtx == NULL || m_bosCtx == NULL) return false;
-
-   ENUM_TREND_STATE htf = m_trendCtx.trend.GetCurrentTrend();
-   ENUM_TREND_STATE stf = m_bosCtx.trend.GetCurrentTrend();
-   bool htfBull = (htf == TREND_BULL || htf == TREND_BULL_STRONG);
-   bool htfBear = (htf == TREND_BEAR || htf == TREND_BEAR_STRONG);
-   bool stfBull = (stf == TREND_BULL || stf == TREND_BULL_STRONG);
-   bool stfBear = (stf == TREND_BEAR || stf == TREND_BEAR_STRONG);
+   if(m_trendCtx == NULL || m_bosCtx == NULL)
+      return false;
 
    // A shared timeframe is one evidence source, not two independent votes.
    if(m_trendCtx.tf == m_bosCtx.tf)
-      return forBuy ? htfBull : htfBear;
+      return ContextMTFStructureAligned(m_trendCtx, forBuy);
 
-   return forBuy ? (htfBull && stfBull) : (htfBear && stfBear);
+   // Both the higher-timeframe trend context and the BOS/structure context
+   // must independently pass direction, freshness and CHoCH-conflict checks.
+   return ContextMTFStructureAligned(m_trendCtx, forBuy)
+          && ContextMTFStructureAligned(m_bosCtx, forBuy);
   }
 //+------------------------------------------------------------------+
 double CScoringEngine::TrendScore(bool forBuy)
