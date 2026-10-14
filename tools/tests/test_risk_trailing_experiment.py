@@ -51,7 +51,7 @@ def _base_preset() -> dict[str, str]:
     }
 
 
-def _context(dataset_hash: str) -> dict:
+def _context(dataset_hash: str, commission: float = 7.0) -> dict:
     return {
         "account_profile": "small_account", "symbol": "XAUUSD", "timeframe": "M5",
         "period_start": "2025-01-01T00:00:00Z", "period_end": "2025-04-01T00:00:00Z",
@@ -60,7 +60,7 @@ def _context(dataset_hash: str) -> dict:
         "ea_build": "build-1", "terminal_build": "terminal-1", "data_vendor": "Exness",
         "spread_model": "real_ticks_plus_stress", "spread_widening_multiplier": 1.5,
         "spread_points": None, "baseline_spread_points": 20.0, "cash_per_point_per_lot": 1.0,
-        "commission_per_lot": 7.0, "slippage_points": 2.0,
+        "commission_per_lot": commission, "slippage_points": 2.0,
         "swap_included": True, "fill_policy": "real_ticks",
         "base_costs_applied_in_tester": True, "stress_costs_applied_in_analysis": True,
         "initial_balance": 10000.0, "account_currency": "USD", "leverage": "1:500",
@@ -87,11 +87,11 @@ def _write_deals(path: Path, profits=(120.0, -60.0, 90.0, -15.0)) -> None:
             writer.writerow([pid, time, entry, 1.0, profit, commission, swap, fee, risk_cash])
 
 
-def _manifest(folder: Path) -> Path:
+def _manifest(folder: Path, commission: float = 7.0) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     dataset = folder / "ticks.bin"
     dataset.write_bytes(b"immutable test tick data")
-    context = _context(hashlib.sha256(dataset.read_bytes()).hexdigest())
+    context = _context(hashlib.sha256(dataset.read_bytes()).hexdigest(), commission)
     presets = {role: _base_preset() for role in ROLES}
     presets["B_trailing_off"]["InpEnableDynamicStop"] = "false"
     presets["C_trailing_candidate"]["InpDynamicStopATRMult"] = "1.75"
@@ -268,3 +268,11 @@ def test_small_account_calibrated_candidate_can_test_more_slots_without_more_mon
     assert calibrated["InpSmallMaxPortfolioRiskPercent"] == baseline["InpSmallMaxPortfolioRiskPercent"]
     assert float(calibrated["InpSmallMaxOpenTrades"]) > float(baseline["InpSmallMaxOpenTrades"])
     assert float(calibrated["InpSmallMaxPositionsPerSymbol"]) > float(baseline["InpSmallMaxPositionsPerSymbol"])
+
+
+
+def test_zero_broker_commission_is_valid_when_observed_and_declared(tmp_path):
+    manifest = _manifest(tmp_path, commission=0.0)
+    report, _summary = compare_manifest(manifest, simulations=10)
+    assert report["cost_model"]["commission_per_lot"] == 0.0
+    assert report["matched_context_verified"] is True
