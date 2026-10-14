@@ -17,8 +17,23 @@ void AssertTrue(bool condition,string name)
 void AssertNear(double actual,double expected,double tolerance,string name)
   { AssertTrue(MathAbs(actual-expected)<=tolerance,name); }
 
+void TraceDecision(string label,DynamicStopDecision d)
+  {
+   PrintFormat("TRACE %s modify=%d stage=%d proposedSL=%.10f reason=%s point=%.10f stops=%d freeze=%d",
+               label,(int)d.modify,(int)d.stage,d.proposedSL,d.reason,
+               SymbolInfoDouble(_Symbol,SYMBOL_POINT),
+               (int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL),
+               (int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL));
+  }
+
 void TestDynamicStop()
   {
+   bool selected=SymbolSelect(_Symbol,true);
+   PrintFormat("SYMBOL_DIAG symbol=%s selected=%d point=%.10f digits=%d stops=%d freeze=%d error=%d",
+               _Symbol,(int)selected,SymbolInfoDouble(_Symbol,SYMBOL_POINT),
+               (int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS),
+               (int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL),
+               (int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL),GetLastError());
    CDynamicStopEngine engine;
    DynamicStopConfig cfg; cfg.SetDefaults();
    cfg.minImprovementPts=0.0;
@@ -27,40 +42,51 @@ void TestDynamicStop()
    // 1R definition: entry 100, structural SL 99 => 1R = 1 price unit.
    // Below +0.75R the structural stop must remain untouched.
    DynamicStopDecision d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,100.50,1.0,0.0);
+   TraceDecision("case-1",d);
    AssertTrue(!d.modify && d.stage==DSE_STRUCTURAL,"BUY below 0.75R retains structural SL");
 
    // +0.75R activates protection.
    d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,100.75,0.25,0.0);
+   TraceDecision("case-2",d);
    AssertTrue(d.modify && d.proposedSL>99.0,"BUY +0.75R activates protection");
 
    // +1R cannot leave the stop on the losing side of entry.
    d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,101.0,0.10,0.0);
+   TraceDecision("case-3",d);
    AssertTrue(d.modify && d.proposedSL>=100.0,"BUY +1R reaches at least breakeven");
 
    // SELL direction is independent and mirrored.
    d=engine.Evaluate(_Symbol,false,100.0,101.0,101.0,99.25,0.25,0.0);
+   TraceDecision("case-4",d);
    AssertTrue(d.modify && d.proposedSL<101.0,"SELL +0.75R activates protection");
    d=engine.Evaluate(_Symbol,false,100.0,101.0,101.0,99.0,0.10,0.0);
+   TraceDecision("case-5",d);
    AssertTrue(d.modify && d.proposedSL<=100.0,"SELL +1R reaches at least breakeven");
 
    // Existing stop must never widen.
    d=engine.Evaluate(_Symbol,true,100.0,99.0,100.50,102.0,2.0,0.0);
+   TraceDecision("case-6",d);
    AssertTrue(!d.modify,"BUY never widens an existing tighter SL");
    d=engine.Evaluate(_Symbol,false,100.0,101.0,99.50,98.0,2.0,0.0);
+   TraceDecision("case-7",d);
    AssertTrue(!d.modify,"SELL never widens an existing tighter SL");
 
    // Confirmed structural anchor takes precedence over ATR fallback.
    d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,102.0,1.0,0.0,101.0);
+   TraceDecision("case-8",d);
    AssertTrue(d.modify && d.stage==DSE_TRAILING,"BUY confirmed anchor selects trailing stage");
    AssertNear(d.proposedSL,100.9,0.000001,"BUY anchor uses configured ATR buffer");
    d=engine.Evaluate(_Symbol,false,100.0,101.0,101.0,98.0,1.0,0.0,99.0);
+   TraceDecision("case-9",d);
    AssertTrue(d.modify && d.stage==DSE_TRAILING,"SELL confirmed anchor selects trailing stage");
    AssertNear(d.proposedSL,99.1,0.000001,"SELL anchor uses configured ATR buffer");
 
    // Invalid anchor geometry must fall back deterministically to ATR.
    d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,102.0,1.0,0.0,103.0);
+   TraceDecision("case-10",d);
    AssertTrue(d.modify && d.stage==DSE_PROTECTION,"invalid BUY anchor falls back to ATR protection");
    d=engine.Evaluate(_Symbol,false,100.0,101.0,101.0,98.0,1.0,0.0,97.0);
+   TraceDecision("case-11",d);
    AssertTrue(d.modify && d.stage==DSE_PROTECTION,"invalid SELL anchor falls back to ATR protection");
 
    // Protection gates are fail-closed when explicitly configured.
@@ -69,16 +95,20 @@ void TestDynamicStop()
    cfg.maxATR=2.00;
    engine.Configure(cfg);
    d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,101.0,1.0,11.0);
+   TraceDecision("case-12",d);
    AssertTrue(!d.modify,"spread protection blocks modification");
    d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,101.0,0.25,5.0);
+   TraceDecision("case-13",d);
    AssertTrue(!d.modify,"low-volatility protection blocks modification");
    d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,101.0,2.5,5.0);
+   TraceDecision("case-14",d);
    AssertTrue(!d.modify,"high-volatility protection blocks modification");
 
    // Threshold suppression prevents pointless sub-point changes.
    cfg.maxSpreadPoints=0; cfg.minATR=0; cfg.maxATR=0; cfg.minImprovementPts=1000.0;
    engine.Configure(cfg);
    d=engine.Evaluate(_Symbol,true,100.0,99.0,99.0,101.0,0.10,0.0);
+   TraceDecision("case-15",d);
    AssertTrue(!d.modify,"minimum-improvement threshold suppresses tiny change");
   }
 
