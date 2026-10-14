@@ -70,6 +70,7 @@ private:
    CTFContext*       m_fvgCtx;
    CTFContext*       m_srCtx;
    CCandleData*      m_priceRef;   // chart-TF candles, used only for "current price"
+   bool              m_requireMtfStructureAlignment; // opt-in until matched backtests validate the gate
 
    CInducement       m_inducement;
    bool              m_requirePremiumDiscount;
@@ -144,6 +145,7 @@ private:
    double            OBScore(bool forBuy);
 
    double            TrendScore(bool forBuy);
+   bool              MTFStructureAligned(bool forBuy);
    double            FVGScore(bool forBuy);
    double            SRScore(bool forBuy);
    double            VolumeScore(bool forBuy);
@@ -162,6 +164,8 @@ public:
                      CScoringEngine();
    void              Init(CTFContext* trendCtx, CTFContext* bosCtx, CTFContext* liqCtx,
                           CTFContext* fvgCtx, CTFContext* srCtx, CCandleData* priceRef);
+   // MTF structure gate is opt-in until matched MT5 ablation tests prove its effect.
+   void              ConfigureMTFStructureAlignment(bool required) { m_requireMtfStructureAlignment = required; }
    void              ConfigureInducement(int lookbackBars, double impulseATRMult, double impulseBodyRatio,
                                          double equalTolATR, int maxLegExtend,
                                          bool requirePremiumDiscount, bool requireDistribution,
@@ -306,6 +310,7 @@ public:
 CScoringEngine::CScoringEngine() : m_trendCtx(NULL), m_bosCtx(NULL), m_liqCtx(NULL),
                                     m_fvgCtx(NULL), m_srCtx(NULL), m_priceRef(NULL),
                                     m_requirePremiumDiscount(true), m_requireDistribution(false),
+                                    m_requireMtfStructureAlignment(false),
                                     m_requireVolumeConfirmation(false), m_rvolThreshold(1.5),
                                     m_requireFibonacciZone(false), m_fibZoneMinPct(50.0), m_fibZoneMaxPct(61.8),
                                     m_requireValueAreaLocation(false), m_blockValueAreaContradictions(true),
@@ -460,6 +465,25 @@ double CScoringEngine::CurrentPrice()
    return m_priceRef.GetCandle(0).close;
   }
 //+------------------------------------------------------------------+
+bool CScoringEngine::MTFStructureAligned(bool forBuy)
+  {
+   // Fail closed when explicitly enabled: unknown/neutral structure is not alignment.
+   if(m_trendCtx == NULL || m_bosCtx == NULL) return false;
+
+   ENUM_TREND_STATE htf = m_trendCtx.trend.GetCurrentTrend();
+   ENUM_TREND_STATE stf = m_bosCtx.trend.GetCurrentTrend();
+   bool htfBull = (htf == TREND_BULL || htf == TREND_BULL_STRONG);
+   bool htfBear = (htf == TREND_BEAR || htf == TREND_BEAR_STRONG);
+   bool stfBull = (stf == TREND_BULL || stf == TREND_BULL_STRONG);
+   bool stfBear = (stf == TREND_BEAR || stf == TREND_BEAR_STRONG);
+
+   // A shared timeframe is one evidence source, not two independent votes.
+   if(m_trendCtx.tf == m_bosCtx.tf)
+      return forBuy ? htfBull : htfBear;
+
+   return forBuy ? (htfBull && stfBull) : (htfBear && stfBear);
+  }
+//+------------------------------------------------------------------+
 double CScoringEngine::TrendScore(bool forBuy)
   {
    if(m_trendCtx == NULL) return 0.0;
@@ -596,6 +620,11 @@ double CScoringEngine::CalculateConfidence(bool forBuy)
 
    InducementResult ind = m_inducement.Validate(forBuy);
    if(!ind.valid) return 0.0;
+
+   // Optional hard gate: HTF trend bias and structure-timeframe trend must
+   // agree with the proposed direction. Disabled by default pending ablation.
+   if(m_requireMtfStructureAlignment && !MTFStructureAligned(forBuy))
+      return 0.0;
 
    // v2.9 (review item #4/#10 — chase filter). Rejects a setup that's
    // already run too far past the BOS confirmation close by the time the
