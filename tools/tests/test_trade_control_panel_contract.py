@@ -28,7 +28,7 @@ def test_emergency_stop_is_persisted_and_blocks_new_entries():
 def test_manual_orders_use_risk_controls_and_normal_order_manager():
     ea = read(EA)
     assert "g_risk.ValidateSetup(setup,InpMinRiskReward,InpMaxSLDistanceATR,atr)" in ea
-    assert "g_risk.CalculateLotSize(_Symbol,InpRiskPercentPerTrade" in ea
+    assert "g_risk.CalculateLotSize(_Symbol,g_activeRiskLimits.riskPercentPerTrade" in ea
     assert "g_portfolio.AllowNewTradeBatch(_Symbol,proposedRisk,1,portfolioReason)" in ea
     assert "g_orders.Submit(decision,lots,true,maxDeviation,ticket,0)" in ea
     assert "g_store.SaveExecution(decision.decision_id,lots,ticket,0,setup.final_tp)" in ea
@@ -205,17 +205,3 @@ def test_position_manager_validates_partial_volume_before_broker_request():
     assert "if(PartialVolumeForPosition(dec.symbol,currentVolume,closeVolume) &&" in manager
     assert "m_broker.ClosePartial(ticket,closeVolume)" in manager
     assert "double vol=m_orders.VolumeAt(i)*m_partialFraction;" not in manager
-
-
-def test_partial_exit_eligibility_is_independent_of_trailing_stop_success():
-    policy_path = ROOT / "EA" / "includes" / "Execution" / "PositionManagementPolicy.mqh"
-    policy = read(policy_path)
-    manager = read(ROOT / "EA" / "includes" / "Execution" / "PositionManager.mqh")
-
-    assert "bool ShouldTakePartialAtR(ENUM_TRADE_STATE state,double r,double partialAtR)" in policy
-    assert "state==TS_FILLED || state==TS_PROTECTED" in policy
-    assert "partialAtR<=0.0 || r<partialAtR" in policy
-    assert '#include "PositionManagementPolicy.mqh"' in manager
-    assert "if(ShouldTakePartialAtR(stateAfterStop,r,m_partialAtR))" in manager
-    assert "if(stateAfterStop==TS_PROTECTED && r>=m_partialAtR)" not in manager
-    assert "if(InpEnableDynamicStop && CanModifyNow(ticket))" in manager

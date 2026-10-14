@@ -49,10 +49,47 @@
 
 - ORM metadata tests assert all seven restored tables and critical idempotency, lease, broker-reference, holdout, and outcome fields.
 - Tests assert the new tables coexist with Midas-specific `signal_delivery_outbox`, configuration registry, configuration evaluation, and config-sync state models.
-- Migration ancestry is checked as `0017 → 0016`.
-- GitHub Actions runs Python tests, research-tool tests, handbook tests, MQL5 structural validation, and bridge lint/security. Results must be green before merge.
+- Migration ancestry is checked as `0017 → 0016 → 0018 → 0019` (Midas already owns revision `0018` for outcome-completeness provenance; the portfolio-scope migration must therefore be `0019`).
+- Latest CI for PR #81 at the inspected head passed all six jobs in run `38359317052`: Python tests, research-tool tests, handbook reference tests, MQL5 structural validation, bridge quality/security, and PostgreSQL migration upgrade/downgrade/re-upgrade. This is repository CI evidence, not MetaEditor or terminal evidence.
 - These checks do **not** substitute for applying the Alembic migration to a disposable PostgreSQL database, MetaEditor compilation, MT5 Strategy Tester, demo forward testing, or broker reconciliation.
 
 ## Non-negotiable migration rule
 
 A missing filename is only a lead, not proof of a missing feature. Preserve Midas-specific execution state, partial-fill handling, decision/leg lineage, immutable configuration, outcome provenance, and signal delivery. Migrate only a behavior that is both genuinely absent and compatible with Midas's current call graph; add regression tests for the behavior before merge.
+
+
+## Research-module behavior audit (source-only package)
+
+The source proposal package contains these 22 modules. Matching names are not treated as proof of equivalence; the status below records where the behavior is represented and what remains to be proven.
+
+| Source module / behavior | Midas-side analogue | Audit disposition / missing proof |
+| --- | --- | --- |
+| `bounds.py`, `canonical_config.py`, `schema.py` | Configuration registry and canonical trade/config contracts | Preserve Midas's immutable registry. Add round-trip contract tests before treating all source validation rules as covered. |
+| `candidates.py`, `proposer.py`, `search_budget.py` | `tools/optimizer.py`, adaptive research | Candidate generation exists in a different architecture. Search-budget equivalence and bounded-compute behavior require matched tests. |
+| `challenger.py`, `objective.py`, `evaluator.py` | `tools/champion_challenger.py`, `tools/metrics_engine.py`, configuration evaluations | Broad capability overlap. Do not port source scoring until objective parity is demonstrated against Midas's costs-inclusive expectancy and strategy/asset-class breakdown. |
+| `statistics.py`, `paired_stats.py`, `multiple_testing.py` | Research/statistical tools and optimizer tests | Exact statistical equivalence is **not yet established**. Require paired tests, multiple-testing correction tests, and reproducible seeds/provenance. |
+| `walk_forward.py`, `holdout.py`, `robustness.py` | `tools/walk_forward.py`, `tools/oos_firewall.py`, `tools/recalibration_guard.py` | Analogues exist; verify temporal leakage barriers, disjoint windows, locked holdout immutability, and robustness acceptance rules end-to-end. The new compatibility API records chronology/provenance but does not itself run these analyses. |
+| `registry.py`, `versioning.py`, `deployment.py`, `gates.py` | Immutable configuration registry, activation/recalibration state, Midas promotion gates | Preserve Midas promotion authority. End-to-end atomicity between approval, activation, EA acknowledgement, rollback, and audit still needs integration tests. |
+| `models.py` | Midas research/configuration models plus restored experiment/validation tables | The seven-table schema has been restored additively. Full data-model semantic parity and migration of legacy research records have not been established. |
+
+## Execution and portfolio behavior audit
+
+| Behavior | Current Midas coverage | Remaining validation / blocker |
+| --- | --- | --- |
+| Duplicate decision/order submission | EA `OrderManager` keys tracked trades by decision and leg; bridge reserve uses a unique request ID | A deterministic request-ID contract joining EA decision+leg to bridge account+server is not yet wired into `COrderManager::Submit`. |
+| Broker send ambiguity / network timeout | Bridge keeps expired leases in `RECOVERING` and retains ACTIVE risk reservations | EA does not yet reserve before broker send or transition to SENT/ACKED/FILLED through the API. A timeout after broker acceptance remains an unclosed integration case. |
+| Partial fills and partial closes | Broker adapter and recovery/outcome code have Midas-specific partial-fill/leg behavior | No end-to-end broker deal-volume ledger reconciles cumulative deals, current position volume, commissions/swaps/fees, and remaining risk reservation. |
+| Restart recovery | EA `RecoveryEngine` restores trades from broker state/history using trade comments and decision/leg identity | No account-wide startup handshake imports all open positions/orders into bridge risk state before new entries. Existing positions with missing/unparseable comments require an explicit conservative orphan-position policy. |
+| Duplicate broker fills / history replay | State-machine and recovery safeguards exist locally | No durable broker-deal uniqueness/idempotency endpoint is currently called by the EA; duplicate-fill fault injection across EA, API, and PostgreSQL remains outstanding. |
+| Broker/database disagreement | Bridge refuses to infer rejection from lease expiry and requires evidence for terminal transitions | There is no complete account-snapshot reconciliation endpoint/caller that can classify broker-only, DB-only, partially closed, and conflicting positions. The safe action must be retain risk and block new entries until reconciled. |
+| Portfolio risk | Midas EA has batch admission, symbol/group caps and fail-closed risk calculation; bridge has per-`portfolio_key` heat reservation | EA/bridge risk-unit normalization is not yet defined end-to-end. A 3R bridge heat ceiling must not be interpreted as 3% account risk without a documented conversion and matched tests. |
+| Existing account positions | EA recovery is scoped by its configured symbol/magic, while portfolio-risk needs account-wide exposure | Account-wide import across symbols/magic numbers and netting-vs-hedging account behavior is unproven. |
+
+## Explicit release gates
+
+1. Define a canonical portfolio key (broker server + account login; do not include magic number if exposure is account-wide), request ID (portfolio + EA instance strategy + decision ID + leg), and documented risk units.
+2. Add broker snapshot/deal reconciliation API semantics that are idempotent by broker deal/ticket identity and do not release risk on missing/partial history.
+3. Call reservation and pre-send state transitions in the authoritative EA submit path; after a broker call, record broker return codes and tickets without retrying an ambiguous send.
+4. Reconcile all account positions and pending orders before enabling entries on startup/restart; fail closed on orphan positions, incomplete history, or DB/broker disagreement.
+5. Add fault-injection tests for duplicate fills, partial closes, terminal restarts, and DB/network outages; then compile in MetaEditor, run matched Strategy Tester runs, and forward-test on a demo account.
+6. Keep PR #81 draft and unmerged until these gates pass. Current CI is green for bridge/schema/structural checks only; it does not satisfy gates 1–5.
