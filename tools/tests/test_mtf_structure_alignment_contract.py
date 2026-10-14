@@ -67,3 +67,34 @@ def test_research_gate_is_not_applied_when_disabled() -> None:
     )
     assert "if(m_requireMtfStructureAlignment && !MTFStructureAligned(forBuy))" in body
     assert "if(!ind.valid) return 0.0;" in body
+
+
+def test_mtf_alignment_fails_closed_for_missing_context_and_wrong_trend() -> None:
+    body = _function_body(
+        SCORING,
+        "bool CScoringEngine::ContextMTFStructureAligned",
+        "bool CScoringEngine::MTFStructureAligned",
+    )
+    assert "if(ctx == NULL || !ctx.candles.IsReady() || ctx.candles.Total() < 2)" in body
+    assert "if(!trendAligned || ctx.bos.Count() <= 0)" in body
+
+
+def test_mtf_alignment_rejects_future_or_forming_bar_events() -> None:
+    body = _function_body(
+        SCORING,
+        "bool CScoringEngine::ContextMTFStructureAligned",
+        "bool CScoringEngine::MTFStructureAligned",
+    )
+    assert "CandleData latestClosed = ctx.candles.GetCandle(1);" in body
+    assert "latestBOS.time > latestClosed.time" in body
+    assert "if(latestCHOCH.time > latestClosed.time)" in body
+
+
+def test_opposing_choch_is_only_authoritative_when_newer_than_latest_bos() -> None:
+    body = _function_body(
+        SCORING,
+        "bool CScoringEngine::ContextMTFStructureAligned",
+        "bool CScoringEngine::MTFStructureAligned",
+    )
+    assert "if(latestCHOCH.time > latestBOS.time && latestCHOCH.bullish != forBuy)" in body
+    assert "if(latestCHOCH.time > latestClosed.time)" in body
