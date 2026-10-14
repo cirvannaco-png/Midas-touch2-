@@ -279,7 +279,7 @@ jobs:
               $logFiles = Get-ChildItem -Path $root -Recurse -File -Filter '*.log' -ErrorAction SilentlyContinue |
                 Where-Object { $_.LastWriteTime -ge $startedAt.AddMinutes(-1) }
               foreach ($logFile in $logFiles) {
-                $matches = Select-String -Path $logFile.FullName -SimpleMatch -Pattern "$testName tests:"
+                $matches = Select-String -Path $logFile.FullName -Pattern @("$testName tests:", "FAIL:", "TRACE ", "SYMBOL_DIAG")
                 foreach ($match in $matches) {
                   $testLogLines += [PSCustomObject]@{ File = $logFile.FullName; Line = $match.Line }
                 }
