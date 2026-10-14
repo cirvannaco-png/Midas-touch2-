@@ -91,6 +91,13 @@ void TestDynamicStop()
    TraceDecision("case-3",d);
    AssertTrue(d.modify && d.proposedSL>=100.0,"BUY +1R reaches at least breakeven");
 
+   // Missing ATR cannot create a stop exactly at the current market price,
+   // even where broker stop/freeze levels are zero.
+   d=engine.EvaluateForTest(_Symbol,true,100.0,99.0,99.0,101.0,0.0,0.0,0.0,0.00001);
+   TraceDecision("case-3a",d);
+   AssertTrue(!d.modify && d.reason=="broker stops/freeze distance protection",
+              "BUY missing ATR fails closed instead of proposing market-price SL");
+
    // SELL direction is independent and mirrored.
    d=engine.EvaluateForTest(_Symbol,false,100.0,101.0,101.0,99.25,0.25,0.0,0.0,0.00001);
    TraceDecision("case-4",d);
@@ -98,6 +105,11 @@ void TestDynamicStop()
    d=engine.EvaluateForTest(_Symbol,false,100.0,101.0,101.0,99.0,0.10,0.0,0.0,0.00001);
    TraceDecision("case-5",d);
    AssertTrue(d.modify && d.proposedSL<=100.0,"SELL +1R reaches at least breakeven");
+
+   d=engine.EvaluateForTest(_Symbol,false,100.0,101.0,101.0,99.0,0.0,0.0,0.0,0.00001);
+   TraceDecision("case-5a",d);
+   AssertTrue(!d.modify && d.reason=="broker stops/freeze distance protection",
+              "SELL missing ATR fails closed instead of proposing market-price SL");
 
    // Existing stop must never widen.
    d=engine.EvaluateForTest(_Symbol,true,100.0,99.0,100.50,102.0,2.0,0.0,0.0,0.00001);
