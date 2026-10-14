@@ -17,7 +17,7 @@ void AssertTrue(bool condition,string name)
 void AssertNear(double actual,double expected,double tolerance,string name)
   { AssertTrue(MathAbs(actual-expected)<=tolerance,name); }
 
-void TraceDecision(string label,const DynamicStopDecision &d)
+void TraceDecision(const string &label,const DynamicStopDecision &d)
   {
    PrintFormat("TRACE %s modify=%d stage=%d proposedSL=%.10f reason=%s point=%.10f stops=%d freeze=%d",
                label,(int)d.modify,(int)d.stage,d.proposedSL,d.reason,
