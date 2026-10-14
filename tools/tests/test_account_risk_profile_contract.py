@@ -36,7 +36,7 @@ def test_profile_resolver_has_explicit_legacy_small_and_prop_firm_mappings() -> 
     policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
     assert "InpSmallRiskPercentPerTrade" in ea and "InpSmallMaxPortfolioRiskPercent" in ea
     assert "InpPropRiskPercentPerTrade" in ea and "InpPropMaxPortfolioRiskPercent" in ea
-    assert "ResolveAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
+    assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
     assert "ValidateAccountRiskLimits(out,reason)" in policy
     assert 'reason="unknown account risk profile"' in policy
 
