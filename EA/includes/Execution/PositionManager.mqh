@@ -9,7 +9,6 @@
 #include "DynamicStopEngine.mqh"
 #include "DynamicStopInputs.mqh"
 #include "PositionManagementPolicy.mqh"
-#include "PositionManagementPolicy.mqh"
 #include "../Monitoring/SLModificationAudit.mqh"
 #include "../Structure/SwingDetector.mqh"
 
@@ -110,6 +109,7 @@ bool CPositionManager::PartialVolumeForPosition(string symbol,double currentVolu
    return true;
   }
 
+//+------------------------------------------------------------------+
 double CPositionManager::RMultiple(const TradeDecisionRecord &dec,double entry,double price)
   {
    bool isBuy=(dec.setup.type==ORDER_TYPE_BUY);
@@ -215,8 +215,9 @@ void CPositionManager::OnTick(double currentAtr)
         {
          double currentVolume=PositionGetDouble(POSITION_VOLUME);
          double closeVolume=0.0;
-         // Partial exit remains eligible regardless of whether a trailing-stop
-         // edit succeeded this tick; broker volume constraints are still required.
+         // Skip locally when broker volume constraints make a partial close
+         // impossible. This avoids repeating a predictably invalid request
+         // on every tick while trailing-stop management continues normally.
          if(PartialVolumeForPosition(dec.symbol,currentVolume,closeVolume) &&
             m_broker.ClosePartial(ticket,closeVolume))
             m_orders.TransitionAt(i,TS_PARTIAL);

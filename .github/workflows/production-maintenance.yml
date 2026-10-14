@@ -18,6 +18,7 @@ on:
           - biweekly-recalibration
           - daily-subscriptions
           - daily-delivery-recovery
+          - execution-ledger-preflight
         default: biweekly-recalibration
 
 permissions:
@@ -29,6 +30,72 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  execution-ledger-preflight:
+    name: Read-only authenticated execution-ledger and database preflight
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.task == 'execution-ledger-preflight' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 3
+    concurrency:
+      group: midas-execution-ledger-preflight
+      cancel-in-progress: false
+    steps:
+      - name: Validate production bridge secrets without printing them
+        env:
+          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
+          : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          raw = os.environ["BRIDGE_BASE_URL"].strip()
+          parsed = urlsplit(raw)
+          if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                  or parsed.password or parsed.query or parsed.fragment
+                  or any(char.isspace() for char in raw)):
+              raise SystemExit("BRIDGE_BASE_URL must be an HTTPS URL without credentials, query, fragment, or whitespace.")
+          if not os.environ["BRIDGE_API_KEY"].strip():
+              raise SystemExit("BRIDGE_API_KEY must be non-empty.")
+          print("Bridge secret presence and URL shape verified; secret values not printed.")
+          PY
+
+      - name: Verify runtime key and real database connection
+        env:
+          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --request GET --header "X-API-Key: ${BRIDGE_API_KEY}" \
+            --header "Accept: application/json" --connect-timeout 8 --max-time 15 --retry 0 \
+            "${BRIDGE_BASE_URL%/}/execution-ledger/health")"; then
+            echo "::error::Execution-ledger preflight request failed; no mutation was attempted."
+            exit 1
+          fi
+          if [[ "$http_code" != "200" ]]; then
+            echo "::error::Authenticated ledger/database health returned HTTP $http_code; no mutation was attempted."
+            exit 1
+          fi
+          python3 - "$response_file" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as source:
+              result = json.load(source)
+          expected = {"status": "online", "database": "connected", "execution_ledger": "ready"}
+          if any(result.get(k) != v for k, v in expected.items()):
+              raise SystemExit("Execution-ledger health response is degraded; no mutation was attempted.")
+          print("Authenticated bridge API key accepted; database SELECT succeeded; response is healthy.")
+          import os
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n### Execution-ledger preflight\n\n- Authenticated key verification: passed\n- Database connectivity probe: passed\n- No production mutation was performed.\n")
+          PY
+
   biweekly-recalibration:
     name: Guarded calibration cycle
     if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 6') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.task == 'biweekly-recalibration') }}

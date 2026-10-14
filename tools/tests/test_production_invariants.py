@@ -38,7 +38,11 @@ def test_ea_initializes_tracker_on_chart_execution_timeframe():
     t=EA.read_text();assert "g_tracker.Init(&g_logger,_Symbol,_Period" in t;assert "g_tracker.Update(g_chartCtx);" in t;assert "g_tracker.Update(g_fvgCtx);" not in t
 
 def test_ea_restores_config_sync_timer_callback():
-    t=EA.read_text();assert "EventSetTimer(MathMax(60,InpConfigSyncPollMinutes*60));" in t;assert "void OnTimer(){if(StringLen(InpConfigSyncEndpoint)>0)g_configSync.Poll();}" in t
+    t=EA.read_text()
+    assert "EventSetTimer(MathMax(10,InpExecutionLedgerRetrySeconds));" in t
+    assert "now-g_lastConfigSyncPoll>=MathMax(60,InpConfigSyncPollMinutes*60)" in t
+    assert "g_configSync.Poll();" in t
+    assert "void OnTimer()" in t
 
 def test_outcomes_advance_before_entry_gates():
     t=EA.read_text();assert t.index("g_tracker.Update(g_chartCtx);")<t.index("g_riskGuard.IsHardHalted")
@@ -87,7 +91,18 @@ def test_broker_checks_directional_trade_modes():
     t=BROKER.read_text();assert "SYMBOL_TRADE_MODE_LONGONLY" in t;assert "SYMBOL_TRADE_MODE_SHORTONLY" in t;assert "SYMBOL_TRADE_MODE_CLOSEONLY" in t
 
 def test_broker_retries_only_explicit_transient_codes():
-    t=BROKER.read_text();assert "case TRADE_RETCODE_REQUOTE:" in t;assert "case TRADE_RETCODE_CONNECTION:" in t;assert "case TRADE_RETCODE_TIMEOUT:" in t;assert "default:" in t;assert "return false;" in t
+    t=BROKER.read_text()
+    retry=t[t.index("bool CBrokerAdapter::IsRetryable"):t.index("int CBrokerAdapter::DelayForRetcode")]
+    assert "case TRADE_RETCODE_REQUOTE:" in retry
+    assert "case TRADE_RETCODE_PRICE_CHANGED:" in retry
+    assert "case TRADE_RETCODE_PRICE_OFF:" in retry
+    assert "default:" in retry and "return false;" in retry
+    assert "case TRADE_RETCODE_CONNECTION:" not in retry
+    assert "case TRADE_RETCODE_TIMEOUT:" not in retry
+    ambiguous=t[t.index("LastRequestAmbiguous() const"):t.index("ResetLastRequestStatus()")]
+    assert "TRADE_RETCODE_CONNECTION" in ambiguous
+    assert "TRADE_RETCODE_TIMEOUT" in ambiguous
+    assert "TRADE_RETCODE_ERROR" in ambiguous
 
 def test_recovery_restores_actual_broker_entry():
     t=RECOVERY.read_text()
