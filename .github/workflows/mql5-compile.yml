@@ -231,10 +231,10 @@ jobs:
             $config | Set-Content -Path $configPath -Encoding ASCII
 
             $startedAt = Get-Date
-            $args = "/config:`"$configPath`""
-            if ($portableMode) { $args += ' /portable' }
+            $terminalArgs = "/config:`"$configPath`""
+            if ($portableMode) { $terminalArgs += ' /portable' }
             Write-Host "Running $testName in MetaTrader 5 Strategy Tester (math-calculation mode; no account login or market orders)."
-            $process = Start-Process -FilePath $terminal -ArgumentList $args -PassThru
+            $process = Start-Process -FilePath $terminal -ArgumentList $terminalArgs -PassThru
             $deadline = (Get-Date).AddMinutes(3)
             while (!$process.HasExited -and (Get-Date) -lt $deadline) {
               Start-Sleep -Seconds 2
