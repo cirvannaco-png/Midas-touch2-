@@ -31,6 +31,18 @@ private:
    string m_dealsName;
    string m_openName;
    ulong  m_magic;
+   double m_spreadSum;
+   double m_spreadMax;
+   ulong  m_spreadSamples;
+   double m_point;
+   double m_tickSize;
+   double m_tickValue;
+   double m_initialBalance;
+   string m_currency;
+   string m_server;
+   long   m_leverage;
+   long   m_terminalBuild;
+   long   m_fillMode;
    TesterDealExportRow m_rows[];
    ulong  m_seenDeals[];
    ulong  m_riskPositions[];
@@ -51,6 +63,46 @@ private:
       if(StringLen(value)==0) value="manual";
       if(StringLen(value)>32) value=StringSubstr(value,0,32);
       return value;
+     }
+
+   string TimeIsoUtc(datetime value) const
+     {
+      // Exness MT5 server timestamps are GMT+0; testing is explicitly
+      // restricted to an Exness demo/trial server by the orchestration job.
+      string stamp=TimeToString(value,TIME_DATE|TIME_SECONDS);
+      StringReplace(stamp,".","-");
+      StringReplace(stamp," ","T");
+      return stamp+"Z";
+     }
+
+   void WriteMetadata()
+     {
+      string filename="MidasTesterMeta_"+m_runId+".json";
+      int handle=FileOpen(filename,FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
+      if(handle==INVALID_HANDLE)
+        {
+         PrintFormat("MIDAS_TEST_EXPORT_ERROR kind=metadata file=%s error=%d",
+                     filename,GetLastError());
+         return;
+        }
+      double cashPerPoint=0.0;
+      if(m_point>0.0 && m_tickSize>0.0 && m_tickValue>0.0)
+         cashPerPoint=m_tickValue*m_point/m_tickSize;
+      double averageSpread=(m_spreadSamples>0 ? m_spreadSum/(double)m_spreadSamples : 0.0);
+      string json=StringFormat(
+         "{\"run_id\":\"%s\",\"symbol\":\"%s\",\"server\":\"%s\","
+         "\"account_currency\":\"%s\",\"leverage\":%I64d,"
+         "\"initial_balance\":%.8f,\"terminal_build\":%I64d,"
+         "\"point\":%.10f,\"tick_size\":%.10f,\"tick_value\":%.8f,"
+         "\"cash_per_point_per_lot\":%.8f,\"spread_points_mean\":%.8f,"
+         "\"spread_points_max\":%.8f,\"spread_samples\":%I64u,"
+         "\"fill_mode\":%I64d}",
+         m_runId,m_symbol,m_server,m_currency,m_leverage,m_initialBalance,
+         m_terminalBuild,m_point,m_tickSize,m_tickValue,cashPerPoint,
+         averageSpread,m_spreadMax,m_spreadSamples,m_fillMode);
+      FileWriteString(handle,json);
+      FileFlush(handle);
+      FileClose(handle);
      }
 
    string EntryName(const ENUM_DEAL_ENTRY entry) const
@@ -106,6 +158,18 @@ public:
       m_runId=SafeName(runId);
       m_dealsName="MidasTesterDeals_"+m_runId+".csv";
       m_openName="MidasTesterOpen_"+m_runId+".csv";
+      m_spreadSum=0.0;
+      m_spreadMax=0.0;
+      m_spreadSamples=0;
+      m_point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      m_tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      m_tickValue=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_VALUE);
+      m_initialBalance=AccountInfoDouble(ACCOUNT_BALANCE);
+      m_currency=AccountInfoString(ACCOUNT_CURRENCY);
+      m_server=AccountInfoString(ACCOUNT_SERVER);
+      m_leverage=AccountInfoInteger(ACCOUNT_LEVERAGE);
+      m_terminalBuild=TerminalInfoInteger(TERMINAL_BUILD);
+      m_fillMode=SymbolInfoInteger(symbol,SYMBOL_FILLING_MODE);
       ArrayResize(m_rows,0);
       ArrayResize(m_seenDeals,0);
       ArrayResize(m_riskPositions,0);
@@ -116,6 +180,20 @@ public:
      }
 
    bool Enabled() const { return m_enabled; }
+
+   void ObserveSpread(const string symbol)
+     {
+      if(!m_enabled) return;
+      MqlTick tick;
+      if(!SymbolInfoTick(symbol,tick)) return;
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      if(point<=0.0 || tick.ask<=0.0 || tick.bid<=0.0 || tick.ask<tick.bid) return;
+      double spread=(tick.ask-tick.bid)/point;
+      if(!MathIsValidNumber(spread) || spread<0.0) return;
+      m_spreadSum+=spread;
+      if(spread>m_spreadMax) m_spreadMax=spread;
+      m_spreadSamples++;
+     }
 
    bool Record(const ulong dealId,const ulong orderId,const ulong positionId,
                const datetime dealTime,const string symbol,
@@ -170,7 +248,7 @@ public:
          TesterDealExportRow row=m_rows[i];
          FileWrite(handle,
                    IntegerToString((long)row.position_id),
-                   TimeToString(row.deal_time,TIME_DATE|TIME_SECONDS),
+                   TimeIsoUtc(row.deal_time),
                    row.entry,
                    DoubleToString(row.volume,8),
                    DoubleToString(row.profit,8),
@@ -205,6 +283,7 @@ public:
         }
       FileFlush(openHandle);
       FileClose(openHandle);
+      WriteMetadata();
       PrintFormat("MIDAS_TEST_EXPORT_COMPLETE run=%s deals=%d risk_positions=%d deals_file=%s open_file=%s",
                   m_runId,ArraySize(m_rows),ArraySize(m_riskPositions),m_dealsName,m_openName);
      }
