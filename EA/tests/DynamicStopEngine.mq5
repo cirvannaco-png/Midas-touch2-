@@ -38,6 +38,13 @@ void TestDynamicStop()
    TraceDecision("case-1",d);
    AssertTrue(!d.modify && d.stage==DSE_STRUCTURAL,"BUY below 0.75R retains structural SL");
 
+   // The production entry point must fail closed if terminal symbol metadata is unavailable.
+   DynamicStopDecision missingGeometry=engine.Evaluate("MidasMissingSymbolZZQ",true,
+                                                        100.0,99.0,99.0,100.75,0.25,0.0);
+   AssertTrue(!missingGeometry.modify &&
+              missingGeometry.reason=="broker stops/freeze distance protection",
+              "production path refuses modification without broker point metadata");
+
    // +0.75R activates protection.
    d=engine.EvaluateForTest(_Symbol,true,100.0,99.0,99.0,100.75,0.25,0.0,0.0,0.00001);
    TraceDecision("case-2",d);
@@ -100,7 +107,7 @@ void TestDynamicStop()
    // Threshold suppression blocks a five-point improvement below the six-point minimum.
    cfg.maxSpreadPoints=0; cfg.minATR=0; cfg.maxATR=0; cfg.minImprovementPts=6.0;
    engine.Configure(cfg);
-   d=engine.EvaluateForTest(_Symbol,true,100.0,99.0,99.0,101.0,0.10,0.0,0.0,0.00001);
+   d=engine.EvaluateForTest(_Symbol,true,1.1000,1.0900,1.10780,1.1080,0.00010,0.0,0.0,0.00001);
    TraceDecision("case-15",d);
    AssertTrue(!d.modify,"minimum-improvement threshold suppresses tiny change");
   }
