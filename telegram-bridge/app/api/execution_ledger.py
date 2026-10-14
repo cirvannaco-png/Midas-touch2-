@@ -32,6 +32,32 @@ from app.routes import verify_api_key
 router = APIRouter(prefix="/execution-ledger", tags=["execution-ledger"])
 
 
+@router.get("/health")
+async def execution_ledger_health(
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Authenticated, non-mutating credential-pair and database readiness probe.
+
+    The response intentionally excludes credentials, connection strings, and
+    database exception details. A 200 means the supplied bridge API key was
+    accepted and a real database SELECT completed on this request.
+    """
+    try:
+        await session.execute(select(1))
+    except Exception as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="execution ledger database unavailable",
+        ) from exc
+    return {
+        "status": "online",
+        "database": "connected",
+        "execution_ledger": "ready",
+    }
+
+
 class ReserveRequest(BaseModel):
     portfolio_key: str = Field(min_length=1, max_length=128)
     request_id: str = Field(min_length=1, max_length=128)
