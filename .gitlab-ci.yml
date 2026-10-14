@@ -5,6 +5,9 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
+    # Allow authorized API-triggered validation after a mirror reconciliation.
+    # Production maintenance jobs remain explicitly disabled below.
+    - if: '$CI_PIPELINE_SOURCE == "api"'
     - when: never
 
 stages:
