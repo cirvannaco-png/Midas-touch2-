@@ -302,6 +302,19 @@ jobs:
               Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           }
 
+      - name: Upload native Strategy Tester reports and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metatrader5-policy-test-evidence
+          path: |
+            ${{ runner.temp }}/MetaTrader5/reports/**
+            ${{ runner.temp }}/MetaTrader5/Tester/logs/**
+            ${{ runner.temp }}/MetaTrader5/Tester/Agent-*/logs/**
+            ${{ runner.temp }}/MetaTrader5/MQL5/Experts/MidasTouch/tests/*.log
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Upload MetaEditor compile log
         if: always()
         uses: actions/upload-artifact@v4
