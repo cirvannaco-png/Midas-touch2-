@@ -5,6 +5,7 @@
 #property strict
 #define MIDAS_DYNAMIC_STOP_TESTING
 #include "../includes/Execution/DynamicStopEngine.mqh"
+#include "../includes/Execution/PriceGridNormalizer.mqh"
 
 int failures=0;
 string g_traceSummary="";
@@ -23,6 +24,41 @@ void TraceDecision(const string &label,const DynamicStopDecision &d)
   {
    g_traceSummary+=StringFormat("%s[m=%d stage=%d sl=%.10f reason=%s];",
                                 label,(int)d.modify,(int)d.stage,d.proposedSL,d.reason);
+  }
+
+void TestPriceGridNormalization()
+  {
+   double normalized=0.0;
+   AssertTrue(NormalizePriceToTickGrid(1.10346,0.00005,5,false,normalized),
+              "BUY stop normalization accepts valid tick grid");
+   AssertNear(normalized,1.10345,0.00000001,
+              "BUY stop rounds down to tick without moving closer to market");
+
+   AssertTrue(NormalizePriceToTickGrid(1.10346,0.00005,5,true,normalized),
+              "SELL stop normalization accepts valid tick grid");
+   AssertNear(normalized,1.10350,0.00000001,
+              "SELL stop rounds up to tick without moving closer to market");
+
+   AssertTrue(NormalizePriceToTickGrid(1.10350,0.00005,5,false,normalized),
+              "already-aligned price accepted when rounding down");
+   AssertNear(normalized,1.10350,0.00000001,
+              "already-aligned price remains unchanged");
+
+   AssertTrue(NormalizePriceToTickGrid(2345.17,0.25,2,false,normalized),
+              "coarse metal/index tick accepts BUY stop");
+   AssertNear(normalized,2345.00,0.001,
+              "coarse BUY stop rounds down to tradable tick");
+   AssertTrue(NormalizePriceToTickGrid(2345.17,0.25,2,true,normalized),
+              "coarse metal/index tick accepts SELL stop");
+   AssertNear(normalized,2345.25,0.001,
+              "coarse SELL stop rounds up to tradable tick");
+
+   AssertTrue(!NormalizePriceToTickGrid(1.10346,0.0,5,false,normalized),
+              "missing tick size fails closed");
+   AssertTrue(!NormalizePriceToTickGrid(0.0,0.00005,5,false,normalized),
+              "non-positive price fails closed");
+   AssertTrue(!NormalizePriceToTickGrid(1.10346,0.00005,9,false,normalized),
+              "unsupported digit precision fails closed");
   }
 
 void TestDynamicStop()
@@ -114,6 +150,7 @@ void TestDynamicStop()
 
 int OnInit()
   {
+   TestPriceGridNormalization();
    TestDynamicStop();
    PrintFormat("DynamicStopEngine tests: %d failure(s) | explicit test point override used for deterministic geometry | trace=%s",
                failures,g_traceSummary);
