@@ -20,6 +20,7 @@
 #include "includes/Execution/OrderManager.mqh"
 #include "includes/Portfolio/MultiTradeEngine.mqh"
 #include "includes/Execution/PositionManager.mqh"
+#include "includes/Execution/TesterDealExport.mqh"
 #include "includes/Recovery/RecoveryEngine.mqh"
 #include "includes/Portfolio/PortfolioManager.mqh"
 #include "includes/Portfolio/RiskGuard.mqh"
@@ -230,6 +231,7 @@ input string InpBridgeApiKey="";
 input string InpExecutionLedgerBaseUrl=""; // HTTPS root for the durable broker execution ledger
 input bool InpRequireExecutionLedger=true; // Fail closed until broker/database reconciliation succeeds
 input int InpExecutionLedgerRetrySeconds=30;
+input string InpTesterExportRunId="matched-experiment"; // CSV run tag used only in Strategy Tester; no live effect
 input string InpWeightSetVersion="v2.10-baseline";
 input group "Decision Lineage"
 input string InpDecisionSchemaVersion="decision-v1";
@@ -263,7 +265,7 @@ input string InpSession3End="22:00";
 
 CTFContextPool g_pool;CScoringEngine g_scoring;CSessionFilter g_operatorSessionFilter;CTradeDecision g_decision;CRiskEngine g_risk;CSignalLogger g_logger;COutcomeTrackerLive g_tracker;CEnvironmentStrategyMemory g_environmentMemory;CDecisionEngine g_router;CBrokerAdapter g_broker;COrderManager g_orders;CPositionManager g_positions;CRecoveryEngine g_recovery;CPortfolioManager g_portfolio;CMultiTradeEngine g_multiTrade;CRiskGuard g_riskGuard;CNewsFilter g_newsFilter;CSubscriberPlatform g_subscribers;CSignalPublisher g_publisher;CDailyTradeTarget g_dailyTradeTarget;CConfigSync g_configSync;CProductionMonitor g_monitor;CTradeControlPanel g_controlPanel;CExecutionAudit g_execAudit;bool g_emergencyStop=false;datetime g_lastSessionBlockLog=0;CTFContext* g_chartCtx=NULL;CTFContext* g_trendCtx=NULL;CTFContext* g_bosCtx=NULL;CTFContext* g_liqCtx=NULL;CTFContext* g_fvgCtx=NULL;CTFContext* g_htfObCtx=NULL;
 AccountRiskLimits g_activeRiskLimits;
-CExecutionLedgerClient g_executionLedger; bool g_executionLedgerHealthy=false; datetime g_lastLedgerReconcileAttempt=0; datetime g_lastConfigSyncPoll=0;
+CExecutionLedgerClient g_executionLedger; CTesterDealExport g_testerDealExport; bool g_executionLedgerHealthy=false; datetime g_lastLedgerReconcileAttempt=0; datetime g_lastConfigSyncPoll=0;
 datetime g_lastLoggedTime=0,g_lastBarTime=0;long g_lifecycleDecisionId=0;datetime g_lifecycleCreationTime=0;TradeSetup g_lifecycleSetup;string g_lifecycleStatus="valid";bool g_panelInitialized=false;
 
 string EmergencyStopGlobalKey();
@@ -768,6 +770,8 @@ bool ResolveSelectedAccountRiskProfile()
 int OnInit()
   {
    if(!ResolveSelectedAccountRiskProfile()) return INIT_PARAMETERS_INCORRECT;
+   g_testerDealExport.Init(InpTesterExportRunId,_Symbol,InpMagicNumber,
+                           (bool)MQLInfoInteger(MQL_TESTER));
    if(StringLen(InpExecutionLedgerBaseUrl)>0 && StringLen(InpBridgeApiKey)>0)
       g_executionLedger.Init(InpExecutionLedgerBaseUrl,InpBridgeApiKey,InpMagicNumber,InpWebRequestTimeoutMs);
    else
@@ -795,7 +799,7 @@ int OnInit()
       EventSetTimer(MathMax(10,InpExecutionLedgerRetrySeconds));
    return INIT_SUCCEEDED;
   }
-void OnDeinit(const int reason){EventKillTimer();if(StringLen(InpConfigSyncEndpoint)>0)EventKillTimer();g_execAudit.Log("DEINIT",StringFormat("reason=%d",reason));if(g_panelInitialized)g_controlPanel.Destroy();g_publisher.Deinit();g_subscribers.Deinit();g_store.Deinit();}
+void OnDeinit(const int reason){g_testerDealExport.Finalize();EventKillTimer();if(StringLen(InpConfigSyncEndpoint)>0)EventKillTimer();g_execAudit.Log("DEINIT",StringFormat("reason=%d",reason));if(g_panelInitialized)g_controlPanel.Destroy();g_publisher.Deinit();g_subscribers.Deinit();g_store.Deinit();}
 void OnTimer()
   {
    datetime now=TimeCurrent();
@@ -1205,7 +1209,35 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
 
    ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
    ulong positionIdentifier=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
-   if(positionIdentifier==0) return;
+   if(positionIdentifier==0) return; 
+   // Native tester deal export is isolated from live operation by MQL_TESTER.
+   // It retains immutable broker cashflows and the original stop-risk basis
+   // for costs-inclusive analysis after the terminal closes.
+   if(g_testerDealExport.Enabled())
+     {
+      ulong exportOrder=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
+      double entryRiskCash=0.0;
+      if(entry==DEAL_ENTRY_IN && exportOrder>0 && HistoryOrderSelect(exportOrder))
+        {
+         double entryStop=HistoryOrderGetDouble(exportOrder,ORDER_SL);
+         double entryVolume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
+         double entryPrice=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
+         if(entryStop>0.0 && entryVolume>0.0 && entryPrice>0.0)
+            entryRiskCash=g_risk.RiskAmountForLots(_Symbol,entryVolume,entryPrice,entryStop);
+        }
+      if(!g_testerDealExport.Record(
+            trans.deal,exportOrder,positionIdentifier,
+            (datetime)HistoryDealGetInteger(trans.deal,DEAL_TIME),
+            HistoryDealGetString(trans.deal,DEAL_SYMBOL),entry,
+            HistoryDealGetDouble(trans.deal,DEAL_VOLUME),
+            HistoryDealGetDouble(trans.deal,DEAL_PRICE),
+            HistoryDealGetDouble(trans.deal,DEAL_PROFIT),
+            HistoryDealGetDouble(trans.deal,DEAL_COMMISSION),
+            HistoryDealGetDouble(trans.deal,DEAL_SWAP),
+            HistoryDealGetDouble(trans.deal,DEAL_FEE),entryRiskCash))
+         PrintFormat("MIDAS_TEST_EXPORT_ERROR deal=%I64u position=%I64u; artifact will be incomplete",
+                     trans.deal,positionIdentifier);
+     }
    // Persist each immutable broker deal before local tracking can return.
    // Failed writes keep new entries blocked until restart/history reconciliation repairs the ledger.
    if(g_executionLedger.Ready() && !SendLedgerDealEvent(trans.deal,positionIdentifier))
