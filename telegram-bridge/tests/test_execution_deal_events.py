@@ -136,3 +136,21 @@ def test_deal_event_rejects_non_finite_values(client):
         headers={"X-API-Key": "test-secret-key", "Content-Type": "application/json"},
     )
     assert response.status_code == 422
+
+def test_execution_ledger_health_verifies_api_key_and_database(client):
+    unauthenticated = client.get(
+        "/execution-ledger/health",
+        headers={"X-API-Key": "wrong-key"},
+    )
+    assert unauthenticated.status_code == 401
+
+    response = client.get(
+        "/execution-ledger/health",
+        headers={"X-API-Key": "test-secret-key"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "status": "online",
+        "database": "connected",
+        "execution_ledger": "ready",
+    }
