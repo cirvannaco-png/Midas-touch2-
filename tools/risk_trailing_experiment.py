@@ -149,7 +149,7 @@ def _context(raw: object, name: str) -> dict[str, Any]:
     result["spread_widening_multiplier"] = _num(raw["spread_widening_multiplier"], f"{name}.spread_widening_multiplier", minimum=1.01)
     result["baseline_spread_points"] = _num(raw["baseline_spread_points"], f"{name}.baseline_spread_points", positive=True)
     result["cash_per_point_per_lot"] = _num(raw["cash_per_point_per_lot"], f"{name}.cash_per_point_per_lot", positive=True)
-    result["commission_per_lot"] = _num(raw["commission_per_lot"], f"{name}.commission_per_lot", positive=True)
+    result["commission_per_lot"] = _num(raw["commission_per_lot"], f"{name}.commission_per_lot", minimum=0.0)
     result["slippage_points"] = _num(raw["slippage_points"], f"{name}.slippage_points", positive=True)
     result["initial_balance"] = _num(raw["initial_balance"], f"{name}.initial_balance", positive=True)
     result["spread_points"] = None if raw["spread_points"] is None else _num(raw["spread_points"], f"{name}.spread_points", minimum=0)
