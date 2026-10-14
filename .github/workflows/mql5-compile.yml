@@ -177,6 +177,108 @@ jobs:
           if (!(Test-Path (Join-Path $expertTestDir 'AccountRiskProfilePolicy.ex5'))) { throw 'Account-risk profile policy test EX5 artifact was not produced.' }
           "AccountRiskProfilePolicy test compiled: errors=$errors warnings=$warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
+      - name: Execute MQL5 policy tests in the native Strategy Tester
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = Join-Path $env:RUNNER_TEMP 'MetaTrader5'
+          $terminal = Join-Path $installDir 'terminal64.exe'
+          $mql5Root = [System.IO.Path]::GetFullPath($env:MT5_MQL5_ROOT)
+          $portableRoot = [System.IO.Path]::GetFullPath((Join-Path $installDir 'MQL5'))
+          $portableMode = $mql5Root.StartsWith($portableRoot, [System.StringComparison]::OrdinalIgnoreCase)
+          $reportDir = Join-Path $installDir 'reports'
+          New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
+          if (!(Test-Path $terminal)) { throw "MetaTrader terminal missing: $terminal" }
+
+          $testNames = @('PositionManagementPolicy', 'AccountRiskProfilePolicy')
+          foreach ($testName in $testNames) {
+            $expert = Join-Path $mql5Root ("Experts/MidasTouch/tests/" + $testName + ".ex5")
+            if (!(Test-Path $expert)) { throw "Compiled policy-test artifact missing: $expert" }
+
+            $reportName = "policy-$testName"
+            $reportPath = Join-Path $reportDir ($reportName + '.htm')
+            if (Test-Path $reportPath) { Remove-Item $reportPath -Force }
+            $configPath = Join-Path $env:RUNNER_TEMP ($reportName + '.ini')
+            $config = @(
+              '[Common]',
+              'ProxyEnable=0',
+              'NewsEnable=0',
+              '',
+              '[Experts]',
+              'AllowLiveTrading=0',
+              'AllowDllImport=0',
+              'Enabled=1',
+              '',
+              '[Tester]',
+              ("Expert=MidasTouch\tests\" + $testName),
+              'Symbol=EURUSD',
+              'Period=M1',
+              'Model=3',
+              'Optimization=0',
+              'Login=0',
+              'Deposit=10000',
+              'Currency=USD',
+              'Leverage=1:100',
+              'ExecutionMode=0',
+              'UseLocal=1',
+              'UseRemote=0',
+              'UseCloud=0',
+              ("Report=reports\" + $reportName + '.htm'),
+              'ReplaceReport=1',
+              'ShutdownTerminal=1'
+            )
+            $config | Set-Content -Path $configPath -Encoding ASCII
+
+            $startedAt = Get-Date
+            $terminalArgs = "/config:`"$configPath`""
+            if ($portableMode) { $terminalArgs += ' /portable' }
+            Write-Host "Running $testName in MetaTrader 5 Strategy Tester (math-calculation mode; no account login or market orders)."
+            $process = Start-Process -FilePath $terminal -ArgumentList $terminalArgs -PassThru
+            $deadline = (Get-Date).AddMinutes(3)
+            while (!$process.HasExited -and (Get-Date) -lt $deadline) {
+              Start-Sleep -Seconds 2
+              $process.Refresh()
+            }
+            $process.Refresh()
+            if (!$process.HasExited) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "MetaTrader Strategy Tester did not exit within three minutes for $testName."
+            }
+            if ($process.ExitCode -ne 0) {
+              throw "MetaTrader terminal exited with code $($process.ExitCode) while running $testName."
+            }
+
+            $roots = @($installDir, (Join-Path $env:APPDATA 'MetaQuotes')) |
+              Where-Object { Test-Path $_ } | Select-Object -Unique
+            $testLogLines = @()
+            foreach ($root in $roots) {
+              $logFiles = Get-ChildItem -Path $root -Recurse -File -Filter '*.log' -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -ge $startedAt.AddMinutes(-1) }
+              foreach ($logFile in $logFiles) {
+                $matches = Select-String -Path $logFile.FullName -SimpleMatch -Pattern "$testName tests:"
+                foreach ($match in $matches) {
+                  $testLogLines += [PSCustomObject]@{ File = $logFile.FullName; Line = $match.Line }
+                }
+              }
+            }
+            $testLogLines | ForEach-Object { Write-Host ("TEST_LOG " + $_.File + ": " + $_.Line) }
+            $passing = @($testLogLines | Where-Object { $_.Line.Contains("$testName tests: 0 failure(s)") })
+            if ($passing.Count -eq 0) {
+              throw "No successful native Strategy Tester assertion summary found for $testName. The test must print '$testName tests: 0 failure(s)'."
+            }
+            if (!(Test-Path $reportPath)) {
+              throw "Strategy Tester did not produce its report for $testName at $reportPath."
+            }
+            $reportContent = Get-Content -Path $reportPath -Raw
+            if ($reportContent.Length -lt 100) {
+              throw "Strategy Tester report for $testName is unexpectedly small."
+            }
+            Write-Host "PASS: $testName executed by Strategy Tester; zero assertion failures; report produced."
+            "Native Strategy Tester policy test passed: $testName; zero assertion failures." |
+              Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
       - name: Upload MetaEditor compile log
         if: always()
         uses: actions/upload-artifact@v4
