@@ -241,9 +241,13 @@ bool CInducement::FindEqualPair(bool wantLows, int scanFrom, int scanTo, double 
 // Thresholds (0.70 / 0.40) are starting points, not tuned constants —
 // they need the same ablation-test treatment as everything else here
 // before being trusted live.
-ENUM_SWEEP_GRADE CInducement::GradeSweep(int sweepBarIdx, bool forBuy, double poolPrice, double &gradeScore)
+ENUM_SWEEP_GRADE CInducement::GradeSweep(int sweepBarIdx, bool forBuy, double poolPrice, double &gradeScore, double &rejectionRatio, double &shapeScore, double &penetrationATR, bool &followThrough)
   {
    gradeScore = 0.0;
+   rejectionRatio = 0.0;
+   shapeScore = 0.0;
+   penetrationATR = 0.0;
+   followThrough = false;
    if(m_candles == NULL || sweepBarIdx < 0) return SWEEP_GRADE_NONE;
    CandleData cd = m_candles.GetCandle(sweepBarIdx);
    double atr = m_candles.GetATR(sweepBarIdx);
@@ -253,16 +257,15 @@ ENUM_SWEEP_GRADE CInducement::GradeSweep(int sweepBarIdx, bool forBuy, double po
    if(wick <= 0) return SWEEP_GRADE_NONE; // shouldn't happen if sweepFound was true, but stay defensive
 
    double closeBack = forBuy ? (cd.close - poolPrice) : (poolPrice - cd.close);
-   double rejectionRatio = MathMax(0.0, MathMin(closeBack / wick, 1.0));
+   rejectionRatio = MathMax(0.0, MathMin(closeBack / wick, 1.0));
 
-   double penetrationATR = wick / atr;
-   double shapeScore;
+   penetrationATR = wick / atr;
    if(penetrationATR >= 0.03 && penetrationATR <= 0.60)
       shapeScore = 1.0;
    else
       shapeScore = MathMax(0.0, 1.0 - MathAbs(penetrationATR - 0.30) / 0.60);
 
-   bool followThrough = (sweepBarIdx - 1 >= 0) ? IsDisplacementBar(sweepBarIdx - 1, forBuy) : false;
+   followThrough = (sweepBarIdx - 1 >= 0) ? IsDisplacementBar(sweepBarIdx - 1, forBuy) : false;
 
    gradeScore = MathMax(0.0, MathMin(0.4 * rejectionRatio + 0.3 * shapeScore + 0.3 * (followThrough ? 1.0 : 0.0), 1.0));
 
@@ -345,6 +348,14 @@ InducementResult CInducement::Validate(bool forBuy)
    // up). Bearish impulse -> equal HIGHS.
    double poolPrice; int nearIdx, farIdx;
    bool structureFound = FindEqualPair(forBuy /*wantLows*/, 0, pullbackTo, atr, poolPrice, nearIdx, farIdx);
+   r.structureType = structureFound ? INDUCEMENT_STRUCTURE_EQUAL_POOL : INDUCEMENT_STRUCTURE_NONE;
+   r.liquidityPoolPrice = poolPrice;
+   r.liquidityPoolNearBarIndex = nearIdx;
+   r.liquidityPoolFarBarIndex = farIdx;
+   r.liquidityPoolBarSpan = (nearIdx >= 0 && farIdx >= 0) ? MathAbs(nearIdx - farIdx) : -1;
+   double nearPoolPrice = (nearIdx >= 0) ? (forBuy ? m_candles.GetCandle(nearIdx).low : m_candles.GetCandle(nearIdx).high) : 0.0;
+   double farPoolPrice  = (farIdx >= 0) ? (forBuy ? m_candles.GetCandle(farIdx).low : m_candles.GetCandle(farIdx).high) : 0.0;
+   r.liquidityPoolSpacingATR = (structureFound && atr > 0 && nearIdx >= 0 && farIdx >= 0) ? MathAbs(nearPoolPrice - farPoolPrice) / atr : 0.0;
    r.internalStructureFound = structureFound;
    r.structureScore = structureFound ? 10.0 : 0.0;
    if(!structureFound)
@@ -396,8 +407,14 @@ InducementResult CInducement::Validate(bool forBuy)
    // same way. Gate is OFF by default (see ConfigureQualityGates()); the
    // grade/score are always computed so the dashboard can show them even
    // when the gate isn't enforcing anything yet.
-   double sweepGradeScore;
-   ENUM_SWEEP_GRADE sweepGrade = GradeSweep(sweepBarIdx, forBuy, poolPrice, sweepGradeScore);
+   double sweepGradeScore, rejectionRatio, shapeScore, penetrationATR;
+   bool followThrough = false;
+   ENUM_SWEEP_GRADE sweepGrade = GradeSweep(sweepBarIdx, forBuy, poolPrice, sweepGradeScore, rejectionRatio, shapeScore, penetrationATR, followThrough);
+   r.sweepRejectionRatio = rejectionRatio;
+   r.sweepShapeScore = shapeScore;
+   r.sweepPenetrationATR = penetrationATR;
+   r.sweepFollowThrough = followThrough;
+   r.sweepFollowThroughBarIndex = (sweepBarIdx - 1 >= 0) ? sweepBarIdx - 1 : -1;
    r.sweepGrade = sweepGrade;
    r.sweepGradeScore = sweepGradeScore;
    r.barsSinceSweep = sweepBarIdx;
