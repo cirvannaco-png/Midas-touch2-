@@ -15,6 +15,7 @@ private:
    double   m_maxDrawdownPercent;
    double   m_deriskStartPercent;
    double   m_deriskFloor;
+   bool     m_useProgressiveDailyDerisk;
 
    double   m_dayStartEquity;
    int      m_dayStartDayOfYear;
@@ -35,7 +36,8 @@ private:
 
 public:
    void     Init(string symbol, double maxDailyLossPercent, double maxDrawdownPercent,
-                  double deriskStartPercent, double deriskFloor);
+                  double deriskStartPercent, double deriskFloor,
+                  bool useProgressiveDailyDerisk = false);
    void     OnTick();
 
    bool     IsDailyLossLimitHit(string &reasonOut);
@@ -55,10 +57,12 @@ void CRiskGuard::PersistDayBaseline()
   }
 //+------------------------------------------------------------------+
 void CRiskGuard::Init(string symbol, double maxDailyLossPercent, double maxDrawdownPercent,
-                       double deriskStartPercent, double deriskFloor)
+                       double deriskStartPercent, double deriskFloor,
+                       bool useProgressiveDailyDerisk)
   {
    m_symbol = symbol;
    m_lastReportedRiskState = "";
+   m_useProgressiveDailyDerisk = useProgressiveDailyDerisk;
    m_maxDailyLossPercent = MathMax(0.0, maxDailyLossPercent);
    m_maxDrawdownPercent = MathMax(0.0, maxDrawdownPercent);
    m_deriskStartPercent = MathMax(0.0, deriskStartPercent);
@@ -194,7 +198,7 @@ double CRiskGuard::SizeMultiplier()
 
    // Daily loss de-risking is separate from the peak-to-equity drawdown ramp.
    // It only reduces exposure; it can never increase risk or trigger recovery sizing.
-   if(m_maxDailyLossPercent>0.0)
+   if(m_useProgressiveDailyDerisk && m_maxDailyLossPercent>0.0)
      {
       double dailyLoss=CurrentDailyLossPercent();
       if(dailyLoss>=m_maxDailyLossPercent) return 0.0;
@@ -213,11 +217,11 @@ string CRiskGuard::RiskStateName()
    if(m_hardHalted || (m_maxDrawdownPercent>0.0 && dd>=m_maxDrawdownPercent) ||
       (m_maxDailyLossPercent>0.0 && daily>=m_maxDailyLossPercent)) return "HALTED";
    double ddSpan=MathMax(0.0,m_maxDrawdownPercent-m_deriskStartPercent);
-   if((m_maxDailyLossPercent>0.0 && daily>=0.75*m_maxDailyLossPercent) ||
+   if(((m_useProgressiveDailyDerisk && m_maxDailyLossPercent>0.0 && daily>=0.75*m_maxDailyLossPercent)) ||
       (ddSpan>0.0 && dd>=m_deriskStartPercent+0.75*ddSpan)) return "CRITICAL";
-   if((m_maxDailyLossPercent>0.0 && daily>=0.50*m_maxDailyLossPercent) ||
+   if(((m_useProgressiveDailyDerisk && m_maxDailyLossPercent>0.0 && daily>=0.50*m_maxDailyLossPercent)) ||
       (ddSpan>0.0 && dd>=m_deriskStartPercent+0.50*ddSpan)) return "DEFENSIVE";
-   if((m_maxDailyLossPercent>0.0 && daily>=0.25*m_maxDailyLossPercent) ||
+   if(((m_useProgressiveDailyDerisk && m_maxDailyLossPercent>0.0 && daily>=0.25*m_maxDailyLossPercent)) ||
       (m_deriskStartPercent>0.0 && dd>=m_deriskStartPercent)) return "CAUTION";
    return "NORMAL";
   }
