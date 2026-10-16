@@ -25,6 +25,13 @@ def test_mtf_adjustment_is_opt_in_bounded_and_both_sides_are_adjusted_independen
     assert "does not hard-block every countertrend setup" in ea
 
 
+def test_equal_buy_sell_candidates_are_not_biased_toward_buy() -> None:
+    ea = (ROOT / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
+    assert 'delta>InpMinDirectionalAdvantage' in ea
+    assert '-delta>InpMinDirectionalAdvantage' in ea
+    assert 'DIRECTIONAL_CONFLICT' in ea
+
+
 def test_top_down_stack_fails_closed_when_enabled_but_data_is_missing() -> None:
     ea = (ROOT / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
     source = (ROOT / "EA/includes/Analysis/TopDownMTFEngine.mqh").read_text(encoding="utf-8")
