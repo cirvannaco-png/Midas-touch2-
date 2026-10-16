@@ -59,6 +59,8 @@ def test_risk_multiplier_remains_in_actual_automated_order_sizing_path() -> None
     ea = (ROOT / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
     assert "g_riskGuard.SizeMultiplier()" in ea
     assert "InpEnableTopDownMTF=false" in ea
+    assert "InpEnableProgressiveDailyLossDeRisk=false" in ea
+    assert "InpEnableProgressiveDailyLossDeRisk);" in ea
     docs = (ROOT / "docs/MT2_TOP_DOWN_MTF_VALIDATION.md").read_text(encoding="utf-8")
     assert "genuine MT5 Strategy Tester results" in docs
     assert "not proof that the strategy is profitable" in docs
