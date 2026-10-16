@@ -14,13 +14,9 @@ The timeframe pool was enlarged to support the seven context charts alongside in
 
 ## Separate drawdown-risk control
 
-The account-wide CRiskGuard remains separate from directional analysis. It continues to persist the daily-equity baseline, peak equity and hard-halt state across terminal restarts. The position-size multiplier now combines:
+The account-wide CRiskGuard remains separate from directional analysis. It continues to persist the daily-equity baseline, peak equity and hard-halt state across terminal restarts. The existing peak-to-equity de-risk ramp remains active. An additional daily-loss ladder is implemented behind the explicit input `InpEnableProgressiveDailyLossDeRisk=false` (OFF by default to preserve existing behavior until matched validation). When enabled, it reduces sizing to at most 75% after 25% of the daily loss budget is consumed, at most 50% after 50%, and at most 25% after 75%; at the daily loss cap it returns a zero sizing multiplier. The existing daily-loss/hard-drawdown gates remain authoritative entry blockers. The opt-in setting enables matched risk-only ablation against the current baseline.
 
-- The existing peak-to-equity de-risk ramp from the configured de-risk start toward the hard drawdown cap.
-- A separate daily-loss ladder: reduce to at most 75% after 25% of the daily loss budget is consumed, at most 50% after 50%, and at most 25% after 75%.
-- Zero permitted new-entry sizing when the daily-loss cap has already been reached. The existing daily-loss/hard-drawdown gates remain authoritative entry blockers.
-
-The daily and peak-drawdown controls only reduce risk. They never increase position size to recover losses, and no martingale or loss-chasing logic is introduced. Logs record transitions between NORMAL, CAUTION, DEFENSIVE, CRITICAL and HALTED risk states.
+The daily and peak-drawdown controls only reduce risk. They never increase position size to recover losses, and no martingale or loss-chasing logic is introduced. Logs record transitions between NORMAL, CAUTION, DEFENSIVE, CRITICAL and HALTED risk states; daily ladder states are reported only when that ladder is enabled.
 
 ## Matched validation protocol
 
