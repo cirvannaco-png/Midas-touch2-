@@ -105,7 +105,7 @@ void CTFContext::Detect(bool force)
    orderBlock.Detect();
   }
 //+------------------------------------------------------------------+
-#define TFPOOL_MAX 8
+#define TFPOOL_MAX 16
 
 // Dedupes contexts by timeframe: if Trend=D1 and someone else also asks
 // for D1, they get the SAME context (and the same, single Detect() call
@@ -176,8 +176,8 @@ CTFContext* CTFContextPool::Get(ENUM_TIMEFRAMES tf)
 
    if(m_count >= TFPOOL_MAX)
      {
-      Print("MedisTouch: TFContextPool full (", TFPOOL_MAX, " timeframes) — reusing last context.");
-      return m_ctx[m_count - 1];
+      Print("MedisTouch: TFContextPool full (", TFPOOL_MAX, " timeframes) — refusing to return a context for the wrong timeframe.");
+      return NULL;
      }
    CTFContext* c = new CTFContext();
    if(!c.Init(m_symbol, tf, m_maxBars, m_swingStrength, m_fvgMinSizeATR, m_liqThresholdATR, m_rvolLookback,
