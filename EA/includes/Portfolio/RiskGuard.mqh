@@ -15,6 +15,7 @@ private:
    double   m_maxDrawdownPercent;
    double   m_deriskStartPercent;
    double   m_deriskFloor;
+   bool     m_useProgressiveDailyDerisk;
 
    double   m_dayStartEquity;
    int      m_dayStartDayOfYear;
@@ -22,6 +23,7 @@ private:
 
    double   m_peakEquity;
    bool     m_hardHalted;
+   string   m_lastReportedRiskState;
 
    string   m_symbol; // retained for diagnostics only; state keys are account-wide
    string   m_gvPeakKey;
@@ -34,13 +36,16 @@ private:
 
 public:
    void     Init(string symbol, double maxDailyLossPercent, double maxDrawdownPercent,
-                  double deriskStartPercent, double deriskFloor);
+                  double deriskStartPercent, double deriskFloor,
+                  bool useProgressiveDailyDerisk = false);
    void     OnTick();
 
    bool     IsDailyLossLimitHit(string &reasonOut);
    bool     IsHardHalted(string &reasonOut);
    double   SizeMultiplier();
    double   CurrentDrawdownPercent();
+   double   CurrentDailyLossPercent();
+   string   RiskStateName();
 
    void     ManualReset();
   };
@@ -52,9 +57,12 @@ void CRiskGuard::PersistDayBaseline()
   }
 //+------------------------------------------------------------------+
 void CRiskGuard::Init(string symbol, double maxDailyLossPercent, double maxDrawdownPercent,
-                       double deriskStartPercent, double deriskFloor)
+                       double deriskStartPercent, double deriskFloor,
+                       bool useProgressiveDailyDerisk)
   {
    m_symbol = symbol;
+   m_lastReportedRiskState = "";
+   m_useProgressiveDailyDerisk = useProgressiveDailyDerisk;
    m_maxDailyLossPercent = MathMax(0.0, maxDailyLossPercent);
    m_maxDrawdownPercent = MathMax(0.0, maxDrawdownPercent);
    m_deriskStartPercent = MathMax(0.0, deriskStartPercent);
@@ -125,6 +133,13 @@ void CRiskGuard::OnTick()
       PrintFormat("MedisTouch RiskGuard: HARD HALT — account drawdown %.2f%% reached %.2f%% cap. No new trades until ManualReset().",
                   CurrentDrawdownPercent(), m_maxDrawdownPercent);
      }
+   string state=RiskStateName();
+   if(state!=m_lastReportedRiskState)
+     {
+      PrintFormat("Midas drawdown-risk state=%s peak-DD=%.2f%% daily-loss=%.2f%% size-multiplier=%.3f",
+                  state,CurrentDrawdownPercent(),CurrentDailyLossPercent(),SizeMultiplier());
+      m_lastReportedRiskState=state;
+     }
   }
 //+------------------------------------------------------------------+
 double CRiskGuard::CurrentDrawdownPercent()
@@ -132,6 +147,13 @@ double CRiskGuard::CurrentDrawdownPercent()
    if(m_peakEquity <= 0) return 0.0;
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    return MathMax(0.0, (m_peakEquity - equity) / m_peakEquity * 100.0);
+  }
+//+------------------------------------------------------------------+
+double CRiskGuard::CurrentDailyLossPercent()
+  {
+   if(m_dayStartEquity<=0.0) return 0.0;
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   return MathMax(0.0,(m_dayStartEquity-equity)/m_dayStartEquity*100.0);
   }
 //+------------------------------------------------------------------+
 bool CRiskGuard::IsDailyLossLimitHit(string &reasonOut)
@@ -160,13 +182,48 @@ bool CRiskGuard::IsHardHalted(string &reasonOut)
 //+------------------------------------------------------------------+
 double CRiskGuard::SizeMultiplier()
   {
-   if(m_maxDrawdownPercent <= m_deriskStartPercent || m_maxDrawdownPercent <= 0) return 1.0;
-   double dd = CurrentDrawdownPercent();
-   if(dd <= m_deriskStartPercent) return 1.0;
-   if(dd >= m_maxDrawdownPercent) return m_deriskFloor;
-   double span = m_maxDrawdownPercent - m_deriskStartPercent;
-   double progress = (dd - m_deriskStartPercent) / span;
-   return 1.0 - progress * (1.0 - m_deriskFloor);
+   double multiplier=1.0;
+   double dd=CurrentDrawdownPercent();
+   if(m_maxDrawdownPercent>m_deriskStartPercent && m_maxDrawdownPercent>0.0 && dd>m_deriskStartPercent)
+     {
+      if(dd>=m_maxDrawdownPercent)
+         multiplier=m_deriskFloor;
+      else
+        {
+         double span=m_maxDrawdownPercent-m_deriskStartPercent;
+         double progress=(dd-m_deriskStartPercent)/span;
+         multiplier=1.0-progress*(1.0-m_deriskFloor);
+        }
+     }
+
+   // Daily loss de-risking is separate from the peak-to-equity drawdown ramp.
+   // It only reduces exposure; it can never increase risk or trigger recovery sizing.
+   if(m_useProgressiveDailyDerisk && m_maxDailyLossPercent>0.0)
+     {
+      double dailyLoss=CurrentDailyLossPercent();
+      if(dailyLoss>=m_maxDailyLossPercent) return 0.0;
+      double dailyRatio=dailyLoss/m_maxDailyLossPercent;
+      if(dailyRatio>=0.75) multiplier=MathMin(multiplier,0.25);
+      else if(dailyRatio>=0.50) multiplier=MathMin(multiplier,0.50);
+      else if(dailyRatio>=0.25) multiplier=MathMin(multiplier,0.75);
+     }
+   return MathMax(0.0,MathMin(1.0,multiplier));
+  }
+//+------------------------------------------------------------------+
+string CRiskGuard::RiskStateName()
+  {
+   double dd=CurrentDrawdownPercent();
+   double daily=CurrentDailyLossPercent();
+   if(m_hardHalted || (m_maxDrawdownPercent>0.0 && dd>=m_maxDrawdownPercent) ||
+      (m_maxDailyLossPercent>0.0 && daily>=m_maxDailyLossPercent)) return "HALTED";
+   double ddSpan=MathMax(0.0,m_maxDrawdownPercent-m_deriskStartPercent);
+   if(((m_useProgressiveDailyDerisk && m_maxDailyLossPercent>0.0 && daily>=0.75*m_maxDailyLossPercent)) ||
+      (ddSpan>0.0 && dd>=m_deriskStartPercent+0.75*ddSpan)) return "CRITICAL";
+   if(((m_useProgressiveDailyDerisk && m_maxDailyLossPercent>0.0 && daily>=0.50*m_maxDailyLossPercent)) ||
+      (ddSpan>0.0 && dd>=m_deriskStartPercent+0.50*ddSpan)) return "DEFENSIVE";
+   if(((m_useProgressiveDailyDerisk && m_maxDailyLossPercent>0.0 && daily>=0.25*m_maxDailyLossPercent)) ||
+      (m_deriskStartPercent>0.0 && dd>=m_deriskStartPercent)) return "CAUTION";
+   return "NORMAL";
   }
 //+------------------------------------------------------------------+
 void CRiskGuard::ManualReset()
