@@ -37,6 +37,8 @@ def test_top_down_stack_fails_closed_when_enabled_but_data_is_missing() -> None:
     source = (ROOT / "EA/includes/Analysis/TopDownMTFEngine.mqh").read_text(encoding="utf-8")
     assert "if(!g_topDownMTF.Evaluate())" in ea
     assert "MTF_CONTEXT_UNAVAILABLE" in ea
+    assert "InpEnableTopDownMTF && _Period!=PERIOD_M1" in ea
+    assert "INIT_PARAMETERS_INCORRECT" in ea
     assert 'm_summary="top-down context unavailable' in source
     assert "m_ready=false;" in source
 
