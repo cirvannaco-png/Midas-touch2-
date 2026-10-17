@@ -81,6 +81,11 @@ jobs:
             exit 1
           fi
 
+          # rsync --delete protects excluded receiver-side paths by default.
+          # Remove stale GitHub Actions files already present from older mirror runs.
+          # GitLab mirrors source files only; GitHub workflows must not linger there.
+          rm -rf /tmp/midas-gitlab-tree/.github
+
           rsync -a --delete \
             --exclude '.git/' \
             --exclude '.github/' \
