@@ -172,6 +172,30 @@ jobs:
             Write-Warning "Companion indicator compiled with $warnings warning(s); review the compiler log."
           }
 
+      - name: Compile read-only production runtime preflight script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scriptDir = Join-Path $env:MT5_MQL5_ROOT 'Scripts/MidasTouch'
+          New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
+          $source = Join-Path $env:GITHUB_WORKSPACE 'EA/tests/ProductionRuntimePreflight.mq5'
+          if (!(Test-Path $source)) { throw "Runtime preflight script is missing: $source" }
+          $staged = Join-Path $scriptDir 'ProductionRuntimePreflight.mq5'
+          Copy-Item -Path $source -Destination $staged -Force
+          $arguments = "/compile:`"$staged`" /include:`"$env:MT5_MQL5_ROOT`" /log"
+          $process = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList $arguments -Wait -PassThru
+          $logPath = Join-Path $scriptDir 'ProductionRuntimePreflight.log'
+          if (!(Test-Path $logPath)) { throw 'MetaEditor did not produce the runtime preflight compile log.' }
+          $log = Get-Content -Path $logPath -Raw
+          Write-Host $log
+          $result = [regex]::Match($log, '(?im)(\d+)\s+errors?,\s*(\d+)\s+warnings?')
+          if (!$result.Success) { throw 'Could not parse runtime preflight compile summary.' }
+          $errors = [int]$result.Groups[1].Value
+          $warnings = [int]$result.Groups[2].Value
+          if ($errors -gt 0) { throw "ProductionRuntimePreflight has $errors compile errors and $warnings warnings." }
+          if (!(Test-Path (Join-Path $scriptDir 'ProductionRuntimePreflight.ex5'))) { throw 'Runtime preflight EX5 artifact was not produced.' }
+          "ProductionRuntimePreflight compiled: errors=$errors warnings=$warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
       - name: Compile partial-exit policy test with MetaEditor
         shell: pwsh
         run: |
