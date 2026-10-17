@@ -142,7 +142,9 @@ jobs:
             throw "Companion indicator source is missing: $indicatorSource"
           }
           Copy-Item -Path $indicatorSource -Destination $indicatorDir -Force
-          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'EA/includes') -Destination $indicatorDir -Recurse -Force
+          $indicatorIncludes = Join-Path $indicatorDir 'includes'
+          New-Item -ItemType Directory -Path $indicatorIncludes -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'EA/includes/*') -Destination $indicatorIncludes -Recurse -Force
           $stagedIndicator = Join-Path $indicatorDir 'MedisTouch_Indicator_v2.8.mq5'
           $arguments = "/compile:`"$stagedIndicator`" /include:`"$env:MT5_MQL5_ROOT`" /log"
           $process = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList $arguments -Wait -PassThru
