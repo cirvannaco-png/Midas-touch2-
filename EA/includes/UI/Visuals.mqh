@@ -66,7 +66,7 @@ void CVisuals::DrawCHOCH(CCHOCH* choch)
       CHOCHPoint pt = choch.Get(i);
       color clr = pt.bullish ? clrDodgerBlue : clrOrange;
       m_objMan.CreateTrendLine("CH_" + IntegerToString(i), pt.time, pt.price, pt.time + PeriodSeconds() * 5, pt.price, clr, 2, STYLE_DOT);
-      m_objMan.CreateLabel("CH_" + IntegerToString(i) + "_lbl", pt.time, pt.price, pt.bullish ? "CHoCH \u2191" : "CHoCH \u2193", clr, 8);
+      m_objMan.CreateLabel("CH_" + IntegerToString(i) + "_lbl", pt.time, pt.price, pt.bullish ? "CHoCH UP" : "CHoCH DOWN", clr, 8);
      }
   }
 //+------------------------------------------------------------------+
