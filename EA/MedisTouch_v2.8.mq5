@@ -783,6 +783,12 @@ int OnInit()
    else
       Print("Midas execution ledger: configure InpExecutionLedgerBaseUrl and InpBridgeApiKey before enabling ledger-enforced entries.");
    g_executionLedgerHealthy=(!InpEnableExecution || !InpRequireExecutionLedger);
+   // M1 is the execution timeframe for this research candidate. Refuse ambiguous chart-timeframe execution.
+   if(InpEnableTopDownMTF && _Period!=PERIOD_M1)
+     {
+      Print("Midas: InpEnableTopDownMTF requires an M1 chart; refusing mismatched execution timeframe.");
+      return INIT_PARAMETERS_INCORRECT;
+     }
    g_pool.Configure(_Symbol,InpMaxHistoryBars,InpSwingStrength,InpFVGMinSizeATR,InpInternalLiqThresholdATR,InpRVOLLookback,InpVALookbackBars,InpVANumBins,InpVAPercent/100.0,InpOBDisplacementATRMult,InpOBMinBodyRatio);g_chartCtx=g_pool.Get(_Period);g_trendCtx=g_pool.Get(InpTrendTF);g_bosCtx=g_pool.Get(InpBOSTF);g_liqCtx=g_pool.Get(InpLiquidityTF);g_fvgCtx=g_pool.Get(InpFVGTF);g_htfObCtx=g_pool.Get(InpHtfObTF);if(g_chartCtx==NULL||g_trendCtx==NULL||g_bosCtx==NULL||g_liqCtx==NULL||g_fvgCtx==NULL||g_htfObCtx==NULL)return INIT_FAILED;
    // Top-down contexts are additional to per-concept contexts. The pool deduplicates
    // identical timeframes and is sized to support both sets without aliasing TFs.
