@@ -10,7 +10,7 @@ Both BUY and SELL setups are still generated independently by the existing strat
 
 Default weights are D1 30%, H4 24%, H1 18%, M30 10%, M15 8%, M5 6%, M1 4%. The weights sum to 100. The confidence adjustment is capped at ±15 points and defaults to ±8 points. The candidate defaults to **disabled** (InpEnableTopDownMTF=false) so production behavior is not changed before evidence exists. When enabled, inability to load any timeframe fails closed for that automated candidate and is logged; it does not silently fall back to a partial stack.
 
-The timeframe pool was enlarged to support the seven context charts alongside independently configured strategy contexts. If it is full, it now returns NULL instead of quietly returning a context belonging to a different timeframe.
+The EA must be attached to an M1 chart when this candidate is enabled. Initialization fails with `INIT_PARAMETERS_INCORRECT` on another chart timeframe; this prevents silently using a slower chart bar as the entry cadence while claiming M1 execution. The timeframe pool was enlarged to support the seven context charts alongside independently configured strategy contexts. If it is full, it now returns NULL instead of quietly returning a context belonging to a different timeframe.
 
 ## Separate drawdown-risk control
 
