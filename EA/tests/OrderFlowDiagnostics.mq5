@@ -144,6 +144,36 @@ int OnInit()
    else
       AssertTrue(false,"auction context fixture has valid pressure input");
 
+   // Replay tests pin time to the closed-window boundary, not wall-clock time.
+   FillTicks(bullish,ticks);
+   datetime evaluationTime=ticks[ArraySize(ticks)-1].time+1;
+   ok=engine.Analyze(ticks,ArraySize(ticks),1.10200,1.09800,
+                     1.10100,1.09900,1.10050,0.00100,snapshot,evaluationTime);
+   AssertTrue(ok && !snapshot.data_stale,
+              "fresh ticks are classified against the closed-window boundary");
+   double replayPressure=snapshot.pressure_ratio;
+   bool replayStale=snapshot.data_stale;
+   ok=engine.Analyze(ticks,ArraySize(ticks),1.10200,1.09800,
+                     1.10100,1.09900,1.10050,0.00100,snapshot,evaluationTime);
+   AssertTrue(ok && snapshot.pressure_ratio==replayPressure && snapshot.data_stale==replayStale,
+              "same tick window and evaluation time replay deterministically");
+
+   FillTicks(bullish,ticks);
+   evaluationTime=ticks[ArraySize(ticks)-1].time+1;
+   ticks[ArraySize(ticks)-1].time_msc=(long)(evaluationTime+1)*1000;
+   ok=engine.Analyze(ticks,ArraySize(ticks),1.10200,1.09800,
+                     1.10100,1.09900,1.10050,0.00100,snapshot,evaluationTime);
+   AssertTrue(!ok,"ticks after the closed-window boundary are rejected to prevent look-ahead");
+
+   engine.Configure(8,0.60,0.15,5);
+   FillTicks(bullish,ticks);
+   evaluationTime=ticks[ArraySize(ticks)-1].time+60;
+   ok=engine.Analyze(ticks,ArraySize(ticks),1.10200,1.09800,
+                     1.10100,1.09900,1.10050,0.00100,snapshot,evaluationTime);
+   AssertTrue(ok && snapshot.data_stale,
+              "staleness is deterministic relative to the evaluation boundary");
+   engine.Configure(8,0.60,0.15,30);
+
    PrintFormat("OrderFlowDiagnostics tests: %d failure(s)",g_failures);
    return g_failures==0 ? INIT_SUCCEEDED : INIT_FAILED;
   }
