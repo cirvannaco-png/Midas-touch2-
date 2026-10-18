@@ -29,6 +29,16 @@ FEATURES = (
     "exhaustion_proxy",
 )
 
+TIMEFRAME_SECONDS = {
+    "PERIOD_M1": 60, "PERIOD_M2": 120, "PERIOD_M3": 180,
+    "PERIOD_M4": 240, "PERIOD_M5": 300, "PERIOD_M6": 360,
+    "PERIOD_M10": 600, "PERIOD_M12": 720, "PERIOD_M15": 900,
+    "PERIOD_M20": 1200, "PERIOD_M30": 1800, "PERIOD_H1": 3600,
+    "PERIOD_H2": 7200, "PERIOD_H3": 10800, "PERIOD_H4": 14400,
+    "PERIOD_H6": 21600, "PERIOD_H8": 28800, "PERIOD_H12": 43200,
+    "PERIOD_D1": 86400, "PERIOD_W1": 604800,
+}
+
 
 def read_csv(path: str | Path) -> list[dict[str, str]]:
     """Read comma- or semicolon-delimited MT5 exports, including UTF-8 BOM files."""
@@ -184,9 +194,11 @@ def build_outcome_index(signal_rows: list[dict[str, str]],
 
 def join_events_to_outcomes(events: list[dict[str, Any]],
                             outcomes: dict[str, dict[str, Any]],
-                            max_match_gap_seconds: int = 120) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    if max_match_gap_seconds < 0:
+                            max_match_gap_seconds: int | None = None) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    if max_match_gap_seconds is not None and max_match_gap_seconds < 0:
         raise ValueError("max_match_gap_seconds must be non-negative")
+    if max_match_gap_seconds == 0:
+        raise ValueError("max_match_gap_seconds must be positive when explicitly set")
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for event in events:
         grouped[(event["symbol"], event["timeframe"])].append(event)
@@ -200,7 +212,15 @@ def join_events_to_outcomes(events: list[dict[str, Any]],
             continue
         event = max(eligible, key=lambda e: e["bar_end_epoch"])
         gap = outcome["decision_epoch"] - event["bar_end_epoch"]
-        if gap > max_match_gap_seconds:
+        timeframe_limit = TIMEFRAME_SECONDS.get(outcome["timeframe"])
+        if max_match_gap_seconds is None:
+            if timeframe_limit is None:
+                rejected["unsupported_timeframe_for_default_match_window"] += 1
+                continue
+            match_limit = timeframe_limit
+        else:
+            match_limit = max_match_gap_seconds
+        if gap > match_limit:
             rejected["stale_event_for_signal"] += 1
             continue
         row = dict(outcome)
@@ -357,7 +377,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--signals", required=True, help="MedisTouch_Signals_<symbol>.csv export")
     parser.add_argument("--outcomes", required=True, help="MedisTouch_Outcomes_v2_<symbol>.csv export")
     parser.add_argument("--output", default="order_flow_research_report.json")
-    parser.add_argument("--max-match-gap-seconds", type=int, default=120)
+    parser.add_argument(
+        "--max-match-gap-seconds", type=int, default=None,
+        help="override default match limit (one signal timeframe bar); must be positive",
+    )
     parser.add_argument("--holdout-fraction", type=float, default=0.30)
     parser.add_argument("--min-sample", type=int, default=30)
     args = parser.parse_args(argv)
