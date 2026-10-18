@@ -207,7 +207,18 @@ class OrderFlowResearchTests(unittest.TestCase):
     def test_v3_attribution_preserves_smc_context_for_stratified_research(self) -> None:
         s = signal(1_700_000_105)
         o = outcome(1_700_000_105, 1_700_000_500, "1.25")
-        evidence = [event("exact-v3", 1_700_000_100)]
+        v3_row = event("exact-v3", 1_700_000_100)
+        v3_row.update({
+            "schema_version": "order-flow-evidence-v3", "tick_count": "60",
+            "signed_tick_pressure": "4", "positive_tick_count": "5", "negative_tick_count": "1",
+            "price_progress": "0.0004", "prior_high": "1.1000", "prior_low": "1.0900",
+            "bar_close": "1.1010", "atr": "0.0010", "pressure_progress_divergence": "false",
+            "continuation_hypothesis": "1", "reversal_hypothesis": "0",
+            "auction_context_available": "true", "value_area_poc": "1.0950",
+            "value_area_vah": "1.1000", "value_area_val": "1.0900",
+            "value_area_source_quality": "0.75", "value_area_source": "2", "auction_location": "2",
+        })
+        evidence = [v3_row]
         report = analyze(evidence, [s], [o],
                          attribution_rows=[attribution_v3(s, "exact-v3")],
                          min_sample=1)
@@ -216,6 +227,10 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertIn("smc_inducement_valid=true", report["feature_breakdown"])
         self.assertIn("smc_sweep_grade=SWEEP_GRADE_A", report["feature_breakdown"])
         self.assertEqual(report["feature_breakdown"]["smc_inducement_valid=true"]["all_sample"]["n"], 1)
+        activity = report["quote_update_activity_proxy"]
+        self.assertEqual(activity["rate_hz"]["all_matched"]["n"], 1)
+        self.assertAlmostEqual(activity["rate_hz"]["all_matched"]["mean"], 1.0)
+        self.assertEqual(activity["ratio_to_prior_median"]["all_matched"]["n"], 0)
 
     def test_v3_attribution_rejects_invalid_smc_context(self) -> None:
         s = signal(1_700_000_105)
