@@ -67,6 +67,11 @@ public:
                   double smallProgressATR,int maxTickAgeSeconds)
      {
       m_min_ticks=(minTicks<3 ? 3 : minTicks);
+      // Keep diagnostic thresholds finite even if corrupted inputs are supplied.
+      if(!MathIsValidNumber(pressureThreshold))
+         pressureThreshold=0.60;
+      if(!MathIsValidNumber(smallProgressATR))
+         smallProgressATR=0.15;
       m_pressure_threshold=Clamp(pressureThreshold,0.10,0.95);
       m_small_progress_atr=Clamp(smallProgressATR,0.01,1.0);
       m_max_tick_age_seconds=(maxTickAgeSeconds<1 ? 1 : maxTickAgeSeconds);
@@ -144,7 +149,15 @@ public:
       out.first_tick_time_msc=0;
       out.last_tick_time_msc=0;
 
-      if(count<m_min_ticks || atr<=0.0 || priorHigh<=priorLow)
+      // Fail closed on malformed inputs before math or indexing. This is still
+      // diagnostic-only: invalid input yields no usable snapshot, never a signal.
+      if(!MathIsValidNumber(priorHigh) || !MathIsValidNumber(priorLow) ||
+         !MathIsValidNumber(barHigh) || !MathIsValidNumber(barLow) ||
+         !MathIsValidNumber(barClose) || !MathIsValidNumber(atr) ||
+         priorHigh<=priorLow || barHigh<barLow ||
+         barClose<barLow || barClose>barHigh || atr<=0.0)
+         return false;
+      if(count<m_min_ticks || count>ArraySize(ticks))
          return false;
 
       int valid=0;
@@ -157,7 +170,8 @@ public:
         {
          double bid=ticks[i].bid;
          double ask=ticks[i].ask;
-         if(bid<=0.0 || ask<=0.0 || ask<bid ||
+         if(!MathIsValidNumber(bid) || !MathIsValidNumber(ask) ||
+            bid<=0.0 || ask<=0.0 || ask<bid ||
             (ticks[i].time<=0 && ticks[i].time_msc<=0))
             continue;
          long tickTimeMsc=(ticks[i].time_msc>0 ? ticks[i].time_msc : (long)ticks[i].time*1000);
