@@ -15,7 +15,7 @@ from tools.order_flow_research import (
 def event(key: str, end: int, *, symbol: str = "EURUSD", timeframe: str = "PERIOD_M1",
           pressure: float = 0.4, bull: str = "true") -> dict[str, str]:
     return {
-        "event_key": key, "symbol": symbol, "timeframe": timeframe,
+        "schema_version": "order-flow-evidence-v1", "event_key": key, "symbol": symbol, "timeframe": timeframe,
         "bar_end_epoch": str(end), "pressure_ratio": str(pressure),
         "bullish_sweep_reclaim": bull, "bearish_sweep_reclaim": "false",
         "absorption_proxy": "false", "exhaustion_proxy": "false",
@@ -102,6 +102,12 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual([r["event_key"] for r in events], ["good"])
         self.assertEqual(rejected["stale_event_record"], 1)
         self.assertEqual(rejected["unsupported_or_mislabeled_data_quality"], 1)
+
+    def test_loader_rejects_unknown_schema_version(self) -> None:
+        unknown = dict(event("future-schema", 1_700_000_003), schema_version="order-flow-evidence-v2")
+        events, rejected = load_order_flow_events([unknown])
+        self.assertEqual(events, [])
+        self.assertEqual(rejected["unsupported_schema_version"], 1)
 
     def test_integrated_report_keeps_automatic_promotion_disabled(self) -> None:
         signals = [signal(1_700_000_100), signal(1_700_000_200), signal(1_700_000_300)]
