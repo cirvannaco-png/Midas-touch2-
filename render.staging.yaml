@@ -48,5 +48,5 @@ services:
         value: "8"
       - key: TELEGRAM_MAX_RETRIES
         value: "3"
-      - key: RETRY_MAX_WAIT_SECONDS
+      - key: TELEGRAM_RETRY_MAX_WAIT_SECONDS
         value: "4"
