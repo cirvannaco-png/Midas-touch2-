@@ -96,6 +96,31 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(rejected["not_filled"], 1)
         self.assertEqual(rejected["outcome_precedes_decision"], 1)
 
+    def test_default_join_window_uses_timeframe_length(self) -> None:
+        s = signal(1_700_000_900, timeframe="PERIOD_M15")
+        o = {"SignalID": s["SignalID"], "Filled": "Yes", "RealizedR": "1.0",
+             "OutcomeEpoch": "1700001000"}
+        index, _ = build_outcome_index([s], [o])
+        events, _ = load_order_flow_events([
+            event("m15-context", 1_700_000_001, timeframe="PERIOD_M15")
+        ])
+        joined, rejected = join_events_to_outcomes(events, index)
+        self.assertEqual(len(joined), 1)
+        self.assertEqual(joined[0]["event_gap_seconds"], 899)
+        self.assertEqual(rejected, {})
+
+    def test_unknown_timeframe_fails_closed_without_manual_gap(self) -> None:
+        s = signal(1_700_000_900, timeframe="PERIOD_MN1")
+        o = {"SignalID": s["SignalID"], "Filled": "Yes", "RealizedR": "1.0",
+             "OutcomeEpoch": "1700001000"}
+        index, _ = build_outcome_index([s], [o])
+        events, _ = load_order_flow_events([
+            event("unknown-context", 1_700_000_850, timeframe="PERIOD_MN1")
+        ])
+        joined, rejected = join_events_to_outcomes(events, index)
+        self.assertEqual(joined, [])
+        self.assertEqual(rejected["unsupported_timeframe_for_default_match_window"], 1)
+
     def test_loader_rejects_stale_and_non_proxy_events(self) -> None:
         good = event("good", 1_700_000_000)
         stale = dict(event("stale", 1_700_000_001), data_stale="true")
@@ -125,6 +150,8 @@ class OrderFlowResearchTests(unittest.TestCase):
         ]
         report = analyze(evidence, signals, outcomes, min_sample=1)
         self.assertEqual(report["matched_outcomes"], 3)
+        self.assertEqual(report["matched_unique_event_count"], 3)
+        self.assertEqual(report["signals_per_event"]["max_signals_per_event"], 1)
         self.assertEqual(report["chronological_holdout"]["train_count_after_purge"], 2)
         self.assertEqual(report["chronological_holdout"]["holdout_count"], 1)
         self.assertFalse(report["release_policy"]["automatic_promotion"])
