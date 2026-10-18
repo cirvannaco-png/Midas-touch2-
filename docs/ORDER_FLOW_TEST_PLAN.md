@@ -57,6 +57,22 @@ For all fixtures, ticks must have valid positive bid/ask, ask >= bid, valid time
 | OF-028 | Signal attributed to a cached event older than one FVG-timeframe bar | Attribution row records `NO_USABLE_EVENT`; no stale direct link |
 | OF-029 | Legacy v2 CSV and new v3 CSV are analyzed | v2 remains supported; v3 fields are validated when v3 schema is declared |
 
+## Python research tests for quote cadence
+
+The research analyzer's `test_quote_activity_regime_uses_prior_closed_bars_only` fixture exercises the distinct quote-cadence proxy; it is separate from the MQL5 midpoint tick-direction pressure calculation.
+
+| Case | Expected result |
+|---|---|
+| Fewer than five prior valid bars in the same symbol/timeframe/UTC-day run | `INSUFFICIENT_HISTORY`; no baseline or ratio is fabricated |
+| Current rate is at least 1.50 times the prior median | `EXPANSION`, with the current bar excluded from its own baseline |
+| Current rate is at most 0.67 times the prior median | `CONTRACTION` |
+| Ratio lies between thresholds | `NORMAL` |
+| UTC-day boundary or gap longer than one nominal bar | Prior baseline resets |
+| Invalid/missing v3 tick count or unknown timeframe duration | Rate is unavailable; no substitution or guessed denominator |
+| Matched, training and holdout rows | Separate rate/ratio distributions; missing values remain missing |
+
+The rate is validated closed-bar `tick_count / nominal timeframe seconds`. It measures broker quote-update cadence, not executed volume, true cumulative volume delta, aggressor-side delta, or market-wide activity. These labels remain descriptive; they do not change trade policy.
+
 ## Review risks to resolve before declaring the module tested
 
 1. `CopyTicksRange` expects millisecond bounds. The EA helper converts `datetime` seconds to milliseconds; preserve and test that conversion.
