@@ -41,24 +41,6 @@ int OnInit()
 
    double bullish[8]={1.10000,1.10010,1.10020,1.10030,1.10040,1.10050,1.10060,1.10070};
    FillTicks(bullish,ticks);
-   int fixtureUsable=0;
-   for(int fi=0;fi<ArraySize(ticks);fi++)
-     {
-      bool fixtureTickValid=(MathIsValidNumber(ticks[fi].bid) &&
-                             MathIsValidNumber(ticks[fi].ask) &&
-                             ticks[fi].bid>0.0 && ticks[fi].ask>=ticks[fi].bid &&
-                             (ticks[fi].time>0 || ticks[fi].time_msc>0));
-      if(fixtureTickValid) fixtureUsable++;
-      PrintFormat("OF_FIXTURE tick=%d time=%I64d msc=%I64d bid=%.8f ask=%.8f valid=%s",
-                  fi,(long)ticks[fi].time,(long)ticks[fi].time_msc,
-                  ticks[fi].bid,ticks[fi].ask,fixtureTickValid ? "true" : "false");
-     }
-   PrintFormat("OF_FIXTURE now=%I64d local=%I64d count=%d size=%d usable=%d finite=%s range=%s atr=%s",
-               (long)TimeCurrent(),(long)TimeLocal(),ArraySize(ticks),ArraySize(ticks),
-               fixtureUsable,
-               MathIsValidNumber(1.10200) ? "true" : "false",
-               (1.10100>=1.09900 && 1.10050>=1.09900 && 1.10050<=1.10100) ? "true" : "false",
-               (MathIsValidNumber(0.00100) && 0.00100>0.0) ? "true" : "false");
    bool ok=engine.Analyze(ticks,ArraySize(ticks),1.10200,1.09800,
                           1.10100,1.09900,1.10050,0.00100,snapshot);
    AssertTrue(ok,"bullish tick window is accepted");
