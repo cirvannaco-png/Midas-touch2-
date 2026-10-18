@@ -827,9 +827,9 @@ void CheckSignalLifecycle(double atr){if(g_lifecycleDecisionId==0)return;bool fi
 bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
                            double priorHigh,double priorLow,
                            double barHigh,double barLow,double barClose,double atr,
-                           OrderFlowSnapshot &of)
+                           string diagnosticStatus,OrderFlowSnapshot &of)
   {
-   string filename="MedisTouch_OrderFlowEvidence_v1_"+_Symbol+"_"+EnumToString(InpFVGTF)+".csv";
+   string filename="MedisTouch_OrderFlowEvidence_v2_"+_Symbol+"_"+EnumToString(InpFVGTF)+".csv";
    int flags=FILE_CSV|FILE_READ|FILE_WRITE|FILE_SHARE_READ|FILE_ANSI;
    ResetLastError();
    int handle=FileOpen(filename,flags,',');
@@ -848,13 +848,13 @@ bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
                                  "pressure_ratio","signed_tick_pressure","positive_tick_count",
                                  "negative_tick_count","price_progress","bullish_sweep_reclaim",
                                  "bearish_sweep_reclaim","absorption_proxy","exhaustion_proxy",
-                                 "data_stale","first_tick_time_msc","last_tick_time_msc");
+                                 "data_stale","first_tick_time_msc","last_tick_time_msc","diagnostic_status");
       headerOK=(headerBytes>0);
      }
 
    FileSeek(handle,0,SEEK_END);
    string eventKey=_Symbol+"|"+EnumToString(InpFVGTF)+"|"+IntegerToString((long)barStart);
-   uint rowBytes=FileWrite(handle,"order-flow-evidence-v1",eventKey,_Symbol,EnumToString(InpFVGTF),
+   uint rowBytes=FileWrite(handle,"order-flow-evidence-v2",eventKey,_Symbol,EnumToString(InpFVGTF),
                            IntegerToString((long)barStart),IntegerToString((long)barEnd),
                            DoubleToString(priorHigh,_Digits),DoubleToString(priorLow,_Digits),
                            DoubleToString(barHigh,_Digits),DoubleToString(barLow,_Digits),
@@ -868,7 +868,7 @@ bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
                            of.absorption_proxy?"true":"false",
                            of.exhaustion_proxy?"true":"false",
                            of.data_stale?"true":"false",
-                           IntegerToString(of.first_tick_time_msc),IntegerToString(of.last_tick_time_msc));
+                           IntegerToString(of.first_tick_time_msc),IntegerToString(of.last_tick_time_msc),diagnosticStatus);
    FileFlush(handle);
    bool ok=(headerOK && rowBytes>0 && GetLastError()==0);
    FileClose(handle);
@@ -905,25 +905,37 @@ void LogOrderFlowDiagnostics()
    MqlTick ticks[];
    long fromMsc=(long)barStart*1000;
    long toMsc=(long)barEnd*1000-1;
-   int copied=CopyTicksRange(_Symbol,ticks,COPY_TICKS_INFO,fromMsc,toMsc);
-   if(copied<=0)
-     {
-      Print("OF_DIAG unavailable: no tick history for closed bar; no evidence row emitted");
-      return;
-     }
-
-   OrderFlowSnapshot of;
    g_orderFlowDiagnostics.Configure(InpOrderFlowMinTicks,
                                     InpOrderFlowPressureThreshold,
                                     InpOrderFlowSmallProgressATR,
                                     InpOrderFlowMaxTickAgeSeconds);
+   ResetLastError();
+   int copied=CopyTicksRange(_Symbol,ticks,COPY_TICKS_INFO,fromMsc,toMsc);
+   OrderFlowSnapshot of;
+   if(copied<=0)
+     {
+      MqlTick emptyTicks[];
+      g_orderFlowDiagnostics.Analyze(emptyTicks,0,priorHigh,priorLow,
+                                     barHigh,barLow,barClose,atr,of);
+      string missingStatus=(copied<0 ? "TICK_HISTORY_ERROR" : "NO_TICKS");
+      AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
+                              barHigh,barLow,barClose,atr,missingStatus,of);
+      PrintFormat("OF_DIAG unavailable: status=%s copied=%d error=%d; no trade-policy effect",
+                  missingStatus,copied,GetLastError());
+      return;
+     }
+
    if(!g_orderFlowDiagnostics.Analyze(ticks,copied,priorHigh,priorLow,
                                       barHigh,barLow,barClose,atr,of))
      {
+      AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
+                              barHigh,barLow,barClose,atr,"INVALID_OR_INSUFFICIENT_TICKS",of);
       PrintFormat("OF_DIAG rejected: insufficient/unordered data, ticks=%d",copied);
       return;
      }
-   AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,barHigh,barLow,barClose,atr,of);
+   string diagnosticStatus=(of.data_stale ? "STALE_PROXY" : "OK_PROXY");
+   AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
+                           barHigh,barLow,barClose,atr,diagnosticStatus,of);
    PrintFormat("OF_DIAG symbol=%s tf=%s ticks=%d quality=%d pressure=%.3f progress=%.5f bull_reclaim=%s bear_reclaim=%s absorption_proxy=%s exhaustion_proxy=%s stale=%s (diagnostic only)",
                _Symbol,EnumToString(InpFVGTF),of.tick_count,(int)of.quality,
                of.pressure_ratio,of.price_progress,
