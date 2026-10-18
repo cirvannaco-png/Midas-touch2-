@@ -993,7 +993,7 @@ void LogOrderFlowDiagnostics()
 
 bool AppendOrderFlowSignalAttribution(TradeSetup &setup,TradeDecisionRecord &decision)
   {
-   string filename="MedisTouch_OrderFlowAttribution_v2_"+_Symbol+"_"+EnumToString(InpFVGTF)+".csv";
+   string filename="MedisTouch_OrderFlowAttribution_v3_"+_Symbol+"_"+EnumToString(InpFVGTF)+".csv";
    int flags=FILE_CSV|FILE_READ|FILE_WRITE|FILE_SHARE_READ|FILE_ANSI;
    ResetLastError();
    int handle=FileOpen(filename,flags,',');
@@ -1008,7 +1008,9 @@ bool AppendOrderFlowSignalAttribution(TradeSetup &setup,TradeDecisionRecord &dec
      {
       uint headerBytes=FileWrite(handle,"schema_version","signal_id","decision_id",
                                  "decision_fingerprint","event_key","symbol","timeframe",
-                                 "direction","signal_epoch","attribution_status");
+                                 "direction","signal_epoch","attribution_status",
+                                 "smc_inducement_valid","smc_liquidity_swept","smc_bos_confirmed",
+                                 "smc_sweep_grade","smc_bos_strength","smc_time_decay");
       headerOK=(headerBytes>0);
      }
    FileSeek(handle,0,SEEK_END);
@@ -1021,11 +1023,18 @@ bool AppendOrderFlowSignalAttribution(TradeSetup &setup,TradeDecisionRecord &dec
                     (setup.creation_time-g_lastOrderFlowEventBarEnd)<=maxEventAgeSeconds);
    string eventKey=(eventFresh ? g_lastOrderFlowEventKey : "");
    string status=(eventFresh ? "MATCHED" : "NO_USABLE_EVENT");
-   uint rowBytes=FileWrite(handle,"order-flow-attribution-v2",signalId,
+   SetupReasons smc=setup.reasons;
+   uint rowBytes=FileWrite(handle,"order-flow-attribution-v3",signalId,
                            IntegerToString((long)decision.decision_id),
                            decision.decision_fingerprint,eventKey,
                            _Symbol,EnumToString(InpFVGTF),direction,
-                           IntegerToString((long)setup.creation_time),status);
+                           IntegerToString((long)setup.creation_time),status,
+                           smc.inducement_valid?"true":"false",
+                           smc.liquidity_swept?"true":"false",
+                           smc.bos_confirmed?"true":"false",
+                           EnumToString(smc.sweep_grade),
+                           DoubleToString(smc.bos_strength,6),
+                           DoubleToString(smc.time_decay,6));
    FileFlush(handle);
    bool ok=(headerOK && rowBytes>0 && GetLastError()==0);
    FileClose(handle);
