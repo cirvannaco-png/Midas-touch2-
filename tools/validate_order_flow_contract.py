@@ -115,6 +115,14 @@ def main() -> int:
                 "order-flow-attribution-v1", "order-flow-attribution-v2",
                 "order-flow-attribution-v3")),
             "analyzer must retain v1/v2 compatibility and parse v3 lineage/context", errors)
+    for token, description in (
+        ('_is_unit_interval(row.get("smc_bos_strength"))',
+         "bounded BOS strength validation"),
+        ('_is_unit_interval(row.get("smc_time_decay"))',
+         "bounded SMC time-decay validation"),
+    ):
+        require(token in analyzer,
+                f"analyzer missing {description}", errors)
     for metric in ("longest_loss_streak", "longest_win_streak",
                    "observed_calendar_days", "trades_per_30_calendar_days"):
         require(f'"{metric}"' in analyzer,
