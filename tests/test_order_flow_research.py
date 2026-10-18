@@ -63,6 +63,23 @@ def attribution_v2(signal_row: dict[str, str], event_key: str, *,
     return row
 
 
+def attribution_v3(signal_row: dict[str, str], event_key: str, *,
+                   status: str = "MATCHED", decision_id: str = "42",
+                   fingerprint: str = "sha256:test-fingerprint") -> dict[str, str]:
+    row = attribution_v2(signal_row, event_key, status=status,
+                         decision_id=decision_id, fingerprint=fingerprint)
+    row.update({
+        "schema_version": "order-flow-attribution-v3",
+        "smc_inducement_valid": "true",
+        "smc_liquidity_swept": "true",
+        "smc_bos_confirmed": "false",
+        "smc_sweep_grade": "SWEEP_GRADE_A",
+        "smc_bos_strength": "0.85",
+        "smc_time_decay": "0.75",
+    })
+    return row
+
+
 def outcome(epoch: int, resolved: int, realized_r: str = "1.0",
             *, filled: str = "Yes") -> dict[str, str]:
     return {
@@ -186,6 +203,27 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(joined[0]["event_key"], "exact-v2")
         self.assertEqual(attr_rejected, {})
         self.assertEqual(rejected, {})
+
+    def test_v3_attribution_preserves_smc_context_for_stratified_research(self) -> None:
+        s = signal(1_700_000_105)
+        o = outcome(1_700_000_105, 1_700_000_500, "1.25")
+        evidence = [event("exact-v3", 1_700_000_100)]
+        report = analyze(evidence, [s], [o],
+                         attribution_rows=[attribution_v3(s, "exact-v3")],
+                         min_sample=1)
+        self.assertEqual(report["matched_outcomes"], 1)
+        self.assertEqual(report["attribution_rejections"], {})
+        self.assertIn("smc_inducement_valid=true", report["feature_breakdown"])
+        self.assertIn("smc_sweep_grade=SWEEP_GRADE_A", report["feature_breakdown"])
+        self.assertEqual(report["feature_breakdown"]["smc_inducement_valid=true"]["all_sample"]["trade_count"], 1)
+
+    def test_v3_attribution_rejects_invalid_smc_context(self) -> None:
+        s = signal(1_700_000_105)
+        row = attribution_v3(s, "exact-v3")
+        row["smc_sweep_grade"] = "INSTITUTIONAL_CONFIRMED"
+        indexed, rejected = build_attribution_index([row])
+        self.assertEqual(indexed, {})
+        self.assertEqual(rejected["invalid_smc_context"], 1)
 
     def test_v2_attribution_without_decision_lineage_is_rejected(self) -> None:
         s = signal(1_700_000_105)
