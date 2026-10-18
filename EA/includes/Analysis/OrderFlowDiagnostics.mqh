@@ -8,8 +8,7 @@
 enum ENUM_OF_DATA_QUALITY
   {
    OF_QUALITY_UNAVAILABLE=0,
-   OF_QUALITY_PROXY_ONLY=1,
-   OF_QUALITY_TICK_DATA=2
+   OF_QUALITY_PROXY_ONLY=1
   };
 
 struct OrderFlowSnapshot
@@ -17,8 +16,8 @@ struct OrderFlowSnapshot
    ENUM_OF_DATA_QUALITY quality;
    int tick_count;
    double signed_tick_pressure;
-   double positive_tick_count; // count of upward-mid ticks, not traded volume
-   double negative_tick_count; // count of downward-mid ticks, not traded volume
+   int positive_tick_count; // count of upward-mid ticks, not traded volume
+   int negative_tick_count; // count of downward-mid ticks, not traded volume
    double pressure_ratio;       // [-1, +1], not exchange delta
    double price_progress;
    bool bullish_sweep_reclaim;
@@ -28,6 +27,8 @@ struct OrderFlowSnapshot
    bool data_stale;
    datetime first_tick_time;
    datetime last_tick_time;
+   long first_tick_time_msc;
+   long last_tick_time_msc;
   };
 
 class COrderFlowDiagnostics
@@ -55,10 +56,10 @@ public:
    void Configure(int minTicks,double pressureThreshold,
                   double smallProgressATR,int maxTickAgeSeconds)
      {
-      m_min_ticks=MathMax(3,minTicks);
+      m_min_ticks=(minTicks<3 ? 3 : minTicks);
       m_pressure_threshold=Clamp(pressureThreshold,0.10,0.95);
       m_small_progress_atr=Clamp(smallProgressATR,0.01,1.0);
-      m_max_tick_age_seconds=MathMax(1,maxTickAgeSeconds);
+      m_max_tick_age_seconds=(maxTickAgeSeconds<1 ? 1 : maxTickAgeSeconds);
      }
 
    // Inputs must be chronological (oldest to newest) and from one bounded
@@ -83,31 +84,38 @@ public:
       out.data_stale=true;
       out.first_tick_time=0;
       out.last_tick_time=0;
+      out.first_tick_time_msc=0;
+      out.last_tick_time_msc=0;
 
       if(count<m_min_ticks || atr<=0.0 || priorHigh<=priorLow)
          return false;
 
       int valid=0;
       double firstMid=0.0,lastMid=0.0;
-      double positive=0.0,negative=0.0;
+      int positive=0,negative=0;
       double previousMid=0.0;
-      datetime previousTime=0;
+      long previousTimeMsc=0;
 
       for(int i=0;i<count;i++)
         {
          double bid=ticks[i].bid;
          double ask=ticks[i].ask;
-         if(bid<=0.0 || ask<=0.0 || ask<bid || ticks[i].time<=0)
+         if(bid<=0.0 || ask<=0.0 || ask<bid ||
+            (ticks[i].time<=0 && ticks[i].time_msc<=0))
+            continue;
+         long tickTimeMsc=(ticks[i].time_msc>0 ? ticks[i].time_msc : (long)ticks[i].time*1000);
+         if(tickTimeMsc<=0)
             continue;
          double mid=(bid+ask)*0.5;
          if(valid==0)
            {
             firstMid=mid;
-            out.first_tick_time=ticks[i].time;
+            out.first_tick_time=(ticks[i].time>0 ? ticks[i].time : (datetime)(tickTimeMsc/1000));
+            out.first_tick_time_msc=tickTimeMsc;
            }
          else
            {
-            if(ticks[i].time<previousTime)
+            if(tickTimeMsc<previousTimeMsc)
                return false; // refuse unordered ticks; no silent sorting
             double delta=mid-previousMid;
             // Each price-changing quote contributes one unit. This is a
@@ -116,9 +124,10 @@ public:
             else if(delta<0.0) negative+=1.0;
            }
          previousMid=mid;
-         previousTime=ticks[i].time;
+         previousTimeMsc=tickTimeMsc;
          lastMid=mid;
-         out.last_tick_time=ticks[i].time;
+         out.last_tick_time=(ticks[i].time>0 ? ticks[i].time : (datetime)(tickTimeMsc/1000));
+         out.last_tick_time_msc=tickTimeMsc;
          valid++;
         }
 
