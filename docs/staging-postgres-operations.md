@@ -35,7 +35,7 @@ For durable ledger storage, the safer default is a paid Render Postgres plan wit
 
 ## Verification gates
 
-- [ ] Create a **new** Render Blueprint with repository `cirvannaco-png/Midas-touch2-`, branch `main`, Blueprint file path `render.staging.yaml`.
+- [ ] Create a **new** Render Blueprint with repository `cirvannaco-png/Midas-touch2-`, Blueprint repository branch `ops/staging-private-db-20261018`, Blueprint file path `render.staging.yaml`. The service defined in that file deliberately uses application branch `main`.
 - [ ] Configure staging-only bot token, chat IDs, API key, and webhook secret in Render; keep all secrets out of Git.
 - [ ] Confirm the staging service's `DATABASE_URL` resolves through the internal `fromDatabase` reference while the database allowlist remains empty.
 - [ ] Verify `GET /health/db` returns HTTP 200 with `status=online` and `database=connected`.
