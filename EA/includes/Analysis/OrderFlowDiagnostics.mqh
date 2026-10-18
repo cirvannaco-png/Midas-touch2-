@@ -181,7 +181,10 @@ public:
          // A closed-window replay must reject post-boundary ticks to prevent look-ahead.
          if(evaluationTime>0 && tickTimeMsc>(long)evaluationTime*1000)
             return false;
-         double mid=(bid+ask)*0.5;
+         // Halving first avoids overflow when two finite quotes are near DBL_MAX.
+          double mid=bid*0.5+ask*0.5;
+          if(!MathIsValidNumber(mid) || mid<=0.0)
+             continue;
          if(valid==0)
            {
             firstMid=mid;
