@@ -133,6 +133,43 @@ def main() -> int:
     require('if(!InpEnableOrderFlowDiagnostics || g_fvgCtx==NULL)' in ea,
             "order-flow sampling must remain behind the explicit opt-in guard", errors)
 
+    # Phase-1 invariant: order-flow diagnostics may collect/attribute evidence,
+    # but must not enter setup selection or risk/execution branches. Keep this
+    # guard structural so later refactors cannot silently promote a proxy into
+    # a trade filter before independent research and review.
+    selection_start = ea.find("TradeSetup buySetup=g_decision.GenerateBuySetup()")
+    selection_end = ea.find(
+        "if(!chosen.active||chosen.creation_time==g_lastLoggedTime)return;",
+        selection_start,
+    )
+    require(selection_start >= 0 and selection_end > selection_start,
+            "could not isolate the canonical setup-selection section", errors)
+    if selection_start >= 0 and selection_end > selection_start:
+        selection_section = ea[selection_start:selection_end]
+        require(not any(token in selection_section for token in
+                        ("OrderFlow", "orderFlow", "g_lastOrderFlow")),
+                "order-flow diagnostics must not affect setup selection/confidence", errors)
+
+    router_start = ea.find("TradeDecisionRecord decision=g_router.Decide(chosen);")
+    fingerprint_end = ea.find("decision.decision_fingerprint=DecisionFingerprintFor(decision);", router_start)
+    attribution_call = ea.find(
+        "AppendOrderFlowSignalAttribution(chosen,decision);", router_start
+    )
+    execution_start = ea.find(
+        "if(!decision.valid||decision.action==POLICY_IGNORE)return;", router_start
+    )
+    require(router_start >= 0 and fingerprint_end > router_start and
+            attribution_call > fingerprint_end and execution_start > attribution_call,
+            "decision attribution must occur after fingerprint creation and before execution routing", errors)
+    if execution_start >= 0:
+        execution_end = ea.find("// Persistent per-symbol/per-magic emergency latch", execution_start)
+        if execution_end < 0:
+            execution_end = len(ea)
+        execution_section = ea[execution_start:execution_end]
+        require(not any(token in execution_section for token in
+                        ("OrderFlow", "orderFlow", "g_lastOrderFlow")),
+                "order-flow evidence must not influence risk, exits, or execution", errors)
+
     print(f"Order-flow CSV contract: {len(evidence_fields)} evidence columns, "
           f"{len(attribution_fields)} attribution columns")
     if errors:
