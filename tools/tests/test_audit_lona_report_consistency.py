@@ -9,8 +9,8 @@ from tools.audit_lona_report_consistency import audit, reconcile_report
 def make_report(count: int = 30) -> dict:
     rows = [
         {
-            "entry_time": f"2026-01-{(i % 28) + 1:02d}T00:00:00Z",
-            "exit_time": f"2026-02-{(i % 28) + 1:02d}T00:00:00Z",
+            "entry_time": f"2026-01-01T00:{i:02d}:00Z",
+            "exit_time": f"2026-02-01T01:{i:02d}:00Z",
             "direction": "LONG" if i % 2 == 0 else "SHORT",
             "pnl": 2.0 if i % 2 == 0 else -1.0,
         }
