@@ -14,7 +14,7 @@ services:
     plan: free
     region: frankfurt
     branch: ops/staging-private-db-20261018
-    autoDeployTrigger: off
+    autoDeployTrigger: "off"
     healthCheckPath: /health/db
 
     envVars:
