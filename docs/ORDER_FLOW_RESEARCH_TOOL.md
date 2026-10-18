@@ -18,15 +18,15 @@ The input remains false by default. Enabling it causes synchronous tick-history 
 
 ## Exact signal attribution
 
-When `InpEnableOrderFlowDiagnostics` and `InpLogSignals` are enabled, the EA appends a separate `MedisTouch_OrderFlowAttribution_v1_<symbol>_<timeframe>.csv` row for each successfully logged signal. The row uses the exact existing `SignalID` and the event key persisted by the evidence writer. It does not change the historical signal/outcome CSV schemas. Attribution status is `MATCHED` when an evidence row was successfully written and `NO_EVENT_KEY` otherwise. A referenced event whose status is unavailable/stale will still be excluded from analysis.
+When `InpEnableOrderFlowDiagnostics` and `InpLogSignals` are enabled, the EA appends a separate `MedisTouch_OrderFlowAttribution_v2_<symbol>_<timeframe>.csv` row for each successfully logged signal. It uses the exact existing `SignalID` and event key, and adds the router's `decision_id` plus `decision_fingerprint` after the decision record is created. This creates an audit trail from signal to evidence event to decision identity without changing legacy signal/outcome CSV schemas. The analyzer accepts historical v1 attribution rows, but v2 rows with missing/invalid decision lineage are rejected. Attribution status is `MATCHED` when a fresh evidence row was successfully written and `NO_USABLE_EVENT` otherwise. A referenced event whose status is unavailable/stale is excluded from analysis.
 
 Pass `--attribution` to use exact SignalID-to-event joins. When the attribution file is supplied, the analyzer does **not** fall back to nearest-time matching for signals without a valid link. Without that optional file, the analyzer retains its explicitly reported nearest-prior-time mode.
 
 ## Analyze exported evidence
 
-Copy the evidence CSV, attribution CSV (for exact joins), and the EA files MedisTouch_Signals_<symbol>.csv and MedisTouch_Outcomes_v2_<symbol>.csv into a research folder, then run from the repository root. Add `--attribution MedisTouch_OrderFlowAttribution_v1_EURUSD_PERIOD_M1.csv` to the command to enable strict direct linkage:
+Copy the evidence CSV, attribution CSV (for exact joins), and the EA files MedisTouch_Signals_<symbol>.csv and MedisTouch_Outcomes_v2_<symbol>.csv into a research folder, then run from the repository root. Add `--attribution MedisTouch_OrderFlowAttribution_v2_EURUSD_PERIOD_M1.csv` to the command to enable strict direct linkage:
 
-    python tools/order_flow_research.py --evidence MedisTouch_OrderFlowEvidence_v3_EURUSD_PERIOD_M1.csv --attribution MedisTouch_OrderFlowAttribution_v1_EURUSD_PERIOD_M1.csv --signals MedisTouch_Signals_EURUSD.csv --outcomes MedisTouch_Outcomes_v2_EURUSD.csv --output order_flow_research_report.json
+    python tools/order_flow_research.py --evidence MedisTouch_OrderFlowEvidence_v3_EURUSD_PERIOD_M1.csv --attribution MedisTouch_OrderFlowAttribution_v2_EURUSD_PERIOD_M1.csv --signals MedisTouch_Signals_EURUSD.csv --outcomes MedisTouch_Outcomes_v2_EURUSD.csv --output order_flow_research_report.json
 
 The analyzer:
 - accepts v2 and v3 schemas, requires proxy-only quality, excludes stale/invalid rows from outcome metrics, and counts unavailable windows for coverage review;
