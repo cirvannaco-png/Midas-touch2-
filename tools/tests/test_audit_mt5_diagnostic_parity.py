@@ -48,19 +48,26 @@ def _manifest(folder: Path) -> Path:
         "initial_balance": 10000,
         "account_currency": "USD",
         "leverage": "1:500",
-        "diagnostic_input": "InpDiagnosticsMode",
-        "diagnostic_off_value": "false",
-        "diagnostic_on_value": "true",
+        "diagnostic_inputs": {
+            "InpDiagContradictionWeight": {"off": "0", "on": "0.25"},
+            "InpDiagEnvWeight": {"off": "0", "on": "1"},
+            "InpDiagExecWeight": {"off": "0", "on": "1"},
+            "InpDiagDecayHalfLifeBars": {"off": "0", "on": "12"},
+        },
     }
-    observed = {k: v for k, v in context.items() if k not in {"diagnostic_off_value", "diagnostic_on_value"}}
+    observed = {k: v for k, v in context.items() if k != "diagnostic_inputs"}
     runs = []
-    for role, enabled, decision_id, diagnostic_score in (
-        ("diagnostic_off", "false", "D-OFF-1", "0"),
-        ("diagnostic_on", "true", "D-ON-1", "0.8"),
+    for role, mode, decision_id, diagnostic_score in (
+        ("diagnostic_off", "off", "D-OFF-1", "0"),
+        ("diagnostic_on", "on", "D-ON-1", "0.8"),
     ):
         preset = folder / f"{role}.set"
+        inputs = context["diagnostic_inputs"]
         preset.write_text(
-            f"InpDiagnosticsMode={enabled}||{enabled}||false||true||N\n"
+            f"InpDiagContradictionWeight={inputs['InpDiagContradictionWeight'][mode]}||0.25||0||0.05||1||N\n"
+            f"InpDiagEnvWeight={inputs['InpDiagEnvWeight'][mode]}||1||0||0.1||2||N\n"
+            f"InpDiagExecWeight={inputs['InpDiagExecWeight'][mode]}||1||0||0.1||2||N\n"
+            f"InpDiagDecayHalfLifeBars={inputs['InpDiagDecayHalfLifeBars'][mode]}||12||0||1||24||N\n"
             "InpRiskPercentPerTrade=0.5||0.5||0.1||1||N\n",
             encoding="utf-8",
         )
@@ -198,8 +205,10 @@ def test_extra_changed_input_is_rejected(tmp_path):
     payload = json.loads(path.read_text())
     preset = tmp_path / payload["runs"][1]["input_preset"]
     preset.write_text(
-        "InpDiagnosticsMode=true||true||false||true||N\n"
-        "InpRiskPercentPerTrade=0.75||0.5||0.1||1||N\n",
+        preset.read_text(encoding="utf-8").replace(
+            "InpRiskPercentPerTrade=0.5||0.5||0.1||1||N",
+            "InpRiskPercentPerTrade=0.75||0.5||0.1||1||N",
+        ),
         encoding="utf-8",
     )
     with pytest.raises(AuditError, match="differ in additional inputs"):
