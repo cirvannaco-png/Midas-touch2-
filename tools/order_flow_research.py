@@ -169,6 +169,10 @@ def build_outcome_index(signal_rows: list[dict[str, str]],
             "symbol": signal["Symbol"],
             "timeframe": signal["EntryTF"],
             "direction": signal["Direction"],
+            "session": signal.get("Session", "").strip(),
+            "regime": signal.get("Regime", "").strip(),
+            "volatility_regime": signal.get("VolRegime", "").strip(),
+            "selected_strategy": signal.get("SelectedStrategy", "").strip(),
             "decision_epoch": decision_epoch,
             "resolved_epoch": resolved_epoch,
             "realized_r": realized_r,
@@ -286,6 +290,16 @@ def _groups(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
         ("pressure=negative", lambda p: p <= -0.15),
     ):
         groups[bucket] = [r for r in rows if predicate(r["pressure_ratio"])]
+    # Context stratification is descriptive, not a vote or an auto-promotion
+    # rule. Missing labels are omitted rather than imputed.
+    for dimension in ("direction", "symbol", "timeframe", "session", "regime",
+                      "volatility_regime", "selected_strategy"):
+        categories = sorted({str(r.get(dimension, "")).strip()
+                             for r in rows if str(r.get(dimension, "")).strip()})
+        for category in categories:
+            groups[f"{dimension}={category}"] = [
+                r for r in rows if str(r.get(dimension, "")).strip() == category
+            ]
     return groups
 
 
