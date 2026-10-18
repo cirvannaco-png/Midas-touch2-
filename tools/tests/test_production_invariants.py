@@ -71,9 +71,10 @@ def test_legacy_decisions_do_not_fabricate_invalidation():
 
 def test_strategy_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
     t=TRADE_ZONE.read_text()
-    assert "TradeSetup out;ZeroMemory(out);" in t
-    assert "m_lastSetup=out;return out;" in t
-    assert "return TradeSetup();" not in t
+    compact="".join(t.split())
+    assert "TradeSetupout;ZeroMemory(out);" in compact
+    assert "m_lastSetup=out;returnout;" in compact
+    assert "returnTradeSetup();" not in compact
 
 def test_strategy_trade_zone_applies_spread_floor_then_rechecks_invalidation():
     t=TRADE_ZONE.read_text();assert "out.stop_loss=EnforceSpreadFloor" in t;assert "out.stop_loss>=out.invalidation" in t;assert "out.stop_loss<=out.invalidation" in t
