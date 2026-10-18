@@ -206,8 +206,21 @@ def join_events_to_outcomes(events: list[dict[str, Any]],
 
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    values = [float(row["realized_r"]) for row in rows
-              if parse_float(row.get("realized_r")) is not None]
+    valid_rows = [
+        (index, row, parse_float(row.get("realized_r")))
+        for index, row in enumerate(rows)
+        if parse_float(row.get("realized_r")) is not None
+    ]
+    # Equity drawdown must follow when trades actually resolve, not signal time:
+    # overlapping positions can close in a different order from their entries.
+    if valid_rows and all(parse_epoch(row.get("resolved_epoch")) is not None
+                          for _, row, _ in valid_rows):
+        valid_rows.sort(key=lambda item: (
+            parse_epoch(item[1].get("resolved_epoch")),
+            parse_epoch(item[1].get("decision_epoch")) or 0,
+            item[0],
+        ))
+    values = [float(value) for _, _, value in valid_rows]
     if not values:
         return {
             "n": 0, "wins": 0, "losses": 0, "scratches": 0,
