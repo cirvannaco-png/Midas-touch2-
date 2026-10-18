@@ -462,10 +462,12 @@ class OrderFlowResearchTests(unittest.TestCase):
 class OrderFlowProxyAnnotationTests(unittest.TestCase):
     @staticmethod
     def proxy_event(key: str, end: int, *, signed: float, up: int, down: int,
-                    close: float, atr: float, location: int, continuation: int) -> dict:
+                    close: float, atr: float, location: int, continuation: int,
+                    tick_count: int | None = None) -> dict:
         return {
             "event_key": key, "symbol": "EURUSD", "timeframe": "PERIOD_M1",
             "bar_end_epoch": end, "schema_version": "order-flow-evidence-v3",
+            "tick_count": tick_count if tick_count is not None else up + down + 1,
             "pressure_ratio": (up - down) / max(1, up + down),
             "signed_tick_pressure": signed, "positive_tick_count": up, "negative_tick_count": down,
             "bar_close": close, "atr": atr, "price_progress": 0.5 if signed >= 0 else -0.5,
@@ -501,10 +503,54 @@ class OrderFlowProxyAnnotationTests(unittest.TestCase):
         self.assertEqual(by_key["e2"]["auction_location_label"], "ABOVE_VAH")
         self.assertEqual(by_key["e2"]["continuation_hypothesis_label"], "BULLISH")
 
+    def test_quote_activity_regime_uses_prior_closed_bars_only(self) -> None:
+        start = 1_700_000_100
+        counts = [60, 60, 60, 60, 60, 180, 12]
+        rows = [
+            self.proxy_event(
+                f"rate-{i}", start + i * 60,
+                signed=2, up=3, down=1, close=100 + i * 0.1, atr=1,
+                location=0, continuation=0, tick_count=count,
+            )
+            for i, count in enumerate(counts)
+        ]
+        rows.append(self.proxy_event(
+            "after-gap", start + 8 * 60,
+            signed=2, up=3, down=1, close=101, atr=1,
+            location=0, continuation=0, tick_count=300,
+        ))
+        annotated = _annotate_order_flow_proxies(rows)
+        by_key = {row["event_key"]: row for row in annotated}
+        self.assertEqual(by_key["rate-0"]["quote_activity_regime"], "INSUFFICIENT_HISTORY")
+        self.assertEqual(by_key["rate-4"]["quote_activity_regime"], "INSUFFICIENT_HISTORY")
+        self.assertAlmostEqual(by_key["rate-5"]["quote_update_rate_ratio_to_prior_median"], 3.0)
+        self.assertEqual(by_key["rate-5"]["quote_activity_regime"], "EXPANSION")
+        self.assertAlmostEqual(by_key["rate-6"]["quote_update_rate_ratio_to_prior_median"], 0.2)
+        self.assertEqual(by_key["rate-6"]["quote_activity_regime"], "CONTRACTION")
+        self.assertEqual(by_key["after-gap"]["quote_activity_regime"], "INSUFFICIENT_HISTORY")
+
+    def test_v3_loader_rejects_missing_or_invalid_tick_count(self) -> None:
+        row = event("bad-count", 1_700_000_095)
+        row.update({
+            "schema_version": "order-flow-evidence-v3",
+            "tick_count": "NaN",
+            "signed_tick_pressure": "4", "positive_tick_count": "5", "negative_tick_count": "1",
+            "price_progress": "0.0004", "prior_high": "1.1000", "prior_low": "1.0900",
+            "bar_close": "1.1010", "atr": "0.0010", "pressure_progress_divergence": "false",
+            "continuation_hypothesis": "1", "reversal_hypothesis": "0",
+            "auction_context_available": "true", "value_area_poc": "1.0950",
+            "value_area_vah": "1.1000", "value_area_val": "1.0900",
+            "value_area_source_quality": "0.75", "value_area_source": "2", "auction_location": "2",
+        })
+        loaded, rejected = load_order_flow_events([row])
+        self.assertEqual(loaded, [])
+        self.assertEqual(rejected.get("invalid_v3_tick_count"), 1)
+
     def test_loader_accepts_v3_while_preserving_v2_compatibility(self) -> None:
         row = event("v3-event", 1_700_000_095)
         row.update({
             "schema_version": "order-flow-evidence-v3",
+            "tick_count": "8",
             "signed_tick_pressure": "4", "positive_tick_count": "5", "negative_tick_count": "1",
             "price_progress": "0.0004", "prior_high": "1.1000", "prior_low": "1.0900",
             "bar_close": "1.1010", "atr": "0.0010", "pressure_progress_divergence": "false",
