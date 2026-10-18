@@ -270,7 +270,7 @@ input bool InpSession3Enabled=false;
 input string InpSession3Start="19:00";
 input string InpSession3End="22:00";
 
-COrderFlowDiagnostics g_orderFlowDiagnostics; datetime g_lastOrderFlowBarTime=0; string g_lastOrderFlowEventKey=""; CTFContextPool g_pool;CScoringEngine g_scoring;CSessionFilter g_operatorSessionFilter;CTradeDecision g_decision;CRiskEngine g_risk;CSignalLogger g_logger;COutcomeTrackerLive g_tracker;CEnvironmentStrategyMemory g_environmentMemory;CDecisionEngine g_router;CBrokerAdapter g_broker;COrderManager g_orders;CPositionManager g_positions;CRecoveryEngine g_recovery;CPortfolioManager g_portfolio;CMultiTradeEngine g_multiTrade;CRiskGuard g_riskGuard;CNewsFilter g_newsFilter;CSubscriberPlatform g_subscribers;CSignalPublisher g_publisher;CDailyTradeTarget g_dailyTradeTarget;CConfigSync g_configSync;CProductionMonitor g_monitor;CTradeControlPanel g_controlPanel;CExecutionAudit g_execAudit;bool g_emergencyStop=false;datetime g_lastSessionBlockLog=0;CTFContext* g_chartCtx=NULL;CTFContext* g_trendCtx=NULL;CTFContext* g_bosCtx=NULL;CTFContext* g_liqCtx=NULL;CTFContext* g_fvgCtx=NULL;CTFContext* g_htfObCtx=NULL;
+COrderFlowDiagnostics g_orderFlowDiagnostics; datetime g_lastOrderFlowBarTime=0; datetime g_lastOrderFlowEventBarEnd=0; string g_lastOrderFlowEventKey=""; CTFContextPool g_pool;CScoringEngine g_scoring;CSessionFilter g_operatorSessionFilter;CTradeDecision g_decision;CRiskEngine g_risk;CSignalLogger g_logger;COutcomeTrackerLive g_tracker;CEnvironmentStrategyMemory g_environmentMemory;CDecisionEngine g_router;CBrokerAdapter g_broker;COrderManager g_orders;CPositionManager g_positions;CRecoveryEngine g_recovery;CPortfolioManager g_portfolio;CMultiTradeEngine g_multiTrade;CRiskGuard g_riskGuard;CNewsFilter g_newsFilter;CSubscriberPlatform g_subscribers;CSignalPublisher g_publisher;CDailyTradeTarget g_dailyTradeTarget;CConfigSync g_configSync;CProductionMonitor g_monitor;CTradeControlPanel g_controlPanel;CExecutionAudit g_execAudit;bool g_emergencyStop=false;datetime g_lastSessionBlockLog=0;CTFContext* g_chartCtx=NULL;CTFContext* g_trendCtx=NULL;CTFContext* g_bosCtx=NULL;CTFContext* g_liqCtx=NULL;CTFContext* g_fvgCtx=NULL;CTFContext* g_htfObCtx=NULL;
 AccountRiskLimits g_activeRiskLimits;
 CExecutionLedgerClient g_executionLedger; bool g_executionLedgerHealthy=false; datetime g_lastLedgerReconcileAttempt=0; datetime g_lastConfigSyncPoll=0;
 datetime g_lastLoggedTime=0,g_lastBarTime=0;long g_lifecycleDecisionId=0;datetime g_lifecycleCreationTime=0;TradeSetup g_lifecycleSetup;string g_lifecycleStatus="valid";bool g_panelInitialized=false;
@@ -829,7 +829,7 @@ bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
                            double barHigh,double barLow,double barClose,double atr,
                            string diagnosticStatus,OrderFlowSnapshot &of)
   {
-   string filename="MedisTouch_OrderFlowEvidence_v2_"+_Symbol+"_"+EnumToString(InpFVGTF)+".csv";
+   string filename="MedisTouch_OrderFlowEvidence_v3_"+_Symbol+"_"+EnumToString(InpFVGTF)+".csv";
    int flags=FILE_CSV|FILE_READ|FILE_WRITE|FILE_SHARE_READ|FILE_ANSI;
    ResetLastError();
    int handle=FileOpen(filename,flags,',');
@@ -848,13 +848,16 @@ bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
                                  "pressure_ratio","signed_tick_pressure","positive_tick_count",
                                  "negative_tick_count","price_progress","bullish_sweep_reclaim",
                                  "bearish_sweep_reclaim","absorption_proxy","exhaustion_proxy",
-                                 "data_stale","first_tick_time_msc","last_tick_time_msc","diagnostic_status");
+                                 "data_stale","first_tick_time_msc","last_tick_time_msc",
+                                 "pressure_progress_divergence","continuation_hypothesis","reversal_hypothesis",
+                                 "auction_context_available","value_area_poc","value_area_vah","value_area_val",
+                                 "value_area_source_quality","value_area_source","auction_location","diagnostic_status");
       headerOK=(headerBytes>0);
      }
 
    FileSeek(handle,0,SEEK_END);
    string eventKey=_Symbol+"|"+EnumToString(InpFVGTF)+"|"+IntegerToString((long)barStart);
-   uint rowBytes=FileWrite(handle,"order-flow-evidence-v2",eventKey,_Symbol,EnumToString(InpFVGTF),
+   uint rowBytes=FileWrite(handle,"order-flow-evidence-v3",eventKey,_Symbol,EnumToString(InpFVGTF),
                            IntegerToString((long)barStart),IntegerToString((long)barEnd),
                            DoubleToString(priorHigh,_Digits),DoubleToString(priorLow,_Digits),
                            DoubleToString(barHigh,_Digits),DoubleToString(barLow,_Digits),
@@ -868,12 +871,31 @@ bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
                            of.absorption_proxy?"true":"false",
                            of.exhaustion_proxy?"true":"false",
                            of.data_stale?"true":"false",
-                           IntegerToString(of.first_tick_time_msc),IntegerToString(of.last_tick_time_msc),diagnosticStatus);
+                           IntegerToString(of.first_tick_time_msc),IntegerToString(of.last_tick_time_msc),
+                           of.pressure_progress_divergence?"true":"false",
+                           IntegerToString(of.continuation_hypothesis),IntegerToString(of.reversal_hypothesis),
+                           of.auction_context_available?"true":"false",
+                           DoubleToString(of.value_area_poc,_Digits),DoubleToString(of.value_area_vah,_Digits),
+                           DoubleToString(of.value_area_val,_Digits),DoubleToString(of.value_area_source_quality,4),
+                           IntegerToString(of.value_area_source),IntegerToString(of.auction_location),diagnosticStatus);
    FileFlush(handle);
    bool ok=(headerOK && rowBytes>0 && GetLastError()==0);
    FileClose(handle);
    g_lastOrderFlowEventKey=(ok && diagnosticStatus=="OK_PROXY" ? eventKey : "");
+   g_lastOrderFlowEventBarEnd=(StringLen(g_lastOrderFlowEventKey)>0 ? barEnd : 0);
    return ok;
+  }
+
+void AttachOrderFlowAuctionContext(double barClose,OrderFlowSnapshot &of)
+  {
+   if(g_fvgCtx==NULL)
+      return;
+   g_orderFlowDiagnostics.AttachAuctionContext(g_fvgCtx.valueArea.POC(),
+                                                g_fvgCtx.valueArea.VAH(),
+                                                g_fvgCtx.valueArea.VAL(),
+                                                g_fvgCtx.valueArea.SourceQuality(),
+                                                (int)g_fvgCtx.valueArea.Source(),
+                                                barClose,of);
   }
 
 void LogOrderFlowDiagnostics()
@@ -937,6 +959,7 @@ void LogOrderFlowDiagnostics()
       g_orderFlowDiagnostics.Analyze(emptyTicks,0,priorHigh,priorLow,
                                      barHigh,barLow,barClose,atr,of);
       string missingStatus=(copied<0 ? "TICK_HISTORY_ERROR" : "NO_TICKS");
+      AttachOrderFlowAuctionContext(barClose,of);
       AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
                               barHigh,barLow,barClose,atr,missingStatus,of);
       PrintFormat("OF_DIAG unavailable: status=%s copied=%d error=%d; no trade-policy effect",
@@ -947,11 +970,13 @@ void LogOrderFlowDiagnostics()
    if(!g_orderFlowDiagnostics.Analyze(ticks,copied,priorHigh,priorLow,
                                       barHigh,barLow,barClose,atr,of))
      {
+      AttachOrderFlowAuctionContext(barClose,of);
       AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
                               barHigh,barLow,barClose,atr,"INVALID_OR_INSUFFICIENT_TICKS",of);
       PrintFormat("OF_DIAG rejected: insufficient/unordered data, ticks=%d",copied);
       return;
      }
+   AttachOrderFlowAuctionContext(barClose,of);
    string diagnosticStatus=(of.data_stale ? "STALE_PROXY" : "OK_PROXY");
    AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
                            barHigh,barLow,barClose,atr,diagnosticStatus,of);
@@ -988,8 +1013,14 @@ bool AppendOrderFlowSignalAttribution(TradeSetup &setup)
    FileSeek(handle,0,SEEK_END);
    string direction=(setup.type==ORDER_TYPE_BUY ? "BUY" : "SELL");
    string signalId=StringFormat("%s_%s_%d",_Symbol,direction,(long)setup.creation_time);
-   string status=(StringLen(g_lastOrderFlowEventKey)>0 ? "MATCHED" : "NO_USABLE_EVENT");
-   uint rowBytes=FileWrite(handle,"order-flow-attribution-v1",signalId,g_lastOrderFlowEventKey,
+   int maxEventAgeSeconds=PeriodSeconds(InpFVGTF);
+   bool eventFresh=(StringLen(g_lastOrderFlowEventKey)>0 &&
+                    g_lastOrderFlowEventBarEnd>0 && maxEventAgeSeconds>0 &&
+                    setup.creation_time>=g_lastOrderFlowEventBarEnd &&
+                    (setup.creation_time-g_lastOrderFlowEventBarEnd)<=maxEventAgeSeconds);
+   string eventKey=(eventFresh ? g_lastOrderFlowEventKey : "");
+   string status=(eventFresh ? "MATCHED" : "NO_USABLE_EVENT");
+   uint rowBytes=FileWrite(handle,"order-flow-attribution-v1",signalId,eventKey,
                            _Symbol,EnumToString(InpFVGTF),direction,
                            IntegerToString((long)setup.creation_time),status);
    FileFlush(handle);
