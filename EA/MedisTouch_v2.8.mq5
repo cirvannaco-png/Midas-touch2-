@@ -854,7 +854,7 @@ bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
 
    FileSeek(handle,0,SEEK_END);
    string eventKey=_Symbol+"|"+EnumToString(InpFVGTF)+"|"+IntegerToString((long)barStart);
-   uint rowBytes=FileWrite(handle,"order-flow-evidence-v1",eventKey,_Symbol,EnumToString(_Period),
+   uint rowBytes=FileWrite(handle,"order-flow-evidence-v1",eventKey,_Symbol,EnumToString(InpFVGTF),
                            IntegerToString((long)barStart),IntegerToString((long)barEnd),
                            DoubleToString(priorHigh,_Digits),DoubleToString(priorLow,_Digits),
                            DoubleToString(barHigh,_Digits),DoubleToString(barLow,_Digits),
@@ -882,7 +882,6 @@ void LogOrderFlowDiagnostics()
    datetime diagnosticBarTime=iTime(_Symbol,InpFVGTF,0);
    if(diagnosticBarTime<=0 || diagnosticBarTime==g_lastOrderFlowBarTime)
       return;
-   g_lastOrderFlowBarTime=diagnosticBarTime;
    datetime barStart=iTime(_Symbol,InpFVGTF,1);
    datetime barEnd=diagnosticBarTime;
    if(barStart<=0 || barEnd<=barStart)
@@ -899,6 +898,9 @@ void LogOrderFlowDiagnostics()
    double atr=g_fvgCtx.candles.GetATR(1);
    if(atr<=0.0)
       return;
+   // Mark this closed-bar window before querying tick history so a missing
+   // history window does not generate the same warning on every tick.
+   g_lastOrderFlowBarTime=diagnosticBarTime;
 
    MqlTick ticks[];
    long fromMsc=(long)barStart*1000;
