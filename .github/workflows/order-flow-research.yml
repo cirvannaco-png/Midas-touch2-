@@ -1,0 +1,59 @@
+name: Order-Flow Research and MQL5 Structural Checks
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+      - feature/order-flow-confirmation-engine
+    paths:
+      - "EA/**"
+      - "tools/validate_mql5.py"
+      - "tools/validate_order_flow_contract.py"
+      - "tools/order_flow_research.py"
+      - "tests/test_order_flow_research.py"
+      - "docs/ORDER_FLOW_TEST_PLAN.md"
+      - "docs/ORDER_FLOW_RESEARCH_TOOL.md"
+      - "docs/TRADING_KNOWLEDGE_INTEGRATION.md"
+      - "docs/ORDER_FLOW_CONFIRMATION_ENGINE.md"
+      - "docs/ORDER_FLOW_LESSON_MAP.md"
+      - "docs/ORDER_FLOW_RESEARCH_RUNBOOK.md"
+      - ".github/workflows/order-flow-research.yml"
+  pull_request:
+    paths:
+      - "EA/**"
+      - "tools/validate_mql5.py"
+      - "tools/validate_order_flow_contract.py"
+      - "tools/order_flow_research.py"
+      - "tests/test_order_flow_research.py"
+      - "docs/ORDER_FLOW_TEST_PLAN.md"
+      - "docs/ORDER_FLOW_RESEARCH_TOOL.md"
+      - "docs/TRADING_KNOWLEDGE_INTEGRATION.md"
+      - "docs/ORDER_FLOW_CONFIRMATION_ENGINE.md"
+      - "docs/ORDER_FLOW_LESSON_MAP.md"
+      - "docs/ORDER_FLOW_RESEARCH_RUNBOOK.md"
+      - ".github/workflows/order-flow-research.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-and-research-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test outcome-linked research utilities
+        run: python -m unittest discover -s tests -p "test_order_flow_research.py" -v
+      - name: Validate order-flow evidence and attribution contracts
+        run: python tools/validate_order_flow_contract.py
+      - name: Validate MQL5 source tree structure
+        run: python tools/validate_mql5.py EA
