@@ -205,3 +205,29 @@ def test_position_manager_validates_partial_volume_before_broker_request():
     assert "if(PartialVolumeForPosition(dec.symbol,currentVolume,closeVolume) &&" in manager
     assert "m_broker.ClosePartial(ticket,closeVolume)" in manager
     assert "double vol=m_orders.VolumeAt(i)*m_partialFraction;" not in manager
+
+
+def test_emergency_stop_latch_is_flushed_and_write_verified():
+    ea = read(EA)
+    stop_start = ea.index("void EmergencyStop()")
+    stop_end = ea.index("bool HasManagedExposure()", stop_start)
+    stop_path = ea[stop_start:stop_end]
+    assert "GlobalVariableSet(EmergencyStopGlobalKey(),1.0)" in stop_path
+    assert "GlobalVariablesFlush();" in stop_path
+    assert "stopLatchVerified" in stop_path
+    assert '"EMERGENCY_STOP_PERSIST_FAILED"' in stop_path
+    assert "g_emergencyStop=true;" in stop_path
+
+
+def test_resume_fails_closed_if_persistent_latch_cannot_be_cleared():
+    ea = read(EA)
+    resume_start = ea.index("void ResumeTrading()")
+    resume_end = ea.index("bool IsNettingOrExchangeAccount()", resume_start)
+    resume_path = ea[resume_start:resume_end]
+    assert "if(HasManagedExposure())" in resume_path
+    assert "GlobalVariableDel(EmergencyStopGlobalKey())" in resume_path
+    assert "GlobalVariablesFlush();" in resume_path
+    assert "GlobalVariableCheck(EmergencyStopGlobalKey())" in resume_path
+    assert '"EMERGENCY_RESUME_FAILED"' in resume_path
+    assert "g_emergencyStop=true;" in resume_path
+    assert "g_emergencyStop=false;" in resume_path
