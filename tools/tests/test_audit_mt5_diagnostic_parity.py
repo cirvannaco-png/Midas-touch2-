@@ -87,21 +87,30 @@ def _manifest(folder: Path) -> Path:
             ["SignalID", "Symbol", "EntryTF", "DateTime", "Direction", "Confidence",
              "ContradictionPenalty", "EnvScore", "ExecScore", "EnvExecConfidence", "SelectedStrategy"],
             [["S-1", "XAUUSD", "PERIOD_M5", "2025.01.06 10:00", "BUY", "80",
+              diagnostic_score, diagnostic_score, diagnostic_score, diagnostic_score, "SMC"],
+             ["S-2", "XAUUSD", "PERIOD_M5", "2025.01.06 10:05", "SELL", "62",
+              diagnostic_score, diagnostic_score, diagnostic_score, diagnostic_score, "SMC"],
+             ["S-3", "XAUUSD", "PERIOD_M5", "2025.01.06 10:10", "BUY", "61",
               diagnostic_score, diagnostic_score, diagnostic_score, diagnostic_score, "SMC"]],
         )
         outcomes = folder / f"{role}-outcomes.csv"
         _write_csv(
             outcomes,
             ["SignalID", "OutcomeEpoch", "Outcome", "Filled", "RealizedNetPnL", "RealizedR",
-             "Commission", "SpreadCost", "SlippageCost"],
-            [["S-1", "1736164800", "TP1_Hit", "Yes", "10", "1", "0.7", "0.2", "0.1"]],
+             "Commission", "SpreadCost", "SlippageCost", "ConfidenceDecayed", "DecayBars"],
+            [["S-1", "1736164800", "TP1_Hit", "Yes", "10", "1", "0.7", "0.2", "0.1",
+              "80" if mode == "off" else "40", "0" if mode == "off" else "12"],
+             ["S-2", "1736164810", "no_fill", "No", "0", "0", "", "", "", "62", "0"],
+             ["S-3", "1736164820", "no_fill", "No", "0", "0", "", "", "", "61", "0"]],
         )
         decisions = folder / f"{role}-decisions.csv"
         _write_csv(
             decisions,
             ["SignalID", "DecisionID", "Decision", "SelectedStrategy", "Direction",
              "ExecutionAuthorized", "DecisionTime"],
-            [["S-1", decision_id, "APPROVE", "SMC", "BUY", "Yes", "2025.01.06 10:00"]],
+            [["S-1", decision_id, "APPROVE", "SMC", "BUY", "Yes", "2025.01.06 10:00"],
+             ["S-2", "0", "IGNORE", "SMC", "SELL", "No", "2025.01.06 10:05"],
+             ["S-3", "0", "IGNORE", "SMC", "BUY", "No", "2025.01.06 10:10"]],
         )
         deals = folder / f"{role}-deals.csv"
         _write_csv(
@@ -143,7 +152,7 @@ def test_identical_decision_path_ignores_only_declared_diagnostic_fields(tmp_pat
     assert code == 0
     assert report["status"] == "diagnostic_parity_verified_not_performance_certified"
     assert report["promotion_eligible"] is False
-    assert report["matched_preset_check"]["other_inputs_identical"] is True
+    assert report["matched_preset_check"]["only_declared_diagnostic_inputs_changed"] is True
     assert report["parity"]["signals"]["field_parity"] is True
     assert report["parity"]["decisions"]["field_parity"] is True
     assert report["parity"]["outcomes"]["field_parity"] is True
