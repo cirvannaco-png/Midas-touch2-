@@ -37,7 +37,7 @@ The term “Axia Fusio” is not established by the sources above. The identifie
 ## Required experiment protocol
 
 1. Freeze the hypothesis, thresholds, instrument, timeframe, session/timezone, entry/invalidation/exit, data source, and risk policy before looking at holdout outcomes.
-2. Use exact SignalID → event_key → decision_id/fingerprint lineage where the v2 attribution export exists. Report unmatched, stale, invalid, duplicate and conflicting rows; do not quietly fall back to a nearest-time match when a supplied attribution row is missing or invalid.
+2. Use exact SignalID → event_key → decision_id/fingerprint lineage from the current v3 attribution export, including SMC inducement/liquidity/BOS context. The analyzer retains v1/v2 compatibility. Report unmatched, stale, invalid, duplicate and conflicting rows; do not quietly fall back to a nearest-time match when a supplied attribution row is missing or invalid.
 3. Compare diagnostic-disabled baseline and diagnostic-enabled recording on identical recorded input. They must generate identical trade decisions, confidence, sizing, SL/TP, trailing-stop and execution/ledger behavior.
 4. For any future candidate entry gate, use costs-inclusive matched testing (spread, commissions, swap/financing, slippage and broker constraints), chronological walk-forward, a locked out-of-sample period and uncertainty intervals.
 5. Require Exness demo forward evidence and broker/database reconciliation before review for any promotion. Keep diagnostics disabled by default until this is complete.
