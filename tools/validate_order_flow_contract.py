@@ -91,6 +91,8 @@ def main() -> int:
 
     require('{"order-flow-evidence-v2", "order-flow-evidence-v3"}' in analyzer,
             "analyzer must retain legacy v2 support and parse the v3 schema", errors)
+    require('{"order-flow-attribution-v1", "order-flow-attribution-v2"}' in analyzer,
+            "analyzer must retain legacy v1 attribution support and parse v2 decision lineage", errors)
 
     expected_statuses = (
         "BAR_HISTORY_UNAVAILABLE", "BAR_CONTEXT_UNAVAILABLE",
