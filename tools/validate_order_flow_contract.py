@@ -106,6 +106,17 @@ def main() -> int:
     ):
         require(token in module, f"order-flow module missing {description}", errors)
 
+    require("datetime evaluationTime=0" in module,
+            "order-flow analysis must accept an explicit evaluation timestamp", errors)
+    require("tickTimeMsc>(long)evaluationTime*1000" in module,
+            "order-flow analysis must reject future ticks beyond the evaluation boundary", errors)
+    require("datetime referenceTime=(evaluationTime>0 ? evaluationTime : TimeCurrent())" in module,
+            "staleness must be anchored to the supplied evaluation timestamp", errors)
+    require(re.search(
+                r"g_orderFlowDiagnostics\\.Analyze\\(ticks,copied,priorHigh,priorLow,\\s*barHigh,barLow,barClose,atr,of,barEnd\\)",
+                ea) is not None,
+            "production analysis must pass the closed-bar end timestamp", errors)
+
     require('input bool InpEnableOrderFlowDiagnostics=false;' in ea,
             "order-flow diagnostics must remain disabled by default", errors)
     require('if(!InpEnableOrderFlowDiagnostics || g_fvgCtx==NULL)' in ea,
