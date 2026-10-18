@@ -99,7 +99,11 @@ def main() -> int:
     # accept v1/v2 attribution exports created before SMC context was added.
     for field in ("decision_id", "decision_fingerprint"):
         require(field in attribution_fields,
-                f"v2 attribution CSV header missing decision lineage field: {field}", errors)
+                f"v3 attribution CSV header missing decision lineage field: {field}", errors)
+    for field in ("smc_inducement_valid", "smc_liquidity_swept", "smc_bos_confirmed",
+                  "smc_sweep_grade", "smc_bos_strength", "smc_time_decay"):
+        require(field in attribution_fields,
+                f"v3 attribution CSV header missing SMC context field: {field}", errors)
     require(all(f'"{schema}"' in analyzer for schema in (
                 "order-flow-attribution-v1", "order-flow-attribution-v2",
                 "order-flow-attribution-v3")),
