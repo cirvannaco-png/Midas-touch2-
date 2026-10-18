@@ -40,6 +40,15 @@ Evidence grade applies to the source's support for a claim, not to the strategy'
 - Irene Aldridge (ed.), *High-Frequency Trading*, chapter “Market Microstructure, Orders, and Limit Order Books.” Use as a technical reference for order types and limit-order-book mechanics.
   - https://onlinelibrary.wiley.com/doi/abs/10.1002/9781119203803.ch3
 
+### Systematic trading validation and price-action research
+
+- Ernest P. Chan, *Algorithmic Trading: Winning Strategies and Their Rationale*, Wiley. Use for systematic hypothesis formation, backtesting design, mean reversion/momentum research, and implementation costs. It is a research-method source, not proof that any candidate strategy will remain profitable.
+  - https://www.wiley.com/en-us/algorithmic-trading-winning-strategies-and-their-rationale-p-9781118676998
+- Adam Grimes, *The Art and Science of Technical Analysis: Market Structure, Price Action, and Trading Strategies*, Wiley. Use to challenge pattern assumptions and require statistical validation across market conditions.
+  - https://onlinelibrary.wiley.com/doi/book/10.1002/9781119202837
+- Jigsaw Trading, Order Flow Foundations and educational videos. Use as a second educator perspective on ladder/footprint interpretation and trade management. Distinguish platform-specific tools and exchange-traded futures examples from the data available on the target MT5 broker feed.
+  - https://www.jigsawtrading.com/education-jigsaw-professional-trading-education/
+
 ### Order-flow educators and videos
 
 - Axia Futures, *Trading with Price Ladder and Order Flow Strategies*: topics include auctioning and market velocity, absorption, large orders, failed breaks, imbalances, momentum breakouts, and replay drills.
