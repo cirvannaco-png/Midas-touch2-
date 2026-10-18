@@ -231,3 +231,16 @@ def test_resume_fails_closed_if_persistent_latch_cannot_be_cleared():
     assert '"EMERGENCY_RESUME_FAILED"' in resume_path
     assert "g_emergencyStop=true;" in resume_path
     assert "g_emergencyStop=false;" in resume_path
+
+
+def test_emergency_stop_latch_is_refreshed_while_stop_remains_active():
+    ea = read(EA)
+    assert "datetime g_lastEmergencyLatchRefresh=0;" in ea
+    assert "|| g_emergencyStop)" in ea
+    timer_start = ea.index("void OnTimer()")
+    timer_end = ea.index("void CheckSignalLifecycle", timer_start)
+    timer_path = ea[timer_start:timer_end]
+    assert "if(g_emergencyStop && now-g_lastEmergencyLatchRefresh>=60)" in timer_path
+    assert "GlobalVariableSet(EmergencyStopGlobalKey(),1.0)" in timer_path
+    assert "GlobalVariablesFlush();" in timer_path
+    assert '"EMERGENCY_STOP_PERSIST_FAILED"' in timer_path
