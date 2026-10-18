@@ -968,7 +968,7 @@ void LogOrderFlowDiagnostics()
      }
 
    if(!g_orderFlowDiagnostics.Analyze(ticks,copied,priorHigh,priorLow,
-                                      barHigh,barLow,barClose,atr,of))
+                                      barHigh,barLow,barClose,atr,of,barEnd))
      {
       AttachOrderFlowAuctionContext(barClose,of);
       AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
