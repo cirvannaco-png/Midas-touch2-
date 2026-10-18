@@ -961,9 +961,29 @@ void CloseAllManagedExposure(const string reason)
 
 void EmergencyStop()
   {
+   // Halt the current EA instance first. A persistence failure must never re-enable
+   // entries in this process, and must be unmistakable to the operator.
    g_emergencyStop=true;
-   GlobalVariableSet(EmergencyStopGlobalKey(),1.0);
-   g_execAudit.Log("EMERGENCY_STOP","latched; new entries blocked and managed exposure is being flattened");
+   ResetLastError();
+   datetime stopWriteTime=GlobalVariableSet(EmergencyStopGlobalKey(),1.0);
+   int stopWriteError=GetLastError();
+   GlobalVariablesFlush();
+
+   bool stopLatchVerified=(stopWriteTime>0 &&
+                           GlobalVariableCheck(EmergencyStopGlobalKey()) &&
+                           GlobalVariableGet(EmergencyStopGlobalKey())>0.5);
+   if(!stopLatchVerified)
+     {
+      g_execAudit.Log("EMERGENCY_STOP_PERSIST_FAILED",
+                      StringFormat("persistent stop latch write/read-back failed; err=%d; in-memory halt remains active",stopWriteError));
+      Print("CRITICAL: MidasTouch emergency stop is active in memory, but its persistent restart latch could not be verified. Do not restart or resume until storage is checked.");
+      Alert("CRITICAL: MIDAS EMERGENCY STOP RESTART LATCH NOT VERIFIED");
+     }
+   else
+     {
+      g_execAudit.Log("EMERGENCY_STOP",
+                      "latched; global-variable flush requested and read-back verified; new entries blocked and managed exposure is being flattened");
+     }
    CloseAllManagedExposure("emergency-stop");
   }
 
@@ -994,9 +1014,28 @@ void ResumeTrading()
       Print("MedisTouch: RESUME refused — close/verify all positions and pending orders for this symbol/magic first.");
       return;
      }
-   GlobalVariableDel(EmergencyStopGlobalKey());
+   bool stopLatchClearOK=true;
+   int stopLatchClearError=0;
+   if(GlobalVariableCheck(EmergencyStopGlobalKey()))
+     {
+      ResetLastError();
+      stopLatchClearOK=GlobalVariableDel(EmergencyStopGlobalKey());
+      stopLatchClearError=GetLastError();
+     }
+   // Flush the cleared state before allowing entry logic to resume. If deletion or
+   // read-back verification fails, retain the in-memory halt and fail closed.
+   GlobalVariablesFlush();
+   if(!stopLatchClearOK || GlobalVariableCheck(EmergencyStopGlobalKey()))
+     {
+      g_emergencyStop=true;
+      g_execAudit.Log("EMERGENCY_RESUME_FAILED",
+                      StringFormat("persistent stop latch clear failed; err=%d; in-memory halt retained",stopLatchClearError));
+      Print("CRITICAL: RESUME refused — the persistent emergency-stop latch could not be cleared and verified.");
+      Alert("CRITICAL: MIDAS EMERGENCY STOP STILL LATCHED");
+      return;
+     }
    g_emergencyStop=false;
-   g_execAudit.Log("EMERGENCY_RESUME","operator cleared persistent emergency latch after exposure check");
+   g_execAudit.Log("EMERGENCY_RESUME","operator cleared persistent emergency latch after exposure check; cleared state flushed and absent on read-back");
    if(!InpShowTradeControlPanel && g_panelInitialized)
      {
       g_controlPanel.Destroy();
