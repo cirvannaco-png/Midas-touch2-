@@ -13,6 +13,7 @@ from tools.order_flow_research import (
     load_order_flow_events,
     read_csv,
     summarize,
+    _annotate_order_flow_proxies,
 )
 
 
@@ -325,6 +326,66 @@ class OrderFlowResearchTests(unittest.TestCase):
     def test_empty_loss_side_does_not_claim_infinite_profit_factor(self) -> None:
         metrics = summarize([{"realized_r": 1.0}, {"realized_r": 2.0}])
         self.assertIsNone(metrics["profit_factor"])
+
+
+class OrderFlowProxyAnnotationTests(unittest.TestCase):
+    @staticmethod
+    def proxy_event(key: str, end: int, *, signed: float, up: int, down: int,
+                    close: float, atr: float, location: int, continuation: int) -> dict:
+        return {
+            "event_key": key, "symbol": "EURUSD", "timeframe": "PERIOD_M1",
+            "bar_end_epoch": end, "schema_version": "order-flow-evidence-v3",
+            "pressure_ratio": (up - down) / max(1, up + down),
+            "signed_tick_pressure": signed, "positive_tick_count": up, "negative_tick_count": down,
+            "bar_close": close, "atr": atr, "price_progress": 0.5 if signed >= 0 else -0.5,
+            "prior_high": close + 1.0, "prior_low": close - 1.0,
+            "pressure_progress_divergence": False, "auction_context_available": True,
+            "auction_location": location, "continuation_hypothesis": continuation,
+            "reversal_hypothesis": 0,
+        }
+
+    def test_cumulative_pressure_is_chronological_and_resets_at_utc_day(self) -> None:
+        start = 1_700_000_100
+        first = self.proxy_event("e1", start, signed=4, up=5, down=1, close=100, atr=1, location=2, continuation=1)
+        second = self.proxy_event("e2", start + 60, signed=2, up=4, down=2, close=98, atr=1, location=-2, continuation=-1)
+        next_day = self.proxy_event("e3", start + 86400, signed=-3, up=1, down=4, close=99, atr=1, location=0, continuation=0)
+
+        rows = _annotate_order_flow_proxies([next_day, second, first])
+        by_key = {row["event_key"]: row for row in rows}
+        self.assertEqual(by_key["e1"]["utc_day_cumulative_tick_pressure_proxy"], 4.0)
+        self.assertEqual(by_key["e2"]["utc_day_cumulative_tick_pressure_proxy"], 6.0)
+        self.assertAlmostEqual(by_key["e2"]["utc_day_cumulative_pressure_ratio_proxy"], 0.5)
+        self.assertEqual(by_key["e3"]["utc_day_cumulative_tick_pressure_proxy"], -3.0)
+        self.assertAlmostEqual(by_key["e3"]["utc_day_cumulative_pressure_ratio_proxy"], -0.6)
+
+    def test_price_pressure_divergence_and_auction_tags_are_descriptive(self) -> None:
+        start = 1_700_000_100
+        first = self.proxy_event("e1", start, signed=4, up=5, down=1, close=100, atr=1, location=2, continuation=1)
+        second = self.proxy_event("e2", start + 60, signed=2, up=4, down=2, close=98, atr=1, location=2, continuation=1)
+
+        rows = _annotate_order_flow_proxies([first, second])
+        by_key = {row["event_key"]: row for row in rows}
+        self.assertFalse(by_key["e1"]["utc_day_pressure_price_divergence"])
+        self.assertTrue(by_key["e2"]["utc_day_pressure_price_divergence"])
+        self.assertEqual(by_key["e2"]["auction_location_label"], "ABOVE_VAH")
+        self.assertEqual(by_key["e2"]["continuation_hypothesis_label"], "BULLISH")
+
+    def test_loader_accepts_v3_while_preserving_v2_compatibility(self) -> None:
+        row = event("v3-event", 1_700_000_095)
+        row.update({
+            "schema_version": "order-flow-evidence-v3",
+            "signed_tick_pressure": "4", "positive_tick_count": "5", "negative_tick_count": "1",
+            "price_progress": "0.0004", "prior_high": "1.1000", "prior_low": "1.0900",
+            "bar_close": "1.1010", "atr": "0.0010", "pressure_progress_divergence": "false",
+            "continuation_hypothesis": "1", "reversal_hypothesis": "0",
+            "auction_context_available": "true", "value_area_poc": "1.0950",
+            "value_area_vah": "1.1000", "value_area_val": "1.0900",
+            "value_area_source_quality": "0.75", "value_area_source": "2", "auction_location": "2",
+        })
+        loaded, rejected = load_order_flow_events([row])
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(rejected, {})
+        self.assertEqual(loaded[0]["schema_version"], "order-flow-evidence-v3")
 
 if __name__ == "__main__":
     unittest.main()
