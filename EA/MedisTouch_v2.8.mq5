@@ -886,42 +886,58 @@ void LogOrderFlowDiagnostics()
    datetime barEnd=diagnosticBarTime;
    if(barStart<=0 || barEnd<=barStart)
       return;
+   // Mark this timeframe's bar boundary immediately: even missing history
+   // must be logged at most once for this closed-bar window.
+   g_lastOrderFlowBarTime=diagnosticBarTime;
+
+   g_orderFlowDiagnostics.Configure(InpOrderFlowMinTicks,
+                                    InpOrderFlowPressureThreshold,
+                                    InpOrderFlowSmallProgressATR,
+                                    InpOrderFlowMaxTickAgeSeconds);
+   OrderFlowSnapshot of;
+   MqlTick emptyTicks[];
+
    int hiShift=iHighest(_Symbol,InpFVGTF,MODE_HIGH,20,2);
    int loShift=iLowest(_Symbol,InpFVGTF,MODE_LOW,20,2);
    if(hiShift<0 || loShift<0)
+     {
+      g_orderFlowDiagnostics.Analyze(emptyTicks,0,0.0,0.0,0.0,0.0,0.0,0.0,of);
+      AppendOrderFlowEvidence(barStart,barEnd,0.0,0.0,0.0,0.0,0.0,0.0,
+                              "BAR_HISTORY_UNAVAILABLE",of);
+      Print("OF_DIAG unavailable: bar history/levels missing");
       return;
+     }
+
    double priorHigh=iHigh(_Symbol,InpFVGTF,hiShift);
    double priorLow=iLow(_Symbol,InpFVGTF,loShift);
    double barHigh=iHigh(_Symbol,InpFVGTF,1);
    double barLow=iLow(_Symbol,InpFVGTF,1);
    double barClose=iClose(_Symbol,InpFVGTF,1);
    double atr=g_fvgCtx.candles.GetATR(1);
-   if(atr<=0.0)
+   if(atr<=0.0 || priorHigh<=priorLow || barHigh<=0.0 || barLow<=0.0 || barClose<=0.0)
+     {
+      g_orderFlowDiagnostics.Analyze(emptyTicks,0,priorHigh,priorLow,
+                                     barHigh,barLow,barClose,atr,of);
+      AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
+                              barHigh,barLow,barClose,atr,"BAR_CONTEXT_UNAVAILABLE",of);
+      PrintFormat("OF_DIAG unavailable: ATR/bar context invalid (atr=%.5f)",atr);
       return;
-   // Mark this closed-bar window before querying tick history so a missing
-   // history window does not generate the same warning on every tick.
-   g_lastOrderFlowBarTime=diagnosticBarTime;
+     }
 
-   MqlTick ticks[];
    long fromMsc=(long)barStart*1000;
    long toMsc=(long)barEnd*1000-1;
-   g_orderFlowDiagnostics.Configure(InpOrderFlowMinTicks,
-                                    InpOrderFlowPressureThreshold,
-                                    InpOrderFlowSmallProgressATR,
-                                    InpOrderFlowMaxTickAgeSeconds);
    ResetLastError();
    int copied=CopyTicksRange(_Symbol,ticks,COPY_TICKS_INFO,fromMsc,toMsc);
-   OrderFlowSnapshot of;
+   int copyError=GetLastError();
    if(copied<=0)
      {
-      MqlTick emptyTicks[];
       g_orderFlowDiagnostics.Analyze(emptyTicks,0,priorHigh,priorLow,
                                      barHigh,barLow,barClose,atr,of);
       string missingStatus=(copied<0 ? "TICK_HISTORY_ERROR" : "NO_TICKS");
       AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
                               barHigh,barLow,barClose,atr,missingStatus,of);
       PrintFormat("OF_DIAG unavailable: status=%s copied=%d error=%d; no trade-policy effect",
-                  missingStatus,copied,GetLastError());
+                  missingStatus,copied,copyError);
       return;
      }
 
