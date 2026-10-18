@@ -366,8 +366,8 @@ def build_attribution_index(rows: list[dict[str, str]]) -> tuple[dict[str, dict[
                     "smc_inducement_valid", "smc_liquidity_swept", "smc_bos_confirmed")) or
                 row.get("smc_sweep_grade", "").strip().upper() not in {
                     "SWEEP_GRADE_NONE", "SWEEP_GRADE_C", "SWEEP_GRADE_B", "SWEEP_GRADE_A"} or
-                parse_float(row.get("smc_bos_strength")) is None or
-                parse_float(row.get("smc_time_decay")) is None):
+                not _is_unit_interval(row.get("smc_bos_strength")) or
+                not _is_unit_interval(row.get("smc_time_decay"))):
             rejected["invalid_smc_context"] += 1
         else:
             index[signal_id] = row
