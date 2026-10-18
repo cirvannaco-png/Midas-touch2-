@@ -18,16 +18,19 @@ private:
       return seconds;
      }
 
-   bool Contains(datetime from,datetime to,long nowSeconds)
+   bool Contains(datetime from,datetime to,long nowSeconds,bool sessionStartsToday)
      {
       long start=SecondsOfDay(from);
       long finish=SecondsOfDay(to);
-      // A broker that returns equal boundaries may be describing an all-day
-      // session. This remains telemetry until verified on the target broker.
+      // Some terminals expose equal boundaries for a full-day session. Keep
+      // that interpretation observational until verified on the target broker.
       if(start==finish) return true;
       if(start<finish) return (nowSeconds>=start && nowSeconds<finish);
-      // Overnight interval, e.g. 22:00-02:00.
-      return (nowSeconds>=start || nowSeconds<finish);
+      // For an overnight window, the post-midnight part belongs to the
+      // previous weekday's session. Do not mark today's future-starting
+      // session as open just because the clock is before its end time.
+      if(sessionStartsToday) return (nowSeconds>=start);
+      return (nowSeconds<finish);
      }
 
 public:
@@ -70,7 +73,7 @@ public:
             anySchedule=true;
             if(day!=now.day_of_week && day!=previousDay)
                continue;
-            if(Contains(from,to,nowSeconds))
+            if(Contains(from,to,nowSeconds,day==now.day_of_week))
               {
                matched=true;
                matchedDay=day;
