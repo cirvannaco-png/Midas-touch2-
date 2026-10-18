@@ -121,9 +121,21 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, A
     events = []
     rejected = defaultdict(int)
     for event_key, row in deduped.items():
-        if row.get("schema_version") != "order-flow-evidence-v2":
+        schema_version = row.get("schema_version")
+        if schema_version not in {"order-flow-evidence-v2", "order-flow-evidence-v3"}:
             rejected["unsupported_schema_version"] += 1
             continue
+        if schema_version == "order-flow-evidence-v3":
+            v3_required = {
+                "signed_tick_pressure", "positive_tick_count", "negative_tick_count",
+                "price_progress", "prior_high", "prior_low", "bar_close", "atr",
+                "pressure_progress_divergence", "continuation_hypothesis", "reversal_hypothesis",
+                "auction_context_available", "value_area_poc", "value_area_vah", "value_area_val",
+                "value_area_source_quality", "value_area_source", "auction_location",
+            }
+            if any(name not in row for name in v3_required):
+                rejected["incomplete_v3_schema"] += 1
+                continue
         end_epoch = parse_epoch(row.get("bar_end_epoch"))
         pressure = parse_float(row.get("pressure_ratio"))
         quality = parse_epoch(row.get("data_quality"))
@@ -145,15 +157,128 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, A
         if quality != 1:
             rejected["unsupported_or_mislabeled_data_quality"] += 1
             continue
+        numeric_fields = (
+            "signed_tick_pressure", "positive_tick_count", "negative_tick_count",
+            "price_progress", "prior_high", "prior_low", "bar_close", "atr",
+            "value_area_poc", "value_area_vah", "value_area_val", "value_area_source_quality",
+            "value_area_source", "auction_location", "continuation_hypothesis", "reversal_hypothesis",
+        )
+        parsed_numeric = {name: parse_float(row.get(name)) for name in numeric_fields}
+        parsed_divergence = parse_bool(row.get("pressure_progress_divergence"))
+        auction_available = parse_bool(row.get("auction_context_available"))
+        if schema_version == "order-flow-evidence-v3" and (
+                parsed_divergence is None or auction_available is None or
+                any(parsed_numeric[name] is None for name in (
+                    "signed_tick_pressure", "positive_tick_count", "negative_tick_count",
+                    "price_progress", "prior_high", "prior_low", "bar_close", "atr",
+                    "value_area_source_quality", "value_area_source", "auction_location",
+                    "continuation_hypothesis", "reversal_hypothesis"))):
+            rejected["invalid_v3_event_fields"] += 1
+            continue
         events.append({
             "event_key": event_key,
+            "schema_version": schema_version,
             "symbol": row["symbol"],
             "timeframe": row["timeframe"],
             "bar_end_epoch": end_epoch,
             "pressure_ratio": pressure,
+            "pressure_progress_divergence": parsed_divergence,
+            "auction_context_available": auction_available,
+            **parsed_numeric,
             **flags,
         })
     return sorted(events, key=lambda e: (e["symbol"], e["timeframe"], e["bar_end_epoch"])), dict(rejected)
+
+
+def _annotate_order_flow_proxies(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add descriptive, no-look-ahead tags; these are not execution signals.
+
+    The cumulative pressure proxy resets at UTC-day boundaries and after a
+    missing-bar-sized gap. It accumulates up/down midpoint-change COUNTS, not
+    traded volume. It must never be described as exchange CVD.
+    """
+    grouped: dict[tuple[str, str, int], list[dict[str, Any]]] = defaultdict(list)
+    for event in events:
+        grouped[(event["symbol"], event["timeframe"], event["bar_end_epoch"] // 86400)].append(event)
+
+    annotated = []
+    for key in sorted(grouped):
+        series = sorted(grouped[key], key=lambda e: (e["bar_end_epoch"], e["event_key"]))
+        tf_seconds = TIMEFRAME_SECONDS.get(key[1])
+        cumulative_signed = 0.0
+        cumulative_directional = 0.0
+        first_close: float | None = None
+        previous_epoch: int | None = None
+        have_counts = False
+        for event in series:
+            epoch = event["bar_end_epoch"]
+            if (previous_epoch is not None and tf_seconds is not None and
+                    epoch - previous_epoch > tf_seconds):
+                cumulative_signed = 0.0
+                cumulative_directional = 0.0
+                first_close = None
+                have_counts = False
+
+            signed = event.get("signed_tick_pressure")
+            positive = event.get("positive_tick_count")
+            negative = event.get("negative_tick_count")
+            if signed is not None and positive is not None and negative is not None:
+                cumulative_signed += float(signed)
+                cumulative_directional += max(0.0, float(positive)) + max(0.0, float(negative))
+                have_counts = True
+            event["utc_day_cumulative_tick_pressure_proxy"] = cumulative_signed if have_counts else None
+            event["utc_day_cumulative_pressure_ratio_proxy"] = (
+                cumulative_signed / cumulative_directional
+                if have_counts and cumulative_directional > 0.0 else None
+            )
+
+            close = event.get("bar_close")
+            atr = event.get("atr")
+            if close is not None:
+                if first_close is None:
+                    first_close = float(close)
+                event["utc_day_price_change"] = float(close) - first_close
+            else:
+                event["utc_day_price_change"] = None
+
+            ratio = event["utc_day_cumulative_pressure_ratio_proxy"]
+            price_change = event["utc_day_price_change"]
+            event["utc_day_pressure_price_divergence"] = (
+                bool(abs(float(ratio)) >= 0.20 and
+                     abs(float(price_change)) >= max(1e-12, 0.25 * float(atr)) and
+                     ((float(ratio) > 0.0 and float(price_change) < 0.0) or
+                      (float(ratio) < 0.0 and float(price_change) > 0.0)))
+                if ratio is not None and price_change is not None and atr is not None else None
+            )
+
+            if event.get("pressure_progress_divergence") is None:
+                pressure = float(event["pressure_ratio"])
+                progress = event.get("price_progress")
+                event["pressure_progress_divergence"] = (
+                    bool((pressure >= 0.60 and float(progress) < 0.0) or
+                         (pressure <= -0.60 and float(progress) > 0.0))
+                    if progress is not None else None
+                )
+
+            if event.get("auction_context_available") is True:
+                location = event.get("auction_location")
+                event["auction_location_label"] = {
+                    -2.0: "BELOW_VAL", -1.0: "IN_VALUE_BELOW_POC", 0.0: "NEAR_POC",
+                    1.0: "IN_VALUE_ABOVE_POC", 2.0: "ABOVE_VAH",
+                }.get(location, "UNCLASSIFIED")
+            else:
+                event["auction_location_label"] = "UNAVAILABLE"
+
+            for field in ("continuation_hypothesis", "reversal_hypothesis"):
+                raw = event.get(field)
+                event[field + "_label"] = (
+                    "BULLISH" if raw is not None and float(raw) > 0 else
+                    "BEARISH" if raw is not None and float(raw) < 0 else
+                    "NONE" if raw is not None else "NOT_RECORDED"
+                )
+            previous_epoch = epoch
+            annotated.append(event)
+    return sorted(annotated, key=lambda e: (e["symbol"], e["timeframe"], e["bar_end_epoch"]))
 
 
 def build_outcome_index(signal_rows: list[dict[str, str]],
@@ -280,6 +405,13 @@ def join_events_to_outcomes(events: list[dict[str, Any]],
         row = dict(outcome)
         row.update({name: event[name] for name in FEATURES})
         row["pressure_ratio"] = event["pressure_ratio"]
+        for name in (
+            "pressure_progress_divergence", "utc_day_cumulative_tick_pressure_proxy",
+            "utc_day_cumulative_pressure_ratio_proxy", "utc_day_price_change",
+            "utc_day_pressure_price_divergence", "auction_location_label",
+            "continuation_hypothesis_label", "reversal_hypothesis_label",
+        ):
+            row[name] = event.get(name)
         row["event_key"] = event["event_key"]
         row["event_gap_seconds"] = gap
         joined.append(row)
@@ -367,7 +499,9 @@ def _groups(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     # Context stratification is descriptive, not a vote or an auto-promotion
     # rule. Missing labels are omitted rather than imputed.
     for dimension in ("direction", "symbol", "timeframe", "session", "regime",
-                      "volatility_regime", "selected_strategy"):
+                      "volatility_regime", "selected_strategy", "auction_location_label",
+                      "continuation_hypothesis_label", "reversal_hypothesis_label",
+                      "pressure_progress_divergence", "utc_day_pressure_price_divergence"):
         categories = sorted({str(r.get(dimension, "")).strip()
                              for r in rows if str(r.get(dimension, "")).strip()})
         for category in categories:
@@ -387,6 +521,7 @@ def analyze(evidence_rows: list[dict[str, str]],
     if min_sample < 1:
         raise ValueError("min_sample must be positive")
     events, event_rejections = load_order_flow_events(evidence_rows)
+    events = _annotate_order_flow_proxies(events)
     raw_event_keys = {row.get("event_key", "").strip() for row in evidence_rows
                       if row.get("event_key", "").strip()}
     outcome_index, outcome_rejections = build_outcome_index(signal_rows, outcome_rows)
