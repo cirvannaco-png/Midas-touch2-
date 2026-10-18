@@ -435,8 +435,13 @@ def _positions(path: Path, ctx: dict[str, Any]) -> tuple[list[dict[str, Any]], i
                 normalized: dict[str, Any] = {"id": pid, "entry": "in" if entry in {"in", "entry_in", "0"} else "out",
                                              "time": _time(row.get("time"), f"{path}:{n}.time")}
                 for k in ("volume", "profit", "commission", "swap", "fee", "risk_cash"):
+                    raw_value = row.get(k)
+                    if raw_value is None or not str(raw_value).strip():
+                        raise ExperimentError(
+                            f"{path}:{n} is missing explicit {k}; blank financial values cannot default to zero"
+                        )
                     try:
-                        val = float(row[k]) if row.get(k) not in (None, "") else 0.0
+                        val = float(raw_value)
                     except (ValueError, TypeError) as exc:
                         raise ExperimentError(f"{path}:{n} has invalid {k}") from exc
                     if not math.isfinite(val):
