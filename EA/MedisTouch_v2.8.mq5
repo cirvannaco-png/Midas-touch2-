@@ -802,12 +802,13 @@ void OnDeinit(const int reason){EventKillTimer();if(StringLen(InpConfigSyncEndpo
 void OnTimer()
   {
    datetime now=TimeCurrent();
-   // Terminal global variables can expire after prolonged inactivity. Keep a
-   // latched stop alive while the EA is running, and refresh it durably once
-   // per minute. A failed refresh must never clear the in-memory halt.
-   if(g_emergencyStop && now-g_lastEmergencyLatchRefresh>=60)
+   // Use local terminal time for the refresh cadence: TimeCurrent can stop
+   // advancing when the market is closed. A failed refresh must never clear
+   // the in-memory halt.
+   datetime localNow=TimeLocal();
+   if(g_emergencyStop && localNow-g_lastEmergencyLatchRefresh>=60)
      {
-      g_lastEmergencyLatchRefresh=now;
+      g_lastEmergencyLatchRefresh=localNow;
       ResetLastError();
       datetime latchWriteTime=GlobalVariableSet(EmergencyStopGlobalKey(),1.0);
       int latchWriteError=GetLastError();
@@ -984,11 +985,22 @@ void EmergencyStop()
    // Halt the current EA instance first. A persistence failure must never re-enable
    // entries in this process, and must be unmistakable to the operator.
    g_emergencyStop=true;
+   // Start/restart the timer even if optional config-sync or ledger polling is off.
+   ResetLastError();
+   bool refreshTimerStarted=EventSetTimer(MathMax(10,InpExecutionLedgerRetrySeconds));
+   int refreshTimerError=GetLastError();
+   if(!refreshTimerStarted)
+     {
+      g_execAudit.Log("EMERGENCY_STOP_REFRESH_TIMER_FAILED",
+                      StringFormat("periodic stop-latch refresh timer failed; err=%d; in-memory halt remains active",refreshTimerError));
+      Print("CRITICAL: MidasTouch stop is active, but periodic latch refresh could not start.");
+      Alert("CRITICAL: MIDAS EMERGENCY STOP REFRESH TIMER NOT RUNNING");
+     }
    ResetLastError();
    datetime stopWriteTime=GlobalVariableSet(EmergencyStopGlobalKey(),1.0);
    int stopWriteError=GetLastError();
    GlobalVariablesFlush();
-   g_lastEmergencyLatchRefresh=TimeCurrent();
+   g_lastEmergencyLatchRefresh=TimeLocal();
 
    bool stopLatchVerified=(stopWriteTime>0 &&
                            GlobalVariableCheck(EmergencyStopGlobalKey()) &&
