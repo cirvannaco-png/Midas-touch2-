@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EA_PATH = ROOT / "EA" / "MedisTouch_v2.8.mq5"
 PY_PATH = ROOT / "tools" / "order_flow_research.py"
+MODULE_PATH = ROOT / "EA" / "includes" / "Analysis" / "OrderFlowDiagnostics.mqh"
 
 EVIDENCE_REQUIRED = {
     "schema_version", "event_key", "symbol", "timeframe", "bar_end_epoch",
@@ -53,6 +54,7 @@ def main() -> int:
     try:
         ea = EA_PATH.read_text(encoding="utf-8")
         analyzer = PY_PATH.read_text(encoding="utf-8")
+        module = MODULE_PATH.read_text(encoding="utf-8")
         evidence_fields = header_fields(ea, "bool AppendOrderFlowEvidence")
         attribution_fields = header_fields(ea, "bool AppendOrderFlowSignalAttribution")
     except (OSError, ValueError) as exc:
@@ -88,6 +90,26 @@ def main() -> int:
     )
     for status in expected_statuses:
         require(status in ea, f"missing explicit diagnostic status: {status}", errors)
+
+    # These source-level guards protect the diagnostic calculation from NaN,
+    # infinity, malformed bar geometry, and mismatched array/count inputs.
+    # They do not replace a native MetaEditor compile or terminal runtime test.
+    for token, description in (
+        ("!MathIsValidNumber(priorHigh)", "finite prior-level guard"),
+        ("!MathIsValidNumber(barClose)", "finite completed-bar guard"),
+        ("barClose<barLow || barClose>barHigh", "completed-bar range guard"),
+        ("!MathIsValidNumber(atr)", "finite ATR guard"),
+        ("count>ArraySize(ticks)", "tick-count/array-bound guard"),
+        ("!MathIsValidNumber(bid)", "finite bid guard"),
+        ("!MathIsValidNumber(ask)", "finite ask guard"),
+        ("!MathIsValidNumber(pressureThreshold)", "finite pressure-threshold guard"),
+    ):
+        require(token in module, f"order-flow module missing {description}", errors)
+
+    require('input bool InpEnableOrderFlowDiagnostics=false;' in ea,
+            "order-flow diagnostics must remain disabled by default", errors)
+    require('if(!InpEnableOrderFlowDiagnostics || g_fvgCtx==NULL)' in ea,
+            "order-flow sampling must remain behind the explicit opt-in guard", errors)
 
     print(f"Order-flow CSV contract: {len(evidence_fields)} evidence columns, "
           f"{len(attribution_fields)} attribution columns")
