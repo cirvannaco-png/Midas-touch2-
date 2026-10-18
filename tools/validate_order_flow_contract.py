@@ -135,12 +135,16 @@ def main() -> int:
         ("count>ArraySize(ticks)", "tick-count/array-bound guard"),
         ("!MathIsValidNumber(bid)", "finite bid guard"),
         ("!MathIsValidNumber(ask)", "finite ask guard"),
+        ("double mid=bid*0.5+ask*0.5;", "overflow-safe midpoint arithmetic"),
         ("!MathIsValidNumber(pressureThreshold)", "finite pressure-threshold guard"),
     ):
         require(token in module, f"order-flow module missing {description}", errors)
 
     require("datetime evaluationTime=0" in module,
             "order-flow analysis must accept an explicit evaluation timestamp", errors)
+    require("extreme finite quotes retain a finite midpoint/progress proxy" in
+            (ROOT / "EA" / "tests" / "OrderFlowDiagnostics.mq5").read_text(encoding="utf-8"),
+            "native order-flow tests must cover extreme finite midpoint arithmetic", errors)
     require("tickTimeMsc>(long)evaluationTime*1000" in module,
             "order-flow analysis must reject future ticks beyond the evaluation boundary", errors)
     require("datetime referenceTime=(evaluationTime>0 ? evaluationTime : TimeCurrent())" in module,
