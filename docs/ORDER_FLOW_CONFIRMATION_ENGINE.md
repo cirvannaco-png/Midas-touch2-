@@ -2,7 +2,7 @@
 
 ## Status and safety boundary
 
-This document defines the implementation plan for integrating order-flow concepts into the existing MQL5 EA. The first implementation is **diagnostic-only**. The branch now contains `EA/includes/Analysis/OrderFlowDiagnostics.mqh` and an opt-in closed-bar hook in `EA/MedisTouch_v2.8.mq5`. The hook is disabled by default and does not change entries, exits, confidence, lot sizing, SL/TP, trailing stops, or execution. It has not yet been compiled in MetaEditor.
+This document defines the implementation plan for integrating order-flow concepts into the existing MQL5 EA. The first implementation is **diagnostic-only**. The branch now contains `EA/includes/Analysis/OrderFlowDiagnostics.mqh` and an opt-in closed-bar hook in `EA/MedisTouch_v2.8.mq5`. The hook is disabled by default and does not change entries, exits, confidence, lot sizing, SL/TP, trailing stops, or execution. Python research tests and MQL5 source-tree structural validation have passed on the draft branch; target MetaEditor compilation and Strategy Tester/demo validation remain outstanding.
 
 The canonical EA source is `EA/`; do not implement new behavior under legacy `mql5/` or the non-production `medis_touch/` reference tree.
 
@@ -23,10 +23,10 @@ The canonical EA source is `EA/`; do not implement new behavior under legacy `mq
 
 - [x] Add a self-contained module under `EA/includes/Analysis/` with a quality/status field (valid/proxy-only/unavailable) and stale-data flag.
 - [x] Add an opt-in, closed-bar diagnostic hook that logs pressure proxy, sweep/reclaim flags, absorption proxy and exhaustion proxy; default OFF.
-- [ ] Add persistent CSV fields and outcome linkage after confirming compatibility with current log consumers.
+- [x] Add versioned per-bar evidence CSV and a separate exact SignalID-to-event-key attribution CSV without changing legacy signal/outcome CSV schemas.
 - Feed it only timestamped data available at decision time. Use closed bars for bar-based features; no future bars, hindsight pivots, or post-fill information.
 - Integrate after data collection and before decision routing as a **diagnostic evidence object**. Keep the existing `CScoringEngine::CalculateConfidence()` arithmetic and all risk/execution controls unchanged in the first phase.
-- Log feature values, data quality, source/timeframe, decision ID, symbol, direction, and outcome linkage to appended/versioned fields. Do not silently change existing CSV column positions or parsers.
+- Log feature values and data quality to the versioned evidence CSV; preserve a separate exact SignalID-to-event-key attribution CSV for outcome linkage. Review both outputs and their schema compatibility before research. Do not silently change existing CSV column positions or parsers.
 - Add explicit inputs for enabling diagnostics and thresholds; defaults must preserve existing trading behavior.
 - Preserve the production trailing stop, emergency stop, account risk profiles, spread/session/news guards, broker reconciliation, and restart recovery.
 - Only after evidence review may a separate opt-in confirmation gate be introduced. A hard gate must fail closed when it is explicitly required but the required data is unavailable; diagnostic-only mode may report unavailable without blocking trades.
@@ -37,7 +37,7 @@ The canonical EA source is `EA/`; do not implement new behavior under legacy `mq
 - Sweep/reclaim is based on the last closed chart bar against a prior 20-bar range. It is a diagnostic event, not an order-flow-confirmed entry.
 - Absorption and exhaustion are rough heuristics and can produce false positives; they must be validated and may need redesign.
 - DOM, true footprint delta, stacked bid/ask imbalance, iceberg detection and spoofing detection are not implemented because a suitable Level-2/exchange feed has not been established.
-- The diagnostic hook currently prints to the terminal log; it does not change trade behavior or write persistent outcome-linked fields.
+- The diagnostic hook writes versioned per-bar evidence and a separate exact SignalID-to-event-key attribution file when signal logging is enabled. Direct attribution is preferred. The analyzer's optional time-based fallback must be explicitly reported and must never be used when an attribution file was supplied but a link is missing or invalid.
 
 ## Validation gates
 
