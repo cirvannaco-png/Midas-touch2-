@@ -178,6 +178,26 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(report["attribution_rejections"]["status_no_event_key"], 1)
         self.assertEqual(report["join_rejections"]["missing_direct_attribution"], 1)
 
+    def test_direct_attribution_rejects_future_feature_event(self) -> None:
+        s = signal(1_700_000_105)
+        o = outcome(1_700_000_105, 1_700_000_500, "1.0")
+        evidence = [event("future-direct", 1_700_000_106)]
+        report = analyze(evidence, [s], [o],
+                         attribution_rows=[attribution(s, "future-direct")],
+                         min_sample=1)
+        self.assertEqual(report["matched_outcomes"], 0)
+        self.assertEqual(report["join_rejections"]["direct_attribution_event_after_signal"], 1)
+
+    def test_direct_attribution_rejects_identity_mismatch(self) -> None:
+        s = signal(1_700_000_105)
+        o = outcome(1_700_000_105, 1_700_000_500, "1.0")
+        evidence = [event("linked", 1_700_000_100)]
+        attr = attribution(s, "linked")
+        attr["timeframe"] = "PERIOD_M5"
+        report = analyze(evidence, [s], [o], attribution_rows=[attr], min_sample=1)
+        self.assertEqual(report["matched_outcomes"], 0)
+        self.assertEqual(report["join_rejections"]["attribution_identity_mismatch"], 1)
+
     def test_loader_rejects_stale_and_non_proxy_events(self) -> None:
         good = event("good", 1_700_000_000)
         stale = dict(event("stale", 1_700_000_001), data_stale="true")
