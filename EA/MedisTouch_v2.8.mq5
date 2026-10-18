@@ -839,36 +839,38 @@ bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
       return false;
      }
 
+   bool headerOK=true;
    if(FileSize(handle)==0)
      {
-      FileWrite(handle,"schema_version","event_key","symbol","timeframe",
-                "bar_start_epoch","bar_end_epoch","prior_high","prior_low",
-                "bar_high","bar_low","bar_close","atr","tick_count","data_quality",
-                "pressure_ratio","signed_tick_pressure","positive_tick_count",
-                "negative_tick_count","price_progress","bullish_sweep_reclaim",
-                "bearish_sweep_reclaim","absorption_proxy","exhaustion_proxy",
-                "data_stale","first_tick_time_msc","last_tick_time_msc");
+      uint headerBytes=FileWrite(handle,"schema_version","event_key","symbol","timeframe",
+                                 "bar_start_epoch","bar_end_epoch","prior_high","prior_low",
+                                 "bar_high","bar_low","bar_close","atr","tick_count","data_quality",
+                                 "pressure_ratio","signed_tick_pressure","positive_tick_count",
+                                 "negative_tick_count","price_progress","bullish_sweep_reclaim",
+                                 "bearish_sweep_reclaim","absorption_proxy","exhaustion_proxy",
+                                 "data_stale","first_tick_time_msc","last_tick_time_msc");
+      headerOK=(headerBytes>0);
      }
 
    FileSeek(handle,0,SEEK_END);
    string eventKey=_Symbol+"|"+EnumToString(_Period)+"|"+IntegerToString((long)barStart);
-   FileWrite(handle,"order-flow-evidence-v1",eventKey,_Symbol,EnumToString(_Period),
-             IntegerToString((long)barStart),IntegerToString((long)barEnd),
-             DoubleToString(priorHigh,_Digits),DoubleToString(priorLow,_Digits),
-             DoubleToString(barHigh,_Digits),DoubleToString(barLow,_Digits),
-             DoubleToString(barClose,_Digits),DoubleToString(atr,_Digits),
-             IntegerToString(of.tick_count),IntegerToString((int)of.quality),
-             DoubleToString(of.pressure_ratio,6),DoubleToString(of.signed_tick_pressure,0),
-             IntegerToString(of.positive_tick_count),IntegerToString(of.negative_tick_count),
-             DoubleToString(of.price_progress,_Digits),
-             of.bullish_sweep_reclaim?"true":"false",
-             of.bearish_sweep_reclaim?"true":"false",
-             of.absorption_proxy?"true":"false",
-             of.exhaustion_proxy?"true":"false",
-             of.data_stale?"true":"false",
-             IntegerToString(of.first_tick_time_msc),IntegerToString(of.last_tick_time_msc));
+   uint rowBytes=FileWrite(handle,"order-flow-evidence-v1",eventKey,_Symbol,EnumToString(_Period),
+                           IntegerToString((long)barStart),IntegerToString((long)barEnd),
+                           DoubleToString(priorHigh,_Digits),DoubleToString(priorLow,_Digits),
+                           DoubleToString(barHigh,_Digits),DoubleToString(barLow,_Digits),
+                           DoubleToString(barClose,_Digits),DoubleToString(atr,_Digits),
+                           IntegerToString(of.tick_count),IntegerToString((int)of.quality),
+                           DoubleToString(of.pressure_ratio,6),DoubleToString(of.signed_tick_pressure,0),
+                           IntegerToString(of.positive_tick_count),IntegerToString(of.negative_tick_count),
+                           DoubleToString(of.price_progress,_Digits),
+                           of.bullish_sweep_reclaim?"true":"false",
+                           of.bearish_sweep_reclaim?"true":"false",
+                           of.absorption_proxy?"true":"false",
+                           of.exhaustion_proxy?"true":"false",
+                           of.data_stale?"true":"false",
+                           IntegerToString(of.first_tick_time_msc),IntegerToString(of.last_tick_time_msc));
    FileFlush(handle);
-   bool ok=(GetLastError()==0);
+   bool ok=(headerOK && rowBytes>0 && GetLastError()==0);
    FileClose(handle);
    return ok;
   }
