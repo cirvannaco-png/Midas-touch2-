@@ -129,6 +129,21 @@ int OnInit()
                      1.10100,1.09900,1.10200,0.00100,snapshot);
    AssertTrue(!ok,"OHLC close outside bar range is rejected");
 
+    // Extreme-but-finite prices must not overflow in midpoint construction.
+    // This catches regressions from bid*0.5+ask*0.5 back to (bid+ask)*0.5.
+    FillTicks(bullish,ticks);
+    for(int i=0;i<ArraySize(ticks);i++)
+      {
+       ticks[i].bid=1.0e308;
+       ticks[i].ask=1.0e308;
+      }
+    ok=engine.Analyze(ticks,ArraySize(ticks),9.9e307,9.0e307,
+                      1.0e308,9.1e307,9.5e307,1.0e306,snapshot);
+    AssertTrue(ok && MathIsValidNumber(snapshot.price_progress) &&
+               snapshot.price_progress==0.0,
+               "extreme finite quotes retain a finite midpoint/progress proxy");
+
+
    FillTicks(bullish,ticks);
    ok=engine.Analyze(ticks,ArraySize(ticks),1.10200,1.09800,
                      1.10100,1.09900,1.10050,0.00100,snapshot);
