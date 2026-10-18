@@ -470,6 +470,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "n": 0, "trade_count": 0, "wins": 0, "losses": 0, "scratches": 0,
             "win_rate": None, "expectancy_r": None, "profit_factor": None,
             "max_drawdown_r": None, "total_r": 0.0,
+            "longest_loss_streak": 0, "longest_win_streak": 0,
+            "observed_calendar_days": None, "trades_per_30_calendar_days": None,
         }
     wins = sum(v > 0 for v in values)
     losses = sum(v < 0 for v in values)
@@ -479,10 +481,35 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     equity = 0.0
     peak = 0.0
     max_drawdown = 0.0
+    current_loss_streak = 0
+    current_win_streak = 0
+    longest_loss_streak = 0
+    longest_win_streak = 0
     for value in values:
         equity += value
         peak = max(peak, equity)
         max_drawdown = max(max_drawdown, peak - equity)
+        if value < 0:
+            current_loss_streak += 1
+            current_win_streak = 0
+        elif value > 0:
+            current_win_streak += 1
+            current_loss_streak = 0
+        else:
+            # Scratches break both runs; do not silently count a flat as a win/loss.
+            current_loss_streak = 0
+            current_win_streak = 0
+        longest_loss_streak = max(longest_loss_streak, current_loss_streak)
+        longest_win_streak = max(longest_win_streak, current_win_streak)
+
+    epochs = [parse_epoch(row.get("decision_epoch")) for _, row, _ in valid_rows]
+    observed_days = None
+    trades_per_30_days = None
+    if epochs and all(epoch is not None for epoch in epochs):
+        span_seconds = max(epochs) - min(epochs)
+        if span_seconds > 0:
+            observed_days = span_seconds / 86400.0
+            trades_per_30_days = len(values) * 30.0 / observed_days
     return {
         "n": len(values),
         "trade_count": len(values),
@@ -494,6 +521,10 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "profit_factor": (gross_profit / gross_loss) if gross_loss > 0 else None,
         "max_drawdown_r": max_drawdown,
         "total_r": sum(values),
+        "longest_loss_streak": longest_loss_streak,
+        "longest_win_streak": longest_win_streak,
+        "observed_calendar_days": observed_days,
+        "trades_per_30_calendar_days": trades_per_30_days,
     }
 
 
