@@ -167,6 +167,13 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(joined, [])
         self.assertEqual(rejected["missing_direct_attribution"], 1)
 
+    def test_no_usable_event_attribution_is_rejected_explicitly(self) -> None:
+        s = signal(1_700_000_105)
+        rows = [attribution(s, "", status="NO_USABLE_EVENT")]
+        indexed, rejected = build_attribution_index(rows)
+        self.assertEqual(indexed, {})
+        self.assertEqual(rejected["status_no_usable_event"], 1)
+
     def test_analyzer_reports_direct_attribution_mode_and_status_rejections(self) -> None:
         s = signal(1_700_000_105)
         o = outcome(1_700_000_105, 1_700_000_500, "1.0")
