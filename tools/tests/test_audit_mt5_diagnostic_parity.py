@@ -189,7 +189,7 @@ def test_math_mode_log_blocks_real_market_data_claim(tmp_path):
     assert code == 1
     assert report["status"] == "blocked"
     assert report["market_data_log_check"]["status"] == "blocked"
-    assert any("mathematical test mode" in item for item in report["blockers"])
+    assert any("mathematical test mode" in item.lower() for item in report["blockers"])
 
 
 @pytest.mark.parametrize("field", ["Commission", "Swap", "Fee"])
@@ -220,7 +220,7 @@ def test_extra_changed_input_is_rejected(tmp_path):
         ),
         encoding="utf-8",
     )
-    with pytest.raises(AuditError, match="differ in additional inputs"):
+    with pytest.raises(AuditError, match="additional inputs changed"):
         audit_manifest(path)
 
 
