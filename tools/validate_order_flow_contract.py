@@ -115,6 +115,10 @@ def main() -> int:
                 "order-flow-attribution-v1", "order-flow-attribution-v2",
                 "order-flow-attribution-v3")),
             "analyzer must retain v1/v2 compatibility and parse v3 lineage/context", errors)
+    for metric in ("longest_loss_streak", "longest_win_streak",
+                   "observed_calendar_days", "trades_per_30_calendar_days"):
+        require(f'"{metric}"' in analyzer,
+                f"research report is missing risk/frequency metric: {metric}", errors)
 
     expected_statuses = (
         "BAR_HISTORY_UNAVAILABLE", "BAR_CONTEXT_UNAVAILABLE",
