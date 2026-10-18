@@ -26,7 +26,7 @@ DIAGNOSTIC_FIELDS = {
 }
 VOLATILE_DECISION_FIELDS = {
     "decisionid", "executionid", "correlationid", "runid", "traceid",
-    "createdat", "updatedat", "loggedat", "generatedat",
+    "createdat", "updatedat", "loggedat", "generatedat", "decisionfingerprint",
 }
 CONTEXT_KEYS = {
     "symbol", "timeframe", "period_start", "period_end",
