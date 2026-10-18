@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 
 from tools.order_flow_research import (
     analyze,
@@ -8,6 +10,7 @@ from tools.order_flow_research import (
     chronological_split,
     join_events_to_outcomes,
     load_order_flow_events,
+    read_csv,
     summarize,
 )
 
@@ -158,6 +161,21 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(report["event_rejections"], {})
         self.assertEqual(report["feature_breakdown"]["direction=BUY"]["all_sample"]["n"], 3)
         self.assertEqual(report["feature_breakdown"]["regime=Trend"]["all_sample"]["n"], 3)
+
+    def test_read_csv_supports_utf8_bom_and_comma_delimiter(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "signals.csv"
+            path.write_text("\\ufeffSignalID,RealizedR\\nsig-1,1.25\\n", encoding="utf-8")
+            rows = read_csv(path)
+        self.assertEqual(rows, [{"SignalID": "sig-1", "RealizedR": "1.25"}])
+
+    def test_read_csv_supports_semicolon_delimiter(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "outcomes.csv"
+            path.write_text("SignalID;RealizedR\\nsig-1;1.25\\nsig-2;-0.5\\n", encoding="utf-8")
+            rows = read_csv(path)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1]["RealizedR"], "-0.5")
 
     def test_empty_source_rows_fail_with_readable_error(self) -> None:
         with self.assertRaisesRegex(ValueError, "no data rows"):
