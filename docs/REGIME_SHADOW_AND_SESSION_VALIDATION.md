@@ -10,7 +10,7 @@ The detector is **not purely diagnostic at the whole-EA level**. CTradeDecision:
 
 ## Shadow telemetry
 
-The opt-in/default-enabled InpEnableRegimeShadowLogging input writes MidasTouch_RegimeShadow_<SYMBOL>_<TIMEFRAME>.csv under the MT5 terminal's file area. It is observational and is not consulted by setup eligibility, sizing, authorization, or order routing.
+The enabled-by-default, disableable InpEnableRegimeShadowLogging input writes MidasTouch_RegimeShadow_<SYMBOL>_<TIMEFRAME>.csv under the MT5 terminal's file area. It is observational and is not consulted by setup eligibility, sizing, authorization, or order routing.
 
 The append-only log records event/signal IDs, direction, regime, volatility regime, market phase, trend context, selected strategy and score, challenger scores/classes, selection/rejection status, the liquidity-session policy result, broker-session schedule result, spread points, point size, ATR, spread-to-ATR, and entry/invalidation/stop/target levels when a setup exists. Additional statuses emitted by the execution path distinguish setup generation, final risk validation, and execution policy authorization/rejection.
 
@@ -31,7 +31,7 @@ Limitations must remain explicit:
 4. **Rollover:** configure a server-time observation window from the actual broker and log it separately. Do not assume all brokers roll over at the same time.
 5. **Volatility:** preserve VOL_REGIME_LOW/NORMAL/HIGH/UNDEFINED; do not silently convert UNDEFINED to NORMAL. Validate regime × volatility outcomes separately.
 
-No new market-availability, spread, or rollover gate is enabled by this instrumentation. Production gate policy must be a separately reviewed change backed by broker-specific specifications and test data.
+A separate CMarketConditionsPolicy module can enforce market availability, an explicit liquidity-session allowlist, absolute spread, spread-to-ATR, a configured rollover window, and volatility state. Its master input InpEnableBrokerAwareEntryGate defaults to false. Missing broker schedule, unconfigured required thresholds, or invalid rollover configuration fail closed if the master gate is explicitly enabled. No new gate changes eligibility under the default preset. Do not enable this option in live trading until a matched tester and broker-demo review confirms its behavior for the exact symbol specification.
 
 ## LONA reconciliation findings
 
