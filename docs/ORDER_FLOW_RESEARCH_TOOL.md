@@ -2,7 +2,7 @@
 
 ## Purpose and limitations
 
-The feature branch adds an optional, diagnostic-only order-flow proxy to the EA plus a standard-library Python utility for joining proxy snapshots to the existing signal/outcome exports. It is research instrumentation, not a strategy promotion system. The MQL5 changes are not yet compiled in MetaEditor, and these metrics do not establish profitability.
+The feature branch adds an optional, diagnostic-only order-flow proxy to the EA plus a standard-library Python utility for joining proxy snapshots to the existing signal/outcome exports. It is research instrumentation, not a strategy promotion system. On exact head `e3f089d4e9b4c350a922fed5b024a5765b3e64db`, GitHub Actions run [39129140510](https://github.com/cirvannaco-png/Midas-touch2-/actions/runs/39129140510) passed MetaEditor compilation with 0 errors and 0 warnings; Midas Touch CI run [39129140499](https://github.com/cirvannaco-png/Midas-touch2-/actions/runs/39129140499) and order-flow research run [39129140488](https://github.com/cirvannaco-png/Midas-touch2-/actions/runs/39129140488) also passed. These results do not establish diagnostic runtime correctness or trading profitability.
 
 The diagnostic timeframe is the EA's configured InpFVGTF, which also appears in the current signal log's EntryTF field. The logger tracks that timeframe's bar boundary independently from the chart timeframe, uses its ATR context, and writes a separate versioned evidence file for the symbol/timeframe. This avoids silently joining snapshots from a different timeframe.
 
@@ -47,4 +47,4 @@ Run:
     python -m unittest discover -s tests -p test_order_flow_research.py -v
     python tools/validate_mql5.py EA
 
-The GitHub Actions workflow under .github/workflows/order-flow-research.yml runs these Python tests and the structural include-tree validation. Those checks do not compile MQL5. The exact EA and included module must still compile in MetaEditor, and the feature must pass Strategy Tester, matched-cost, out-of-sample, and demo-forward gates before any execution integration.
+The GitHub Actions workflow under .github/workflows/order-flow-research.yml runs these Python tests and structural include-tree validation. The exact head has also passed the separate MetaEditor compile workflow; however, no diagnostic-specific Strategy Tester ON/OFF equivalence, matched-cost performance experiment, locked-OOS evaluation, or Exness demo-forward test has been evidenced. Those gates remain mandatory before any execution integration.
