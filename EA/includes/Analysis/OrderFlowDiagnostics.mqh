@@ -17,8 +17,8 @@ struct OrderFlowSnapshot
    ENUM_OF_DATA_QUALITY quality;
    int tick_count;
    double signed_tick_pressure;
-   double positive_tick_volume;
-   double negative_tick_volume;
+   double positive_tick_count; // count of upward-mid ticks, not traded volume
+   double negative_tick_count; // count of downward-mid ticks, not traded volume
    double pressure_ratio;       // [-1, +1], not exchange delta
    double price_progress;
    bool bullish_sweep_reclaim;
@@ -72,8 +72,8 @@ public:
       out.quality=OF_QUALITY_UNAVAILABLE;
       out.tick_count=0;
       out.signed_tick_pressure=0.0;
-      out.positive_tick_volume=0.0;
-      out.negative_tick_volume=0.0;
+      out.positive_tick_count=0.0;
+      out.negative_tick_count=0.0;
       out.pressure_ratio=0.0;
       out.price_progress=0.0;
       out.bullish_sweep_reclaim=false;
@@ -126,8 +126,8 @@ public:
          return false;
 
       out.tick_count=valid;
-      out.positive_tick_volume=positive;
-      out.negative_tick_volume=negative;
+      out.positive_tick_count=positive;
+      out.negative_tick_count=negative;
       double directional=positive+negative;
       out.pressure_ratio=(directional>0.0 ? (positive-negative)/directional : 0.0);
       out.signed_tick_pressure=positive-negative;
