@@ -115,7 +115,7 @@ Do not optimize solely for win rate or profit. Reject candidates whose apparent 
 
 ## Current implementation boundary
 
-The branch contains a first diagnostic-only order-flow proxy. It has not yet been compiled in MetaEditor or validated by real-tick backtests in this environment. Its tick-pressure, absorption, and exhaustion labels are heuristics, not validated edge. Keep them off by default until code review, compilation, deterministic tests, matched-cost backtests, out-of-sample testing, and demo-forward validation are complete.
+The branch contains a diagnostic-only order-flow proxy, a versioned per-bar CSV evidence export, and the tools/order_flow_research.py analyzer. This code has not yet been compiled in MetaEditor or validated by real-tick backtests in this environment. Tick-pressure, absorption, and exhaustion labels are heuristics, not validated edge. Evidence is joined to signals by symbol/timeframe and nearest prior bar time rather than direct decision ID, so match gaps and rejected rows must be reviewed. Diagnostics remain disabled by default; enabling them adds synchronous I/O latency and may affect live fill timing. Keep them off in live trading until MetaEditor compilation, deterministic tests, decision-path comparisons, matched-cost backtests, out-of-sample testing, and demo-forward validation are complete.
 
 ## Next implementation sequence
 
