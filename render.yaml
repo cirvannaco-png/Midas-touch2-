@@ -1,50 +1,40 @@
-# Medis Touch / Midas Touch 2 Render Blueprint
+# Isolated staging-only Render Blueprint.
+# This file intentionally replaces the production Blueprint only on the
+# ops/staging-private-db-20261018 branch. Do not merge this file into main:
+# the existing midas-touch2 service remains attached to main.
 #
-# This Blueprint manages the existing midas-touch2 web service.
-# The PostgreSQL instance is intentionally referenced but NOT declared here:
-# it already exists in Render as midas-touch2-production-db and must not be
-# recreated or destroyed by Blueprint changes.
-#
-# Runtime is Docker so the production image is deterministic and independent
-# of Render's native Python runtime.
-
+# Database access is PRIVATE: fromDatabase resolves the internal URL for
+# same-workspace, same-region services. Keep the database IP allowlist empty.
 services:
   - type: web
-    name: midas-touch2
+    name: midas-touch2-staging
     runtime: docker
     dockerfilePath: ./telegram-bridge/Dockerfile
     dockerContext: .
     plan: free
     region: frankfurt
-    branch: main
-    autoDeployTrigger: commit
+    branch: ops/staging-private-db-20261018
+    autoDeployTrigger: off
     healthCheckPath: /health/db
 
     envVars:
-      # IMPORTANT: the previous service had a literal placeholder here:
-      # __LINK_MIDAS_TOUCH2_PRODUCTION_DB_IN_RENDER__
-      # That is not a SQLAlchemy URL and caused the Alembic crash.
       - key: DATABASE_URL
         fromDatabase:
-          name: midas-touch2-production-db
+          name: midas-touch2-staging-db
           property: connectionString
 
-      # Secrets remain dashboard-managed and are intentionally not stored in Git.
+      # REQUIRED staging-only secrets. Do not reuse the production Telegram
+      # bot token: this app registers a webhook and would overwrite the
+      # production bot's webhook if the same token were used.
       - key: BOT_TOKEN
         sync: false
       - key: CHAT_ID
         sync: false
       - key: ADMIN_CHAT_ID
         sync: false
-      - key: ADMIN_USER_ID
-        sync: false
-      - key: GROUP_CHAT_ID
-        sync: false
       - key: SECRET_KEY
         sync: false
       - key: WEBHOOK_SECRET_TOKEN
-        sync: false
-      - key: SUBSCRIPTION_PROVIDER_TOKEN
         sync: false
 
       - key: LOG_LEVEL
@@ -65,19 +55,3 @@ services:
         value: "3"
       - key: TELEGRAM_RETRY_MAX_WAIT_SECONDS
         value: "4"
-      - key: PENDING_STALE_SECONDS
-        value: "120"
-      - key: SUBSCRIPTION_CURRENCY
-        value: "XTR"
-      - key: SUBSCRIPTION_PRICE_AMOUNT
-        value: "500"
-      - key: SUBSCRIPTION_PERIOD_DAYS
-        value: "30"
-      - key: SUBSCRIPTION_GRACE_PERIOD_DAYS
-        value: "3"
-      - key: SUBSCRIPTION_WARNING_HOURS_BEFORE_EXPIRY
-        value: "24"
-      - key: COPY_TRADING_CONFIRM_TTL_SECONDS
-        value: "120"
-      - key: COPY_FEED_MAX_SIGNALS
-        value: "20"
