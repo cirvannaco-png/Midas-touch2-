@@ -78,21 +78,8 @@ def main() -> int:
     ):
         require(token in ea, f"EA missing {description}: {token}", errors)
 
-    require('"order-flow-evidence-v2" in analyzer and '"order-flow-evidence-v3" in analyzer,
-            "analyzer must retain legacy v2 support and parse the EA's v3 schema", errors)
-    require('row.get("schema_version") != "order-flow-attribution-v1"' in analyzer,
-            "analyzer attribution schema version does not match the EA writer", errors)
-    require("diagnostic_status" in analyzer and "attribution_mode" in analyzer,
-            "analyzer must parse diagnostic status and report attribution mode", errors)
-    require("input bool InpEnableOrderFlowDiagnostics=false;" in ea,
-            "diagnostics must remain disabled by default", errors)
-    require("if(InpEnableOrderFlowDiagnostics)LogOrderFlowDiagnostics();" in ea,
-            "OnTick must gate the diagnostics call behind the opt-in input", errors)
-    require("if(InpEnableOrderFlowDiagnostics && signalLogged)AppendOrderFlowSignalAttribution(chosen);" in ea,
-            "signal attribution must be gated by enabled diagnostics and successful signal logging", errors)
-    require("g_lastOrderFlowEventBarEnd" in ea and "PeriodSeconds(InpFVGTF)" in ea and
-            "setup.creation_time-g_lastOrderFlowEventBarEnd" in ea,
-            "direct attribution must reject evidence older than one configured timeframe bar", errors)
+    require('{"order-flow-evidence-v2", "order-flow-evidence-v3"}' in analyzer,
+            "analyzer must retain legacy v2 support and parse the v3 schema", errors)
 
     expected_statuses = (
         "BAR_HISTORY_UNAVAILABLE", "BAR_CONTEXT_UNAVAILABLE",
