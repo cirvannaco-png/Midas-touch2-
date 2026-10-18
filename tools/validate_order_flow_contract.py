@@ -49,6 +49,19 @@ def require(condition: bool, message: str, errors: list[str]) -> None:
         errors.append(message)
 
 
+def section_between(source: str, start_marker: str, end_marker: str) -> str:
+    """Extract a source section between unique function markers."""
+    start = source.find(start_marker)
+    if start < 0:
+        raise ValueError(f"missing source marker: {start_marker}")
+    end = source.find(end_marker, start + len(start_marker))
+    if end < 0:
+        raise ValueError(f"missing source marker: {end_marker}")
+    if end <= start:
+        raise ValueError(f"invalid source section: {start_marker} -> {end_marker}")
+    return source[start:end]
+
+
 def main() -> int:
     errors: list[str] = []
     try:
@@ -170,6 +183,37 @@ def main() -> int:
                         ("OrderFlow", "orderFlow", "g_lastOrderFlow")),
                 "order-flow evidence must not influence risk, exits, or execution", errors)
 
+    # Defense in depth: every member access on the local snapshot must stay
+    # within the evidence writer and diagnostic log. Its proxy fields are not
+    # eligible inputs to any scorer, router, sizing component or order manager.
+    try:
+        evidence_writer = section_between(
+            ea, "bool AppendOrderFlowEvidence(", "void AttachOrderFlowAuctionContext("
+        )
+        diagnostic_runner = section_between(
+            ea, "void LogOrderFlowDiagnostics()", "bool AppendOrderFlowSignalAttribution("
+        )
+        remaining = ea
+        for section in (evidence_writer, diagnostic_runner):
+            require(section in remaining,
+                    "could not isolate order-flow evidence/logging sections", errors)
+            remaining = remaining.replace(section, "", 1)
+        require(
+            re.search(r"\\bof\\s*\\.", remaining) is None,
+            "OrderFlowSnapshot fields may only be read in evidence/logging sections",
+            errors,
+        )
+        for token in (
+            "g_scoring", "g_risk.", "g_riskGuard.", "g_router.Decide",
+            "g_decision.Generate", "g_orders.Submit", "g_portfolio.",
+            "CalculateLotSize", "chosen.confidence", "chosen.stop_loss",
+            "chosen.final_tp",
+        ):
+            require(token not in diagnostic_runner,
+                    f"diagnostic runner must not enter trade policy: {token}", errors)
+    except ValueError as exc:
+        errors.append(f"diagnostic isolation contract: {exc}")
+
     print(f"Order-flow CSV contract: {len(evidence_fields)} evidence columns, "
           f"{len(attribution_fields)} attribution columns")
     if errors:
@@ -177,7 +221,7 @@ def main() -> int:
             print(f"error: {error}", file=sys.stderr)
         print(f"{len(errors)} contract error(s).", file=sys.stderr)
         return 1
-    print("CSV schema, version, status and opt-in gate checks passed.")
+    print("CSV schema, version, status, opt-in gate and diagnostic-isolation checks passed.")
     print("Note: this is static validation, not a MetaEditor compilation.")
     return 0
 
