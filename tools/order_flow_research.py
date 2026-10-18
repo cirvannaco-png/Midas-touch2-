@@ -337,16 +337,30 @@ def analyze(evidence_rows: list[dict[str, str]],
     split = chronological_split(joined, holdout_fraction)
     descriptions = {}
     for name, subset in _groups(joined).items():
+        unique_events = {r["event_key"] for r in subset}
         descriptions[name] = {
             "all_sample": summarize(subset),
             "train_sample": summarize([r for r in subset if r in split["train"]]),
             "holdout_sample": summarize([r for r in subset if r in split["test"]]),
-            "sufficient_sample_for_descriptive_review": len(subset) >= min_sample,
+            "unique_evidence_events": len(unique_events),
+            "sufficient_unique_event_sample_for_descriptive_review": len(unique_events) >= min_sample,
+            "note": "Trade rows sharing an event are correlated and are not independent evidence.",
         }
+    unique_joined_events = {r["event_key"] for r in joined}
+    event_counts: dict[str, int] = defaultdict(int)
+    for row in joined:
+        event_counts[row["event_key"]] += 1
     return {
         "schema_version": "midas-touch2-order-flow-research-v1",
         "purpose": "descriptive diagnostics; not an execution policy or profitability claim",
         "matched_outcomes": len(joined),
+        "matched_unique_event_count": len(unique_joined_events),
+        "signals_per_event": {
+            "unique_event_count": len(event_counts),
+            "max_signals_per_event": max(event_counts.values()) if event_counts else 0,
+            "events_shared_by_multiple_signals": sum(n > 1 for n in event_counts.values()),
+            "note": "Trade count is not the independent sample size when multiple signals share a bar feature snapshot.",
+        },
         "source_event_count": len(events),
         "source_signal_count": len(signal_rows),
         "event_rejections": event_rejections,
