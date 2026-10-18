@@ -24,12 +24,13 @@ Copy the evidence CSV and the EA files MedisTouch_Signals_<symbol>.csv and Medis
 
 The analyzer:
 - requires proxy-only quality and excludes stale/invalid rows;
-- joins by exact symbol/timeframe to the most recent bar boundary no later than the signal creation epoch, with a configurable maximum gap;
+- joins by exact symbol/timeframe to the most recent bar boundary no later than the signal creation epoch, with a configurable maximum gap. By default, the match window is the duration of one recognized signal timeframe bar; unknown periods are rejected unless a positive explicit override is supplied;
 - excludes unfilled signals, missing/non-finite R values, missing outcome epochs, and outcomes resolving before their signal;
 - fails closed on conflicting duplicate IDs instead of silently picking one;
 - reports expectancy in R, profit factor, maximum drawdown in R, total R and win/loss/scratch counts;
 - uses a chronological holdout and purges training observations whose outcomes resolve at or after the holdout start;
-- reports join rejections and never automatically promotes a feature or alters a live policy.
+- reports join rejections, breaks down outcomes by direction, symbol, timeframe, session, regime, volatility regime and selected strategy where those signal columns are available, and never automatically promotes a feature or alters a live policy.
+- reports both matched trade count and unique evidence-event count, including events shared by multiple signals; repeated signals referencing one proxy snapshot must not be treated as independent evidence.
 
 The join is time-based rather than a direct decision-fingerprint join. Review match rates and rejected rows before interpreting results. If the nearest-bar mapping is ambiguous on real samples, add a decision-ID-level handoff rather than relaxing the guardrails.
 
