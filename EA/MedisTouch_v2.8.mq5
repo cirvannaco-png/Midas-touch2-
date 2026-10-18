@@ -872,7 +872,7 @@ bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
    FileFlush(handle);
    bool ok=(headerOK && rowBytes>0 && GetLastError()==0);
    FileClose(handle);
-   g_lastOrderFlowEventKey=(ok ? eventKey : "");
+   g_lastOrderFlowEventKey=(ok && diagnosticStatus=="OK_PROXY" ? eventKey : "");
    return ok;
   }
 
@@ -926,6 +926,7 @@ void LogOrderFlowDiagnostics()
       return;
      }
 
+   MqlTick ticks[];
    long fromMsc=(long)barStart*1000;
    long toMsc=(long)barEnd*1000-1;
    ResetLastError();
@@ -987,7 +988,7 @@ bool AppendOrderFlowSignalAttribution(TradeSetup &setup)
    FileSeek(handle,0,SEEK_END);
    string direction=(setup.type==ORDER_TYPE_BUY ? "BUY" : "SELL");
    string signalId=StringFormat("%s_%s_%d",_Symbol,direction,(long)setup.creation_time);
-   string status=(StringLen(g_lastOrderFlowEventKey)>0 ? "MATCHED" : "NO_EVENT_KEY");
+   string status=(StringLen(g_lastOrderFlowEventKey)>0 ? "MATCHED" : "NO_USABLE_EVENT");
    uint rowBytes=FileWrite(handle,"order-flow-attribution-v1",signalId,g_lastOrderFlowEventKey,
                            _Symbol,EnumToString(InpFVGTF),direction,
                            IntegerToString((long)setup.creation_time),status);
