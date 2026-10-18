@@ -22,6 +22,7 @@ from typing import Any
 
 DIAGNOSTIC_FIELDS = {
     "contradictionpenalty", "envscore", "execscore", "envexecconfidence",
+    "confidencedecayed", "decaybars",
 }
 VOLATILE_DECISION_FIELDS = {
     "decisionid", "executionid", "correlationid", "runid", "traceid",
@@ -354,7 +355,19 @@ def _validate_decisions(header: list[str], rows: list[dict[str, str]], role: str
         raise AuditError(f"{role} decision CSV missing required columns: {', '.join(missing)}")
     signal_key, decision_key = _field(header, "signalid"), _field(header, "decisionid")
     by_signal = _row_index(rows, signal_key, f"{role} decisions")
-    _row_index(rows, decision_key, f"{role} decisions")
+    # The EA uses DecisionID=0 for ignored/rejected decisions before the router
+    # allocates a durable decision identifier. Zero is intentionally repeatable;
+    # positive IDs must remain unique within a run.
+    seen: set[str] = set()
+    for line_no, row in enumerate(rows, start=2):
+        value = (row.get(decision_key) or "").strip()
+        if not value:
+            raise AuditError(f"{role} decision row {line_no} has an empty DecisionID")
+        if value in {"0", "-1"}:
+            continue
+        if value in seen:
+            raise AuditError(f"{role} decisions contain duplicate non-zero DecisionID: {value}")
+        seen.add(value)
     return by_signal
 
 
