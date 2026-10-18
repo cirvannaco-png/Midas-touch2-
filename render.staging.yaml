@@ -8,7 +8,7 @@ services:
     dockerContext: .
     plan: free
     region: frankfurt
-    branch: ops/staging-private-db-20261018
+    branch: main
     autoDeployTrigger: "off"
     healthCheckPath: /health/db
 
@@ -48,5 +48,5 @@ services:
         value: "8"
       - key: TELEGRAM_MAX_RETRIES
         value: "3"
-      - key: TELEGRAM_RETRY_MAX_WAIT_SECONDS
+      - key: RETRY_MAX_WAIT_SECONDS
         value: "4"
