@@ -225,6 +225,39 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(indexed, {})
         self.assertEqual(rejected["invalid_smc_context"], 1)
 
+    def test_v3_attribution_rejects_smc_strength_and_decay_outside_unit_interval(self) -> None:
+        s = signal(1_700_000_105)
+        invalid_values = (
+            ("smc_bos_strength", "-0.01"),
+            ("smc_bos_strength", "1.01"),
+            ("smc_time_decay", "-0.01"),
+            ("smc_time_decay", "1.01"),
+            ("smc_bos_strength", "nan"),
+            ("smc_time_decay", "inf"),
+        )
+        for field, value in invalid_values:
+            with self.subTest(field=field, value=value):
+                row = attribution_v3(s, "exact-v3")
+                row[field] = value
+                indexed, rejected = build_attribution_index([row])
+                self.assertEqual(indexed, {})
+                self.assertEqual(rejected["invalid_smc_context"], 1)
+
+    def test_v3_attribution_accepts_smc_domain_boundaries(self) -> None:
+        s = signal(1_700_000_105)
+        for field, value in (
+            ("smc_bos_strength", "0"),
+            ("smc_bos_strength", "1"),
+            ("smc_time_decay", "0"),
+            ("smc_time_decay", "1"),
+        ):
+            with self.subTest(field=field, value=value):
+                row = attribution_v3(s, "exact-v3")
+                row[field] = value
+                indexed, rejected = build_attribution_index([row])
+                self.assertIn(s["SignalID"], indexed)
+                self.assertEqual(rejected, {})
+
     def test_v2_attribution_without_decision_lineage_is_rejected(self) -> None:
         s = signal(1_700_000_105)
         row = attribution_v2(s, "exact-v2")
