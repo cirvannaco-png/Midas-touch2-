@@ -908,7 +908,7 @@ void LogOrderFlowDiagnostics()
    int copied=CopyTicksRange(_Symbol,ticks,COPY_TICKS_INFO,fromMsc,toMsc);
    if(copied<=0)
      {
-      Print("OF_DIAG unavailable: no tick history for closed bar; no trading effect");
+      Print("OF_DIAG unavailable: no tick history for closed bar; no evidence row emitted");
       return;
      }
 
