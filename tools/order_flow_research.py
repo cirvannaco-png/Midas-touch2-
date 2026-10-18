@@ -13,6 +13,7 @@ import math
 import sys
 from collections import defaultdict
 from pathlib import Path
+from statistics import median
 from typing import Any, Iterable
 
 EVIDENCE_REQUIRED = {
@@ -138,7 +139,7 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, A
             continue
         if schema_version == "order-flow-evidence-v3":
             v3_required = {
-                "signed_tick_pressure", "positive_tick_count", "negative_tick_count",
+                "tick_count", "signed_tick_pressure", "positive_tick_count", "negative_tick_count",
                 "price_progress", "prior_high", "prior_low", "bar_close", "atr",
                 "pressure_progress_divergence", "continuation_hypothesis", "reversal_hypothesis",
                 "auction_context_available", "value_area_poc", "value_area_vah", "value_area_val",
@@ -169,7 +170,7 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, A
             rejected["unsupported_or_mislabeled_data_quality"] += 1
             continue
         numeric_fields = (
-            "signed_tick_pressure", "positive_tick_count", "negative_tick_count",
+            "tick_count", "signed_tick_pressure", "positive_tick_count", "negative_tick_count",
             "price_progress", "prior_high", "prior_low", "bar_close", "atr",
             "value_area_poc", "value_area_vah", "value_area_val", "value_area_source_quality",
             "value_area_source", "auction_location", "continuation_hypothesis", "reversal_hypothesis",
@@ -185,6 +186,12 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, A
                     "value_area_source_quality", "value_area_source", "auction_location",
                     "continuation_hypothesis", "reversal_hypothesis"))):
             rejected["invalid_v3_event_fields"] += 1
+            continue
+        if schema_version == "order-flow-evidence-v3" and (
+                parsed_numeric["tick_count"] is None or
+                parsed_numeric["tick_count"] < 1 or
+                not float(parsed_numeric["tick_count"]).is_integer()):
+            rejected["invalid_v3_tick_count"] += 1
             continue
         events.append({
             "event_key": event_key,
@@ -204,9 +211,11 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, A
 def _annotate_order_flow_proxies(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Add descriptive, no-look-ahead tags; these are not execution signals.
 
-    The cumulative pressure proxy resets at UTC-day boundaries and after a
-    missing-bar-sized gap. It accumulates up/down midpoint-change COUNTS, not
-    traded volume. It must never be described as exchange CVD.
+    Cumulative pressure resets at UTC-day boundaries and missing-bar-sized gaps.
+    It accumulates midpoint-change counts, not traded volume. Quote-update-rate
+    is tick count per nominal bar second; its activity regime compares the
+    current closed bar only with prior bars in the same symbol/timeframe/day
+    run. Neither is exchange CVD or aggressor volume.
     """
     grouped: dict[tuple[str, str, int], list[dict[str, Any]]] = defaultdict(list)
     for event in events:
@@ -221,6 +230,7 @@ def _annotate_order_flow_proxies(events: list[dict[str, Any]]) -> list[dict[str,
         first_close: float | None = None
         previous_epoch: int | None = None
         have_counts = False
+        prior_activity_rates: list[float] = []
         for event in series:
             epoch = event["bar_end_epoch"]
             if (previous_epoch is not None and tf_seconds is not None and
@@ -229,6 +239,38 @@ def _annotate_order_flow_proxies(events: list[dict[str, Any]]) -> list[dict[str,
                 cumulative_directional = 0.0
                 first_close = None
                 have_counts = False
+                prior_activity_rates = []
+
+            # Quote-update cadence / market-activity proxy from the existing
+            # closed-bar tick count. Normalize by nominal timeframe duration so
+            # weekend/session gaps do not inflate the denominator.
+            tick_count = parse_float(event.get("tick_count"))
+            activity_rate = (
+                tick_count / tf_seconds
+                if tick_count is not None and tick_count > 0 and tf_seconds is not None
+                else None
+            )
+            event["quote_update_rate_hz_proxy"] = activity_rate
+            baseline = median(prior_activity_rates[-20:]) if len(prior_activity_rates) >= 5 else None
+            event["quote_update_rate_ratio_to_prior_median"] = (
+                activity_rate / baseline
+                if activity_rate is not None and baseline is not None and baseline > 0.0
+                else None
+            )
+            ratio_to_baseline = event["quote_update_rate_ratio_to_prior_median"]
+            if activity_rate is None:
+                event["quote_activity_regime"] = "UNAVAILABLE"
+            elif ratio_to_baseline is None:
+                event["quote_activity_regime"] = "INSUFFICIENT_HISTORY"
+            elif ratio_to_baseline >= 1.50:
+                event["quote_activity_regime"] = "EXPANSION"
+            elif ratio_to_baseline <= 0.67:
+                event["quote_activity_regime"] = "CONTRACTION"
+            else:
+                event["quote_activity_regime"] = "NORMAL"
+            # Add current activity only after comparison; the baseline is prior-only.
+            if activity_rate is not None:
+                prior_activity_rates.append(activity_rate)
 
             signed = event.get("signed_tick_pressure")
             positive = event.get("positive_tick_count")
@@ -437,6 +479,8 @@ def join_events_to_outcomes(events: list[dict[str, Any]],
             "utc_day_cumulative_pressure_ratio_proxy", "utc_day_price_change",
             "utc_day_pressure_price_divergence", "auction_location_label",
             "continuation_hypothesis_label", "reversal_hypothesis_label",
+            "quote_update_rate_hz_proxy", "quote_update_rate_ratio_to_prior_median",
+            "quote_activity_regime",
         ):
             row[name] = event.get(name)
         row["event_key"] = event["event_key"]
@@ -579,6 +623,7 @@ def _groups(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
                       "volatility_regime", "selected_strategy", "auction_location_label",
                       "continuation_hypothesis_label", "reversal_hypothesis_label",
                       "pressure_progress_divergence", "utc_day_pressure_price_divergence",
+                      "quote_activity_regime",
                       "smc_inducement_valid", "smc_liquidity_swept", "smc_bos_confirmed",
                       "smc_sweep_grade"):
         categories = sorted({category_text(r.get(dimension))
