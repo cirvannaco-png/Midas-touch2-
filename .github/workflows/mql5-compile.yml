@@ -131,6 +131,34 @@ jobs:
             Write-Warning "Compilation succeeded with $warnings warning(s); review the uploaded compiler log."
           }
 
+      - name: Compile MedisTouch indicator with MetaEditor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $indicatorSource = Join-Path $env:GITHUB_WORKSPACE 'EA/MedisTouch_Indicator_v2.8.mq5'
+          $indicatorDir = Join-Path $env:MT5_MQL5_ROOT 'Indicators/MidasTouch'
+          New-Item -ItemType Directory -Path $indicatorDir -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'EA/includes') -Destination $indicatorDir -Recurse -Force
+          $stagedIndicator = Join-Path $indicatorDir 'MedisTouch_Indicator_v2.8.mq5'
+          Copy-Item -Path $indicatorSource -Destination $stagedIndicator -Force
+          $arguments = "/compile:`"$stagedIndicator`" /include:`"$env:MT5_MQL5_ROOT`" /log"
+          $process = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList $arguments -Wait -PassThru
+          $logPath = Join-Path $indicatorDir 'MedisTouch_Indicator_v2.8.log'
+          if (!(Test-Path $logPath)) { throw 'MetaEditor did not produce the indicator compile log.' }
+          $log = Get-Content -Path $logPath -Raw
+          Write-Host $log
+          Copy-Item -Path $logPath -Destination (Join-Path $env:RUNNER_TEMP 'MedisTouch_Indicator_v2.8.log') -Force
+          $result = [regex]::Match($log, '(?im)(\d+)\s+errors?,\s*(\d+)\s+warnings?')
+          if (!$result.Success) { throw 'Could not parse MetaEditor indicator compile summary; refusing unknown status.' }
+          $errors = [int]$result.Groups[1].Value
+          $warnings = [int]$result.Groups[2].Value
+          if ($errors -gt 0) { throw "Indicator reported $errors compile errors and $warnings warnings." }
+          if (!(Test-Path (Join-Path $indicatorDir 'MedisTouch_Indicator_v2.8.ex5'))) {
+            throw 'MetaEditor reported no indicator compile errors but did not produce the expected EX5 artifact.'
+          }
+          "MetaEditor indicator compile succeeded: errors=$errors warnings=$warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($warnings -gt 0) { Write-Warning "Indicator compiled with $warnings warning(s); review the compiler log." }
+
       - name: Compile partial-exit policy test with MetaEditor
         shell: pwsh
         run: |
@@ -344,6 +372,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: metatrader5-compile-log
-          path: ${{ runner.temp }}/MedisTouch_v2.8.log
+          path: |
+            ${{ runner.temp }}/MedisTouch_v2.8.log
+            ${{ runner.temp }}/MedisTouch_Indicator_v2.8.log
           if-no-files-found: warn
           retention-days: 14
