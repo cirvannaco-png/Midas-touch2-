@@ -50,6 +50,8 @@ public:
    TradeSetup GenerateSellSetup();
    TradeSetup GetLastSetup()const{return m_lastSetup;}
    void ConfigureRegimeShadowLogger(bool enabled);
+   bool ConfigureRegimeRolloverTelemetry(bool enabled,int startHour,int startMinute,int endHour,int endMinute);
+   bool LogRegimeShadowFinal(const TradeSetup &setup,const string status,const string rejectionReason);
   };
 
 CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;}
@@ -66,6 +68,30 @@ double CTradeDecision::EnforceSpreadFloor(string symbol,double entry,double stop
 void CTradeDecision::ConfigureRegimeShadowLogger(bool enabled)
   {
    m_regimeShadowLogger.Configure(enabled);
+  }
+
+bool CTradeDecision::ConfigureRegimeRolloverTelemetry(bool enabled,int startHour,int startMinute,int endHour,int endMinute)
+  {
+   return m_regimeShadowLogger.ConfigureRolloverTelemetry(enabled,startHour,startMinute,endHour,endMinute);
+  }
+
+bool CTradeDecision::LogRegimeShadowFinal(const TradeSetup &setup,const string status,const string rejectionReason)
+  {
+   if(m_priceRef==NULL) return false;
+   bool isBuy=(setup.type==ORDER_TYPE_BUY);
+   string symbol=m_priceRef.Symbol();
+   string direction=isBuy ? "BUY" : "SELL";
+   datetime barTime=setup.creation_time;
+   if(barTime<=0 && m_priceRef.Total()>0) barTime=m_priceRef.GetCandle(0).time;
+   if(barTime<=0) barTime=TimeCurrent();
+   string signalId=StringFormat("%s_%s_%d",symbol,direction,(long)setup.creation_time);
+   double entryReference=0.0;
+   if(setup.entry_top>0.0 && setup.entry_bottom>0.0)
+      entryReference=(setup.entry_top+setup.entry_bottom)/2.0;
+   return m_regimeShadowLogger.Log(symbol,_Period,barTime,isBuy,setup.reasons,
+                                   setup.reasons.selected_strategy,setup.reasons.selected_strategy_score,
+                                   status,rejectionReason,signalId,entryReference,setup.invalidation,
+                                   setup.stop_loss,setup.tp1,setup.tp2,setup.final_tp);
   }
 
 bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
