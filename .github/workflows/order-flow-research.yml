@@ -23,6 +23,7 @@ on:
     paths:
       - "EA/**"
       - "tools/validate_mql5.py"
+      - "tools/validate_order_flow_contract.py"
       - "tools/order_flow_research.py"
       - "tests/test_order_flow_research.py"
       - "docs/ORDER_FLOW_TEST_PLAN.md"
