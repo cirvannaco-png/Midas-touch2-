@@ -18,9 +18,9 @@ void FillTicks(double &midpoints[],MqlTick &ticks[])
   {
    int count=ArraySize(midpoints);
    ArrayResize(ticks,count);
-   datetime base=TimeCurrent();
-   if(base<=0)
-      base=TimeLocal();
+   // Fixed epoch keeps unit fixtures deterministic in Strategy Tester agents
+   // where TimeCurrent/TimeLocal may be unavailable during OnInit.
+   datetime base=(datetime)1700000000;
    base-=count+2;
    for(int i=0;i<count;i++)
      {
