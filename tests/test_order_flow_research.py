@@ -44,25 +44,27 @@ class OrderFlowResearchTests(unittest.TestCase):
         signals = [signal(1_700_000_105)]
         outcomes = [outcome(1_700_000_105, 1_700_000_500, "1.5")]
         index, rejected = build_outcome_index(signals, outcomes)
-        joined, join_rejected = join_events_to_outcomes(
+        normalized_events, event_rejected = load_order_flow_events(
             [event("old", 1_700_000_000, pressure=-0.3),
-             event("new", 1_700_000_100, pressure=0.7)],
-            index, max_match_gap_seconds=120,
+             event("new", 1_700_000_100, pressure=0.7)]
+        )
+        joined, join_rejected = join_events_to_outcomes(
+            normalized_events, index, max_match_gap_seconds=120,
         )
         self.assertEqual(len(joined), 1)
         self.assertEqual(joined[0]["event_key"], "new")
         self.assertEqual(joined[0]["pressure_ratio"], 0.7)
         self.assertEqual(joined[0]["realized_r"], 1.5)
         self.assertEqual(rejected, {})
+        self.assertEqual(event_rejected, {})
         self.assertEqual(join_rejected, {})
 
     def test_future_event_is_never_joined(self) -> None:
         signals = [signal(1_700_000_100)]
         outcomes = [outcome(1_700_000_100, 1_700_000_500)]
         index, _ = build_outcome_index(signals, outcomes)
-        joined, rejected = join_events_to_outcomes(
-            [event("future", 1_700_000_101)], index
-        )
+        normalized_events, _ = load_order_flow_events([event("future", 1_700_000_101)])
+        joined, rejected = join_events_to_outcomes(normalized_events, index)
         self.assertEqual(joined, [])
         self.assertEqual(rejected["no_prior_same_symbol_timeframe_event"], 1)
 
@@ -70,10 +72,12 @@ class OrderFlowResearchTests(unittest.TestCase):
         signals = [signal(1_700_000_500)]
         outcomes = [outcome(1_700_000_500, 1_700_000_800)]
         index, _ = build_outcome_index(signals, outcomes)
-        joined, rejected = join_events_to_outcomes(
+        normalized_events, _ = load_order_flow_events(
             [event("stale", 1_700_000_000),
-             event("wrong-tf", 1_700_000_490, timeframe="PERIOD_M5")],
-            index, max_match_gap_seconds=120,
+             event("wrong-tf", 1_700_000_490, timeframe="PERIOD_M5")]
+        )
+        joined, rejected = join_events_to_outcomes(
+            normalized_events, index, max_match_gap_seconds=120,
         )
         self.assertEqual(joined, [])
         self.assertEqual(rejected["stale_event_for_signal"], 1)
