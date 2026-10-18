@@ -171,6 +171,18 @@ def main() -> int:
     require('if(!InpEnableOrderFlowDiagnostics || g_fvgCtx==NULL)' in ea,
             "order-flow sampling must remain behind the explicit opt-in guard", errors)
 
+    # Market-velocity lesson implementation must stay a quote-cadence proxy,
+    # derived from validated v3 tick counts and prior completed bars only.
+    for token, description in (
+        ('"tick_count"', "v3 tick-count field"),
+        ("quote_update_rate_hz_proxy", "quote-update rate proxy"),
+        ("quote_update_rate_ratio_to_prior_median", "prior-bar activity comparison"),
+        ("prior_activity_rates[-20:]", "bounded prior-only baseline window"),
+        ("len(prior_activity_rates) >= 5", "minimum baseline history"),
+        ("quote_activity_regime", "descriptive activity regime"),
+    ):
+        require(token in analyzer, f"research analyzer missing {description}", errors)
+
     # Phase-1 invariant: order-flow diagnostics may collect/attribute evidence,
     # but must not enter setup selection or risk/execution branches. Keep this
     # guard structural so later refactors cannot silently promote a proxy into
