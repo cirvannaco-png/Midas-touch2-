@@ -35,8 +35,7 @@ CONTEXT_KEYS = {
     "cash_per_point_per_lot", "commission_per_lot", "slippage_points",
     "swap_included", "base_costs_applied_in_tester",
     "stress_costs_applied_in_analysis", "fill_policy", "initial_balance",
-    "account_currency", "leverage", "diagnostic_input",
-    "diagnostic_off_value", "diagnostic_on_value",
+    "account_currency", "leverage", "diagnostic_inputs",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -135,8 +134,7 @@ def _context(raw: object) -> dict[str, Any]:
     result = dict(raw)
     for key in (
         "symbol", "timeframe", "ea_build", "terminal_build", "data_vendor",
-        "tester_model", "spread_model", "fill_policy", "account_currency",
-        "leverage", "diagnostic_input", "diagnostic_off_value", "diagnostic_on_value",
+        "tester_model", "spread_model", "fill_policy", "account_currency", "leverage",
     ):
         if not isinstance(result[key], str) or not result[key].strip():
             raise AuditError(f"test_context.{key} must be a non-empty string")
@@ -166,6 +164,23 @@ def _context(raw: object) -> dict[str, Any]:
             raise AuditError("spread_points may be null only for a real-tick spread model")
     else:
         result["spread_points"] = _number(result["spread_points"], "test_context.spread_points", minimum=0)
+    diagnostic_inputs = result["diagnostic_inputs"]
+    if not isinstance(diagnostic_inputs, dict) or not diagnostic_inputs:
+        raise AuditError("test_context.diagnostic_inputs must map one or more real MT5 input names to OFF/ON values")
+    normalized_inputs = {}
+    for input_name, pair in diagnostic_inputs.items():
+        if not isinstance(input_name, str) or not input_name.strip() or not isinstance(pair, dict) or set(pair) != {"off", "on"}:
+            raise AuditError("each diagnostic_inputs entry must contain exactly off and on values")
+        values = {}
+        for mode in ("off", "on"):
+            raw_value = pair[mode]
+            if isinstance(raw_value, (dict, list)) or raw_value is None:
+                raise AuditError(f"diagnostic_inputs.{input_name}.{mode} must be a scalar .set value")
+            values[mode] = str(raw_value).strip()
+        if not values["off"] or not values["on"] or values["off"].casefold() == values["on"].casefold():
+            raise AuditError(f"diagnostic input {input_name} must differ between OFF and ON")
+        normalized_inputs[input_name.strip()] = values
+    result["diagnostic_inputs"] = normalized_inputs
     for key in ("swap_included", "base_costs_applied_in_tester", "stress_costs_applied_in_analysis"):
         if result[key] is not True:
             raise AuditError(f"test_context.{key} must be true; missing costs cannot be assumed away")
@@ -242,41 +257,38 @@ def _same_setting(left: tuple[str, tuple[str, ...]], right: tuple[str, tuple[str
 
 def _check_preset_pair(off_path: Path, on_path: Path, context: dict[str, Any]) -> dict[str, Any]:
     off, on = _preset(off_path), _preset(on_path)
-    key = context["diagnostic_input"]
+    expected = context["diagnostic_inputs"]
     if set(off) != set(on):
         raise AuditError("diagnostic OFF/ON preset key sets differ")
-    if key not in off:
-        raise AuditError(f"diagnostic_input {key!r} is absent from the exported .set presets")
-    off_expected, on_expected = context["diagnostic_off_value"], context["diagnostic_on_value"]
-    def value_norm(value: str) -> str:
-        if value.lower() in {"true", "false"}:
-            return value.lower()
-        try:
-            num = float(value)
-        except ValueError:
-            return value.strip()
-        return format(num, ".12g") if math.isfinite(num) else value.strip()
-    if value_norm(off[key][0]) != value_norm(off_expected):
-        raise AuditError("diagnostic OFF preset value does not match test_context")
-    if value_norm(on[key][0]) != value_norm(on_expected):
-        raise AuditError("diagnostic ON preset value does not match test_context")
-    if _same_setting(off[key], on[key]):
-        raise AuditError("the declared diagnostic input does not differ between presets")
+    missing = sorted(set(expected) - set(off))
+    if missing:
+        raise AuditError("diagnostic input(s) absent from exported .set presets: " + ", ".join(missing))
     changed = []
+    report_inputs = {}
+    for name, modes in expected.items():
+        expected_off, expected_on = modes["off"], modes["on"]
+        if _same_setting(off[name], on[name]):
+            raise AuditError(f"declared diagnostic input {name} does not differ between presets")
+        if off[name][1] != on[name][1]:
+            raise AuditError(f"diagnostic input {name} differs in optimizer metadata, not only its active value")
+        if not _same_setting((off[name][0], ()), (expected_off, ())) or not _same_setting((on[name][0], ()), (expected_on, ())):
+            raise AuditError(f"{name} preset values do not match test_context diagnostic_inputs")
+        report_inputs[name] = {"off_value": off[name][0], "on_value": on[name][0]}
     for name in sorted(off):
-        if name == key:
-            if off[name][1] != on[name][1]:
-                raise AuditError("diagnostic preset differs in optimizer metadata, not only the input value")
-            continue
         if not _same_setting(off[name], on[name]):
             changed.append(name)
-    if changed:
-        raise AuditError("diagnostic ON/OFF differ in additional inputs: " + ", ".join(changed))
+    if set(changed) != set(expected):
+        extra = sorted(set(changed) - set(expected))
+        unchanged = sorted(set(expected) - set(changed))
+        details = []
+        if extra:
+            details.append("additional inputs changed: " + ", ".join(extra))
+        if unchanged:
+            details.append("declared diagnostic inputs unchanged: " + ", ".join(unchanged))
+        raise AuditError("diagnostic OFF/ON presets are not an isolated ablation (" + "; ".join(details) + ")")
     return {
-        "diagnostic_input": key,
-        "off_value": off[key][0],
-        "on_value": on[key][0],
-        "other_inputs_identical": True,
+        "diagnostic_inputs": report_inputs,
+        "only_declared_diagnostic_inputs_changed": True,
         "off_preset_sha256": _hash(off_path),
         "on_preset_sha256": _hash(on_path),
     }
@@ -513,8 +525,7 @@ def audit_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], int]:
     all_artifact_paths: dict[str, Path] = {}
     artifacts: dict[str, Any] = {}
     blockers: list[str] = []
-    raw_context = {key: value for key, value in context.items()
-                   if key not in {"diagnostic_off_value", "diagnostic_on_value"}}
+    raw_context = {key: value for key, value in context.items() if key != "diagnostic_inputs"}
     for index, item in enumerate(runs):
         if not isinstance(item, dict):
             raise AuditError(f"runs[{index}] must be an object")
