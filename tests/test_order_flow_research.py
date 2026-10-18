@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tools.order_flow_research import (
     analyze,
+    build_attribution_index,
     build_outcome_index,
     chronological_split,
     join_events_to_outcomes,
@@ -33,6 +34,19 @@ def signal(epoch: int, *, symbol: str = "EURUSD", timeframe: str = "PERIOD_M1",
         "EntryTF": timeframe, "Direction": direction,
         "Session": "London", "Regime": "Trend", "VolRegime": "Normal",
         "SelectedStrategy": "Sweep",
+    }
+
+
+def attribution(signal_row: dict[str, str], event_key: str, *, status: str = "MATCHED") -> dict[str, str]:
+    return {
+        "schema_version": "order-flow-attribution-v1",
+        "signal_id": signal_row["SignalID"],
+        "event_key": event_key,
+        "symbol": signal_row["Symbol"],
+        "timeframe": signal_row["EntryTF"],
+        "direction": signal_row["Direction"],
+        "signal_epoch": signal_row["SignalID"].rsplit("_", 1)[-1],
+        "attribution_status": status,
     }
 
 
@@ -123,6 +137,46 @@ class OrderFlowResearchTests(unittest.TestCase):
         joined, rejected = join_events_to_outcomes(events, index)
         self.assertEqual(joined, [])
         self.assertEqual(rejected["unsupported_timeframe_for_default_match_window"], 1)
+
+    def test_direct_attribution_uses_exact_event_not_nearest_time(self) -> None:
+        s = signal(1_700_000_105)
+        o = outcome(1_700_000_105, 1_700_000_500, "1.25")
+        evidence, _ = load_order_flow_events([
+            event("exact-event", 1_700_000_100, pressure=-0.4),
+            event("closer-but-not-linked", 1_700_000_104, pressure=0.8),
+        ])
+        outcome_index, _ = build_outcome_index([s], [o])
+        attr_index, attr_rejected = build_attribution_index([attribution(s, "exact-event")])
+        joined, rejected = join_events_to_outcomes(
+            evidence, outcome_index, attribution_index=attr_index
+        )
+        self.assertEqual(len(joined), 1)
+        self.assertEqual(joined[0]["event_key"], "exact-event")
+        self.assertEqual(joined[0]["pressure_ratio"], -0.4)
+        self.assertEqual(attr_rejected, {})
+        self.assertEqual(rejected, {})
+
+    def test_direct_mode_never_falls_back_when_attribution_missing(self) -> None:
+        s = signal(1_700_000_105)
+        o = outcome(1_700_000_105, 1_700_000_500, "1.0")
+        evidence, _ = load_order_flow_events([event("nearest", 1_700_000_100)])
+        outcome_index, _ = build_outcome_index([s], [o])
+        joined, rejected = join_events_to_outcomes(
+            evidence, outcome_index, attribution_index={}
+        )
+        self.assertEqual(joined, [])
+        self.assertEqual(rejected["missing_direct_attribution"], 1)
+
+    def test_analyzer_reports_direct_attribution_mode_and_status_rejections(self) -> None:
+        s = signal(1_700_000_105)
+        o = outcome(1_700_000_105, 1_700_000_500, "1.0")
+        evidence = [event("linked", 1_700_000_100)]
+        attr = [attribution(s, "", status="NO_EVENT_KEY")]
+        report = analyze(evidence, [s], [o], attribution_rows=attr, min_sample=1)
+        self.assertEqual(report["attribution_mode"], "direct_signal_id")
+        self.assertEqual(report["matched_outcomes"], 0)
+        self.assertEqual(report["attribution_rejections"]["status_no_event_key"], 1)
+        self.assertEqual(report["join_rejections"]["missing_direct_attribution"], 1)
 
     def test_loader_rejects_stale_and_non_proxy_events(self) -> None:
         good = event("good", 1_700_000_000)
