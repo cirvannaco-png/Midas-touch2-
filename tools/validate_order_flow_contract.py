@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Static contract checks for Midas-touch2 order-flow CSV writers and analyzer.
+
+This validates source-level schemas and feature gates only. It does not compile
+MQL5 or prove that terminal-side FileWrite calls succeed at runtime.
+"""
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+EA_PATH = ROOT / "EA" / "MedisTouch_v2.8.mq5"
+PY_PATH = ROOT / "tools" / "order_flow_research.py"
+
+EVIDENCE_REQUIRED = {
+    "schema_version", "event_key", "symbol", "timeframe", "bar_end_epoch",
+    "pressure_ratio", "diagnostic_status", "bullish_sweep_reclaim",
+    "bearish_sweep_reclaim", "absorption_proxy", "exhaustion_proxy",
+    "data_quality", "data_stale",
+}
+ATTRIBUTION_REQUIRED = {
+    "schema_version", "signal_id", "event_key", "symbol", "timeframe",
+    "direction", "signal_epoch", "attribution_status",
+}
+
+
+def header_fields(source: str, start_marker: str) -> list[str]:
+    start = source.find(start_marker)
+    if start < 0:
+        raise ValueError(f"missing source marker: {start_marker}")
+    section = source[start:]
+    match = re.search(r"uint\s+headerBytes\s*=\s*FileWrite\(handle,(.*?)\);", section, re.S)
+    if not match:
+        raise ValueError(f"missing FileWrite header after: {start_marker}")
+    fields = re.findall(r'"((?:[^"\\]|\\.)*)"', match.group(1))
+    if not fields:
+        raise ValueError(f"header has no string fields after: {start_marker}")
+    return fields
+
+
+def require(condition: bool, message: str, errors: list[str]) -> None:
+    if not condition:
+        errors.append(message)
+
+
+def main() -> int:
+    errors: list[str] = []
+    try:
+        ea = EA_PATH.read_text(encoding="utf-8")
+        analyzer = PY_PATH.read_text(encoding="utf-8")
+        evidence_fields = header_fields(ea, "bool AppendOrderFlowEvidence")
+        attribution_fields = header_fields(ea, "bool AppendOrderFlowSignalAttribution")
+    except (OSError, ValueError) as exc:
+        print(f"order-flow contract validation: {exc}", file=sys.stderr)
+        return 1
+
+    missing_evidence = sorted(EVIDENCE_REQUIRED - set(evidence_fields))
+    missing_attribution = sorted(ATTRIBUTION_REQUIRED - set(attribution_fields))
+    require(not missing_evidence,
+            f"evidence CSV header missing analyzer fields: {missing_evidence}", errors)
+    require(not missing_attribution,
+            f"attribution CSV header missing fields: {missing_attribution}", errors)
+    require(len(evidence_fields) == len(set(evidence_fields)),
+            "evidence CSV header contains duplicate column names", errors)
+    require(len(attribution_fields) == len(set(attribution_fields)),
+            "attribution CSV header contains duplicate column names", errors)
+
+    for token, description in (
+        ('"order-flow-evidence-v2"', "evidence row schema literal"),
+        ('"order-flow-attribution-v1"', "attribution row schema literal"),
+        ('"MedisTouch_OrderFlowEvidence_v2_"', "evidence filename version"),
+        ('"MedisTouch_OrderFlowAttribution_v1_"', "attribution filename version"),
+    ):
+        require(token in ea, f"EA missing {description}: {token}", errors)
+
+    require('row.get("schema_version") != "order-flow-evidence-v2"' in analyzer,
+            "analyzer evidence schema version does not match the EA writer", errors)
+    require('row.get("schema_version") != "order-flow-attribution-v1"' in analyzer,
+            "analyzer attribution schema version does not match the EA writer", errors)
+    require("diagnostic_status" in analyzer and "attribution_mode" in analyzer,
+            "analyzer must parse diagnostic status and report attribution mode", errors)
+    require("input bool InpEnableOrderFlowDiagnostics=false;" in ea,
+            "diagnostics must remain disabled by default", errors)
+    require("if(InpEnableOrderFlowDiagnostics)LogOrderFlowDiagnostics();" in ea,
+            "OnTick must gate the diagnostics call behind the opt-in input", errors)
+    require("if(InpEnableOrderFlowDiagnostics && signalLogged)AppendOrderFlowSignalAttribution(chosen);" in ea,
+            "signal attribution must be gated by enabled diagnostics and successful signal logging", errors)
+
+    expected_statuses = (
+        "BAR_HISTORY_UNAVAILABLE", "BAR_CONTEXT_UNAVAILABLE",
+        "TICK_HISTORY_ERROR", "NO_TICKS", "INVALID_OR_INSUFFICIENT_TICKS",
+        "STALE_PROXY", "OK_PROXY",
+    )
+    for status in expected_statuses:
+        require(status in ea, f"missing explicit diagnostic status: {status}", errors)
+
+    print(f"Order-flow CSV contract: {len(evidence_fields)} evidence columns, "
+          f"{len(attribution_fields)} attribution columns")
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        print(f"{len(errors)} contract error(s).", file=sys.stderr)
+        return 1
+    print("CSV schema, version, status and opt-in gate checks passed.")
+    print("Note: this is static validation, not a MetaEditor compilation.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
