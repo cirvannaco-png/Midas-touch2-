@@ -578,6 +578,25 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def describe_numeric_field(rows: list[dict[str, Any]], field: str) -> dict[str, Any]:
+    """Summarize a descriptive numeric field without imputing missing values."""
+    values = sorted(
+        value for row in rows
+        if (value := parse_float(row.get(field))) is not None
+    )
+    if not values:
+        return {"n": 0, "mean": None, "median": None, "p90": None, "min": None, "max": None}
+    p90_index = max(0, math.ceil(0.90 * len(values)) - 1)
+    return {
+        "n": len(values),
+        "mean": sum(values) / len(values),
+        "median": median(values),
+        "p90": values[p90_index],
+        "min": values[0],
+        "max": values[-1],
+    }
+
+
 def chronological_split(rows: list[dict[str, Any]], holdout_fraction: float) -> dict[str, Any]:
     """Chronological holdout with purging: training outcomes must resolve before test starts."""
     if not 0.10 <= holdout_fraction <= 0.50:
@@ -707,6 +726,29 @@ def analyze(evidence_rows: list[dict[str, str]],
             "holdout_metrics": summarize(split["test"]),
         },
         "feature_breakdown": descriptions,
+        "quote_update_activity_proxy": {
+            "definition": (
+                "validated broker quote updates per nominal timeframe second; "
+                "not executed trade count, volume, aggressor delta, or a consolidated order book"
+            ),
+            "regime_definition": {
+                "baseline": "median of up to 20 prior valid closed bars, requiring at least 5",
+                "comparison": "current closed bar divided by prior median; current bar is never included in its own baseline",
+                "expansion_ratio_gte": 1.50,
+                "contraction_ratio_lte": 0.67,
+                "reset": "UTC-day boundary or gap larger than one nominal timeframe bar",
+            },
+            "rate_hz": {
+                "all_matched": describe_numeric_field(joined, "quote_update_rate_hz_proxy"),
+                "train_sample": describe_numeric_field(split["train"], "quote_update_rate_hz_proxy"),
+                "holdout_sample": describe_numeric_field(split["test"], "quote_update_rate_hz_proxy"),
+            },
+            "ratio_to_prior_median": {
+                "all_matched": describe_numeric_field(joined, "quote_update_rate_ratio_to_prior_median"),
+                "train_sample": describe_numeric_field(split["train"], "quote_update_rate_ratio_to_prior_median"),
+                "holdout_sample": describe_numeric_field(split["test"], "quote_update_rate_ratio_to_prior_median"),
+            },
+        },
         "release_policy": {
             "automatic_promotion": False,
             "minimum_sample_is_not_proof_of_edge": True,
