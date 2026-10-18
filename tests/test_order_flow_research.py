@@ -18,11 +18,11 @@ from tools.order_flow_research import (
 def event(key: str, end: int, *, symbol: str = "EURUSD", timeframe: str = "PERIOD_M1",
           pressure: float = 0.4, bull: str = "true") -> dict[str, str]:
     return {
-        "schema_version": "order-flow-evidence-v1", "event_key": key, "symbol": symbol, "timeframe": timeframe,
+        "schema_version": "order-flow-evidence-v2", "event_key": key, "symbol": symbol, "timeframe": timeframe,
         "bar_end_epoch": str(end), "pressure_ratio": str(pressure),
         "bullish_sweep_reclaim": bull, "bearish_sweep_reclaim": "false",
         "absorption_proxy": "false", "exhaustion_proxy": "false",
-        "data_quality": "1", "data_stale": "false",
+        "data_quality": "1", "data_stale": "false", "diagnostic_status": "OK_PROXY",
     }
 
 
@@ -133,8 +133,18 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(rejected["stale_event_record"], 1)
         self.assertEqual(rejected["unsupported_or_mislabeled_data_quality"], 1)
 
+    def test_loader_accounts_for_missing_tick_windows_without_using_them(self) -> None:
+        missing = dict(
+            event("missing", 1_700_000_010),
+            data_quality="0", data_stale="true", diagnostic_status="NO_TICKS",
+        )
+        usable = event("usable", 1_700_000_000)
+        events, rejected = load_order_flow_events([missing, usable])
+        self.assertEqual([row["event_key"] for row in events], ["usable"])
+        self.assertEqual(rejected["status_no_ticks"], 1)
+
     def test_loader_rejects_unknown_schema_version(self) -> None:
-        unknown = dict(event("future-schema", 1_700_000_003), schema_version="order-flow-evidence-v2")
+        unknown = dict(event("future-schema", 1_700_000_003), schema_version="order-flow-evidence-v3")
         events, rejected = load_order_flow_events([unknown])
         self.assertEqual(events, [])
         self.assertEqual(rejected["unsupported_schema_version"], 1)
@@ -153,6 +163,9 @@ class OrderFlowResearchTests(unittest.TestCase):
         ]
         report = analyze(evidence, signals, outcomes, min_sample=1)
         self.assertEqual(report["matched_outcomes"], 3)
+        self.assertEqual(report["source_evidence_row_count"], 3)
+        self.assertEqual(report["distinct_evidence_event_keys"], 3)
+        self.assertEqual(report["usable_evidence_fraction"], 1.0)
         self.assertEqual(report["matched_unique_event_count"], 3)
         self.assertEqual(report["signals_per_event"]["max_signals_per_event"], 1)
         self.assertEqual(report["chronological_holdout"]["train_count_after_purge"], 2)
