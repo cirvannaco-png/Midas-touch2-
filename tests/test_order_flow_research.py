@@ -213,9 +213,9 @@ class OrderFlowResearchTests(unittest.TestCase):
                          min_sample=1)
         self.assertEqual(report["matched_outcomes"], 1)
         self.assertEqual(report["attribution_rejections"], {})
-        self.assertIn("smc_inducement_valid=true", report["feature_breakdown"])
+        self.assertIn("smc_inducement_valid=True", report["feature_breakdown"])
         self.assertIn("smc_sweep_grade=SWEEP_GRADE_A", report["feature_breakdown"])
-        self.assertEqual(report["feature_breakdown"]["smc_inducement_valid=true"]["all_sample"]["trade_count"], 1)
+        self.assertEqual(report["feature_breakdown"]["smc_inducement_valid=True"]["all_sample"]["n"], 1)
 
     def test_v3_attribution_rejects_invalid_smc_context(self) -> None:
         s = signal(1_700_000_105)
