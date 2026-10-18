@@ -112,3 +112,27 @@ Run focused tests in an environment with repository-declared Python dependencies
 Retain the CI run URL, exact head commit, native MetaEditor compilation result for the revised EA/include, test output, both audit JSON reports, original reports/logs, dataset digest, walk-forward/OOS results and demo reconciliation evidence with the release decision.
 
 **Do not merge or enable live order flow while any of the following remains true:** mathematical/no-history tester mode; missing/invalid native exports; different non-diagnostic inputs between matched arms; missing explicit financial fields; incomplete attribution; behavioral diagnostic parity failure; insufficient locked-OOS samples; unstable walk-forward results; unreviewed native equity drawdown; unresolved Exness order/position/cashflow discrepancies; or failed emergency-stop/restart tests.
+
+
+## 6. Auxiliary LONA / StrategyTune research findings (2026-10-18)
+
+These are research-platform diagnostics only. They are **not** native MT5 Strategy Tester evidence, an Exness broker reconciliation, or release authorization.
+
+### LONA daily session-gate defect and regression
+
+- Original strategy: `d3e8d7e7-ea99-42f0-968f-6d8a9beff63d`, version 1.0.2; XAUUSD daily data; 2024-01-01 through 2024-12-31; starting balance USD 10,000; configured commission 0.0005; leverage 10.
+- With `use_session_filter=true`, reports `1a6b58a9-9d6b-42af-9f7b-38f1db4c9237` and `f2f47145-6b02-431e-bb50-b6bb2da74f2b` both recorded zero trades. The code was checking an intraday UTC-hour window (07:00–21:00) on daily bars timestamped at 00:00 UTC, so it could suppress all entries.
+- Diagnostic control with `use_session_filter=false`, report `45ee809b-5a12-4e41-b248-32e2ba35517d`: 27 trades, reported P&L -$8.56, 59.26% win rate, 0.82 profit factor, -$0.32 expectancy per trade, 0.50% maximum drawdown, and 7.8 average bars held.
+- A first fork using the feed's internal timeframe enum (`92a76e09-3bc3-486f-afd8-b1329fd6a652`) still produced zero daily trades; that fix is rejected as ineffective.
+- A second research-only fork infers bar cadence from recent timestamp gaps: `9f61339b-f925-44a7-9245-ab170faa6b90`, version 1.0.4. Its dry run completed and emitted order events. The D1 regression report `9b687c59-fa52-4b1f-9f99-60d417cab109`, with `use_session_filter=true`, reproduced the same 27 trades and -$8.56 as the filter-disabled control. This verifies the daily gating correction for this dataset only; intraday session-filter parity still needs its own test. The negative expectancy remains a performance failure, not a candidate for promotion.
+
+### StrategyTune exploratory runs
+
+- The saved script `l4zdo1wehylq2zrc3df62y1h` completed multiple H1 runs on EURUSD / IC Markets data for 2025-10-18 through 2026-10-16, with USD 10,000 starting balance. These are not Exness or MT5 runs.
+- Across the retrieved runs, reported gross P&L ranged from $106.66 to $537.84; larger samples reported roughly 55.7%–58.5% position win rate. The script's **estimated**, not broker-charged, commission-plus-slippage adjustment ranged from $2.34 to $121.32 in the retrieved runs; one 82-position result reported $537.84 gross, $115.92 estimated costs, $421.92 estimated after-cost P&L, and $344.69 estimated maximum drawdown after costs.
+- Run history did not preserve a complete, independently recoverable input manifest for these variants in the retrieved summaries. Therefore these runs must not be treated as matched ablations, walk-forward folds, locked-OOS evidence, or proof that +600% return / 87% win rate has been achieved. Several runs recorded zero days meeting the configured minimum daily-trade target; that target is diagnostic, not a reason to loosen risk gates.
+- The requested new four-arm fallback-attribution run (strict-only, single-swing-only, continuation-only, micro-momentum-only) was rejected by the platform because the free-tier daily compute allowance was exhausted (14 minutes used against a 10-minute limit). No new attribution result is claimed. Resume when compute is available or run the controlled experiment in the native MT5 harness.
+
+### Release implication
+
+Keep PR #115 draft and keep live execution disabled. The LONA correction is a research-code fix only. Continue with complete run manifests, native MT5 real-tick paired exports, five-arm deal histories with verified broker costs, three chronological folds, frozen locked OOS, and Exness demo reconciliation/emergency-stop/restart evidence.
