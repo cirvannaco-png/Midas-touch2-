@@ -25,6 +25,16 @@ struct OrderFlowSnapshot
    bool absorption_proxy;
    bool exhaustion_proxy;
    bool data_stale;
+   bool pressure_progress_divergence;
+   int continuation_hypothesis; // -1 bearish, 0 none, +1 bullish
+   int reversal_hypothesis;     // -1 bearish, 0 none, +1 bullish
+   bool auction_context_available;
+   double value_area_poc;
+   double value_area_vah;
+   double value_area_val;
+   double value_area_source_quality;
+   int value_area_source;
+   int auction_location; // -2 below VAL, -1 in value below POC, 0 near POC, +1 in value above POC, +2 above VAH, 9 unavailable
    datetime first_tick_time;
    datetime last_tick_time;
    long first_tick_time_msc;
@@ -62,6 +72,43 @@ public:
       m_max_tick_age_seconds=(maxTickAgeSeconds<1 ? 1 : maxTickAgeSeconds);
      }
 
+   // Attach existing value-profile levels to the diagnostic snapshot. The
+   // location label is context only; it is not acceptance/rejection by itself.
+   void AttachAuctionContext(double poc,double vah,double val,
+                             double sourceQuality,int source,double close,
+                             OrderFlowSnapshot &out)
+     {
+      out.auction_context_available=false;
+      out.value_area_poc=0.0;
+      out.value_area_vah=0.0;
+      out.value_area_val=0.0;
+      out.value_area_source_quality=0.0;
+      out.value_area_source=0;
+      out.auction_location=9;
+      if(!MathIsValidNumber(poc) || !MathIsValidNumber(vah) ||
+         !MathIsValidNumber(val) || !MathIsValidNumber(sourceQuality) ||
+         !MathIsValidNumber(close) || poc<=0.0 || vah<=0.0 || val<=0.0 ||
+         close<=0.0 || val>poc || poc>vah || sourceQuality<=0.0 || source<=0)
+         return;
+      out.auction_context_available=true;
+      out.value_area_poc=poc;
+      out.value_area_vah=vah;
+      out.value_area_val=val;
+      out.value_area_source_quality=sourceQuality;
+      out.value_area_source=source;
+      double pocTolerance=(vah-val)*0.01;
+      if(close>vah)
+         out.auction_location=2;
+      else if(close<val)
+         out.auction_location=-2;
+      else if(MathAbs(close-poc)<=pocTolerance)
+         out.auction_location=0;
+      else if(close<poc)
+         out.auction_location=-1;
+      else
+         out.auction_location=1;
+     }
+
    // Inputs must be chronological (oldest to newest) and from one bounded
    // decision window. This computes tick-direction pressure, NOT true
    // aggressor-side volume or centralized futures footprint delta.
@@ -82,6 +129,16 @@ public:
       out.absorption_proxy=false;
       out.exhaustion_proxy=false;
       out.data_stale=true;
+      out.pressure_progress_divergence=false;
+      out.continuation_hypothesis=0;
+      out.reversal_hypothesis=0;
+      out.auction_context_available=false;
+      out.value_area_poc=0.0;
+      out.value_area_vah=0.0;
+      out.value_area_val=0.0;
+      out.value_area_source_quality=0.0;
+      out.value_area_source=0;
+      out.auction_location=9;
       out.first_tick_time=0;
       out.last_tick_time=0;
       out.first_tick_time_msc=0;
@@ -163,6 +220,25 @@ public:
       double range=barHigh-barLow;
       out.exhaustion_proxy=(range>=atr*2.0 &&
                             MathAbs(out.pressure_ratio)<0.20);
+
+      // Explicit, research-only tags derived from completed-bar evidence.
+      // They are hypotheses for outcome analysis, never entry instructions.
+      out.pressure_progress_divergence=
+         ((out.pressure_ratio>=m_pressure_threshold && out.price_progress<0.0) ||
+          (out.pressure_ratio<=-m_pressure_threshold && out.price_progress>0.0));
+      out.continuation_hypothesis=0;
+      if(barClose>priorHigh && out.pressure_ratio>=m_pressure_threshold &&
+         out.price_progress>0.0)
+         out.continuation_hypothesis=1;
+      else if(barClose<priorLow && out.pressure_ratio<=-m_pressure_threshold &&
+              out.price_progress<0.0)
+         out.continuation_hypothesis=-1;
+
+      out.reversal_hypothesis=0;
+      if(out.bullish_sweep_reclaim && out.pressure_ratio>0.0)
+         out.reversal_hypothesis=1;
+      else if(out.bearish_sweep_reclaim && out.pressure_ratio<0.0)
+         out.reversal_hypothesis=-1;
       return true;
      }
   };
