@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+import unittest
+
+from tools.order_flow_research import (
+    build_outcome_index,
+    chronological_split,
+    join_events_to_outcomes,
+    summarize,
+)
+
+
+def event(key: str, end: int, *, symbol: str = "EURUSD", timeframe: str = "PERIOD_M1",
+          pressure: float = 0.4, bull: str = "true") -> dict[str, str]:
+    return {
+        "event_key": key, "symbol": symbol, "timeframe": timeframe,
+        "bar_end_epoch": str(end), "pressure_ratio": str(pressure),
+        "bullish_sweep_reclaim": bull, "bearish_sweep_reclaim": "false",
+        "absorption_proxy": "false", "exhaustion_proxy": "false",
+    }
+
+
+def signal(epoch: int, *, symbol: str = "EURUSD", timeframe: str = "PERIOD_M1",
+           direction: str = "BUY") -> dict[str, str]:
+    return {
+        "SignalID": f"{symbol}_{direction}_{epoch}", "Symbol": symbol,
+        "EntryTF": timeframe, "Direction": direction,
+    }
+
+
+def outcome(epoch: int, resolved: int, realized_r: str = "1.0",
+            *, filled: str = "Yes") -> dict[str, str]:
+    return {
+        "SignalID": f"EURUSD_BUY_{epoch}", "Filled": filled,
+        "RealizedR": realized_r, "OutcomeEpoch": str(resolved),
+    }
+
+
+class OrderFlowResearchTests(unittest.TestCase):
+    def test_join_uses_latest_prior_event(self) -> None:
+        signals = [signal(1_700_000_105)]
+        outcomes = [outcome(1_700_000_105, 1_700_000_500, "1.5")]
+        index, rejected = build_outcome_index(signals, outcomes)
+        joined, join_rejected = join_events_to_outcomes(
+            [event("old", 1_700_000_000, pressure=-0.3),
+             event("new", 1_700_000_100, pressure=0.7)],
+            index, max_match_gap_seconds=120,
+        )
+        self.assertEqual(len(joined), 1)
+        self.assertEqual(joined[0]["event_key"], "new")
+        self.assertEqual(joined[0]["pressure_ratio"], 0.7)
+        self.assertEqual(joined[0]["realized_r"], 1.5)
+        self.assertEqual(rejected, {})
+        self.assertEqual(join_rejected, {})
+
+    def test_future_event_is_never_joined(self) -> None:
+        signals = [signal(1_700_000_100)]
+        outcomes = [outcome(1_700_000_100, 1_700_000_500)]
+        index, _ = build_outcome_index(signals, outcomes)
+        joined, rejected = join_events_to_outcomes(
+            [event("future", 1_700_000_101)], index
+        )
+        self.assertEqual(joined, [])
+        self.assertEqual(rejected["no_prior_same_symbol_timeframe_event"], 1)
+
+    def test_stale_event_and_wrong_timeframe_are_rejected(self) -> None:
+        signals = [signal(1_700_000_500)]
+        outcomes = [outcome(1_700_000_500, 1_700_000_800)]
+        index, _ = build_outcome_index(signals, outcomes)
+        joined, rejected = join_events_to_outcomes(
+            [event("stale", 1_700_000_000),
+             event("wrong-tf", 1_700_000_490, timeframe="PERIOD_M5")],
+            index, max_match_gap_seconds=120,
+        )
+        self.assertEqual(joined, [])
+        self.assertEqual(rejected["stale_event_for_signal"], 1)
+
+    def test_unfilled_and_invalid_timing_outcomes_are_excluded(self) -> None:
+        s1 = signal(1_700_000_100)
+        s2 = signal(1_700_000_200, direction="SELL")
+        rows = [
+            {"SignalID": s1["SignalID"], "Filled": "No", "RealizedR": "0", "OutcomeEpoch": "1700000500"},
+            {"SignalID": s2["SignalID"], "Filled": "Yes", "RealizedR": "2", "OutcomeEpoch": "1700000100"},
+        ]
+        index, rejected = build_outcome_index([s1, s2], rows)
+        self.assertEqual(index, {})
+        self.assertEqual(rejected["not_filled"], 1)
+        self.assertEqual(rejected["outcome_precedes_decision"], 1)
+
+    def test_conflicting_duplicate_signal_is_fail_closed(self) -> None:
+        s = signal(1_700_000_100)
+        s2 = dict(s, Direction="SELL")
+        with self.assertRaisesRegex(ValueError, "conflicting duplicate"):
+            build_outcome_index([s, s2], [outcome(1_700_000_100, 1_700_000_500)])
+
+    def test_metrics_are_in_realized_r_and_chronological(self) -> None:
+        rows = [{"realized_r": x} for x in [1.0, -0.5, 0.0, -1.0, 2.0]]
+        metrics = summarize(rows)
+        self.assertEqual(metrics["n"], 5)
+        self.assertEqual(metrics["wins"], 2)
+        self.assertEqual(metrics["losses"], 2)
+        self.assertEqual(metrics["scratches"], 1)
+        self.assertAlmostEqual(metrics["expectancy_r"], 0.3)
+        self.assertAlmostEqual(metrics["profit_factor"], 2.0)
+        self.assertAlmostEqual(metrics["max_drawdown_r"], 1.5)
+
+    def test_chronological_split_purges_outcomes_overlapping_holdout(self) -> None:
+        rows = []
+        for i in range(10):
+            decision = i * 100 + 1
+            resolved = i * 100 + 50
+            if i == 6:
+                resolved = 750  # this training decision is resolved after test starts
+            rows.append({
+                "decision_epoch": decision,
+                "resolved_epoch": resolved,
+                "realized_r": 1.0,
+            })
+        split = chronological_split(rows, 0.30)
+        self.assertEqual(split["test_start_epoch"], 701)
+        self.assertEqual(len(split["test"]), 3)
+        self.assertEqual(len(split["train"]), 6)
+        self.assertEqual(split["purged_train"], 1)
+        self.assertLess(max(r["resolved_epoch"] for r in split["train"]), split["test_start_epoch"])
+
+    def test_empty_loss_side_does_not_claim_infinite_profit_factor(self) -> None:
+        metrics = summarize([{"realized_r": 1.0}, {"realized_r": 2.0}])
+        self.assertIsNone(metrics["profit_factor"])
+
+if __name__ == "__main__":
+    unittest.main()
