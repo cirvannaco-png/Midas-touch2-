@@ -76,9 +76,9 @@ PY
 
 unauth_code="$(request_code "$unauth_body" --request GET \
   --header 'Accept: application/json' "$base/execution-ledger/health")"
-if [[ "$unauth_code" == 2* ]]; then
-  echo "FAIL: execution-ledger health was accessible without an API key (HTTP $unauth_code)."
+if [[ "$unauth_code" != "401" ]]; then
+  echo "FAIL: missing API key should return HTTP 401, got HTTP $unauth_code."
   exit 1
 fi
-echo "PASS: unauthenticated execution-ledger health was rejected (HTTP $unauth_code)."
+echo "PASS: unauthenticated execution-ledger health returned HTTP 401."
 echo "All read-only staging preflight checks passed."
