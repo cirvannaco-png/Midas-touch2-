@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 EVIDENCE_REQUIRED = {
-    "event_key", "symbol", "timeframe", "bar_end_epoch", "pressure_ratio",
+    "schema_version", "event_key", "symbol", "timeframe", "bar_end_epoch", "pressure_ratio",
     "bullish_sweep_reclaim", "bearish_sweep_reclaim",
     "absorption_proxy", "exhaustion_proxy", "data_quality", "data_stale",
 }
@@ -106,6 +106,9 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, A
     events = []
     rejected = defaultdict(int)
     for event_key, row in deduped.items():
+        if row.get("schema_version") != "order-flow-evidence-v1":
+            rejected["unsupported_schema_version"] += 1
+            continue
         end_epoch = parse_epoch(row.get("bar_end_epoch"))
         pressure = parse_float(row.get("pressure_ratio"))
         quality = parse_epoch(row.get("data_quality"))
