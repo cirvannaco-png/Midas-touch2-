@@ -25,8 +25,10 @@ EVIDENCE_REQUIRED = {
     "value_area_source_quality", "value_area_source", "auction_location",
 }
 ATTRIBUTION_REQUIRED = {
-    "schema_version", "signal_id", "event_key", "symbol", "timeframe",
-    "direction", "signal_epoch", "attribution_status",
+    "schema_version", "signal_id", "decision_id", "decision_fingerprint",
+    "event_key", "symbol", "timeframe", "direction", "signal_epoch",
+    "attribution_status", "smc_inducement_valid", "smc_liquidity_swept",
+    "smc_bos_confirmed", "smc_sweep_grade", "smc_bos_strength", "smc_time_decay",
 }
 
 
@@ -87,25 +89,28 @@ def main() -> int:
 
     for token, description in (
         ('"order-flow-evidence-v3"', "evidence row schema literal"),
-        ('"order-flow-attribution-v2"', "attribution row schema literal"),
+        ('"order-flow-attribution-v3"', "attribution row schema literal"),
         ('"MedisTouch_OrderFlowEvidence_v3_"', "evidence filename version"),
-        ('"MedisTouch_OrderFlowAttribution_v2_"', "attribution filename version"),
+        ('"MedisTouch_OrderFlowAttribution_v3_"', "attribution filename version"),
     ):
         require(token in ea, f"EA missing {description}: {token}", errors)
 
-    # v2 carries auditable decision lineage. The analyzer must still accept
-    # v1 exports created before decision_id/fingerprint were added.
+    # v3 carries decision lineage plus SMC context. The analyzer must still
+    # accept v1/v2 attribution exports created before SMC context was added.
     for field in ("decision_id", "decision_fingerprint"):
         require(field in attribution_fields,
                 f"v2 attribution CSV header missing decision lineage field: {field}", errors)
-    require('"order-flow-attribution-v1"' in analyzer and
-            '"order-flow-attribution-v2"' in analyzer,
-            "analyzer must support legacy v1 and current v2 attribution schemas", errors)
+    require(all(f'"{schema}"' in analyzer for schema in (
+                "order-flow-attribution-v1", "order-flow-attribution-v2",
+                "order-flow-attribution-v3")),
+            "analyzer must support v1/v2 compatibility and current v3 attribution", errors)
 
     require('{"order-flow-evidence-v2", "order-flow-evidence-v3"}' in analyzer,
             "analyzer must retain legacy v2 support and parse the v3 schema", errors)
-    require('{"order-flow-attribution-v1", "order-flow-attribution-v2"}' in analyzer,
-            "analyzer must retain legacy v1 attribution support and parse v2 decision lineage", errors)
+    require(all(f'"{schema}"' in analyzer for schema in (
+                "order-flow-attribution-v1", "order-flow-attribution-v2",
+                "order-flow-attribution-v3")),
+            "analyzer must retain v1/v2 compatibility and parse v3 lineage/context", errors)
 
     expected_statuses = (
         "BAR_HISTORY_UNAVAILABLE", "BAR_CONTEXT_UNAVAILABLE",
@@ -199,7 +204,7 @@ def main() -> int:
                     "could not isolate order-flow evidence/logging sections", errors)
             remaining = remaining.replace(section, "", 1)
         require(
-            re.search(r"\\bof\\s*\\.", remaining) is None,
+            re.search(r"\bof\s*\.", remaining) is None,
             "OrderFlowSnapshot fields may only be read in evidence/logging sections",
             errors,
         )
