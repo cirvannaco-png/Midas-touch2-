@@ -12,7 +12,7 @@ When diagnostics are enabled, the EA appends per-closed-bar records to `MedisTou
 
 ## Unit-test seam
 
-The `Analyze` method accepts a chronological `MqlTick[]`, count, prior range, completed-bar OHLC, ATR, and output snapshot. Build a small MQL5 test harness or script that constructs deterministic ticks. If the compiler/test framework cannot construct the required structures cleanly, extract pure calculations into a testable helper without changing production trade decisions.
+The `Analyze` method accepts a chronological `MqlTick[]`, count, prior range, completed-bar OHLC, ATR, output snapshot, and an optional evaluation timestamp. Production passes the end boundary of the closed evidence window. Build a small MQL5 test harness or script that constructs deterministic ticks. If the compiler/test framework cannot construct the required structures cleanly, extract pure calculations into a testable helper without changing production trade decisions.
 
 For all fixtures, ticks must have valid positive bid/ask, ask >= bid, valid timestamps, and known chronological order unless the case intentionally tests invalid input.
 
@@ -35,11 +35,13 @@ For all fixtures, ticks must have valid positive bid/ask, ask >= bid, valid time
 | OF-013 | Small price progress + strong pressure near prior range edge | Absorption proxy may flag; assert only exact documented heuristic, not actual absorption |
 | OF-014 | Bar range >= 2 ATR and absolute pressure < 0.20 | Exhaustion proxy true |
 | OF-015 | Bar range < 2 ATR or absolute pressure >= 0.20 | Exhaustion proxy false |
-| OF-016 | Last tick older than configured threshold relative to test clock | `data_stale` true |
-| OF-017 | Last tick recent relative to test clock | `data_stale` false |
+| OF-016 | Last tick older than configured threshold relative to explicit evaluation time | `data_stale` true |
+| OF-017 | Last tick within configured threshold before explicit evaluation time | `data_stale` false |
+| OF-030 | Replay the same historical window later using the same evaluation time | Identical stale classification |
+| OF-031 | Any valid tick occurs after the supplied evaluation boundary | `Analyze` returns false; no usable evidence snapshot |
 | OF-018 | Diagnostics disabled at EA level | No diagnostic CopyTicksRange call/log; signal generation and execution path remain unchanged |
 | OF-019 | Diagnostics enabled with no tick history | A clear unavailable message; no trade decisions changed |
-| OF-020 | Same fixture replayed twice | Identical snapshot fields and log values, excluding intentionally clock-relative stale state |
+| OF-020 | Same fixture replayed twice with the same evaluation timestamp | Identical snapshot fields and log values, including stale state |
 
 ## Additional v3 cases
 
@@ -60,7 +62,7 @@ For all fixtures, ticks must have valid positive bid/ask, ask >= bid, valid time
 1. `CopyTicksRange` expects millisecond bounds. The EA helper converts `datetime` seconds to milliseconds; preserve and test that conversion.
 2. Tick chronology is checked with `MqlTick.time_msc` when available, with a seconds-based fallback when millisecond timestamps are absent.
 3. Data quality must remain proxy-only because the method infers midpoint direction; it must never imply exchange-quality aggressor data.
-4. Staleness is relative to `TimeCurrent()`; Strategy Tester and live-server time behavior should be checked. A closed-bar window naturally ends before the current tick, so do not mistake ordinary bar closure for a broken feed.
+4. Production staleness is measured against the explicit closed-window end time, not the wall clock. The optional `TimeCurrent()` fallback exists only for standalone callers that do not provide an evaluation time. Future-dated ticks beyond the evaluation boundary are rejected to preserve no-look-ahead behavior.
 5. `positive_tick_count` and `negative_tick_count` are counts of price-changing midpoint observations, not trade volume. Preserve these names and labels.
 6. Confirm that `iHighest` / `iLowest` ranges use the intended prior 20 completed bars (starting at shift 2) and that no current/incomplete bar enters the reference range.
 7. Confirm array ordering returned by `CopyTicksRange` on the supported MT5 build. The method intentionally rejects out-of-order input rather than silently sorting it.
