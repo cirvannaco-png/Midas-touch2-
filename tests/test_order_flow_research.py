@@ -369,6 +369,28 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["profit_factor"], 2.0)
         self.assertAlmostEqual(metrics["max_drawdown_r"], 1.5)
 
+    def test_streaks_and_trade_frequency_are_reported_without_guessing(self) -> None:
+        start = 1_700_000_000
+        rows = [
+            {"decision_epoch": start, "resolved_epoch": start + 70, "realized_r": -1.0},
+            {"decision_epoch": start + 86400, "resolved_epoch": start + 80, "realized_r": 1.0},
+            {"decision_epoch": start + 2 * 86400, "resolved_epoch": start + 90, "realized_r": -0.5},
+            {"decision_epoch": start + 3 * 86400, "resolved_epoch": start + 100, "realized_r": -0.25},
+            {"decision_epoch": start + 4 * 86400, "resolved_epoch": start + 110, "realized_r": 0.0},
+            {"decision_epoch": start + 5 * 86400, "resolved_epoch": start + 120, "realized_r": 0.75},
+        ]
+        metrics = summarize(rows)
+        # Sorted resolution outcomes: -1, +1, -0.5, -0.25, 0, +0.75.
+        self.assertEqual(metrics["longest_loss_streak"], 2)
+        self.assertEqual(metrics["longest_win_streak"], 1)
+        self.assertAlmostEqual(metrics["observed_calendar_days"], 5.0)
+        self.assertAlmostEqual(metrics["trades_per_30_calendar_days"], 36.0)
+
+    def test_trade_frequency_is_unknown_without_a_time_span(self) -> None:
+        metrics = summarize([{"realized_r": 1.0}])
+        self.assertIsNone(metrics["observed_calendar_days"])
+        self.assertIsNone(metrics["trades_per_30_calendar_days"])
+
     def test_drawdown_uses_resolution_order_for_overlapping_positions(self) -> None:
         # Entry order is loss, win, loss; resolution order is win, loss, loss.
         rows = [
