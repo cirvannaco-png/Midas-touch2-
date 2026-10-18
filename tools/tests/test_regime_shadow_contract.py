@@ -85,6 +85,25 @@ class RegimeShadowContractTests(unittest.TestCase):
         self.assertIn("return (nowSeconds<finish);", source)
         self.assertIn("BROKER_SCHEDULE_NOT_EXPOSED_BY_TERMINAL", source)
 
+    def test_broker_aware_entry_gate_is_separate_and_default_off(self):
+        policy = read("EA/includes/Decision/MarketConditionsPolicy.mqh")
+        main = read("EA/MedisTouch_v2.8.mq5")
+        self.assertIn("InpEnableBrokerAwareEntryGate=false", main)
+        self.assertIn("InpBrokerGateMaxSpreadPoints=0.0", main)
+        self.assertIn("InpBrokerGateMaxSpreadToATR=0.0", main)
+        self.assertIn("BLOCK_INVALID_OR_INCOMPLETE_POLICY_CONFIGURATION", policy)
+        self.assertIn("BLOCK_MARKET_AVAILABILITY_", policy)
+        self.assertIn("BLOCK_LIQUIDITY_SESSION_POLICY", policy)
+        self.assertIn("BLOCK_MAX_SPREAD_POINTS", policy)
+        self.assertIn("BLOCK_MAX_SPREAD_TO_ATR", policy)
+        self.assertIn("BLOCK_CONFIGURED_ROLLOVER_WINDOW", policy)
+        self.assertIn("BLOCK_LOW_VOLATILITY", policy)
+        self.assertIn("BLOCK_UNDEFINED_VOLATILITY", policy)
+        self.assertNotIn("OrderSend(", policy)
+        self.assertNotIn("trade.Buy(", policy)
+        self.assertIn("if(InpEnableBrokerAwareEntryGate)", main)
+        self.assertIn("BROKER_CONDITIONS_REJECTED", main)
+
     def test_existing_outcome_export_contains_join_key_and_cost_fields(self):
         source = read("EA/includes/Core/SignalLogger.mqh")
         outcome = source[source.index("bool CSignalLogger::LogOutcome"):]
