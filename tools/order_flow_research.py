@@ -27,6 +27,7 @@ ATTRIBUTION_REQUIRED = {
     "schema_version", "signal_id", "event_key", "symbol", "timeframe",
     "direction", "signal_epoch", "attribution_status",
 }
+ATTRIBUTION_V2_REQUIRED = {"decision_id", "decision_fingerprint"}
 FEATURES = (
     "bullish_sweep_reclaim",
     "bearish_sweep_reclaim",
@@ -336,12 +337,19 @@ def build_attribution_index(rows: list[dict[str, str]]) -> tuple[dict[str, dict[
     rejected = defaultdict(int)
     for signal_id, row in indexed_rows.items():
         status = row.get("attribution_status", "").strip().upper()
-        if row.get("schema_version") != "order-flow-attribution-v1":
+        schema = row.get("schema_version", "").strip()
+        if schema not in {"order-flow-attribution-v1", "order-flow-attribution-v2"}:
             rejected["unsupported_attribution_schema"] += 1
         elif status != "MATCHED":
             rejected["status_" + (status.lower() if status else "missing")] += 1
         elif not row.get("event_key", "").strip():
             rejected["matched_status_without_event_key"] += 1
+        elif schema == "order-flow-attribution-v2" and (
+                not ATTRIBUTION_V2_REQUIRED.issubset(row) or
+                not row.get("decision_id", "").strip().isdecimal() or
+                int(row.get("decision_id", "0") or "0") <= 0 or
+                not row.get("decision_fingerprint", "").strip()):
+            rejected["missing_decision_lineage"] += 1
         else:
             index[signal_id] = row
     return index, dict(rejected)
@@ -414,6 +422,10 @@ def join_events_to_outcomes(events: list[dict[str, Any]],
             row[name] = event.get(name)
         row["event_key"] = event["event_key"]
         row["event_gap_seconds"] = gap
+        if attribution_index is not None and attribution is not None:
+            # Keep exact decision lineage in the report when using the v2 schema.
+            row["decision_id"] = attribution.get("decision_id")
+            row["decision_fingerprint"] = attribution.get("decision_fingerprint")
         joined.append(row)
     return sorted(joined, key=lambda r: r["decision_epoch"]), dict(rejected)
 
@@ -599,7 +611,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--outcomes", required=True, help="MedisTouch_Outcomes_v2_<symbol>.csv export")
     parser.add_argument(
         "--attribution", default=None,
-        help="optional MedisTouch_OrderFlowAttribution_v1_<symbol>_<timeframe>.csv; direct SignalID join, no time fallback",
+        help="optional MedisTouch_OrderFlowAttribution_v1/v2_<symbol>_<timeframe>.csv; direct SignalID join, no time fallback",
     )
     parser.add_argument("--output", default="order_flow_research_report.json")
     parser.add_argument(
