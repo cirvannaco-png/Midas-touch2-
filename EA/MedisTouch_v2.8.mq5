@@ -824,6 +824,55 @@ void OnTimer()
      }
   }
 void CheckSignalLifecycle(double atr){if(g_lifecycleDecisionId==0)return;bool filled;double fillPrice;datetime fillTime;int barsToFill;if(!g_tracker.GetFillState(g_lifecycleCreationTime,g_lifecycleDecisionId,filled,fillPrice,fillTime,barsToFill)){g_lifecycleDecisionId=0;return;}if(filled){g_lifecycleDecisionId=0;return;}bool buy=g_lifecycleSetup.type==ORDER_TYPE_BUY;int barsSince=iBarShift(_Symbol,_Period,g_lifecycleCreationTime,false);if(barsSince>=InpSignalExpiryBars){if(g_lifecycleStatus!="expired"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"expired",StringFormat("Unfilled for %d execution bars",barsSince));g_lifecycleStatus="expired";}g_lifecycleDecisionId=0;return;}double opposite=g_scoring.CalculateConfidence(!buy);if(opposite>=InpInvalidateOpposingConfidence){if(g_lifecycleStatus!="invalidated"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"invalidated",StringFormat("Opposing confidence %.0f",opposite));g_lifecycleStatus="invalidated";}g_lifecycleDecisionId=0;return;}if(atr>0){double entry=ResolveExecutionEntry(g_lifecycleSetup);double price=buy?SymbolInfoDouble(_Symbol,SYMBOL_ASK):SymbolInfoDouble(_Symbol,SYMBOL_BID);double drift=MathAbs(price-entry)/atr;bool wrong=buy?(price>entry):(price<entry);if(wrong&&drift>=InpSignalStaleChaseATR){if(g_lifecycleStatus!="stale"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"stale",StringFormat("Price drifted %.2f ATR past entry",drift));g_lifecycleStatus="stale";}}else if(g_lifecycleStatus=="stale"&&drift<InpSignalStaleChaseATR*0.5){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"valid","Price returned toward entry");g_lifecycleStatus="valid";}}}
+bool AppendOrderFlowEvidence(datetime barStart,datetime barEnd,
+                           double priorHigh,double priorLow,
+                           double barHigh,double barLow,double barClose,double atr,
+                           OrderFlowSnapshot &of)
+  {
+   string filename="MedisTouch_OrderFlowEvidence_v1_"+_Symbol+"_"+EnumToString(_Period)+".csv";
+   int flags=FILE_CSV|FILE_READ|FILE_WRITE|FILE_SHARE_READ|FILE_ANSI;
+   ResetLastError();
+   int handle=FileOpen(filename,flags,',');
+   if(handle==INVALID_HANDLE)
+     {
+      PrintFormat("OF_DIAG evidence file open failed: %s error=%d",filename,GetLastError());
+      return false;
+     }
+
+   if(FileSize(handle)==0)
+     {
+      FileWrite(handle,"schema_version","event_key","symbol","timeframe",
+                "bar_start_epoch","bar_end_epoch","prior_high","prior_low",
+                "bar_high","bar_low","bar_close","atr","tick_count","data_quality",
+                "pressure_ratio","signed_tick_pressure","positive_tick_count",
+                "negative_tick_count","price_progress","bullish_sweep_reclaim",
+                "bearish_sweep_reclaim","absorption_proxy","exhaustion_proxy",
+                "data_stale","first_tick_time_msc","last_tick_time_msc");
+     }
+
+   FileSeek(handle,0,SEEK_END);
+   string eventKey=_Symbol+"|"+EnumToString(_Period)+"|"+IntegerToString((long)barStart);
+   FileWrite(handle,"order-flow-evidence-v1",eventKey,_Symbol,EnumToString(_Period),
+             IntegerToString((long)barStart),IntegerToString((long)barEnd),
+             DoubleToString(priorHigh,_Digits),DoubleToString(priorLow,_Digits),
+             DoubleToString(barHigh,_Digits),DoubleToString(barLow,_Digits),
+             DoubleToString(barClose,_Digits),DoubleToString(atr,_Digits),
+             IntegerToString(of.tick_count),IntegerToString((int)of.quality),
+             DoubleToString(of.pressure_ratio,6),DoubleToString(of.signed_tick_pressure,0),
+             IntegerToString(of.positive_tick_count),IntegerToString(of.negative_tick_count),
+             DoubleToString(of.price_progress,_Digits),
+             of.bullish_sweep_reclaim?"true":"false",
+             of.bearish_sweep_reclaim?"true":"false",
+             of.absorption_proxy?"true":"false",
+             of.exhaustion_proxy?"true":"false",
+             of.data_stale?"true":"false",
+             IntegerToString(of.first_tick_time_msc),IntegerToString(of.last_tick_time_msc));
+   FileFlush(handle);
+   bool ok=(GetLastError()==0);
+   FileClose(handle);
+   return ok;
+  }
+
 void LogOrderFlowDiagnostics()
   {
    if(!InpEnableOrderFlowDiagnostics || g_chartCtx==NULL)
@@ -866,6 +915,7 @@ void LogOrderFlowDiagnostics()
       PrintFormat("OF_DIAG rejected: insufficient/unordered data, ticks=%d",copied);
       return;
      }
+   AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,barHigh,barLow,barClose,atr,of);
    PrintFormat("OF_DIAG symbol=%s tf=%s ticks=%d quality=%d pressure=%.3f progress=%.5f bull_reclaim=%s bear_reclaim=%s absorption_proxy=%s exhaustion_proxy=%s stale=%s (diagnostic only)",
                _Symbol,EnumToString(_Period),of.tick_count,(int)of.quality,
                of.pressure_ratio,of.price_progress,
