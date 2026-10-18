@@ -74,11 +74,20 @@ def main() -> int:
 
     for token, description in (
         ('"order-flow-evidence-v3"', "evidence row schema literal"),
-        ('"order-flow-attribution-v1"', "attribution row schema literal"),
+        ('"order-flow-attribution-v2"', "attribution row schema literal"),
         ('"MedisTouch_OrderFlowEvidence_v3_"', "evidence filename version"),
-        ('"MedisTouch_OrderFlowAttribution_v1_"', "attribution filename version"),
+        ('"MedisTouch_OrderFlowAttribution_v2_"', "attribution filename version"),
     ):
         require(token in ea, f"EA missing {description}: {token}", errors)
+
+    # v2 carries auditable decision lineage. The analyzer must still accept
+    # v1 exports created before decision_id/fingerprint were added.
+    for field in ("decision_id", "decision_fingerprint"):
+        require(field in attribution_fields,
+                f"v2 attribution CSV header missing decision lineage field: {field}", errors)
+    require('"order-flow-attribution-v1"' in analyzer and
+            '"order-flow-attribution-v2"' in analyzer,
+            "analyzer must support legacy v1 and current v2 attribution schemas", errors)
 
     require('{"order-flow-evidence-v2", "order-flow-evidence-v3"}' in analyzer,
             "analyzer must retain legacy v2 support and parse the v3 schema", errors)
