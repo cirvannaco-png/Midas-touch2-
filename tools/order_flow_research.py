@@ -23,6 +23,10 @@ EVIDENCE_REQUIRED = {
 }
 SIGNAL_REQUIRED = {"SignalID", "Symbol", "EntryTF", "Direction"}
 OUTCOME_REQUIRED = {"SignalID", "Filled", "RealizedR", "OutcomeEpoch"}
+ATTRIBUTION_REQUIRED = {
+    "schema_version", "signal_id", "event_key", "symbol", "timeframe",
+    "direction", "signal_epoch", "attribution_status",
+}
 FEATURES = (
     "bullish_sweep_reclaim",
     "bearish_sweep_reclaim",
@@ -198,9 +202,30 @@ def build_outcome_index(signal_rows: list[dict[str, str]],
     return index, dict(rejected)
 
 
+
+def build_attribution_index(rows: list[dict[str, str]]) -> tuple[dict[str, dict[str, str]], dict[str, int]]:
+    """Index explicit signal-to-event links. Never fall back to time for supplied attribution."""
+    require_columns(rows, ATTRIBUTION_REQUIRED, "order-flow attribution")
+    indexed_rows = _dedupe_by_key(rows, "signal_id", "order-flow attribution")
+    index: dict[str, dict[str, str]] = {}
+    rejected = defaultdict(int)
+    for signal_id, row in indexed_rows.items():
+        status = row.get("attribution_status", "").strip().upper()
+        if row.get("schema_version") != "order-flow-attribution-v1":
+            rejected["unsupported_attribution_schema"] += 1
+        elif status != "MATCHED":
+            rejected["status_" + (status.lower() if status else "missing")] += 1
+        elif not row.get("event_key", "").strip():
+            rejected["matched_status_without_event_key"] += 1
+        else:
+            index[signal_id] = row
+    return index, dict(rejected)
+
+
 def join_events_to_outcomes(events: list[dict[str, Any]],
                             outcomes: dict[str, dict[str, Any]],
-                            max_match_gap_seconds: int | None = None) -> tuple[list[dict[str, Any]], dict[str, int]]:
+                            max_match_gap_seconds: int | None = None,
+                            attribution_index: dict[str, dict[str, str]] | None = None) -> tuple[list[dict[str, Any]], dict[str, int]]:
     if max_match_gap_seconds is not None and max_match_gap_seconds < 0:
         raise ValueError("max_match_gap_seconds must be non-negative")
     if max_match_gap_seconds == 0:
@@ -210,13 +235,36 @@ def join_events_to_outcomes(events: list[dict[str, Any]],
         grouped[(event["symbol"], event["timeframe"])].append(event)
     joined: list[dict[str, Any]] = []
     rejected = defaultdict(int)
+    events_by_key = {event["event_key"]: event for event in events}
     for signal_id, outcome in outcomes.items():
         possible = grouped.get((outcome["symbol"], outcome["timeframe"]), [])
-        eligible = [e for e in possible if e["bar_end_epoch"] <= outcome["decision_epoch"]]
-        if not eligible:
-            rejected["no_prior_same_symbol_timeframe_event"] += 1
-            continue
-        event = max(eligible, key=lambda e: e["bar_end_epoch"])
+        if attribution_index is not None:
+            attribution = attribution_index.get(signal_id)
+            if attribution is None:
+                rejected["missing_direct_attribution"] += 1
+                continue
+            if (attribution.get("symbol") != outcome["symbol"] or
+                    attribution.get("timeframe") != outcome["timeframe"] or
+                    attribution.get("direction") != outcome["direction"] or
+                    parse_epoch(attribution.get("signal_epoch")) != outcome["decision_epoch"]):
+                rejected["attribution_identity_mismatch"] += 1
+                continue
+            event = events_by_key.get(attribution.get("event_key", "").strip())
+            if event is None:
+                rejected["direct_event_unusable_or_missing"] += 1
+                continue
+            if event["symbol"] != outcome["symbol"] or event["timeframe"] != outcome["timeframe"]:
+                rejected["direct_event_identity_mismatch"] += 1
+                continue
+            if event["bar_end_epoch"] > outcome["decision_epoch"]:
+                rejected["direct_attribution_event_after_signal"] += 1
+                continue
+        else:
+            eligible = [e for e in possible if e["bar_end_epoch"] <= outcome["decision_epoch"]]
+            if not eligible:
+                rejected["no_prior_same_symbol_timeframe_event"] += 1
+                continue
+            event = max(eligible, key=lambda e: e["bar_end_epoch"])
         gap = outcome["decision_epoch"] - event["bar_end_epoch"]
         timeframe_limit = TIMEFRAME_SECONDS.get(outcome["timeframe"])
         if max_match_gap_seconds is None:
@@ -332,16 +380,25 @@ def _groups(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
 def analyze(evidence_rows: list[dict[str, str]],
             signal_rows: list[dict[str, str]],
             outcome_rows: list[dict[str, str]],
-            max_match_gap_seconds: int = 120,
+            max_match_gap_seconds: int | None = None,
             holdout_fraction: float = 0.30,
-            min_sample: int = 30) -> dict[str, Any]:
+            min_sample: int = 30,
+            attribution_rows: list[dict[str, str]] | None = None) -> dict[str, Any]:
     if min_sample < 1:
         raise ValueError("min_sample must be positive")
     events, event_rejections = load_order_flow_events(evidence_rows)
     raw_event_keys = {row.get("event_key", "").strip() for row in evidence_rows
                       if row.get("event_key", "").strip()}
     outcome_index, outcome_rejections = build_outcome_index(signal_rows, outcome_rows)
-    joined, join_rejections = join_events_to_outcomes(events, outcome_index, max_match_gap_seconds)
+    attribution_rejections: dict[str, int] = {}
+    attribution_mode = "nearest_prior_time"
+    attribution_index = None
+    if attribution_rows is not None:
+        attribution_mode = "direct_signal_id"
+        attribution_index, attribution_rejections = build_attribution_index(attribution_rows)
+    joined, join_rejections = join_events_to_outcomes(
+        events, outcome_index, max_match_gap_seconds, attribution_index
+    )
     split = chronological_split(joined, holdout_fraction)
     descriptions = {}
     for name, subset in _groups(joined).items():
@@ -361,6 +418,8 @@ def analyze(evidence_rows: list[dict[str, str]],
     return {
         "schema_version": "midas-touch2-order-flow-research-v1",
         "purpose": "descriptive diagnostics; not an execution policy or profitability claim",
+        "attribution_mode": attribution_mode,
+        "attribution_rejections": attribution_rejections,
         "matched_outcomes": len(joined),
         "matched_unique_event_count": len(unique_joined_events),
         "signals_per_event": {
@@ -403,6 +462,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--evidence", required=True, help="Order-flow evidence CSV export")
     parser.add_argument("--signals", required=True, help="MedisTouch_Signals_<symbol>.csv export")
     parser.add_argument("--outcomes", required=True, help="MedisTouch_Outcomes_v2_<symbol>.csv export")
+    parser.add_argument(
+        "--attribution", default=None,
+        help="optional MedisTouch_OrderFlowAttribution_v1_<symbol>_<timeframe>.csv; direct SignalID join, no time fallback",
+    )
     parser.add_argument("--output", default="order_flow_research_report.json")
     parser.add_argument(
         "--max-match-gap-seconds", type=int, default=None,
@@ -417,6 +480,7 @@ def main(argv: list[str] | None = None) -> int:
             max_match_gap_seconds=args.max_match_gap_seconds,
             holdout_fraction=args.holdout_fraction,
             min_sample=args.min_sample,
+            attribution_rows=read_csv(args.attribution) if args.attribution else None,
         )
         Path(args.output).write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     except (OSError, ValueError) as exc:
@@ -424,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(json.dumps({
         "matched_outcomes": report["matched_outcomes"],
+        "attribution_mode": report["attribution_mode"],
         "train_count": report["chronological_holdout"]["train_count_after_purge"],
         "holdout_count": report["chronological_holdout"]["holdout_count"],
         "report": str(Path(args.output)),
