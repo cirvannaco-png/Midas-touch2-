@@ -1,6 +1,9 @@
 name: Midas Touch Production Health Check
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/production-health-check.yml"
   workflow_dispatch:
   schedule:
     - cron: "7 */6 * * *"
@@ -18,7 +21,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  workflow-static-validation:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: Validate health workflow without production credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Parse YAML and assert fail-closed release gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pyyaml
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          path = Path(".github/workflows/production-health-check.yml")
+          document = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+          assert isinstance(document, dict), "workflow document must be a mapping"
+          assert "workflow_dispatch" in document["on"], "manual read-only preflight trigger missing"
+          assert "schedule" in document["on"], "periodic health trigger missing"
+          assert "pull_request" in document["on"], "static PR validation trigger missing"
+          jobs = document["jobs"]
+          health = jobs["service-database-health"]
+          assert health["environment"] == "production", "health gate must use protected production environment"
+          assert health["if"] == "${{ github.event_name != 'pull_request' }}", "production health calls must not run on PRs"
+          runs = "\n".join(step.get("run", "") for step in health["steps"])
+          for required in (
+              "secrets.BRIDGE_BASE_URL",
+              "secrets.BRIDGE_API_KEY",
+              "execution_ledger",
+              "database",
+              "status",
+              "401|403|422",
+              "/health/db",
+          ):
+              assert required in path.read_text(encoding="utf-8"), f"required release-gate contract missing: {required}"
+          static = jobs["workflow-static-validation"]
+          assert static["if"] == "${{ github.event_name == 'pull_request' }}", "static validation job must be PR-only"
+          assert all("BRIDGE_API_KEY" not in step.get("env", {}) for step in static["steps"]), "production key must never enter PR validation"
+          print("PASS: valid YAML; authenticated ledger, unauthenticated denial, DB-backed probe, and PR secret isolation gates present.")
+          PY
+
   service-database-health:
+    if: ${{ github.event_name != 'pull_request' }}
     name: Verify authenticated execution ledger and live database
     runs-on: ubuntu-latest
     timeout-minutes: 8
