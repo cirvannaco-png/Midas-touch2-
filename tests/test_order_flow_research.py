@@ -139,6 +139,17 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["profit_factor"], 2.0)
         self.assertAlmostEqual(metrics["max_drawdown_r"], 1.5)
 
+    def test_drawdown_uses_resolution_order_for_overlapping_positions(self) -> None:
+        # Entry order is loss, win, loss; resolution order is win, loss, loss.
+        rows = [
+            {"decision_epoch": 100, "resolved_epoch": 400, "realized_r": -1.0},
+            {"decision_epoch": 200, "resolved_epoch": 250, "realized_r": 2.0},
+            {"decision_epoch": 300, "resolved_epoch": 350, "realized_r": -1.0},
+        ]
+        metrics = summarize(rows)
+        self.assertAlmostEqual(metrics["max_drawdown_r"], 2.0)
+        self.assertEqual(metrics["total_r"], 0.0)
+
     def test_chronological_split_purges_outcomes_overlapping_holdout(self) -> None:
         rows = []
         for i in range(10):
