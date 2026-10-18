@@ -467,7 +467,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     values = [float(value) for _, _, value in valid_rows]
     if not values:
         return {
-            "n": 0, "wins": 0, "losses": 0, "scratches": 0,
+            "n": 0, "trade_count": 0, "wins": 0, "losses": 0, "scratches": 0,
             "win_rate": None, "expectancy_r": None, "profit_factor": None,
             "max_drawdown_r": None, "total_r": 0.0,
         }
@@ -485,6 +485,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         max_drawdown = max(max_drawdown, peak - equity)
     return {
         "n": len(values),
+        "trade_count": len(values),
         "wins": wins,
         "losses": losses,
         "scratches": scratches,
