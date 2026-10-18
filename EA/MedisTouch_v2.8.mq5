@@ -36,7 +36,7 @@
 
 input group "General"
 input int InpMaxHistoryBars=500;
-input group "Order-Flow Diagnostics (diagnostic-only; does not affect trades)"
+input group "Order-Flow Diagnostics (diagnostic-only; disabled by default; adds I/O when enabled)"
 input bool InpEnableOrderFlowDiagnostics=false;
 input int InpOrderFlowMinTicks=8;
 input double InpOrderFlowPressureThreshold=0.60;
