@@ -39,9 +39,7 @@ request_code() {
 }
 
 # This route executes a real SELECT 1 through the running app's DATABASE_URL.
-health_code="$(request_code "$health_body" --request GET \
-  --header "x-api-key: $BRIDGE_API_KEY" \
-  --header 'Accept: application/json' "$base/health/db")"
+health_code="$(request_code "$health_body" --request GET --header 'Accept: application/json' "$base/health/db")"
 if [[ "$health_code" != "200" ]]; then
   echo "FAIL: /health/db returned HTTP $health_code."
   exit 1
