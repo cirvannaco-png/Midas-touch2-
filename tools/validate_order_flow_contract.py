@@ -112,10 +112,10 @@ def main() -> int:
             "order-flow analysis must reject future ticks beyond the evaluation boundary", errors)
     require("datetime referenceTime=(evaluationTime>0 ? evaluationTime : TimeCurrent())" in module,
             "staleness must be anchored to the supplied evaluation timestamp", errors)
-    require(re.search(
-                r"g_orderFlowDiagnostics\\.Analyze\\(ticks,copied,priorHigh,priorLow,\\s*barHigh,barLow,barClose,atr,of,barEnd\\)",
-                ea) is not None,
-            "production analysis must pass the closed-bar end timestamp", errors)
+    require(
+        "g_orderFlowDiagnostics.Analyze(ticks,copied,priorHigh,priorLow," in ea and
+        "barHigh,barLow,barClose,atr,of,barEnd)" in ea,
+        "production analysis must pass the closed-bar end timestamp", errors)
 
     require('input bool InpEnableOrderFlowDiagnostics=false;' in ea,
             "order-flow diagnostics must remain disabled by default", errors)
