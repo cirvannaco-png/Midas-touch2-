@@ -173,3 +173,15 @@ def test_outcome_provenance_preserves_signed_cashflows_and_unknown_costs():
     assert r'\"swap_cashflow\":%s' in publisher
     assert r'\"broker_fee_cashflow\":%s' in publisher
     assert '"commission_cashflow", "swap_cashflow", "broker_fee_cashflow"' in walk_forward
+
+
+def test_ea_persists_candidate_to_decision_trace_before_ignore_return():
+    ea = EA.read_text()
+    trace = (ROOT / "EA" / "includes" / "Decision" / "DecisionTraceLogger.mqh").read_text()
+    assert '#include "includes/Decision/DecisionTraceLogger.mqh"' in ea
+    assert "CDecisionTraceLogger g_decisionTrace;" in ea
+    assert "g_decisionTrace.Init(_Symbol);" in ea
+    assert "MidasTouch_DecisionTrace_" in trace
+    assert "DecisionID" in trace and "DecisionFingerprint" in trace
+    assert ea.index("decision.decision_fingerprint=DecisionFingerprintFor(decision);") < ea.index("g_decisionTrace.Log(chosen,decision);")
+    assert ea.index("g_decisionTrace.Log(chosen,decision);") < ea.index("if(!decision.valid||decision.action==POLICY_IGNORE)return;")
