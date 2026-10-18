@@ -17,6 +17,7 @@ from typing import Any, Iterable
 
 EVIDENCE_REQUIRED = {
     "schema_version", "event_key", "symbol", "timeframe", "bar_end_epoch", "pressure_ratio",
+    "diagnostic_status",
     "bullish_sweep_reclaim", "bearish_sweep_reclaim",
     "absorption_proxy", "exhaustion_proxy", "data_quality", "data_stale",
 }
@@ -116,24 +117,29 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, A
     events = []
     rejected = defaultdict(int)
     for event_key, row in deduped.items():
-        if row.get("schema_version") != "order-flow-evidence-v1":
+        if row.get("schema_version") != "order-flow-evidence-v2":
             rejected["unsupported_schema_version"] += 1
             continue
         end_epoch = parse_epoch(row.get("bar_end_epoch"))
         pressure = parse_float(row.get("pressure_ratio"))
         quality = parse_epoch(row.get("data_quality"))
         stale = parse_bool(row.get("data_stale"))
+        status = row.get("diagnostic_status", "").strip().upper()
         flags = {feature: parse_bool(row.get(feature)) for feature in FEATURES}
-        if end_epoch is None or pressure is None or stale is None or any(v is None for v in flags.values()):
+        if (end_epoch is None or pressure is None or stale is None or not status or
+                any(v is None for v in flags.values())):
             rejected["invalid_event_fields"] += 1
             continue
-        # Only the deliberately limited midpoint-tick proxy is expected.
-        # Reject any source quality that might be mislabeled as actual delta.
+        # Failed windows are retained in the CSV so report coverage can show
+        # them, but only complete, non-stale proxy observations enter metrics.
+        if status == "STALE_PROXY" or (status == "OK_PROXY" and stale):
+            rejected["stale_event_record"] += 1
+            continue
+        if status != "OK_PROXY":
+            rejected["status_" + status.lower()] += 1
+            continue
         if quality != 1:
             rejected["unsupported_or_mislabeled_data_quality"] += 1
-            continue
-        if stale:
-            rejected["stale_event_record"] += 1
             continue
         events.append({
             "event_key": event_key,
@@ -332,6 +338,8 @@ def analyze(evidence_rows: list[dict[str, str]],
     if min_sample < 1:
         raise ValueError("min_sample must be positive")
     events, event_rejections = load_order_flow_events(evidence_rows)
+    raw_event_keys = {row.get("event_key", "").strip() for row in evidence_rows
+                      if row.get("event_key", "").strip()}
     outcome_index, outcome_rejections = build_outcome_index(signal_rows, outcome_rows)
     joined, join_rejections = join_events_to_outcomes(events, outcome_index, max_match_gap_seconds)
     split = chronological_split(joined, holdout_fraction)
@@ -361,7 +369,12 @@ def analyze(evidence_rows: list[dict[str, str]],
             "events_shared_by_multiple_signals": sum(n > 1 for n in event_counts.values()),
             "note": "Trade count is not the independent sample size when multiple signals share a bar feature snapshot.",
         },
+        "source_evidence_row_count": len(evidence_rows),
+        "distinct_evidence_event_keys": len(raw_event_keys),
         "source_event_count": len(events),
+        "usable_evidence_fraction": (
+            len(events) / len(raw_event_keys) if raw_event_keys else None
+        ),
         "source_signal_count": len(signal_rows),
         "event_rejections": event_rejections,
         "resolved_candidate_count": len(outcome_index),
