@@ -120,7 +120,8 @@ public:
    bool Analyze(const MqlTick &ticks[],int count,
                 double priorHigh,double priorLow,
                 double barHigh,double barLow,double barClose,
-                double atr,OrderFlowSnapshot &out)
+                double atr,OrderFlowSnapshot &out,
+                datetime evaluationTime=0)
      {
       out.quality=OF_QUALITY_UNAVAILABLE;
       out.tick_count=0;
@@ -177,6 +178,9 @@ public:
          long tickTimeMsc=(ticks[i].time_msc>0 ? ticks[i].time_msc : (long)ticks[i].time*1000);
          if(tickTimeMsc<=0)
             continue;
+         // A closed-window replay must reject post-boundary ticks to prevent look-ahead.
+         if(evaluationTime>0 && tickTimeMsc>(long)evaluationTime*1000)
+            return false;
          double mid=(bid+ask)*0.5;
          if(valid==0)
            {
@@ -214,9 +218,12 @@ public:
       out.price_progress=lastMid-firstMid;
       out.quality=OF_QUALITY_PROXY_ONLY;
 
-      datetime now=TimeCurrent();
-      out.data_stale=(now>0 && out.last_tick_time>0 &&
-                      (now-out.last_tick_time)>m_max_tick_age_seconds);
+      // Anchor staleness to the closed-window boundary when supplied so that
+      // a delayed historical replay returns the same classification.
+      datetime referenceTime=(evaluationTime>0 ? evaluationTime : TimeCurrent());
+      long ageMsc=(long)referenceTime*1000-out.last_tick_time_msc;
+      out.data_stale=(referenceTime>0 && out.last_tick_time_msc>0 &&
+                      (ageMsc<0 || ageMsc>(long)m_max_tick_age_seconds*1000));
 
       // Sweep-and-reclaim uses the supplied completed-bar OHLC and prior
       // levels. Call only after the bar closes to avoid intrabar repainting.
