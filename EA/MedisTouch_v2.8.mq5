@@ -925,7 +925,7 @@ void LogOrderFlowDiagnostics()
    int loShift=iLowest(_Symbol,InpFVGTF,MODE_LOW,20,2);
    if(hiShift<0 || loShift<0)
      {
-      g_orderFlowDiagnostics.Analyze(emptyTicks,0,0.0,0.0,0.0,0.0,0.0,0.0,of);
+      g_orderFlowDiagnostics.Analyze(emptyTicks,0,0.0,0.0,0.0,0.0,0.0,0.0,of,barEnd);
       AppendOrderFlowEvidence(barStart,barEnd,0.0,0.0,0.0,0.0,0.0,0.0,
                               "BAR_HISTORY_UNAVAILABLE",of);
       Print("OF_DIAG unavailable: bar history/levels missing");
