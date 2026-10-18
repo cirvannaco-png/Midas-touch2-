@@ -165,14 +165,14 @@ class OrderFlowResearchTests(unittest.TestCase):
     def test_read_csv_supports_utf8_bom_and_comma_delimiter(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "signals.csv"
-            path.write_text("\\ufeffSignalID,RealizedR\\nsig-1,1.25\\n", encoding="utf-8")
+            path.write_text("\ufeffSignalID,RealizedR\nsig-1,1.25\n", encoding="utf-8")
             rows = read_csv(path)
         self.assertEqual(rows, [{"SignalID": "sig-1", "RealizedR": "1.25"}])
 
     def test_read_csv_supports_semicolon_delimiter(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "outcomes.csv"
-            path.write_text("SignalID;RealizedR\\nsig-1;1.25\\nsig-2;-0.5\\n", encoding="utf-8")
+            path.write_text("SignalID;RealizedR\nsig-1;1.25\nsig-2;-0.5\n", encoding="utf-8")
             rows = read_csv(path)
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[1]["RealizedR"], "-0.5")
