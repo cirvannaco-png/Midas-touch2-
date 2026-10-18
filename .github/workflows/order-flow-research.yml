@@ -11,6 +11,8 @@ on:
       - "tools/order_flow_research.py"
       - "tests/test_order_flow_research.py"
       - "docs/ORDER_FLOW_TEST_PLAN.md"
+      - "docs/ORDER_FLOW_RESEARCH_TOOL.md"
+      - "docs/TRADING_KNOWLEDGE_INTEGRATION.md"
       - ".github/workflows/order-flow-research.yml"
   pull_request:
     paths:
@@ -19,6 +21,8 @@ on:
       - "tools/order_flow_research.py"
       - "tests/test_order_flow_research.py"
       - "docs/ORDER_FLOW_TEST_PLAN.md"
+      - "docs/ORDER_FLOW_RESEARCH_TOOL.md"
+      - "docs/TRADING_KNOWLEDGE_INTEGRATION.md"
       - ".github/workflows/order-flow-research.yml"
   workflow_dispatch:
 
