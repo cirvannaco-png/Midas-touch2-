@@ -518,6 +518,14 @@ def chronological_split(rows: list[dict[str, Any]], holdout_fraction: float) -> 
 
 def _groups(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     groups: dict[str, list[dict[str, Any]]] = {"all": rows}
+
+    def category_text(value: Any) -> str:
+        # Canonicalize booleans to lower-case so JSON reports and stable keys
+        # do not depend on whether inputs came from Python bools or CSV text.
+        if isinstance(value, bool):
+            return str(value).lower()
+        return str(value if value is not None else "").strip()
+
     for feature in FEATURES:
         for value in (True, False):
             groups[f"{feature}={str(value).lower()}"] = [r for r in rows if r[feature] is value]
@@ -535,11 +543,11 @@ def _groups(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
                       "pressure_progress_divergence", "utc_day_pressure_price_divergence",
                       "smc_inducement_valid", "smc_liquidity_swept", "smc_bos_confirmed",
                       "smc_sweep_grade"):
-        categories = sorted({str(r.get(dimension, "")).strip()
-                             for r in rows if str(r.get(dimension, "")).strip()})
+        categories = sorted({category_text(r.get(dimension))
+                             for r in rows if category_text(r.get(dimension))})
         for category in categories:
             groups[f"{dimension}={category}"] = [
-                r for r in rows if str(r.get(dimension, "")).strip() == category
+                r for r in rows if category_text(r.get(dimension)) == category
             ]
     return groups
 
