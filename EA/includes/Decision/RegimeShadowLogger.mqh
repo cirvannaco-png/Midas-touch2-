@@ -60,9 +60,10 @@ private:
       return inWindow ? "IN_CONFIGURED_WINDOW_TELEMETRY_ONLY" : "OUTSIDE_CONFIGURED_WINDOW";
      }
 
-   string SpreadStatus(double spreadToAtr,double spreadPoints)
+   string SpreadStatus(double spreadToAtr,double spreadPoints,double pointSize,double atrValue)
      {
-      if(spreadPoints<0.0 || spreadToAtr<0.0) return "UNKNOWN_SPREAD";
+      if(spreadPoints<0.0 || pointSize<=0.0 || atrValue<=0.0 ||
+         !MathIsValidNumber(spreadToAtr)) return "UNKNOWN_SPREAD";
       // Telemetry label only. It never blocks or changes an order.
       if(spreadToAtr>=0.15) return "HIGH_SPREAD_TO_ATR_REVIEW";
       return "OBSERVED_WITHOUT_GATE";
@@ -142,6 +143,7 @@ public:
                    "BrokerMarketAvailability","BrokerScheduleReason","RolloverStatus",
                    "EntryReference","ThesisInvalidation","ProtectiveStop","TP1","TP2","FinalTP");
       FileSeek(handle,0,SEEK_END);
+      ResetLastError();
       FileWrite(handle,1,eventId,signalId,
                 TimeToString(TimeGMT(),TIME_DATE|TIME_SECONDS),
                 serverNow>0 ? TimeToString(serverNow,TIME_DATE|TIME_SECONDS) : "UNKNOWN",
@@ -155,11 +157,12 @@ public:
                 status,rejectionReason,EnumToString(reasons.session),SessionStatus(reasons.session_ok),
                 DoubleToString(reasons.spread_points,2),DoubleToString(reasons.point_size,10),
                 DoubleToString(reasons.atr_value,10),DoubleToString(spreadAtr,6),
-                SpreadStatus(spreadAtr,reasons.spread_points),availability,scheduleReason,RolloverStatus(serverNow),
+                SpreadStatus(spreadAtr,reasons.spread_points,reasons.point_size,reasons.atr_value),availability,scheduleReason,RolloverStatus(serverNow),
                 DoubleToString(entry,_Digits),DoubleToString(invalidation,_Digits),
                 DoubleToString(stopLoss,_Digits),DoubleToString(tp1,_Digits),
                 DoubleToString(tp2,_Digits),DoubleToString(finalTp,_Digits));
-      bool ok=(GetLastError()==0);
+      int writeError=GetLastError();
+      bool ok=(writeError==0);
       FileClose(handle);
       if(isBuy) m_lastBuyKey=key; else m_lastSellKey=key;
       return ok;
