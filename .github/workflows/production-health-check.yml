@@ -52,7 +52,7 @@ jobs:
           assert isinstance(health["if"], str) and "pull_request" in health["if"] and "!=" in health["if"], "production health calls must not run on PRs"
           runs = "\n".join(step.get("run", "") for step in health["steps"])
           for required in (
-              "secrets.BRIDGE_BASE_URL",
+              "BRIDGE_BASE_URL: https://midas-touch2.onrender.com",
               "secrets.BRIDGE_API_KEY",
               "execution_ledger",
               "database",
@@ -76,7 +76,7 @@ jobs:
     steps:
       - name: Validate production bridge secrets without printing them
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -106,7 +106,7 @@ jobs:
 
       - name: Require authenticated execution-ledger health
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -166,7 +166,7 @@ jobs:
 
       - name: Verify unauthenticated execution-ledger access is rejected
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
         shell: bash
         run: |
           set -euo pipefail
@@ -195,7 +195,7 @@ jobs:
 
       - name: Require a successful database-backed production health probe
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
         shell: bash
         run: |
           set -euo pipefail
