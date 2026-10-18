@@ -9,33 +9,40 @@
 
 ## Safety boundary
 
-The existing `midas-touch2` Render service follows `main`. Do not change its `DATABASE_URL` to the staging database. The `render.yaml` on branch `ops/staging-private-db-20261018` describes a separate `midas-touch2-staging` service, and has `autoDeployTrigger: off`. Do not merge that branch's staging-only `render.yaml` into `main`: it intentionally does not describe the production service.
+The existing `midas-touch2` Render service follows `main`. Do not change its `DATABASE_URL` to the staging database.
 
-The staging blueprint injects `DATABASE_URL` via Render's `fromDatabase` reference. This selects the internal connection string for a same-workspace, same-region Render service. Keep the database IP allowlist empty; do not use `0.0.0.0/0` to make a remote SQL client work.
+The additive Blueprint file `render.staging.yaml` defines a separate `midas-touch2-staging` service; it sets `autoDeployTrigger: "off"`, points to the existing app code on `main`, and uses the staging DB through a Render `fromDatabase` reference. In Render, create a **new Blueprint** and set its Blueprint file path to `render.staging.yaml`. Do **not** sync this file into the existing production Blueprint. It intentionally omits the production service.
 
-The service's startup registers a Telegram webhook. Supply a dedicated staging bot token and test chat IDs. **Never copy the production bot token into staging**, because registering the staging webhook would replace the production bot webhook.
+The staged code includes a local preflight script at `scripts/staging_bridge_preflight.sh`; after the staging service is configured, it checks `/health/db`, authenticated `/execution-ledger/health`, and rejection of a request without a key. It is read-only and does not print secrets.
 
-## Expiry and data policy
+The staging blueprint needs `BOT_TOKEN`, `CHAT_ID`, `ADMIN_CHAT_ID`, `SECRET_KEY`, and `WEBHOOK_SECRET_TOKEN` configured as Render secrets. The bridge registers a Telegram webhook at startup. Supply a dedicated staging bot token and test chat IDs. **Never copy the production bot token into staging**, because registering the staging webhook would replace the production bot webhook.
 
-This database was provisioned as a free staging database. Free Postgres expires 30 days after creation and has no Render-managed backup or point-in-time recovery. Treat its contents as disposable test data only. Do not put production records, credentials, or authoritative trading/execution-ledger records in it.
+## Private database networking
 
-Before using it for any data that must survive a reset or expiry, choose and validate one of these routes:
+Keep the DB `ipAllowList` empty. Render services in the same workspace and region can connect to Postgres using its internal URL; that traffic bypasses the external IP allowlist. The Blueprint's `fromDatabase` binding is the intended way to supply the internal connection string to the staging service. Do not use `0.0.0.0/0` as a workaround.
 
-1. **Preferred for durable ledger storage:** upgrade/provision a paid database and enable managed recovery. Render's current documented paid recovery window for a Hobby workspace is three days; logical exports are separately retained for seven days. A PITR restore creates a separate database that can be inspected before switching services.
-2. **If keeping Free:** establish an independent encrypted export destination first. Run `pg_dump` from a same-region Render-side job using the internal connection string, store the encrypted archive outside Render, keep its decryption key separately, and test restoring into an isolated empty database. A checksum or successful `pg_restore --list` is not a substitute for a real restore test.
+The hosted Render SQL-query tool runs outside Render's private network. Its failed query is expected with this private-only setting and does not establish whether a same-region Render service can connect. Verify the live connection from the staging service itself through `/health/db`, which uses the app's `DATABASE_URL` to execute `SELECT 1`.
 
-At the time of this check, no external backup destination or validated restore procedure is configured. Consequently, no persistent data should be written to this Free database until that gate is met.
+## Expiry and backup policy
+
+This database was provisioned on Free as a **disposable staging database only**. Free Postgres expires 30 days after creation, has a fixed 1 GB allowance, and does not support Render-managed backups or point-in-time recovery. After expiry it becomes inaccessible; there is a 14-day upgrade grace period before deletion. See [Render free-plan limits](https://render.com/docs/free).
+
+**Expiry decision:** use only synthetic/demo test data in this database; no authoritative execution ledger, customer data, production signals, or information that must survive expiry. Review it by **2026-11-10**, and either export/verify and retire it before expiry or arrange a paid retention plan through the Dashboard. The resource's current expiry is **2026-11-17 19:14:39 UTC**.
+
+**Backup decision:** there is no external backup destination or tested restore configured, so do not persist important data here. If staging must retain data, establish a separate encrypted backup target and prove a full restore into a clean database before placing important test evidence there. Keep the encryption key separate from backup artifacts. A checksum, file listing, or `pg_restore --list` is not a restore test.
+
+For durable ledger storage, the safer default is a paid Render Postgres plan with managed recovery enabled. Current Render pricing lists the 256 MB Postgres plan at **$6/month** and 1 GB RAM at **$19/month**; prices can change. On a Hobby workspace, paid database PITR has a three-day window; Pro or higher has seven days. Logical exports are retained for seven days, and Free databases have no Render-created logical exports. See [pricing](https://render.com/pricing) and [backup/recovery docs](https://render.com/docs/postgresql-backups). No paid upgrade has been made.
 
 ## Verification gates
 
-- [ ] Apply this staging blueprint as a separate Render Blueprint, not as a sync/update to the production service.
-- [ ] Configure the required staging secrets in Render; keep secrets out of Git. Use a staging-only Telegram bot.
-- [ ] Confirm the staging service resolves the database's internal URL and that the DB allowlist remains empty.
-- [ ] Verify `GET /health/db` returns HTTP 200 with `status=online` and `database=connected`. This route runs a live SQL `SELECT 1`; it does not authenticate callers.
-- [ ] Verify `GET /execution-ledger/health` using the staging `X-API-Key` returns HTTP 200 and `status=online`, `database=connected`, `execution_ledger=ready`; verify the same route without a key is rejected.
-- [ ] Create an encrypted backup and perform a real restore test before retaining any non-disposable data.
-- [ ] Check authenticated bridge and database health again after staging configuration, then review the evidence before considering a production change.
+- [ ] Create a **new** Render Blueprint with repository `cirvannaco-png/Midas-touch2-`, branch `main`, Blueprint file path `render.staging.yaml`.
+- [ ] Configure staging-only bot token, chat IDs, API key, and webhook secret in Render; keep all secrets out of Git.
+- [ ] Confirm the staging service's `DATABASE_URL` resolves through the internal `fromDatabase` reference while the database allowlist remains empty.
+- [ ] Verify `GET /health/db` returns HTTP 200 with `status=online` and `database=connected`.
+- [ ] Run `BRIDGE_BASE_URL=https://<actual-staging-host> BRIDGE_API_KEY=<staging-SECRET_KEY> bash scripts/staging_bridge_preflight.sh` from a trusted environment with network access. It must verify authenticated ledger health (`status=online`, `database=connected`, `execution_ledger=ready`) and verify that the same endpoint rejects a missing key. Do not put the key in shell history or print it; prefer environment-secret injection.
+- [ ] Establish an encrypted external backup and perform a real restore test before retaining any non-disposable data.
+- [ ] Review staging logs and check health again after staging configuration. Only then consider any separate production change.
 
-## Current access limitation
+## Current blockers (not represented as successful)
 
-The hosted Render SQL-query tool runs outside Render's private network. With this database's external IP allowlist empty, its SQL attempt is correctly rejected. This is not a reason to open public database access: use the Render-internal `fromDatabase` URL from the staging service for the live SQL test. This operator session does not expose a Blueprint-sync action or a database IP-allowlist update action, and the GitHub production-maintenance environment is missing `BRIDGE_BASE_URL` and `BRIDGE_API_KEY`; those limitations prevent claiming live staging SQL, authenticated-ledger, or restore verification at present.
+The Render tools available in this operator session do not provide the action to create/sync a Blueprint or update/upgrade PostgreSQL and do not provide the host/IP needed to perform a private-only SQL query through the hosted SQL connector. The staging DB therefore remains unconnected and its SQL/health test is still unverified. The GitHub production-maintenance environment also lacks the required `BRIDGE_BASE_URL` and `BRIDGE_API_KEY`; do not run its production preflight until the intended staging values are added in a **staging** GitHub environment. No live staging deployment, secrets change, paid upgrade, backup, or restore test has been performed as part of this preparation.
