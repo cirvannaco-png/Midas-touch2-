@@ -118,6 +118,10 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertFalse(report["release_policy"]["automatic_promotion"])
         self.assertEqual(report["event_rejections"], {})
 
+    def test_empty_source_rows_fail_with_readable_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "no data rows"):
+            analyze([], [signal(1_700_000_100)], [outcome(1_700_000_100, 1_700_000_200)])
+
     def test_conflicting_duplicate_signal_is_fail_closed(self) -> None:
         s = signal(1_700_000_100)
         s2 = dict(s, Direction="SELL")
