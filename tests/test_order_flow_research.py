@@ -28,6 +28,8 @@ def signal(epoch: int, *, symbol: str = "EURUSD", timeframe: str = "PERIOD_M1",
     return {
         "SignalID": f"{symbol}_{direction}_{epoch}", "Symbol": symbol,
         "EntryTF": timeframe, "Direction": direction,
+        "Session": "London", "Regime": "Trend", "VolRegime": "Normal",
+        "SelectedStrategy": "Sweep",
     }
 
 
@@ -127,6 +129,8 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(report["chronological_holdout"]["holdout_count"], 1)
         self.assertFalse(report["release_policy"]["automatic_promotion"])
         self.assertEqual(report["event_rejections"], {})
+        self.assertEqual(report["feature_breakdown"]["direction=BUY"]["all_sample"]["n"], 3)
+        self.assertEqual(report["feature_breakdown"]["regime=Trend"]["all_sample"]["n"], 3)
 
     def test_empty_source_rows_fail_with_readable_error(self) -> None:
         with self.assertRaisesRegex(ValueError, "no data rows"):
