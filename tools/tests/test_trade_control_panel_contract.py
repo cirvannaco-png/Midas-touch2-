@@ -240,7 +240,13 @@ def test_emergency_stop_latch_is_refreshed_while_stop_remains_active():
     timer_start = ea.index("void OnTimer()")
     timer_end = ea.index("void CheckSignalLifecycle", timer_start)
     timer_path = ea[timer_start:timer_end]
-    assert "if(g_emergencyStop && now-g_lastEmergencyLatchRefresh>=60)" in timer_path
+    assert "datetime localNow=TimeLocal();" in timer_path
+    assert "if(g_emergencyStop && localNow-g_lastEmergencyLatchRefresh>=60)" in timer_path
     assert "GlobalVariableSet(EmergencyStopGlobalKey(),1.0)" in timer_path
     assert "GlobalVariablesFlush();" in timer_path
     assert '"EMERGENCY_STOP_PERSIST_FAILED"' in timer_path
+    stop_start = ea.index("void EmergencyStop()")
+    stop_end = ea.index("bool HasManagedExposure()", stop_start)
+    stop_path = ea[stop_start:stop_end]
+    assert "EventSetTimer(MathMax(10,InpExecutionLedgerRetrySeconds))" in stop_path
+    assert '"EMERGENCY_STOP_REFRESH_TIMER_FAILED"' in stop_path
