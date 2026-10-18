@@ -18,7 +18,7 @@ from typing import Any, Iterable
 EVIDENCE_REQUIRED = {
     "event_key", "symbol", "timeframe", "bar_end_epoch", "pressure_ratio",
     "bullish_sweep_reclaim", "bearish_sweep_reclaim",
-    "absorption_proxy", "exhaustion_proxy",
+    "absorption_proxy", "exhaustion_proxy", "data_quality", "data_stale",
 }
 SIGNAL_REQUIRED = {"SignalID", "Symbol", "EntryTF", "Direction"}
 OUTCOME_REQUIRED = {"SignalID", "Filled", "RealizedR", "OutcomeEpoch"}
@@ -98,15 +98,27 @@ def _dedupe_by_key(rows: Iterable[dict[str, str]], key: str, label: str) -> dict
     return indexed
 
 
-def load_order_flow_events(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+def load_order_flow_events(rows: list[dict[str, str]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     require_columns(rows, EVIDENCE_REQUIRED, "order-flow evidence")
     deduped = _dedupe_by_key(rows, "event_key", "order-flow evidence")
     events = []
+    rejected = defaultdict(int)
     for event_key, row in deduped.items():
         end_epoch = parse_epoch(row.get("bar_end_epoch"))
         pressure = parse_float(row.get("pressure_ratio"))
+        quality = parse_epoch(row.get("data_quality"))
+        stale = parse_bool(row.get("data_stale"))
         flags = {feature: parse_bool(row.get(feature)) for feature in FEATURES}
-        if end_epoch is None or pressure is None or any(v is None for v in flags.values()):
+        if end_epoch is None or pressure is None or stale is None or any(v is None for v in flags.values()):
+            rejected["invalid_event_fields"] += 1
+            continue
+        # Only the deliberately limited midpoint-tick proxy is expected.
+        # Reject any source quality that might be mislabeled as actual delta.
+        if quality != 1:
+            rejected["unsupported_or_mislabeled_data_quality"] += 1
+            continue
+        if stale:
+            rejected["stale_event_record"] += 1
             continue
         events.append({
             "event_key": event_key,
@@ -116,7 +128,7 @@ def load_order_flow_events(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             "pressure_ratio": pressure,
             **flags,
         })
-    return sorted(events, key=lambda e: (e["symbol"], e["timeframe"], e["bar_end_epoch"]))
+    return sorted(events, key=lambda e: (e["symbol"], e["timeframe"], e["bar_end_epoch"])), dict(rejected)
 
 
 def build_outcome_index(signal_rows: list[dict[str, str]],
@@ -267,7 +279,7 @@ def analyze(evidence_rows: list[dict[str, str]],
             min_sample: int = 30) -> dict[str, Any]:
     if min_sample < 1:
         raise ValueError("min_sample must be positive")
-    events = load_order_flow_events(evidence_rows)
+    events, event_rejections = load_order_flow_events(evidence_rows)
     outcome_index, outcome_rejections = build_outcome_index(signal_rows, outcome_rows)
     joined, join_rejections = join_events_to_outcomes(events, outcome_index, max_match_gap_seconds)
     split = chronological_split(joined, holdout_fraction)
@@ -285,6 +297,7 @@ def analyze(evidence_rows: list[dict[str, str]],
         "matched_outcomes": len(joined),
         "source_event_count": len(events),
         "source_signal_count": len(signal_rows),
+        "event_rejections": event_rejections,
         "resolved_candidate_count": len(outcome_index),
         "outcome_rejections": outcome_rejections,
         "join_rejections": join_rejections,
