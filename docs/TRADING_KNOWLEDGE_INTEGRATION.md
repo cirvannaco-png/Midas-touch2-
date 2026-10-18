@@ -131,6 +131,6 @@ The branch contains a diagnostic-only order-flow proxy, version-2 per-bar eviden
 1. Compile the EA and included diagnostic module in the target MetaEditor build; source-level structural validation is not an MQL5 compile.
 2. Run the committed Python research unit tests and the MQL5 structural validation workflow; capture the actual CI result.
 3. Export sample CSVs from MT5 and validate column integrity, event match rate, stale-event rejection counts, and conflicting duplicate handling.
-4. Add direct decision-ID/fingerprint attribution if nearest-prior-bar joins prove ambiguous; never loosen the join window just to increase sample size.
+4. Prefer the implemented exact SignalID-to-event-key attribution CSV. Treat nearest-prior-bar joins as a separately reported fallback only when no attribution file is supplied; never loosen the join window just to increase sample size.
 5. Add independently testable strategy hypotheses and ablations, then run matched-cost Strategy Tester, walk-forward, and untouched out-of-sample evaluations.
 6. Conduct demo-forward validation with reconciliation and human review before considering any diagnostic feature for execution decisions.
