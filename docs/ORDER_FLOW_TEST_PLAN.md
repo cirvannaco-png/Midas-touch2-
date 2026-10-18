@@ -8,7 +8,7 @@ Test `EA/includes/Analysis/OrderFlowDiagnostics.mqh` as a diagnostic utility. Pa
 
 ## Evidence export and exact attribution
 
-When diagnostics are enabled, the EA appends per-closed-bar records to `MedisTouch_OrderFlowEvidence_v2_<symbol>_<timeframe>.csv` in the terminal file sandbox. Missing bar/tick history and invalid windows receive explicit status records, allowing the usable-evidence fraction to be reported rather than silently omitting them. It writes a deterministic event key plus bar boundary epochs and proxy features. Use `tools/order_flow_research.py` to join these events to `MedisTouch_Signals_<symbol>.csv` and `MedisTouch_Outcomes_v2_<symbol>.csv`. Preferred mode is exact `SignalID` → event-key attribution via `MedisTouch_OrderFlowAttribution_v1_<symbol>_<timeframe>.csv`; pass it with `--attribution`. When that file is supplied, missing, invalid, or stale links are rejected and the analyzer must not fall back to nearest-time matching. Time-based nearest-prior-bar matching is a separately reported fallback only when no attribution file is supplied; it requires exact symbol/timeframe, a bar boundary no later than signal time, and a bounded gap. The default gap is one bar duration for recognized timeframes; unknown timeframes require an explicit positive override. Review direct-link coverage, fallback mode, match/rejection counts, and usable-data rates before interpreting metrics. Review match and rejection counts before interpreting metrics. Existing rows are never rewritten. Restart duplicates with conflicting values are rejected rather than silently merged.
+When diagnostics are enabled, the EA appends per-closed-bar records to `MedisTouch_OrderFlowEvidence_v3_<symbol>_<timeframe>.csv` in the terminal file sandbox. Missing bar/tick history and invalid windows receive explicit status records, allowing the usable-evidence fraction to be reported rather than silently omitting them. It writes a deterministic event key plus bar boundary epochs and proxy features. Use `tools/order_flow_research.py` to join these events to `MedisTouch_Signals_<symbol>.csv` and `MedisTouch_Outcomes_v2_<symbol>.csv`. Preferred mode is exact `SignalID` → event-key attribution via `MedisTouch_OrderFlowAttribution_v1_<symbol>_<timeframe>.csv`; pass it with `--attribution`. When that file is supplied, missing, invalid, or stale links are rejected and the analyzer must not fall back to nearest-time matching. Time-based nearest-prior-bar matching is a separately reported fallback only when no attribution file is supplied; it requires exact symbol/timeframe, a bar boundary no later than signal time, and a bounded gap. The default gap is one bar duration for recognized timeframes; unknown timeframes require an explicit positive override. Review direct-link coverage, fallback mode, match/rejection counts, and usable-data rates before interpreting metrics. Review match and rejection counts before interpreting metrics. Existing rows are never rewritten. Restart duplicates with conflicting values are rejected rather than silently merged. Direct attribution is considered usable only if its event end is no later than signal creation and is no older than one configured FVG-timeframe bar.
 
 ## Unit-test seam
 
@@ -40,6 +40,20 @@ For all fixtures, ticks must have valid positive bid/ask, ask >= bid, valid time
 | OF-018 | Diagnostics disabled at EA level | No diagnostic CopyTicksRange call/log; signal generation and execution path remain unchanged |
 | OF-019 | Diagnostics enabled with no tick history | A clear unavailable message; no trade decisions changed |
 | OF-020 | Same fixture replayed twice | Identical snapshot fields and log values, excluding intentionally clock-relative stale state |
+
+## Additional v3 cases
+
+| ID | Fixture | Expected result |
+|---|---|---|
+| OF-021 | Valid POC/VAH/VAL and close below VAL | Auction context available; location is below VAL; no entry-policy effect |
+| OF-022 | Invalid or low-quality value-profile source | Auction context marked unavailable; no fabricated POC/VAH/VAL conclusion |
+| OF-023 | Strong midpoint tick pressure disagrees with first-to-last midpoint progress | Pressure/progress divergence tagged for research only |
+| OF-024 | Close beyond a prior 20-bar level with aligned pressure | Continuation hypothesis tagged separately; no live entry effect |
+| OF-025 | Sweep/reclaim with directionally aligned pressure | Reversal hypothesis tagged separately; no automatic fade |
+| OF-026 | Consecutive valid bars with midpoint direction counts | UTC-day cumulative pressure is chronological and resets at day boundary or a missing-bar-sized gap |
+| OF-027 | Positive cumulative tick pressure while price moves materially lower | Cumulative pressure/price divergence reported as a proxy, not true CVD |
+| OF-028 | Signal attributed to a cached event older than one FVG-timeframe bar | Attribution row records `NO_USABLE_EVENT`; no stale direct link |
+| OF-029 | Legacy v2 CSV and new v3 CSV are analyzed | v2 remains supported; v3 fields are validated when v3 schema is declared |
 
 ## Review risks to resolve before declaring the module tested
 
