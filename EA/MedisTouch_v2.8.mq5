@@ -941,7 +941,7 @@ void LogOrderFlowDiagnostics()
    if(atr<=0.0 || priorHigh<=priorLow || barHigh<=0.0 || barLow<=0.0 || barClose<=0.0)
      {
       g_orderFlowDiagnostics.Analyze(emptyTicks,0,priorHigh,priorLow,
-                                     barHigh,barLow,barClose,atr,of);
+                                     barHigh,barLow,barClose,atr,of,barEnd);
       AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
                               barHigh,barLow,barClose,atr,"BAR_CONTEXT_UNAVAILABLE",of);
       PrintFormat("OF_DIAG unavailable: ATR/bar context invalid (atr=%.5f)",atr);
@@ -957,7 +957,7 @@ void LogOrderFlowDiagnostics()
    if(copied<=0)
      {
       g_orderFlowDiagnostics.Analyze(emptyTicks,0,priorHigh,priorLow,
-                                     barHigh,barLow,barClose,atr,of);
+                                     barHigh,barLow,barClose,atr,of,barEnd);
       string missingStatus=(copied<0 ? "TICK_HISTORY_ERROR" : "NO_TICKS");
       AttachOrderFlowAuctionContext(barClose,of);
       AppendOrderFlowEvidence(barStart,barEnd,priorHigh,priorLow,
