@@ -39,6 +39,7 @@ The analyzer:
 - uses a chronological holdout and purges training observations whose outcomes resolve at or after the holdout start;
 - reports join rejections, breaks down outcomes by direction, symbol, timeframe, session, regime, volatility regime and selected strategy where those signal columns are available, and never automatically promotes a feature or alters a live policy.
 - reports both matched trade count and unique evidence-event count, including events shared by multiple signals; repeated signals referencing one proxy snapshot must not be treated as independent evidence.
+- reports net realized expectancy in R, profit factor, maximum drawdown in R, longest winning/losing streaks, total R, and an observed trade frequency normalized to 30 calendar days when valid signal timestamps span a non-zero interval. Frequency is `null` when no trustworthy time span exists; short samples can make the normalized rate unstable and it is descriptive, not a forecast.
 
 Direct mode joins the signal ID to the stored event key; the signal ID is inherited from the EA's existing logging schema and the analyzer also verifies symbol, timeframe, direction, chronology and usable evidence status. The fallback mode remains time-based. Review attribution coverage and rejection counts before interpreting results.
 
