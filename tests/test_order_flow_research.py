@@ -3,9 +3,11 @@ from __future__ import annotations
 import unittest
 
 from tools.order_flow_research import (
+    analyze,
     build_outcome_index,
     chronological_split,
     join_events_to_outcomes,
+    load_order_flow_events,
     summarize,
 )
 
@@ -17,6 +19,7 @@ def event(key: str, end: int, *, symbol: str = "EURUSD", timeframe: str = "PERIO
         "bar_end_epoch": str(end), "pressure_ratio": str(pressure),
         "bullish_sweep_reclaim": bull, "bearish_sweep_reclaim": "false",
         "absorption_proxy": "false", "exhaustion_proxy": "false",
+        "data_quality": "1", "data_stale": "false",
     }
 
 
@@ -86,6 +89,34 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(index, {})
         self.assertEqual(rejected["not_filled"], 1)
         self.assertEqual(rejected["outcome_precedes_decision"], 1)
+
+    def test_loader_rejects_stale_and_non_proxy_events(self) -> None:
+        good = event("good", 1_700_000_000)
+        stale = dict(event("stale", 1_700_000_001), data_stale="true")
+        mislabeled = dict(event("bad-quality", 1_700_000_002), data_quality="2")
+        events, rejected = load_order_flow_events([good, stale, mislabeled])
+        self.assertEqual([r["event_key"] for r in events], ["good"])
+        self.assertEqual(rejected["stale_event_record"], 1)
+        self.assertEqual(rejected["unsupported_or_mislabeled_data_quality"], 1)
+
+    def test_integrated_report_keeps_automatic_promotion_disabled(self) -> None:
+        signals = [signal(1_700_000_100), signal(1_700_000_200), signal(1_700_000_300)]
+        outcomes = [
+            outcome(1_700_000_100, 1_700_000_150, "1.0"),
+            outcome(1_700_000_200, 1_700_000_250, "-0.5"),
+            outcome(1_700_000_300, 1_700_000_350, "0.2"),
+        ]
+        evidence = [
+            event("e1", 1_700_000_095, pressure=0.4, bull="true"),
+            event("e2", 1_700_000_195, pressure=-0.2, bull="false"),
+            event("e3", 1_700_000_295, pressure=0.7, bull="true"),
+        ]
+        report = analyze(evidence, signals, outcomes, min_sample=1)
+        self.assertEqual(report["matched_outcomes"], 3)
+        self.assertEqual(report["chronological_holdout"]["train_count_after_purge"], 2)
+        self.assertEqual(report["chronological_holdout"]["holdout_count"], 1)
+        self.assertFalse(report["release_policy"]["automatic_promotion"])
+        self.assertEqual(report["event_rejections"], {})
 
     def test_conflicting_duplicate_signal_is_fail_closed(self) -> None:
         s = signal(1_700_000_100)
