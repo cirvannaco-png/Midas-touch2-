@@ -101,6 +101,12 @@ def parse_bool(value: Any) -> bool | None:
     return None
 
 
+def _is_unit_interval(value: Any) -> bool:
+    """Return true only for finite numeric values normalized to the [0, 1] range."""
+    number = parse_float(value)
+    return number is not None and 0.0 <= number <= 1.0
+
+
 def signal_epoch(signal_id: str) -> int | None:
     """SignalLogger IDs end in the canonical creation-time epoch."""
     suffix = signal_id.rsplit("_", 1)[-1]
