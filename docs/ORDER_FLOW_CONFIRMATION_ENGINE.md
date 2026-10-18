@@ -2,7 +2,7 @@
 
 ## Status and safety boundary
 
-This document defines the implementation plan for integrating order-flow concepts into the existing MQL5 EA. The first implementation is **diagnostic-only**. The branch now contains `EA/includes/Analysis/OrderFlowDiagnostics.mqh` and an opt-in closed-bar hook in `EA/MedisTouch_v2.8.mq5`. The hook is disabled by default and does not change entries, exits, confidence, lot sizing, SL/TP, trailing stops, or execution. Python research tests and MQL5 source-tree structural validation have passed on the draft branch; target MetaEditor compilation and Strategy Tester/demo validation remain outstanding.
+This document records the implementation and validation plan for the existing MQL5 EA. Order-flow remains diagnostic-only and disabled by default. The current feature branch adds version-3 per-closed-bar evidence, explicit value-area context, separate continuation/reversal research hypotheses, a stale-attribution guard, and outcome-analysis support with legacy v2 CSV compatibility. These changes must not alter entries, confidence, sizing, exits, SL/TP, trailing stops, emergency stop, or execution. A fresh CI result and target MetaEditor compile are required for the current branch head; Strategy Tester and Exness demo evidence remain outstanding.
 
 The canonical EA source is `EA/`; do not implement new behavior under legacy `mql5/` or the non-production `medis_touch/` reference tree.
 
@@ -30,6 +30,12 @@ The canonical EA source is `EA/`; do not implement new behavior under legacy `mq
 - Add explicit inputs for enabling diagnostics and thresholds; defaults must preserve existing trading behavior.
 - Preserve the production trailing stop, emergency stop, account risk profiles, spread/session/news guards, broker reconciliation, and restart recovery.
 - Only after evidence review may a separate opt-in confirmation gate be introduced. A hard gate must fail closed when it is explicitly required but the required data is unavailable; diagnostic-only mode may report unavailable without blocking trades.
+
+## Version-3 research evidence
+
+The version-3 evidence schema appends pressure-versus-price-progress divergence, separately tagged continuation and sweep/reclaim reversal hypotheses, and the existing ValueArea engine's POC/VAH/VAL levels, source quality/source identifier, and close location. Auction location is contextual only: one close above VAH does not prove acceptance, and one wick does not prove a stop hunt or institutional activity.
+
+The research analyzer retains compatibility with legacy v2 files. It computes a UTC-day-reset cumulative midpoint tick-count pressure proxy and an explicitly labeled cumulative-pressure/price divergence. These are quote-direction counts, not executed volume, exchange CVD, or market-wide order-flow visibility. All new labels are descriptive research features, not live trading rules.
 
 ## Current implementation limits
 
