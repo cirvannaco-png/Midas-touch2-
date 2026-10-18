@@ -398,6 +398,53 @@ def _validate_deals(header: list[str], rows: list[dict[str, str]], role: str) ->
     }
 
 
+def _deal_group_signatures(header: list[str], rows: list[dict[str, str]]) -> list[str]:
+    """Build position-level execution signatures while ignoring run-local ticket IDs."""
+    position_key = _field(header, "positionid")
+    time_key = _field(header, "time")
+    entry_key = _field(header, "entry")
+    fields = {key: _field(header, key) for key in ("volume", "profit", "commission", "swap", "fee")}
+    grouped: dict[str, list[tuple[Any, ...]]] = {}
+    for line_no, row in enumerate(rows, start=2):
+        position_id = (row.get(position_key) or "").strip()
+        entry = _canon(row.get(entry_key, ""))
+        if entry in {"0", "dealentryin", "entryin"}:
+            entry = "in"
+        elif entry in {"1", "dealentryout", "entryout"}:
+            entry = "out"
+        elif entry in {"3", "dealentryoutby", "entryoutby"}:
+            entry = "outby"
+        stamp = _iso(_parse_time(row.get(time_key), f"deal row {line_no}.time"))
+        numbers = tuple(
+            round(_number(row.get(fields[key]), f"deal row {line_no}.{key}"), 10)
+            for key in ("volume", "profit", "commission", "swap", "fee")
+        )
+        grouped.setdefault(position_id, []).append((stamp, entry, *numbers))
+    signatures = [
+        json.dumps(sorted(group), separators=(",", ":"), allow_nan=False)
+        for group in grouped.values()
+    ]
+    return sorted(signatures)
+
+
+def _compare_deal_groups(off_header: list[str], off_rows: list[dict[str, str]],
+                         on_header: list[str], on_rows: list[dict[str, str]]) -> dict[str, Any]:
+    """Compare position economics without requiring ticket numbers to match between runs."""
+    off_groups = _deal_group_signatures(off_header, off_rows)
+    on_groups = _deal_group_signatures(on_header, on_rows)
+    off_count, on_count = Counter(off_groups), Counter(on_groups)
+    removed = list((off_count - on_count).elements())
+    added = list((on_count - off_count).elements())
+    return {
+        "off_position_groups": len(off_groups),
+        "on_position_groups": len(on_groups),
+        "groups_added_when_diagnostic_on": len(added),
+        "groups_missing_when_diagnostic_on": len(removed),
+        "economic_signatures_identical": not added and not removed,
+        "note": "Deal tickets and position identifiers are run-local; comparison uses timestamp, entry/exit type, volume, profit, commission, swap, and fee per position.",
+    }
+
+
 def _validate_log(path: Path, context: dict[str, Any], role: str) -> list[str]:
     raw = path.read_text(encoding="utf-8", errors="replace")
     findings = []
@@ -612,10 +659,14 @@ def audit_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], int]:
     for name, parity in (("signal", signal_parity), ("decision", decision_parity), ("outcome", outcome_parity)):
         if not parity["field_parity"]:
             blockers.append(f"diagnostic OFF/ON {name} parity differs; inspect added, removed, and changed fields")
-    if cost_summary["diagnostic_off"]["deal_rows"] != cost_summary["diagnostic_on"]["deal_rows"]:
-        blockers.append("diagnostic OFF/ON deal-row counts differ")
-    if cost_summary["diagnostic_off"]["position_id_groups"] != cost_summary["diagnostic_on"]["position_id_groups"]:
-        blockers.append("diagnostic OFF/ON position-group counts differ")
+    deal_parity = _compare_deal_groups(
+        loaded["diagnostic_off"]["tables"]["deals_csv"]["header"],
+        loaded["diagnostic_off"]["tables"]["deals_csv"]["rows"],
+        loaded["diagnostic_on"]["tables"]["deals_csv"]["header"],
+        loaded["diagnostic_on"]["tables"]["deals_csv"]["rows"],
+    )
+    if not deal_parity["economic_signatures_identical"]:
+        blockers.append("diagnostic OFF/ON position economics differ after matching run-local identifiers")
     if not all(item["cost_fields_explicit_and_finite"] for item in cost_summary.values()):
         blockers.append("one or more deal ledgers lack explicit finite commission/swap/fee fields")
 
@@ -636,8 +687,7 @@ def audit_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], int]:
             "signals": signal_parity,
             "decisions": decision_parity,
             "outcomes": outcome_parity,
-            "deal_rows_equal": cost_summary["diagnostic_off"]["deal_rows"] == cost_summary["diagnostic_on"]["deal_rows"],
-            "position_group_counts_equal": cost_summary["diagnostic_off"]["position_id_groups"] == cost_summary["diagnostic_on"]["position_id_groups"],
+            "deals": deal_parity,
         },
         "market_data_log_check": {
             "status": "blocked" if any("tester log" in item for item in blockers) else "no_known_synthetic_mode_signature_found",
