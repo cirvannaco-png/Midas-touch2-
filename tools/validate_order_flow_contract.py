@@ -18,7 +18,10 @@ EVIDENCE_REQUIRED = {
     "schema_version", "event_key", "symbol", "timeframe", "bar_end_epoch",
     "pressure_ratio", "diagnostic_status", "bullish_sweep_reclaim",
     "bearish_sweep_reclaim", "absorption_proxy", "exhaustion_proxy",
-    "data_quality", "data_stale",
+    "data_quality", "data_stale", "pressure_progress_divergence",
+    "continuation_hypothesis", "reversal_hypothesis", "auction_context_available",
+    "value_area_poc", "value_area_vah", "value_area_val",
+    "value_area_source_quality", "value_area_source", "auction_location",
 }
 ATTRIBUTION_REQUIRED = {
     "schema_version", "signal_id", "event_key", "symbol", "timeframe",
@@ -68,15 +71,15 @@ def main() -> int:
             "attribution CSV header contains duplicate column names", errors)
 
     for token, description in (
-        ('"order-flow-evidence-v2"', "evidence row schema literal"),
+        ('"order-flow-evidence-v3"', "evidence row schema literal"),
         ('"order-flow-attribution-v1"', "attribution row schema literal"),
-        ('"MedisTouch_OrderFlowEvidence_v2_"', "evidence filename version"),
+        ('"MedisTouch_OrderFlowEvidence_v3_"', "evidence filename version"),
         ('"MedisTouch_OrderFlowAttribution_v1_"', "attribution filename version"),
     ):
         require(token in ea, f"EA missing {description}: {token}", errors)
 
-    require('row.get("schema_version") != "order-flow-evidence-v2"' in analyzer,
-            "analyzer evidence schema version does not match the EA writer", errors)
+    require('"order-flow-evidence-v2" in analyzer and '"order-flow-evidence-v3" in analyzer,
+            "analyzer must retain legacy v2 support and parse the EA's v3 schema", errors)
     require('row.get("schema_version") != "order-flow-attribution-v1"' in analyzer,
             "analyzer attribution schema version does not match the EA writer", errors)
     require("diagnostic_status" in analyzer and "attribution_mode" in analyzer,
@@ -87,6 +90,9 @@ def main() -> int:
             "OnTick must gate the diagnostics call behind the opt-in input", errors)
     require("if(InpEnableOrderFlowDiagnostics && signalLogged)AppendOrderFlowSignalAttribution(chosen);" in ea,
             "signal attribution must be gated by enabled diagnostics and successful signal logging", errors)
+    require("g_lastOrderFlowEventBarEnd" in ea and "PeriodSeconds(InpFVGTF)" in ea and
+            "setup.creation_time-g_lastOrderFlowEventBarEnd" in ea,
+            "direct attribution must reject evidence older than one configured timeframe bar", errors)
 
     expected_statuses = (
         "BAR_HISTORY_UNAVAILABLE", "BAR_CONTEXT_UNAVAILABLE",
