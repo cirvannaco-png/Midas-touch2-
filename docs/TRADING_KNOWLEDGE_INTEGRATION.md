@@ -119,9 +119,9 @@ The branch contains a diagnostic-only order-flow proxy, a versioned per-bar CSV 
 
 ## Next implementation sequence
 
-1. Inspect the diagnostic module and EA integration for compile safety, tick ordering, time handling, and false labels.
-2. Add a stable event schema linking every candidate observation to eventual trade outcome without altering trade decisions.
-3. Add deterministic test fixtures for pressure, sweep/reclaim, stale data, insufficient ticks, and neutral conditions.
-4. Add independent hypothesis toggles and ablation tests; avoid a single opaque composite score.
-5. Run existing syntax/structural CI and MetaEditor compilation; then matched-cost Strategy Tester runs on broker-appropriate data.
-6. Evaluate walk-forward, out-of-sample, and demo-forward results before considering any execution integration.
+1. Compile the EA and included diagnostic module in the target MetaEditor build; source-level structural validation is not an MQL5 compile.
+2. Run the committed Python research unit tests and the MQL5 structural validation workflow; capture the actual CI result.
+3. Export sample CSVs from MT5 and validate column integrity, event match rate, stale-event rejection counts, and conflicting duplicate handling.
+4. Add direct decision-ID/fingerprint attribution if nearest-prior-bar joins prove ambiguous; never loosen the join window just to increase sample size.
+5. Add independently testable strategy hypotheses and ablations, then run matched-cost Strategy Tester, walk-forward, and untouched out-of-sample evaluations.
+6. Conduct demo-forward validation with reconciliation and human review before considering any diagnostic feature for execution decisions.
