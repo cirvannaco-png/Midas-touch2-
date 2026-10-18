@@ -49,6 +49,8 @@ def read_csv(path: str | Path) -> list[dict[str, str]]:
 
 
 def require_columns(rows: list[dict[str, str]], needed: set[str], label: str) -> None:
+    if not rows:
+        raise ValueError(f"{label}: no data rows")
     columns = set(rows[0])
     missing = sorted(needed - columns)
     if missing:
