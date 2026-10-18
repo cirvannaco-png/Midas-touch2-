@@ -18,6 +18,9 @@ on:
       - "docs/ORDER_FLOW_TEST_PLAN.md"
       - "docs/ORDER_FLOW_RESEARCH_TOOL.md"
       - "docs/TRADING_KNOWLEDGE_INTEGRATION.md"
+      - "docs/ORDER_FLOW_CONFIRMATION_ENGINE.md"
+      - "docs/ORDER_FLOW_LESSON_MAP.md"
+      - "docs/ORDER_FLOW_RESEARCH_RUNBOOK.md"
       - ".github/workflows/order-flow-research.yml"
   pull_request:
     paths:
@@ -29,6 +32,9 @@ on:
       - "docs/ORDER_FLOW_TEST_PLAN.md"
       - "docs/ORDER_FLOW_RESEARCH_TOOL.md"
       - "docs/TRADING_KNOWLEDGE_INTEGRATION.md"
+      - "docs/ORDER_FLOW_CONFIRMATION_ENGINE.md"
+      - "docs/ORDER_FLOW_LESSON_MAP.md"
+      - "docs/ORDER_FLOW_RESEARCH_RUNBOOK.md"
       - ".github/workflows/order-flow-research.yml"
   workflow_dispatch:
 
