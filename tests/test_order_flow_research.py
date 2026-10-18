@@ -226,7 +226,7 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(rejected["status_no_ticks"], 1)
 
     def test_loader_rejects_unknown_schema_version(self) -> None:
-        unknown = dict(event("future-schema", 1_700_000_003), schema_version="order-flow-evidence-v3")
+        unknown = dict(event("future-schema", 1_700_000_003), schema_version="order-flow-evidence-v999")
         events, rejected = load_order_flow_events([unknown])
         self.assertEqual(events, [])
         self.assertEqual(rejected["unsupported_schema_version"], 1)
