@@ -51,6 +51,18 @@ def attribution(signal_row: dict[str, str], event_key: str, *, status: str = "MA
     }
 
 
+def attribution_v2(signal_row: dict[str, str], event_key: str, *,
+                   status: str = "MATCHED", decision_id: str = "42",
+                   fingerprint: str = "sha256:test-fingerprint") -> dict[str, str]:
+    row = attribution(signal_row, event_key, status=status)
+    row.update({
+        "schema_version": "order-flow-attribution-v2",
+        "decision_id": decision_id,
+        "decision_fingerprint": fingerprint,
+    })
+    return row
+
+
 def outcome(epoch: int, resolved: int, realized_r: str = "1.0",
             *, filled: str = "Yes") -> dict[str, str]:
     return {
@@ -156,6 +168,32 @@ class OrderFlowResearchTests(unittest.TestCase):
         self.assertEqual(joined[0]["pressure_ratio"], -0.4)
         self.assertEqual(attr_rejected, {})
         self.assertEqual(rejected, {})
+
+    def test_v2_attribution_preserves_decision_lineage_in_joined_rows(self) -> None:
+        s = signal(1_700_000_105)
+        o = outcome(1_700_000_105, 1_700_000_500, "1.25")
+        evidence, _ = load_order_flow_events([event("exact-v2", 1_700_000_100)])
+        outcome_index, _ = build_outcome_index([s], [o])
+        attr_index, attr_rejected = build_attribution_index([
+            attribution_v2(s, "exact-v2", decision_id="987654")
+        ])
+        joined, rejected = join_events_to_outcomes(
+            evidence, outcome_index, attribution_index=attr_index
+        )
+        self.assertEqual(len(joined), 1)
+        self.assertEqual(joined[0]["decision_id"], "987654")
+        self.assertEqual(joined[0]["decision_fingerprint"], "sha256:test-fingerprint")
+        self.assertEqual(joined[0]["event_key"], "exact-v2")
+        self.assertEqual(attr_rejected, {})
+        self.assertEqual(rejected, {})
+
+    def test_v2_attribution_without_decision_lineage_is_rejected(self) -> None:
+        s = signal(1_700_000_105)
+        row = attribution_v2(s, "exact-v2")
+        row.pop("decision_fingerprint")
+        indexed, rejected = build_attribution_index([row])
+        self.assertEqual(indexed, {})
+        self.assertEqual(rejected["missing_decision_lineage"], 1)
 
     def test_direct_mode_never_falls_back_when_attribution_missing(self) -> None:
         s = signal(1_700_000_105)
