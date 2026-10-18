@@ -73,8 +73,8 @@ public:
       out.quality=OF_QUALITY_UNAVAILABLE;
       out.tick_count=0;
       out.signed_tick_pressure=0.0;
-      out.positive_tick_count=0.0;
-      out.negative_tick_count=0.0;
+      out.positive_tick_count=0;
+      out.negative_tick_count=0;
       out.pressure_ratio=0.0;
       out.price_progress=0.0;
       out.bullish_sweep_reclaim=false;
@@ -120,8 +120,8 @@ public:
             double delta=mid-previousMid;
             // Each price-changing quote contributes one unit. This is a
             // deliberately conservative tick-direction proxy, not volume.
-            if(delta>0.0) positive+=1.0;
-            else if(delta<0.0) negative+=1.0;
+            if(delta>0.0) positive++;
+            else if(delta<0.0) negative++;
            }
          previousMid=mid;
          previousTimeMsc=tickTimeMsc;
