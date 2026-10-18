@@ -23,7 +23,7 @@ The canonical EA source is `EA/`; do not implement new behavior under legacy `mq
 
 - [x] Add a self-contained module under `EA/includes/Analysis/` with a quality/status field (valid/proxy-only/unavailable) and stale-data flag.
 - [x] Add an opt-in, closed-bar diagnostic hook that logs pressure proxy, sweep/reclaim flags, absorption proxy and exhaustion proxy; default OFF.
-- [x] Add versioned per-bar evidence CSV and a separate exact SignalID-to-event-key attribution CSV without changing legacy signal/outcome CSV schemas.
+- [x] Add versioned per-bar evidence CSV and a separate exact SignalID-to-event-key attribution CSV. Attribution v2 records the router decision ID and decision fingerprint after routing, without changing legacy signal/outcome CSV schemas; the research analyzer remains compatible with historical v1 attribution files.
 - Feed it only timestamped data available at decision time. Use closed bars for bar-based features; no future bars, hindsight pivots, or post-fill information.
 - Integrate after data collection and before decision routing as a **diagnostic evidence object**. Keep the existing `CScoringEngine::CalculateConfidence()` arithmetic and all risk/execution controls unchanged in the first phase.
 - Log feature values and data quality to the versioned evidence CSV; preserve a separate exact SignalID-to-event-key attribution CSV for outcome linkage. Review both outputs and their schema compatibility before research. Do not silently change existing CSV column positions or parsers.
