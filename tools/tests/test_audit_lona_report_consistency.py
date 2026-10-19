@@ -35,7 +35,7 @@ def make_report(group_count: int = 30) -> dict:
             "net_pnl": round(net_pnl, 8),
             "win_rate_pct": 50.0,
             "profit_factor": 2.0,
-            "expectancy": net_pnl / (group_count * 3),
+            "expectancy": net_pnl / (group_count * 3) if group_count else 0.0,
             "max_drawdown_pct": 1.5,
         },
         "trade_history": {
