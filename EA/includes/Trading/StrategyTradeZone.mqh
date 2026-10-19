@@ -12,6 +12,7 @@
 #include "StrategySetupBuilders.mqh"
 #include "Targets.mqh"
 #include "EnvironmentStrategyMemory.mqh"
+#include "../Decision/RegimeShadowLogger.mqh"
 
 extern CTFContext* g_chartCtx;
 extern CTFContext* g_trendCtx;
@@ -27,6 +28,7 @@ private:
    CTFContext*                     m_bosCtx;
    CScoringEngine*                 m_scoring;
    CEnvironmentStrategyMemory*     m_environmentMemory;
+   CRegimeShadowLogger             m_regimeShadowLogger;
    TradeSetup                      m_lastSetup;
    double                          m_slBufferATR;
    double                          m_minStopSpreadMult;
@@ -47,6 +49,9 @@ public:
    TradeSetup GenerateBuySetup();
    TradeSetup GenerateSellSetup();
    TradeSetup GetLastSetup()const{return m_lastSetup;}
+   void ConfigureRegimeShadowLogger(bool enabled);
+   bool ConfigureRegimeRolloverTelemetry(bool enabled,int startHour,int startMinute,int endHour,int endMinute);
+   bool LogRegimeShadowFinal(const TradeSetup &setup,const string status,const string rejectionReason);
   };
 
 CTradeDecision::CTradeDecision(){ZeroMemory(m_lastSetup);m_priceRef=NULL;m_fvgCtx=NULL;m_liqCtx=NULL;m_srCtx=NULL;m_bosCtx=NULL;m_scoring=NULL;m_environmentMemory=NULL;m_slBufferATR=0.25;m_minStopSpreadMult=3.0;m_fvgMaxDistATR=1.25;m_minSelectionScore=60.0;}
@@ -59,6 +64,35 @@ void CTradeDecision::Init(CCandleData* priceRef,CTFContext* fvgCtx,CTFContext* l
 
 double CTradeDecision::EnforceSpreadFloor(string symbol,double entry,double stopLoss,bool isBuy)
   {if(m_minStopSpreadMult<=0)return stopLoss;long sp=SymbolInfoInteger(symbol,SYMBOL_SPREAD);double pt=SymbolInfoDouble(symbol,SYMBOL_POINT);if(sp<=0||pt<=0)return stopLoss;double minDist=(double)sp*pt*m_minStopSpreadMult;double cur=MathAbs(entry-stopLoss);if(cur>=minDist)return stopLoss;return isBuy?(entry-minDist):(entry+minDist);}
+
+void CTradeDecision::ConfigureRegimeShadowLogger(bool enabled)
+  {
+   m_regimeShadowLogger.Configure(enabled);
+  }
+
+bool CTradeDecision::ConfigureRegimeRolloverTelemetry(bool enabled,int startHour,int startMinute,int endHour,int endMinute)
+  {
+   return m_regimeShadowLogger.ConfigureRolloverTelemetry(enabled,startHour,startMinute,endHour,endMinute);
+  }
+
+bool CTradeDecision::LogRegimeShadowFinal(const TradeSetup &setup,const string status,const string rejectionReason)
+  {
+   if(m_priceRef==NULL) return false;
+   bool isBuy=(setup.type==ORDER_TYPE_BUY);
+   string symbol=m_priceRef.Symbol();
+   string direction=isBuy ? "BUY" : "SELL";
+   datetime barTime=setup.creation_time;
+   if(barTime<=0 && m_priceRef.Total()>0) barTime=m_priceRef.GetCandle(0).time;
+   if(barTime<=0) barTime=TimeCurrent();
+   string signalId=StringFormat("%s_%s_%d",symbol,direction,(long)setup.creation_time);
+   double entryReference=0.0;
+   if(setup.entry_top>0.0 && setup.entry_bottom>0.0)
+      entryReference=(setup.entry_top+setup.entry_bottom)/2.0;
+   return m_regimeShadowLogger.Log(symbol,_Period,barTime,isBuy,setup.reasons,
+                                   setup.reasons.selected_strategy,setup.reasons.selected_strategy_score,
+                                   status,rejectionReason,signalId,entryReference,setup.invalidation,
+                                   setup.stop_loss,setup.tp1,setup.tp2,setup.final_tp);
+  }
 
 bool CTradeDecision::FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out)
   {if(m_fvgCtx==NULL||m_priceRef==NULL||m_priceRef.Total()==0)return false;double price=m_priceRef.GetCandle(0).close;double atr=m_fvgCtx.candles.GetATR(0);if(price<=0||atr<=0)return false;bool found=false;double bestScore=-1.0;for(int i=0;i<m_fvgCtx.fvg.Count();i++){FVGZone z=m_fvgCtx.fvg.GetZone(i);if(z.dir!=dir)continue;if(z.state!=FVG_FRESH&&z.state!=FVG_TESTED)continue;double mid=(z.top+z.bottom)/2.0;double distATR=MathAbs(price-mid)/atr;if(distATR>m_fvgMaxDistATR)continue;double base=(z.state==FVG_FRESH)?1.0:0.6;double proximity=MathMax(0.0,1.0-distATR/m_fvgMaxDistATR);double score=base*(0.5+0.5*proximity);if(!found||score>bestScore){found=true;bestScore=score;out=z;}}return found;}
@@ -112,7 +146,69 @@ bool CTradeDecision::BuildNonSMC(bool forBuy,ENUM_SELECTED_STRATEGY selected,dou
   }
 
 TradeSetup CTradeDecision::Generate(bool forBuy)
-  {TradeSetup out;ZeroMemory(out);if(m_scoring==NULL||m_priceRef==NULL)return out;SetupReasons reasons;PopulateStrategyReads(forBuy,reasons);ENUM_SELECTED_STRATEGY selected=STRATEGY_NONE;double selectedScore=0.0;SelectPeerStrategy(forBuy,reasons,selected,selectedScore);if(selected==STRATEGY_NONE||selectedScore<m_minSelectionScore){m_lastSetup=out;return out;}reasons.selected_strategy=selected;reasons.selected_strategy_score=selectedScore;if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons);else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out)){ZeroMemory(out);m_lastSetup=out;return out;}if(!out.active){ZeroMemory(out);m_lastSetup=out;return out;}out.reasons.selected_strategy=selected;out.reasons.selected_strategy_score=selectedScore;m_lastSetup=out;return out;}
+  {
+   TradeSetup out;
+   ZeroMemory(out);
+   if(m_scoring==NULL || m_priceRef==NULL)
+      return out;
+
+   SetupReasons reasons;
+   PopulateStrategyReads(forBuy,reasons);
+   ENUM_SELECTED_STRATEGY selected=STRATEGY_NONE;
+   double selectedScore=0.0;
+   SelectPeerStrategy(forBuy,reasons,selected,selectedScore);
+   reasons.selected_strategy=selected;
+   reasons.selected_strategy_score=selectedScore;
+
+   string symbol=m_priceRef.Symbol();
+   datetime barTime=TimeCurrent();
+   if(m_priceRef.Total()>0)
+      barTime=m_priceRef.GetCandle(0).time;
+   string direction=forBuy ? "BUY" : "SELL";
+
+   if(selected==STRATEGY_NONE || selectedScore<m_minSelectionScore)
+     {
+      string why=(reasons.regime==REGIME_UNDEFINED) ?
+                 "REGIME_UNDEFINED_FAIL_CLOSED" : "NO_ELIGIBLE_STRATEGY_OR_BELOW_SELECTION_THRESHOLD";
+      m_regimeShadowLogger.Log(symbol,_Period,barTime,forBuy,reasons,selected,selectedScore,
+                               "REJECTED",why);
+      m_lastSetup=out;
+      return out;
+     }
+
+   if(selected==STRATEGY_SMC)
+      out=BuildSMC(forBuy,selectedScore,reasons);
+   else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))
+     {
+      m_regimeShadowLogger.Log(symbol,_Period,barTime,forBuy,reasons,selected,selectedScore,
+                               "REJECTED","SELECTED_STRATEGY_BUILDER_FAILED");
+      ZeroMemory(out);
+      m_lastSetup=out;
+      return out;
+     }
+
+   if(!out.active)
+     {
+      string why=(selected==STRATEGY_SMC) ? "SMC_SETUP_BUILD_FAILED" : "SELECTED_SETUP_INACTIVE";
+      m_regimeShadowLogger.Log(symbol,_Period,barTime,forBuy,reasons,selected,selectedScore,
+                               "REJECTED",why);
+      ZeroMemory(out);
+      m_lastSetup=out;
+      return out;
+     }
+
+   out.reasons.selected_strategy=selected;
+   out.reasons.selected_strategy_score=selectedScore;
+   string signalId=StringFormat("%s_%s_%d",symbol,direction,(long)out.creation_time);
+   double entryReference=0.0;
+   if(out.entry_top>0.0 && out.entry_bottom>0.0)
+      entryReference=(out.entry_top+out.entry_bottom)/2.0;
+   m_regimeShadowLogger.Log(symbol,_Period,barTime,forBuy,out.reasons,selected,selectedScore,
+                            "SETUP_BUILT","",signalId,entryReference,out.invalidation,
+                            out.stop_loss,out.tp1,out.tp2,out.final_tp);
+   m_lastSetup=out;
+   return out;
+  }
 
 TradeSetup CTradeDecision::GenerateBuySetup(){return Generate(true);}TradeSetup CTradeDecision::GenerateSellSetup(){return Generate(false);}
 

@@ -71,9 +71,10 @@ def test_legacy_decisions_do_not_fabricate_invalidation():
 
 def test_strategy_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
     t=TRADE_ZONE.read_text()
-    assert "TradeSetup out;ZeroMemory(out);" in t
-    assert "m_lastSetup=out;return out;" in t
-    assert "return TradeSetup();" not in t
+    compact="".join(t.split())
+    assert "TradeSetupout;ZeroMemory(out);" in compact
+    assert "m_lastSetup=out;returnout;" in compact
+    assert "returnTradeSetup();" not in compact
 
 def test_strategy_trade_zone_applies_spread_floor_then_rechecks_invalidation():
     t=TRADE_ZONE.read_text();assert "out.stop_loss=EnforceSpreadFloor" in t;assert "out.stop_loss>=out.invalidation" in t;assert "out.stop_loss<=out.invalidation" in t
@@ -173,3 +174,15 @@ def test_outcome_provenance_preserves_signed_cashflows_and_unknown_costs():
     assert r'\"swap_cashflow\":%s' in publisher
     assert r'\"broker_fee_cashflow\":%s' in publisher
     assert '"commission_cashflow", "swap_cashflow", "broker_fee_cashflow"' in walk_forward
+
+
+def test_ea_persists_candidate_to_decision_trace_before_ignore_return():
+    ea = EA.read_text()
+    trace = (ROOT / "EA" / "includes" / "Decision" / "DecisionTraceLogger.mqh").read_text()
+    assert '#include "includes/Decision/DecisionTraceLogger.mqh"' in ea
+    assert "CDecisionTraceLogger g_decisionTrace;" in ea
+    assert "g_decisionTrace.Init(_Symbol);" in ea
+    assert "MidasTouch_DecisionTrace_" in trace
+    assert "DecisionID" in trace and "DecisionFingerprint" in trace
+    assert ea.index("decision.decision_fingerprint=DecisionFingerprintFor(decision);") < ea.index("g_decisionTrace.Log(chosen,decision);")
+    assert ea.index("g_decisionTrace.Log(chosen,decision);") < ea.index("if(!decision.valid||decision.action==POLICY_IGNORE)return;")

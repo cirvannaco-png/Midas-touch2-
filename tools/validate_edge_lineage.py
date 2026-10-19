@@ -93,17 +93,20 @@ def main() -> int:
                 errors.append(f"{rel}: required contract token missing: {token}")
 
     trade_zone = texts.get("EA/includes/Trading/StrategyTradeZone.mqh", "")
-    if "SelectPeerStrategy(forBuy,reasons,selected,selectedScore)" not in trade_zone:
+    # Normalize whitespace only for structural-token checks. Refactoring a
+    # multi-line function must not invalidate an otherwise preserved contract.
+    trade_zone_compact = "".join(trade_zone.split())
+    if "SelectPeerStrategy(forBuy,reasons,selected,selectedScore)" not in trade_zone_compact:
         errors.append("TradeZone: authoritative strategy selection is not explicitly wired")
-    if "if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons)" not in trade_zone:
+    if "if(selected==STRATEGY_SMC)out=BuildSMC(forBuy,selectedScore,reasons)" not in trade_zone_compact:
         errors.append("TradeZone: selected SMC strategy is not built through its owned builder")
-    if "else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))" not in trade_zone:
+    if "elseif(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))" not in trade_zone_compact:
         errors.append("TradeZone: selected challenger strategy is not built through its owned builder")
-    if "out.reasons.selected_strategy=selected" not in trade_zone:
+    if "out.reasons.selected_strategy=selected" not in trade_zone_compact:
         errors.append("TradeZone: selected strategy provenance is not retained on the completed setup")
-    if "m_lastSetup=out;return out;" not in trade_zone:
+    if "m_lastSetup=out;returnout;" not in trade_zone_compact:
         errors.append("TradeZone: completed setup is not returned through the owned last-setup path")
-    if "return TradeSetup();" in trade_zone:
+    if "returnTradeSetup();" in trade_zone_compact:
         errors.append("TradeZone: temporary TradeSetup return reintroduced in a fail-closed path")
 
     if errors:

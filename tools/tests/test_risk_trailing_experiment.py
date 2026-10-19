@@ -268,3 +268,22 @@ def test_small_account_calibrated_candidate_can_test_more_slots_without_more_mon
     assert calibrated["InpSmallMaxPortfolioRiskPercent"] == baseline["InpSmallMaxPortfolioRiskPercent"]
     assert float(calibrated["InpSmallMaxOpenTrades"]) > float(baseline["InpSmallMaxOpenTrades"])
     assert float(calibrated["InpSmallMaxPositionsPerSymbol"]) > float(baseline["InpSmallMaxPositionsPerSymbol"])
+
+@pytest.mark.parametrize("cost_field", ["commission", "swap", "fee"])
+def test_blank_deal_cost_is_not_silently_treated_as_zero(tmp_path, cost_field):
+    manifest = _manifest(tmp_path)
+    doc = json.loads(manifest.read_text(encoding="utf-8"))
+    baseline = next(row for row in doc["variants"] if row["role"] == "A_current_baseline")
+    deals_path = tmp_path / baseline["deals_csv"]
+    with deals_path.open("r", encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream)
+        fields = list(reader.fieldnames or [])
+        rows = list(reader)
+    rows[0][cost_field] = ""
+    with deals_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    with pytest.raises(ExperimentError, match=f"missing explicit {cost_field}"):
+        compare_manifest(manifest, simulations=10)
+

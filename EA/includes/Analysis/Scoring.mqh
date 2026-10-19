@@ -118,9 +118,11 @@ private:
    // Strategies/MomentumBreakout.mqh) — owned here rather than as
    // separate objects wired at the .mq5 level, because everything they
    // need (m_trendCtx.trend, m_bosCtx.bos, m_liqCtx.liquidity, m_phase,
-   // m_volRegime) already exists on this class. Populated by
-   // PopulateStrategyDiagnostics() only; never consulted by
-   // CalculateConfidence() or anything that gates a trade.
+   // m_volRegime) already exists on this class. This scoring block only
+   // populates diagnostic fields; however, executable selection in
+   // Trading/StrategyTradeZone.mqh separately reads SetupReasons.regime
+   // and uses it to restrict challenger strategy eligibility. Do not
+   // generalize "diagnostic-only" to the entire EA decision path.
    CRegimeDetector          m_regimeDetector;
    CMomentumBreakoutEngine  m_momentumEngine;
    // v2.13: Mean Reversion needs its own volatility-regime read scoped

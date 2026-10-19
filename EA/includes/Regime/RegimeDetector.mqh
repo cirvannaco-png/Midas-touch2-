@@ -26,11 +26,18 @@
 // forcing every bar into one of two buckets a weak signal can't actually
 // support.
 //
-// DIAGNOSTIC ONLY. Nothing reads Classify()'s return value except
-// CSV logging (see SetupReasons.regime in Core/Config.mqh) and, later,
-// the strategy-selection engine this doc argues for — which does not
-// exist yet. No entry filter, confidence calculation, or order path
-// consults this today.
+// LIVE SELECTION INPUT — not a stand-alone global trade gate.
+// CTradeDecision::SelectPeerStrategy reads SetupReasons.regime to decide
+// which challenger strategy may compete, and returns no selected strategy
+// when the regime is UNDEFINED. With a defined regime, an eligible SMC
+// baseline may still be selected. This selector behavior can therefore
+// affect live entry eligibility even though the classification logic here
+// does not modify confidence or place orders directly.
+// The separate CStrategySelector in Scoring.mqh also emits diagnostic
+// rankings; do not assume that ranking and executable selection are the
+// same path without verifying the current caller graph. Keep this comment
+// synchronized with the actual selector wiring and validate both paths
+// against matched historical data before changing regime semantics.
 class CRegimeDetector
   {
 private:
