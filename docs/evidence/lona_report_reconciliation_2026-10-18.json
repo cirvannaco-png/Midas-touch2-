@@ -1,11 +1,13 @@
 {
   "schema_version": 1,
-  "min_trades_for_performance_review": 30,
-  "as_of_utc": "2026-10-18",
+  "min_groups_for_performance_review": 30,
+  "net_pnl_reconciliation_tolerance": 0.02,
+  "as_of_utc": "2026-10-19",
   "notes": [
-    "Metrics and row counts were read from LONA reports and the reconstructed trade-history endpoint.",
-    "The endpoint's P&L is gross of commissions and fees; stored report P&L is preserved as reported and not reconciled against gross P&L.",
-    "A row-count mismatch blocks optimization. Cost inputs are unverified broker evidence and block performance certification."
+    "Fetched directly from the LONA report and reconstructed position-group history endpoints on 2026-10-19.",
+    "Stored number_of_trades counts closed tranches; reconstructed history returns grouped positions. Current strategy opens three parent tranches per setup (50/20/30 defaults).",
+    "Group P&L less LONA's configured simulated commission is compared to stored net P&L; that reconciliation does not verify real broker costs.",
+    "Broker cost evidence is unavailable for these runs, so promotion remains blocked even where grouped history and stored net P&L reconcile."
   ],
   "reports": [
     {
@@ -15,6 +17,7 @@
       "timeframe": "1d",
       "stored_metrics": {
         "trade_count": 27,
+        "trade_count_unit": "closed_tranche",
         "net_pnl": -8.56,
         "win_rate_pct": 59.26,
         "profit_factor": 0.82,
@@ -27,62 +30,98 @@
             "entry_time": "2024-05-10T00:00:00+00:00",
             "exit_time": "2024-05-22T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 13.689571031304995
+            "pnl": 13.689571031304995,
+            "quantity": 0.3215765135730115,
+            "entry_price": 2346.76,
+            "exit_price": 2389.3301829999996
           },
           {
             "entry_time": "2024-05-29T00:00:00+00:00",
             "exit_time": "2024-06-03T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": -10.015305370537103
+            "pnl": -10.015305370537103,
+            "quantity": 0.2377578132583184,
+            "entry_price": 2359.89,
+            "exit_price": 2317.76602
           },
           {
             "entry_time": "2024-06-21T00:00:00+00:00",
             "exit_time": "2024-06-26T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": -10.00398472141942
+            "pnl": -10.00398472141942,
+            "quantity": 0.16283714570039318,
+            "entry_price": 2360.96,
+            "exit_price": 2299.52448
           },
           {
             "entry_time": "2024-07-04T00:00:00+00:00",
             "exit_time": "2024-07-08T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 1.624391363393329
+            "pnl": 1.624391363393329,
+            "quantity": 0.2139015497730824,
+            "entry_price": 2358.86,
+            "exit_price": 2366.4541074999997
           },
           {
             "entry_time": "2024-07-12T00:00:00+00:00",
             "exit_time": "2024-07-19T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 1.6240985039755138
+            "pnl": 1.6240985039755138,
+            "quantity": 0.13631485848648267,
+            "entry_price": 2415.96,
+            "exit_price": 2427.8743175
           },
           {
             "entry_time": "2024-07-31T00:00:00+00:00",
             "exit_time": "2024-08-02T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 1.7697995632149273
+            "pnl": 1.7697995632149273,
+            "quantity": 0.15550000236922015,
+            "entry_price": 2409.95,
+            "exit_price": 2421.3313475
           },
           {
             "entry_time": "2024-08-12T00:00:00+00:00",
             "exit_time": "2024-08-16T00:00:00+00:00",
             "direction": "SHORT",
-            "pnl": -24.976553076158808
+            "pnl": -24.976553076158808,
+            "quantity": 0.42986277217414237,
+            "entry_price": 2428.03,
+            "exit_price": 2486.1335500000005
           },
           {
             "entry_time": "2024-08-18T00:00:00+00:00",
             "exit_time": "2024-10-08T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 10.760127087547655
+            "pnl": 10.760127087547655,
+            "quantity": 0.1068807253804625,
+            "entry_price": 2509.1,
+            "exit_price": 2609.7741585000003
           },
           {
             "entry_time": "2024-10-13T00:00:00+00:00",
             "exit_time": "2024-10-31T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 11.644385672321459
+            "pnl": 11.644385672321459,
+            "quantity": 0.1634982638442717,
+            "entry_price": 2655.57,
+            "exit_price": 2726.7902405
           }
         ],
         "reconstructed_count": 9,
         "reconstructed_total": 9,
         "has_next": false,
-        "raw_export_complete": false,
-        "legacy_redacted": null
+        "raw_export_complete": true,
+        "grouping": {
+          "history_unit": "position_group",
+          "tranches_per_group": 3,
+          "unit_semantics_evidence": "Strategy implementation opens three parent tranches per setup (50/20/30 defaults); LONA stored number_of_trades counts closed tranches while the reconstructed history endpoint returns one grouped position record per setup."
+        }
+      },
+      "simulation": {
+        "initial_cash": 10000,
+        "commission_rate": 0.0005,
+        "leverage": 10
       },
       "costs": {
         "verified": false,
@@ -101,6 +140,7 @@
       "timeframe": "1d",
       "stored_metrics": {
         "trade_count": 27,
+        "trade_count_unit": "closed_tranche",
         "net_pnl": -8.56,
         "win_rate_pct": 59.26,
         "profit_factor": 0.82,
@@ -113,62 +153,98 @@
             "entry_time": "2024-05-10T00:00:00+00:00",
             "exit_time": "2024-05-22T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 13.689571031304995
+            "pnl": 13.689571031304995,
+            "quantity": 0.3215765135730115,
+            "entry_price": 2346.76,
+            "exit_price": 2389.3301829999996
           },
           {
             "entry_time": "2024-05-29T00:00:00+00:00",
             "exit_time": "2024-06-03T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": -10.015305370537103
+            "pnl": -10.015305370537103,
+            "quantity": 0.2377578132583184,
+            "entry_price": 2359.89,
+            "exit_price": 2317.76602
           },
           {
             "entry_time": "2024-06-21T00:00:00+00:00",
             "exit_time": "2024-06-26T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": -10.00398472141942
+            "pnl": -10.00398472141942,
+            "quantity": 0.16283714570039318,
+            "entry_price": 2360.96,
+            "exit_price": 2299.52448
           },
           {
             "entry_time": "2024-07-04T00:00:00+00:00",
             "exit_time": "2024-07-08T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 1.624391363393329
+            "pnl": 1.624391363393329,
+            "quantity": 0.2139015497730824,
+            "entry_price": 2358.86,
+            "exit_price": 2366.4541074999997
           },
           {
             "entry_time": "2024-07-12T00:00:00+00:00",
             "exit_time": "2024-07-19T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 1.6240985039755138
+            "pnl": 1.6240985039755138,
+            "quantity": 0.13631485848648267,
+            "entry_price": 2415.96,
+            "exit_price": 2427.8743175
           },
           {
             "entry_time": "2024-07-31T00:00:00+00:00",
             "exit_time": "2024-08-02T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 1.7697995632149273
+            "pnl": 1.7697995632149273,
+            "quantity": 0.15550000236922015,
+            "entry_price": 2409.95,
+            "exit_price": 2421.3313475
           },
           {
             "entry_time": "2024-08-12T00:00:00+00:00",
             "exit_time": "2024-08-16T00:00:00+00:00",
             "direction": "SHORT",
-            "pnl": -24.976553076158808
+            "pnl": -24.976553076158808,
+            "quantity": 0.42986277217414237,
+            "entry_price": 2428.03,
+            "exit_price": 2486.1335500000005
           },
           {
             "entry_time": "2024-08-18T00:00:00+00:00",
             "exit_time": "2024-10-08T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 10.760127087547655
+            "pnl": 10.760127087547655,
+            "quantity": 0.1068807253804625,
+            "entry_price": 2509.1,
+            "exit_price": 2609.7741585000003
           },
           {
             "entry_time": "2024-10-13T00:00:00+00:00",
             "exit_time": "2024-10-31T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 11.644385672321459
+            "pnl": 11.644385672321459,
+            "quantity": 0.1634982638442717,
+            "entry_price": 2655.57,
+            "exit_price": 2726.7902405
           }
         ],
         "reconstructed_count": 9,
         "reconstructed_total": 9,
         "has_next": false,
-        "raw_export_complete": false,
-        "legacy_redacted": null
+        "raw_export_complete": true,
+        "grouping": {
+          "history_unit": "position_group",
+          "tranches_per_group": 3,
+          "unit_semantics_evidence": "Strategy implementation opens three parent tranches per setup (50/20/30 defaults); LONA stored number_of_trades counts closed tranches while the reconstructed history endpoint returns one grouped position record per setup."
+        }
+      },
+      "simulation": {
+        "initial_cash": 10000,
+        "commission_rate": 0.0005,
+        "leverage": 10
       },
       "costs": {
         "verified": false,
@@ -187,6 +263,7 @@
       "timeframe": "1d",
       "stored_metrics": {
         "trade_count": 3,
+        "trade_count_unit": "closed_tranche",
         "net_pnl": 10.52,
         "win_rate_pct": 100,
         "profit_factor": 0,
@@ -199,14 +276,26 @@
             "entry_time": "2024-08-18T00:00:00+00:00",
             "exit_time": "2024-10-08T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 10.792777806273417
+            "pnl": 10.792777806273417,
+            "quantity": 0.10720504613180766,
+            "entry_price": 2509.1,
+            "exit_price": 2609.7741585
           }
         ],
         "reconstructed_count": 1,
         "reconstructed_total": 1,
         "has_next": false,
-        "raw_export_complete": false,
-        "legacy_redacted": null
+        "raw_export_complete": true,
+        "grouping": {
+          "history_unit": "position_group",
+          "tranches_per_group": 3,
+          "unit_semantics_evidence": "Strategy implementation opens three parent tranches per setup (50/20/30 defaults); LONA stored number_of_trades counts closed tranches while the reconstructed history endpoint returns one grouped position record per setup."
+        }
+      },
+      "simulation": {
+        "initial_cash": 10000,
+        "commission_rate": 0.0005,
+        "leverage": 10
       },
       "costs": {
         "verified": false,
@@ -225,6 +314,7 @@
       "timeframe": "1d",
       "stored_metrics": {
         "trade_count": 3,
+        "trade_count_unit": "closed_tranche",
         "net_pnl": 5.26,
         "win_rate_pct": 100,
         "profit_factor": 0,
@@ -237,14 +327,26 @@
             "entry_time": "2024-08-18T00:00:00+00:00",
             "exit_time": "2024-10-08T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 5.3963889031367085
+            "pnl": 5.3963889031367085,
+            "quantity": 0.05360252306590383,
+            "entry_price": 2509.1,
+            "exit_price": 2609.7741585
           }
         ],
         "reconstructed_count": 1,
         "reconstructed_total": 1,
         "has_next": false,
-        "raw_export_complete": false,
-        "legacy_redacted": null
+        "raw_export_complete": true,
+        "grouping": {
+          "history_unit": "position_group",
+          "tranches_per_group": 3,
+          "unit_semantics_evidence": "Strategy implementation opens three parent tranches per setup (50/20/30 defaults); LONA stored number_of_trades counts closed tranches while the reconstructed history endpoint returns one grouped position record per setup."
+        }
+      },
+      "simulation": {
+        "initial_cash": 10000,
+        "commission_rate": 0.0005,
+        "leverage": 10
       },
       "costs": {
         "verified": false,
@@ -263,6 +365,7 @@
       "timeframe": "1d",
       "stored_metrics": {
         "trade_count": 21,
+        "trade_count_unit": "closed_tranche",
         "net_pnl": 65.71,
         "win_rate_pct": 100,
         "profit_factor": 0,
@@ -275,50 +378,80 @@
             "entry_time": "2026-01-09T00:00:00+00:00",
             "exit_time": "2026-01-29T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 42.45663899592136
+            "pnl": 42.45663899592136,
+            "quantity": 0.11392973903401207,
+            "entry_price": 4475.75,
+            "exit_price": 4848.406335
           },
           {
             "entry_time": "2026-02-22T00:00:00+00:00",
             "exit_time": "2026-03-03T00:00:00+00:00",
             "direction": "LONG",
-            "pnl": 1.6383518678848783
+            "pnl": 1.6383518678848783,
+            "quantity": 0.03298353966286764,
+            "entry_price": 5107.245,
+            "exit_price": 5156.9168025
           },
           {
             "entry_time": "2026-04-29T00:00:00+00:00",
             "exit_time": "2026-05-05T00:00:00+00:00",
             "direction": "SHORT",
-            "pnl": 1.6319640354467633
+            "pnl": 1.6319640354467633,
+            "quantity": 0.053947619259155116,
+            "entry_price": 4595.79,
+            "exit_price": 4565.5391
           },
           {
             "entry_time": "2026-05-17T00:00:00+00:00",
             "exit_time": "2026-05-29T00:00:00+00:00",
             "direction": "SHORT",
-            "pnl": 1.695821475242846
+            "pnl": 1.695821475242846,
+            "quantity": 0.038871299651631275,
+            "entry_price": 4529.69,
+            "exit_price": 4486.06343
           },
           {
             "entry_time": "2026-06-02T00:00:00+00:00",
             "exit_time": "2026-06-11T00:00:00+00:00",
             "direction": "SHORT",
-            "pnl": 16.995256280959065
+            "pnl": 16.995256280959065,
+            "quantity": 0.07619337898648514,
+            "entry_price": 4484.65,
+            "exit_price": 4261.5957595
           },
           {
             "entry_time": "2026-06-19T00:00:00+00:00",
             "exit_time": "2026-07-03T00:00:00+00:00",
             "direction": "SHORT",
-            "pnl": 1.6356057803506574
+            "pnl": 1.6356057803506574,
+            "quantity": 0.04607271766174892,
+            "entry_price": 4188.38,
+            "exit_price": 4152.8794725
           },
           {
             "entry_time": "2026-07-08T00:00:00+00:00",
             "exit_time": "2026-07-14T00:00:00+00:00",
             "direction": "SHORT",
-            "pnl": 1.6352032241287673
+            "pnl": 1.6352032241287673,
+            "quantity": 0.08082794223812641,
+            "entry_price": 4098.68,
+            "exit_price": 4078.4493325000003
           }
         ],
         "reconstructed_count": 7,
         "reconstructed_total": 7,
         "has_next": false,
-        "raw_export_complete": false,
-        "legacy_redacted": null
+        "raw_export_complete": true,
+        "grouping": {
+          "history_unit": "position_group",
+          "tranches_per_group": 3,
+          "unit_semantics_evidence": "Strategy implementation opens three parent tranches per setup (50/20/30 defaults); LONA stored number_of_trades counts closed tranches while the reconstructed history endpoint returns one grouped position record per setup."
+        }
+      },
+      "simulation": {
+        "initial_cash": 10000,
+        "commission_rate": 0.0005,
+        "leverage": 10
       },
       "costs": {
         "verified": false,
@@ -337,6 +470,7 @@
       "timeframe": "1d",
       "stored_metrics": {
         "trade_count": 0,
+        "trade_count_unit": "closed_tranche",
         "net_pnl": 0,
         "win_rate_pct": 0,
         "profit_factor": 0,
@@ -349,7 +483,16 @@
         "reconstructed_total": 0,
         "has_next": false,
         "raw_export_complete": true,
-        "legacy_redacted": null
+        "grouping": {
+          "history_unit": "position_group",
+          "tranches_per_group": 3,
+          "unit_semantics_evidence": "Strategy implementation opens three parent tranches per setup (50/20/30 defaults); LONA stored number_of_trades counts closed tranches while the reconstructed history endpoint returns one grouped position record per setup."
+        }
+      },
+      "simulation": {
+        "initial_cash": 10000,
+        "commission_rate": 0.0005,
+        "leverage": 10
       },
       "costs": {
         "verified": false,
