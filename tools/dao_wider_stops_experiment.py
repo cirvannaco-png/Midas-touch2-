@@ -263,7 +263,7 @@ def compare_manifest(manifest_path: str | Path) -> dict:
         "account_profile", "account_currency", "initial_balance", "symbol", "timeframe",
         "period_start", "period_end", "locked_oos_start", "locked_oos_end",
         "dataset_sha256", "ea_source_sha", "ea_build", "terminal_build", "fill_policy",
-        "spread_model", "spread_widening_multiplier", "base_costs_applied_in_tester",
+        "spread_model", "spread_widening_multiplier", "baseline_spread_points", "cash_per_point_per_lot", "slippage_points", "base_costs_applied_in_tester",
         "stress_costs_applied_in_analysis", "swap_included",
     }
     if not isinstance(ctx, dict) or set(ctx) != required_ctx:
