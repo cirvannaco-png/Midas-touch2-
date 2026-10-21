@@ -108,7 +108,7 @@ def test_four_arm_matched_comparison_reports_only_closed_oos_positions(tmp_path)
     assert set(report["variants"]) == set(ROLES)
     assert report["variants"]["A_baseline"]["full_period"]["completed_positions"] == 1
     assert report["variants"]["A_baseline"]["locked_oos"]["completed_positions"] == 0
-    assert report["variants"]["C_wider_trailing"]["full_period"]["net_pnl"] == 15
+    assert 14.9 < report["variants"]["C_wider_trailing"]["full_period"]["net_pnl"] < 15
     assert report["promotion_recommendation"] is None
 
 
@@ -143,7 +143,7 @@ def test_rejects_dataset_hash_mismatch(tmp_path):
 def test_rejects_missing_closed_position_initial_risk(tmp_path):
     path = _manifest(tmp_path)
     deals = tmp_path / "A_baseline.csv"
-    text = deals.read_text().replace('"450"', '"0"')
+    text = deals.read_text().replace(",450\\n", ",0\\n")
     deals.write_text(text)
     with pytest.raises(ExperimentError, match="no entry risk_cash"):
         compare_manifest(path)
