@@ -91,7 +91,7 @@ def _manifest(tmp_path, *, profile="small_account"):
             "ea_source_sha": "a" * 40, "ea_build": "test-build",
             "terminal_build": "test-terminal", "fill_policy": "test-policy",
             "spread_model": "real-ticks-plus-stress",
-            "spread_widening_multiplier": 1.25,
+            "spread_widening_multiplier": 1.25,\n            "baseline_spread_points": 10, "cash_per_point_per_lot": 0.1, "slippage_points": 2,
             "base_costs_applied_in_tester": True,
             "stress_costs_applied_in_analysis": True, "swap_included": True,
         },
