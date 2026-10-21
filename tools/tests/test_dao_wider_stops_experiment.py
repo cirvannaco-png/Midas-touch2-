@@ -91,7 +91,9 @@ def _manifest(tmp_path, *, profile="small_account"):
             "ea_source_sha": "a" * 40, "ea_build": "test-build",
             "terminal_build": "test-terminal", "fill_policy": "test-policy",
             "spread_model": "real-ticks-plus-stress",
-            "spread_widening_multiplier": 1.25,\n            "baseline_spread_points": 10, "cash_per_point_per_lot": 0.1, "slippage_points": 2,
+            "spread_widening_multiplier": 1.25,
+            "baseline_spread_points": 10, "cash_per_point_per_lot": 0.1,
+            "slippage_points": 2,
             "base_costs_applied_in_tester": True,
             "stress_costs_applied_in_analysis": True, "swap_included": True,
         },
@@ -114,10 +116,8 @@ def test_four_arm_matched_comparison_reports_only_closed_oos_positions(tmp_path)
 
 def test_rejects_risk_percent_that_is_not_constant_30(tmp_path):
     path = _manifest(tmp_path)
-    doc = json.loads(path.read_text())
     preset_path = tmp_path / "B_wider_initial_sl.set"
     preset_path.write_text(preset_path.read_text().replace("InpSmallRiskPercentPerTrade=30", "InpSmallRiskPercentPerTrade=29"))
-    path.write_text(json.dumps(doc))
     with pytest.raises(ExperimentError, match="preserve"):
         compare_manifest(path)
 
@@ -128,7 +128,6 @@ def test_rejects_changes_to_entry_or_other_non_stop_settings(tmp_path):
     with preset_path.open("a") as stream:
         stream.write("InpMinRiskReward=2.0\n")
     # This creates a key-set mismatch rather than silently accepting a confound.
-    path.write_text(path.read_text())
     with pytest.raises(ExperimentError, match="key set differs"):
         compare_manifest(path)
 
@@ -143,8 +142,7 @@ def test_rejects_dataset_hash_mismatch(tmp_path):
 def test_rejects_missing_closed_position_initial_risk(tmp_path):
     path = _manifest(tmp_path)
     deals = tmp_path / "A_baseline.csv"
-    text = deals.read_text().replace(",450\\n", ",0\\n")
-    deals.write_text(text)
+    deals.write_text(deals.read_text().replace('"risk_cash"\n', '"risk_cash"\n').replace('"450"\n', '"0"\n', 1))
     with pytest.raises(ExperimentError, match="no entry risk_cash"):
         compare_manifest(path)
 
