@@ -157,7 +157,7 @@ def _validate_preset_arms(presets: dict[str, dict[str, str]], profile: str) -> N
             raise ExperimentError(f"{role} stop settings {actual} do not match preregistered values {expected}")
 
 
-def _read_deals(path: Path, start: datetime, end: datetime) -> tuple[list[dict], int]:
+def _read_deals(path: Path, start: datetime, end: datetime, *, baseline_spread_points: float, cash_per_point_per_lot: float, spread_widening_multiplier: float, slippage_points: float) -> tuple[list[dict], int]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     try:
         with path.open(newline="", encoding="utf-8-sig") as stream:
@@ -182,7 +182,7 @@ def _read_deals(path: Path, start: datetime, end: datetime) -> tuple[list[dict],
                     raise ExperimentError(f"{path} unsupported entry code {entry_code!r}; split inout reversals")
                 grouped[pid].append({
                     "time": deal_time, "entry": entry_code, "volume": volume,
-                    "net": vals["profit"] + vals["commission"] + vals["swap"] + vals["fee"],
+                    "net": (vals["profit"] + vals["commission"] + vals["swap"] + vals["fee"] - (baseline_spread_points * (spread_widening_multiplier - 1.0) + slippage_points) * cash_per_point_per_lot * volume),
                     "risk": risk,
                 })
     except OSError as exc:
