@@ -142,7 +142,15 @@ def test_rejects_dataset_hash_mismatch(tmp_path):
 def test_rejects_missing_closed_position_initial_risk(tmp_path):
     path = _manifest(tmp_path)
     deals = tmp_path / "A_baseline.csv"
-    deals.write_text(deals.read_text().replace('"risk_cash"\n', '"risk_cash"\n').replace('"450"\n', '"0"\n', 1))
+    with deals.open(newline="") as stream:
+        reader = csv.DictReader(stream)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    rows[0]["risk_cash"] = "0"
+    with deals.open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
     with pytest.raises(ExperimentError, match="no entry risk_cash"):
         compare_manifest(path)
 
