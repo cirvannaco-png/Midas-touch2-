@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "experiment_id": "REPLACE_WITH_EXACT_EXPERIMENT_ID_FROM_MATCHED_MANIFEST",
+  "frozen_at": null,
+  "matched_manifest_sha256": null,
+  "point_value_per_lot": null,
+  "spread_widening_points": [
+    0,
+    2,
+    5
+  ],
+  "slippage_points_per_fill": [
+    0,
+    1,
+    2
+  ],
+  "simulations": 10000,
+  "seed": 20261013,
+  "train_months": 4,
+  "test_months": 2,
+  "folds": 4,
+  "promotion_criteria": [
+    "Cost-complete metrics include actual deal profit, commission, swap and fee; real-tick spread is not charged twice.",
+    "At least 30 fully closed locked-OOS positions; otherwise the OOS result is inconclusive.",
+    "Locked-OOS net expectancy is positive and profit factor exceeds 1.0 after recorded costs.",
+    "The declared +2-point spread widening and +1-point per-fill slippage stress has positive expectancy or is explicitly recorded as a robustness failure.",
+    "HTF trailing ON has no stop-safety, stop-modification, duplicate-fill, restart-recovery or broker-ledger reconciliation failures.",
+    "Native MT5 tick-level equity drawdown remains under the project’s frozen risk limit; closed-position drawdown alone is insufficient.",
+    "No promotion based only on compile/CI, in-sample results, or Monte Carlo; demo-forward validation remains required."
+  ],
+  "oos_previously_inspected": null,
+  "point_value_source_path": null,
+  "point_value_source_sha256": null
+}

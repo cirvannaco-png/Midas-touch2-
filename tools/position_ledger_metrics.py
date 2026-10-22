@@ -177,13 +177,9 @@ def reconstruct_positions(deals, open_ids=None):
     return positions, ignored
 
 
-def calculate_metrics(positions, initial_balance=10000.0, ignored=None, target_return_pct=None):
+def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
     if not math.isfinite(initial_balance) or initial_balance <= 0:
         raise LedgerError("initial balance must be finite and positive")
-    if target_return_pct is not None and (
-        not math.isfinite(target_return_pct) or target_return_pct < 0
-    ):
-        raise LedgerError("target return percentage must be finite and non-negative")
     wins = [p for p in positions if p["net_pnl"] > EPS]
     losses = [p for p in positions if p["net_pnl"] < -EPS]
     flats = [p for p in positions if abs(p["net_pnl"]) <= EPS]
@@ -222,6 +218,10 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None, target_r
                 lane_loss_streak_max = max(lane_loss_streak_max, lane_loss_streak)
             else:
                 lane_loss_streak = 0
+        lane_r_w = [p["net_pnl"] / p["risk_cash"] for p in lane_w if p.get("risk_cash") and p["risk_cash"] > 0]
+        lane_r_l = [-p["net_pnl"] / p["risk_cash"] for p in lane_l if p.get("risk_cash") and p["risk_cash"] > 0]
+        lane_avg_win_r = sum(lane_r_w) / len(lane_r_w) if lane_r_w else None
+        lane_avg_loss_r = sum(lane_r_l) / len(lane_r_l) if lane_r_l else None
         lanes[lane] = {
             "positions": len(rows),
             "wins": len(lane_w),
@@ -230,11 +230,25 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None, target_r
             "expectancy_per_position": round(sum(p["net_pnl"] for p in rows) / len(rows), 4) if rows else None,
             "average_win": round(sum(p["net_pnl"] for p in lane_w) / len(lane_w), 2) if lane_w else None,
             "average_loss": round(sum(p["net_pnl"] for p in lane_l) / len(lane_l), 2) if lane_l else None,
+            "average_win_R": round(lane_avg_win_r, 4) if lane_avg_win_r is not None else None,
+            "average_loss_R_abs": round(lane_avg_loss_r, 4) if lane_avg_loss_r is not None else None,
+            "payoff_ratio_R": round(lane_avg_win_r / lane_avg_loss_r, 4) if lane_avg_win_r is not None and lane_avg_loss_r is not None and lane_avg_loss_r > 0 else None,
             "max_consecutive_losses": lane_loss_streak_max,
             "win_rate_pct_excluding_flats": round(100 * len(lane_w) / (len(lane_w) + len(lane_l)), 2) if lane_w or lane_l else None,
             "profit_factor": round(lp / ll, 4) if ll else (None if not lp else "no_losses"),
         }
-    r_values = [p["net_pnl"] / p["risk_cash"] for p in positions if p["risk_cash"] and p["risk_cash"] > 0]
+    r_positions = [p for p in positions if p.get("risk_cash") and p["risk_cash"] > 0]
+    r_values = [p["net_pnl"] / p["risk_cash"] for p in r_positions]
+    win_r = [p["net_pnl"] / p["risk_cash"] for p in wins if p.get("risk_cash") and p["risk_cash"] > 0]
+    loss_r_abs = [-p["net_pnl"] / p["risk_cash"] for p in losses if p.get("risk_cash") and p["risk_cash"] > 0]
+    avg_win_r = sum(win_r) / len(win_r) if win_r else None
+    avg_loss_r_abs = sum(loss_r_abs) / len(loss_r_abs) if loss_r_abs else None
+    payoff_ratio_r = avg_win_r / avg_loss_r_abs if avg_win_r is not None and avg_loss_r_abs is not None and avg_loss_r_abs > 0 else None
+    break_even_win_rate = (
+        100.0 * avg_loss_r_abs / (avg_win_r + avg_loss_r_abs)
+        if avg_win_r is not None and avg_loss_r_abs is not None and avg_win_r + avg_loss_r_abs > 0
+        else None
+    )
     return {
         "status": "completed" if positions else "no_complete_positions",
         "initial_balance": round(initial_balance, 2), "final_balance": round(balance, 2),
@@ -247,6 +261,12 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None, target_r
         "profit_factor": round(gross_win / gross_loss, 4) if gross_loss else (None if not gross_win else "no_losses"),
         "average_win": round(sum(p["net_pnl"] for p in wins) / len(wins), 2) if wins else None,
         "average_loss": round(sum(p["net_pnl"] for p in losses) / len(losses), 2) if losses else None,
+        "average_win_R": round(avg_win_r, 4) if avg_win_r is not None else None,
+        "average_loss_R_abs": round(avg_loss_r_abs, 4) if avg_loss_r_abs is not None else None,
+        "payoff_ratio_R": round(payoff_ratio_r, 4) if payoff_ratio_r is not None else None,
+        "break_even_win_rate_pct_from_avg_R": round(break_even_win_rate, 2) if break_even_win_rate is not None else None,
+        "positions_with_win_risk_cash": len(win_r),
+        "positions_with_loss_risk_cash": len(loss_r_abs),
         "average_position_pnl": round(pnl / len(positions), 2) if positions else None,
         "net_expectancy_per_completed_position": round(pnl / len(positions), 4) if positions else None,
         "max_consecutive_losses": max_consecutive_losses,
@@ -254,13 +274,35 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None, target_r
         "average_realized_R": round(sum(r_values) / len(r_values), 4) if r_values else None,
         "positions_with_risk_cash": len(r_values), "by_lane": lanes, "ignored_groups": ignored or {},
         "drawdown_basis": "closed-position settlement sequence, not tick-level equity",
-        **({
-            "target_return_pct": round(float(target_return_pct), 4),
-            "target_profit": round(initial_balance * float(target_return_pct) / 100.0, 2),
-            "target_reached": pnl >= initial_balance * float(target_return_pct) / 100.0,
-        } if target_return_pct is not None else {}),
         "equity_curve": equity,
     }
+
+
+def reject_reserved_oos_entries(deals: list[dict]) -> None:
+    """Prevent the standard ledger CLI from printing outcomes for the locked holdout."""
+    reservation_path = Path(__file__).resolve().parents[1] / "docs" / "LOCKED_OOS_RESERVATION_2026-09-01_TO_2026-10-01.json"
+    try:
+        reservation = json.loads(reservation_path.read_text(encoding="utf-8"))
+        if reservation.get("status") != "reserved_unscored":
+            return
+        start = datetime.fromisoformat(reservation["locked_oos_start"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        end = datetime.fromisoformat(reservation["locked_oos_end"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        if not start < end:
+            raise ValueError("invalid reservation interval")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise LedgerError(f"cannot validate locked-OOS reservation file: {reservation_path}") from exc
+    for deal in deals:
+        if deal.get("entry") in IN or deal.get("entry") in INOUT:
+            trade_time = deal.get("time")
+            if isinstance(trade_time, datetime):
+                if trade_time.tzinfo is None or trade_time.utcoffset() is None:
+                    raise LedgerError("deal timestamps must be timezone-aware to enforce locked-OOS protection")
+                trade_time = trade_time.astimezone(timezone.utc)
+                if start <= trade_time < end:
+                    raise LedgerError(
+                        "deal CSV includes entries from the registered locked-OOS window; "
+                        "standard ledger CLI withholds these outcomes. Use the one-shot evaluator after freeze."
+                    )
 
 
 def main():
@@ -268,15 +310,13 @@ def main():
     parser.add_argument("deals_csv")
     parser.add_argument("--open-positions", help="optional CSV of current position IDs to exclude")
     parser.add_argument("--initial-balance", type=float, default=10000.0)
-    parser.add_argument(
-        "--target-return-pct", type=float, default=None,
-        help="optional net account-return target percentage; no target is assumed by default",
-    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
-        positions, ignored = reconstruct_positions(read_deals(args.deals_csv), read_open_ids(args.open_positions))
-        report = calculate_metrics(positions, args.initial_balance, ignored, args.target_return_pct)
+        deals = read_deals(args.deals_csv)
+        reject_reserved_oos_entries(deals)
+        positions, ignored = reconstruct_positions(deals, read_open_ids(args.open_positions))
+        report = calculate_metrics(positions, args.initial_balance, ignored)
     except (OSError, LedgerError) as exc:
         print(f"position_ledger_metrics: {exc}", file=sys.stderr)
         return 2
@@ -290,8 +330,7 @@ def main():
         print(f"Win rate (exclude flats): {report['win_rate_pct_excluding_flats']}% | Profit factor: {report['profit_factor']}")
         print(f"Average win/loss: {report['average_win']} / {report['average_loss']}")
         print(f"Closed-position drawdown: {report['max_closed_position_drawdown_cash']:.2f} ({report['max_closed_position_drawdown_pct']:.2f}%)")
-        if args.target_return_pct is not None:
-            print(f"{args.target_return_pct:g}% net-return target reached: {report['target_reached']}")
+        print("No accuracy or return target is inferred by this ledger; use the reported realized metrics.")
         print("Warning: drawdown is closed-position based, not tick-level equity drawdown.")
     return 0 if positions else 1
 
