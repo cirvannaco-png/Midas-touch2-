@@ -22,6 +22,7 @@ enum ENUM_OB_STATE { OB_FRESH, OB_TESTED, OB_MITIGATED };
 enum ENUM_VOL_REGIME { VOL_REGIME_UNDEFINED, VOL_REGIME_LOW, VOL_REGIME_NORMAL, VOL_REGIME_HIGH };
 enum ENUM_TRADING_SESSION { SESSION_DEAD, SESSION_TOKYO, SESSION_LONDON, SESSION_NEWYORK, SESSION_LONDON_NY_OVERLAP };
 enum ENUM_MARKET_REGIME { REGIME_UNDEFINED, REGIME_TRENDING, REGIME_RANGING, REGIME_TRANSITION };
+enum ENUM_SMC_STRUCTURE_STATE { SMC_WAIT, SMC_INVALID, SMC_VALID, SMC_STALE, SMC_INVALIDATED };
 enum ENUM_BREAKOUT_CLASS { BREAKOUT_NONE, BREAKOUT_EXPANSION, BREAKOUT_LIQUIDITY, BREAKOUT_FAILED, BREAKOUT_EXHAUSTION };
 enum ENUM_REVERSION_CLASS { REVERSION_NONE, REVERSION_VALUE_FADE, REVERSION_LEVEL_REJECTION, REVERSION_TREND_CONFLICT };
 enum ENUM_KEYLEVEL_SOURCE { LEVEL_NONE, LEVEL_SR, LEVEL_ORDER_BLOCK, LEVEL_VALUE_AREA, LEVEL_LIQUIDITY_POOL, LEVEL_PREV_WEEK, LEVEL_SESSION, LEVEL_PSYCHOLOGICAL };
@@ -29,8 +30,9 @@ enum ENUM_KEYLEVEL_REACTION { REACTION_NONE, REACTION_REJECTION, REACTION_BREAK,
 enum ENUM_SELECTED_STRATEGY { STRATEGY_NONE, STRATEGY_SMC, STRATEGY_MOMENTUM_BREAKOUT, STRATEGY_MEAN_REVERSION, STRATEGY_KEY_LEVEL };
 enum ENUM_SWEEP_GRADE { SWEEP_GRADE_NONE, SWEEP_GRADE_C, SWEEP_GRADE_B, SWEEP_GRADE_A };
 
-struct ImpulseLeg { bool valid; datetime start_time; datetime end_time; int start_bar; int end_bar; double start_price; double end_price; bool bullish; double strength; };
-struct InducementResult { bool valid; bool impulseFound; bool internalStructureFound; bool sweepFound; bool bosConfirmed; double impulseScore; double structureScore; double sweepScore; double bosScore; double totalScore; ImpulseLeg leg; string reason; ENUM_SWEEP_GRADE sweepGrade; double sweepGradeScore; double bosStrength; int barsSinceSweep; int barsSinceBOS; double timeDecay; double bosClosePrice; int bosBarIndex; };
+struct ImpulseLeg { bool valid; datetime start_time; datetime end_time; int start_bar; int end_bar; int displacement_bar; double start_price; double end_price; bool bullish; double strength; };
+struct InducementResult { bool valid; bool impulseFound; bool internalStructureFound; bool sweepFound; bool bosConfirmed; double impulseScore; double structureScore; double sweepScore; double bosScore; double totalScore; ImpulseLeg leg; string reason; ENUM_SWEEP_GRADE sweepGrade; double sweepGradeScore; double bosStrength; int barsSinceSweep; int barsSinceBOS; double timeDecay; double bosClosePrice; int bosBarIndex; int sweepBarIndex; int displacementBarIndex; double sweepPoolPrice; };
+struct SMCStructuralValidation { ENUM_SMC_STRUCTURE_STATE state; bool structural_valid; bool htf_structure_valid; bool regime_applicable; bool liquidity_target_valid; bool sweep_valid; bool displacement_valid; bool bos_valid; bool fvg_causal; bool order_block_causal; bool htf_ob_present; bool premium_discount_valid; bool freshness_valid; bool invalidation_clear; double protected_level; double invalidation_level; int sweep_bar_index; int bos_bar_index; int displacement_bar_index; int entry_fvg_bar_index; int causal_ob_bar_index; string failure_reason; };
 struct OutcomeStats { int wins; int losses; int scratches; int ambiguous; double netPnL; double grossProfit; double grossLoss; double totalCommission; double totalSpreadCost; double totalSlippageCost; double sumRMultiple; int resolvedCount; int ExcludingAmbiguousTotal() const { return wins + losses; } double WinRateExcludingAmbiguous() const { int t=wins+losses; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsLoss() const { int t=wins+losses+ambiguous; return t>0?100.0*wins/t:0.0; } double WinRateAmbiguousAsWin() const { int t=wins+losses+ambiguous; return t>0?100.0*(wins+ambiguous)/t:0.0; } double ProfitFactor() const { if(grossLoss>0)return grossProfit/grossLoss; return grossProfit>0?-1.0:0.0; } double ExpectancyPerTrade() const { return resolvedCount>0?netPnL/resolvedCount:0.0; } double AverageRMultiple() const { return resolvedCount>0?sumRMultiple/resolvedCount:0.0; } };
 struct CandleData { datetime time; double open; double high; double low; double close; long tick_volume; long real_volume; double atr; };
 struct SwingPoint { datetime time; double price; bool is_high; int bar_index; double strength; };
@@ -51,6 +53,14 @@ struct SetupReasons {
    double exec_score; double env_exec_confidence; ENUM_MARKET_REGIME regime; double momentum_score; double breakout_score; ENUM_BREAKOUT_CLASS breakout_class;
    double reversion_score; ENUM_REVERSION_CLASS reversion_class; ENUM_KEYLEVEL_SOURCE keylevel_source; ENUM_KEYLEVEL_REACTION keylevel_reaction; double keylevel_score;
    ENUM_SELECTED_STRATEGY selected_strategy; double selected_strategy_score;
+   // SMC structural-validation telemetry. Diagnostic only until explicitly promoted by a validated policy.
+   // Authoritative inducement evidence reused by structural diagnostics; prevents a second reconstruction of sweep/BOS provenance.
+   InducementResult smc_inducement;
+   ENUM_SMC_STRUCTURE_STATE smc_state; bool smc_structural_valid; bool smc_htf_structure_valid; bool smc_regime_applicable;
+   bool smc_liquidity_target_valid; bool smc_sweep_valid; bool smc_displacement_valid; bool smc_bos_valid;
+   bool smc_fvg_causal; bool smc_order_block_causal; bool smc_htf_ob_present; bool smc_premium_discount_valid;
+   bool smc_freshness_valid; bool smc_invalidation_clear; double smc_protected_level; double smc_invalidation_level;
+   int smc_sweep_bar_index; int smc_bos_bar_index; int smc_displacement_bar_index; int smc_entry_fvg_bar_index; int smc_causal_ob_bar_index; string smc_failure_reason;
    // Environment telemetry. These are observations only and never act as
    // standalone trading gates.
    double trend_strength; double liquidity_score; int liquidity_bucket;
