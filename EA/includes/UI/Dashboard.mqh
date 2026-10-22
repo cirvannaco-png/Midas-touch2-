@@ -122,14 +122,14 @@ void CDashboard::Update()
       string dir = (lastSetup.type == ORDER_TYPE_BUY) ? "BUY SETUP" : "SELL SETUP";
 
       string reasonLines = "";
-      if(r.inducement_valid) reasonLines += "\u2713 Inducement confirmed (sweep+BOS)\n";
-      if(r.premium_discount_ok) reasonLines += "\u2713 Premium/Discount OK\n";
+      if(r.inducement_valid) reasonLines += "[+] Inducement confirmed (sweep+BOS)\n";
+      if(r.premium_discount_ok) reasonLines += "[+] Premium/Discount OK\n";
       reasonLines += StringFormat("  Phase: %s\n", PhaseLabel(r.phase));
-      if(r.trend_aligned)   reasonLines += StringFormat("\u2713 %s trend aligned\n", trendTF);
-      if(r.bos_confirmed)   reasonLines += StringFormat("\u2713 %s BOS/CHoCH confirmed\n", bosTF);
-      if(r.liquidity_swept) reasonLines += StringFormat("\u2713 %s liquidity sweep\n", liqTF);
-      if(r.fresh_fvg)       reasonLines += "\u2713 Fresh FVG in zone\n";
-      if(r.sr_confluence)   reasonLines += "\u2713 S/R confluence\n";
+      if(r.trend_aligned)   reasonLines += StringFormat("[+] %s trend aligned\n", trendTF);
+      if(r.bos_confirmed)   reasonLines += StringFormat("[+] %s BOS/CHoCH confirmed\n", bosTF);
+      if(r.liquidity_swept) reasonLines += StringFormat("[+] %s liquidity sweep\n", liqTF);
+      if(r.fresh_fvg)       reasonLines += "[+] Fresh FVG in zone\n";
+      if(r.sr_confluence)   reasonLines += "[+] S/R confluence\n";
       // v2.9: sweep grade / BOS strength / chase distance — the setup
       // grading breakdown from the review (items #16/#17), not just a
       // single confidence number.
@@ -137,9 +137,9 @@ void CDashboard::Update()
                          (r.sweep_grade == SWEEP_GRADE_C) ? "C" : "-";
       reasonLines += StringFormat("  Sweep grade: %s | BOS strength: %.0f%% | Decay: %.0f%%\n",
                                    gradeStr, r.bos_strength * 100.0, r.time_decay * 100.0);
-      reasonLines += StringFormat("  Chase distance: %.2f ATR%s\n", r.chase_dist_atr, r.chase_ok ? "" : " \u26a0 late entry");
-      reasonLines += StringFormat("  RVOL: %.2f%s\n", r.rvol, r.volume_confirmed ? " \u2713" : "");
-      reasonLines += StringFormat("  Fib zone: %s%s\n", FibZoneLabel(r.fib_zone), r.fib_in_zone ? " \u2713 in pullback zone" : "");
+      reasonLines += StringFormat("  Chase distance: %.2f ATR%s\n", r.chase_dist_atr, r.chase_ok ? "" : " [!] late entry");
+      reasonLines += StringFormat("  RVOL: %.2f%s\n", r.rvol, r.volume_confirmed ? " [+]" : "");
+      reasonLines += StringFormat("  Fib zone: %s%s\n", FibZoneLabel(r.fib_zone), r.fib_in_zone ? " [+] in pullback zone" : "");
       string vaSource = EnumToString(r.value_profile_source);
       StringReplace(vaSource, "VA_SOURCE_", "");
       string vaState = EnumToString(r.value_profile_state);
@@ -153,7 +153,7 @@ void CDashboard::Update()
       string riskLine = (StringLen(r.risk_warning) > 0) ? r.risk_warning : "None nearby";
 
       text = StringFormat(
-                "MEDIS TOUCH \u2014 %s\n"
+                "MEDIS TOUCH  -  %s\n"
                 "%s\n"
                 "Confidence: %.0f%%\n"
                 "\n"
@@ -182,9 +182,9 @@ void CDashboard::Update()
      {
       OutcomeStats st = m_tracker.GetStats();
       double pf = st.ProfitFactor();
-      string pfStr = (pf < 0) ? "\u221E" : DoubleToString(pf, 2); // -1 sentinel = infinite (no losing trades yet)
+      string pfStr = (pf < 0) ? "INF" : DoubleToString(pf, 2); // -1 sentinel = infinite (no losing trades yet)
       text += StringFormat(
-                "\n\n\u2014 Trade Simulator \u2014\n"
+                "\n\n -  Trade Simulator  - \n"
                 "W:%d  L:%d  Scratch:%d  Ambig:%d\n"
                 "Win rate (ex-ambig): %.1f%%\n"
                 "Net P&L: %.2f | PF: %s\n"

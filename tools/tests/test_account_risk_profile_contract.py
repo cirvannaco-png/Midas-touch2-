@@ -15,7 +15,7 @@ def test_automated_and_manual_orders_use_the_resolved_profile() -> None:
     assert "g_tracker.ConfigureSimulation(g_activeRiskLimits.riskPercentPerTrade" in runtime
     assert "g_orders.Init(&g_broker,g_activeRiskLimits.maxOpenTrades" in runtime
     assert "g_portfolio.Init(g_activeRiskLimits.maxPortfolioRiskPercent,g_activeRiskLimits.maxPositionsPerSymbol,g_activeRiskLimits.maxPositionsPerGroup" in runtime
-    assert "g_riskGuard.Init(_Symbol,g_activeRiskLimits.maxDailyLossPercent,g_activeRiskLimits.maxDrawdownPercent,g_activeRiskLimits.deriskStartPercent,g_activeRiskLimits.deriskFloor)" in runtime
+    assert "g_riskGuard.Init(_Symbol,g_activeRiskLimits.maxDailyLossPercent,g_activeRiskLimits.maxDrawdownPercent,g_activeRiskLimits.deriskStartPercent,g_activeRiskLimits.deriskFloor,InpEnableProgressiveDailyLossDeRisk)" in runtime
     assert "availableSlots=g_activeRiskLimits.maxOpenTrades-g_orders.OpenCount()" in runtime
     assert "CalculateLotSize(_Symbol,g_activeRiskLimits.riskPercentPerTrade*fraction" in runtime
     assert "if(g_orders.OpenCount()>=g_activeRiskLimits.maxOpenTrades)" in runtime

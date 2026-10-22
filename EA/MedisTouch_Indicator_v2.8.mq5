@@ -274,7 +274,7 @@ int OnCalculate(const int rates_total,
    datetime setupFillTime = 0;
    int    setupBarsToFill = 0;
    if(InpTrackOutcomes && g_lastSetup.active)
-      g_tracker.GetFillState(g_lastSetup.creation_time, setupFilled, setupFillPrice, setupFillTime, setupBarsToFill);
+      g_tracker.GetFillState(g_lastSetup.creation_time, -1, setupFilled, setupFillPrice, setupFillTime, setupBarsToFill);
    g_visuals.DrawTradeSetup(g_lastSetup, setupFilled, setupFillPrice, setupFillTime);
 
    if(InpShowDashboard)
