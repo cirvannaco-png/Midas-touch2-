@@ -1,6 +1,8 @@
 # Midas Touch
 
-Midas Touch is an MT5 Expert Advisor (EA) suite with a production-ready Telegram signal bridge. The EA generates trade signals on your MT5 terminal; the bridge receives them via HTTP and forwards them to a private Telegram group.
+Midas Touch is an MT5 Expert Advisor (EA) suite with a FastAPI Telegram signal bridge. The EA generates trade signals on your MT5 terminal; the bridge receives them via HTTP and forwards them to a private Telegram group.
+
+**Operational status is evidence-gated.** Source code, successful CI, and a live Render deployment do not by themselves prove production readiness. Do not enable live trading until the exact EA build compiles, the configured bridge reports a healthy live database and authenticated execution ledger, broker-side orders reconcile with the ledger, and Exness demo forward-testing plus emergency-stop/restart recovery pass. See [the production readiness audit](docs/PRODUCTION_READINESS_AUDIT_2026-10-22.md).
 
 ## Subprojects
 
@@ -52,14 +54,14 @@ See [`telegram-bridge/README.md`](telegram-bridge/README.md) for full environmen
 
 ## Status
 
-- **telegram-bridge**: production FastAPI service, tested and deployable (see below).
+- **telegram-bridge**: FastAPI service source with tests and deployment configuration. A live deployment is ready only when `/health/db` reports `status=online` and `database=connected`, and the authenticated `/execution-ledger/health` probe reports `execution_ledger=ready`.
 - **medis_touch**: non-production Midas Touch reference/handbook implementation. It intentionally contains incomplete integrations and must not be treated as the live trading runtime.
 - **EA/**: the EA (`MedisTouch_v2.8.mq5`), the visuals-only indicator
   (`MedisTouch_Indicator_v2.8.mq5`) and the full `includes/` engine tree.
   Filenames still say v2.8; the engine inside is **v2.10**. Compiled `.ex5`
   output is git-ignored; build it in MetaEditor. CI runs a structural check
   on every push (see `EA/README.md`).
-- **Confidence engine**: **v2.10 is diagnostic-only.** The contradiction /
+- **Small-account risk**: default inputs now select a conservative small-account profile (0.5% per trade, one open position, 1.5% daily-loss limit, 5% hard drawdown limit, and 0.5% portfolio open-risk cap). The EA enforces a hard 2% per-trade ceiling; 30% risk is rejected. Broker minimum-volume constraints may still legitimately block entries when the KSh 1,500 account is too small for the symbol and stop distance.\n- **Confidence engine**: **v2.10 is diagnostic-only.** The contradiction /
   environment / execution model and the confidence decay are computed and
   logged, but nothing in them can change a confidence value, a filter
   verdict, a lot size, or an order. See below.
