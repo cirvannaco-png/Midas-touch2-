@@ -37,7 +37,6 @@ int OnInit()
    // portfolio caps. A 30% setup must not become valid by raising those caps.
    AccountRiskLimits unsafeRisk;
    SetLimits(unsafeRisk,30.0,3,40.0,60.0,20.0,0.25,35.0,3,3);
-   string reason="";
    AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
       "30 percent per-trade risk is rejected by the hard safety ceiling");
    AssertTrue(StringFind(reason,"hard safety ceiling")>=0,
