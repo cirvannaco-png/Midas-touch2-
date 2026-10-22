@@ -33,6 +33,20 @@ int OnInit()
    SetLimits(propFirm,0.25,3,1.5,5.0,2.0,0.25,1.0,2,2);
    string reason="";
 
+   // Hard safety ceiling is independent of the operator-configured daily and
+   // portfolio caps. A 30% setup must not become valid by raising those caps.
+   AccountRiskLimits unsafeRisk;
+   SetLimits(unsafeRisk,30.0,3,40.0,60.0,20.0,0.25,35.0,3,3);
+   string reason="";
+   AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
+      "30 percent per-trade risk is rejected by the hard safety ceiling");
+   AssertTrue(StringFind(reason,"hard safety ceiling")>=0,
+      "excessive risk reports the hard-ceiling remediation");
+   SetLimits(unsafeRisk,2.0,3,3.0,10.0,5.0,0.25,3.0,3,3);
+   reason="";
+   AssertTrue(ValidateAccountRiskLimits(unsafeRisk,reason),
+      "risk at the 2 percent hard ceiling remains valid when other limits are coherent");
+
    AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_LEGACY_INPUTS,
       legacy,smallAccount,propFirm,selected,reason),"legacy profile resolves");
    AssertTrue(selected.riskPercentPerTrade==0.50 && selected.maxOpenTrades==3 &&
