@@ -1,10 +1,10 @@
 from pathlib import Path
 
 
-def test_profile_selector_preserves_legacy_behavior_by_default() -> None:
+def test_profile_selector_defaults_to_small_account_profile() -> None:
     root = Path(__file__).resolve().parents[2]
     ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
-    assert "InpAccountRiskProfile=ACCOUNT_RISK_PROFILE_LEGACY_INPUTS" in ea
+    assert "InpAccountRiskProfile=ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT" in ea
     assert "if(!ResolveSelectedAccountRiskProfile()) return INIT_PARAMETERS_INCORRECT;" in ea
 
 
@@ -52,12 +52,25 @@ def test_startup_ledger_reconciliation_uses_selected_profile_risk() -> None:
     assert "InpRiskPercentPerTrade" not in reconciliation
 
 
-def test_nonlegacy_profiles_require_explicit_configuration_acknowledgement() -> None:
+def test_safe_small_account_preset_is_explicit_and_prop_firm_stays_gated() -> None:
     root = Path(__file__).resolve().parents[2]
     ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
     policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
-    assert "InpSmallAccountProfileConfigured=false" in ea
+    assert "InpSmallAccountProfileConfigured=true" in ea
+    assert "InpSmallRiskPercentPerTrade=0.5" in ea
+    assert "InpSmallMaxOpenTrades=1" in ea
+    assert "InpSmallMaxDailyLossPercent=1.5" in ea
+    assert "InpSmallMaxDrawdownPercent=5.0" in ea
+    assert "InpSmallMaxPortfolioRiskPercent=0.5" in ea
     assert "InpPropFirmProfileConfigured=false" in ea
     assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
     assert "small-account risk inputs must be configured before selecting this profile" in policy
     assert "exact prop-firm limits must be configured before selecting this profile" in policy
+
+def test_hard_risk_ceiling_is_shared_by_policy_and_lot_sizing() -> None:
+    root = Path(__file__).resolve().parents[2]
+    policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
+    engine = (root / "EA/includes/Trading/RiskEngine.mqh").read_text(encoding="utf-8")
+    assert "#define MIDAS_MAX_RISK_PERCENT_PER_TRADE 2.0" in policy
+    assert "limits.riskPercentPerTrade>MIDAS_MAX_RISK_PERCENT_PER_TRADE" in policy
+    assert "riskPercent>MIDAS_MAX_RISK_PERCENT_PER_TRADE" in engine
