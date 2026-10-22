@@ -42,6 +42,10 @@ The latest successful MetaEditor compile located in the available run history wa
 
 Earlier StrategyTune runs used independent $10,000 periods, IC Markets data, and omitted a fully matched Exness commission/slippage/swap model. The candidate lowered losses versus its baseline in the combined samples but was still net negative across the independent periods. The 87% win-rate target did not hold consistently, and 600% return has not been demonstrated. Risk controls and trailing stops can manage exposure; they cannot create predictive edge by themselves.
 
+## Additional research tooling correction
+
+The separate DAO wider-stop research branch had a research-test failure because the deal reader added required spread-widening and slippage inputs while the manifest call site did not pass them. That call site is now fixed to pass the manifest's explicit cost model to both full-period and locked-OOS reads; [CI for the research branch](https://github.com/cirvannaco-png/Midas-touch2-/actions/runs/39745734881) passed. This is a tooling fix, not evidence that a 30% risk strategy is safe or profitable. The research branch has not been merged or deployed.
+
 ## Required release gates
 
 1. Merge only after MetaEditor compile, MQL5 policy tests, bridge tests, PostgreSQL migration smoke tests, research tests, and security/dependency checks pass.
