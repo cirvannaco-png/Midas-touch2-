@@ -16,6 +16,8 @@ class CSignalLogger
 private:
    string            m_filename;
    string            m_outcomeFilename;
+   string            m_smcFilename;
+   bool              m_smcHeaderWritten;
    bool              m_headerWritten;
    bool              m_outcomeHeaderWritten;
    int               m_gmtOffsetOverrideHours; // 999 = auto-detect
@@ -35,21 +37,25 @@ private:
    string            KeyLevelSourceLabel(ENUM_KEYLEVEL_SOURCE s);     // v2.14
    string            KeyLevelReactionLabel(ENUM_KEYLEVEL_REACTION r); // v2.14
    string            SelectedStrategyLabel(ENUM_SELECTED_STRATEGY s); // v2.15
+   string            SMCStateLabel(ENUM_SMC_STRUCTURE_STATE s);
 
 public:
                      CSignalLogger();
    void              Init(string symbol, int gmtOffsetOverrideHours = 999);
    bool              LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF, string trendLabel);
+   bool              LogSMCStructure(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF);
    bool              LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES entryTF, string outcome,
                                 double exitPrice, ENUM_FILL_POLICY fillPolicy = FILL_CONSERVATIVE,
                                 datetime outcomeTime = 0);
   };
 //+------------------------------------------------------------------+
-CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(false), m_gmtOffsetOverrideHours(999) {}
+CSignalLogger::CSignalLogger() : m_headerWritten(false), m_outcomeHeaderWritten(false), m_smcHeaderWritten(false), m_gmtOffsetOverrideHours(999) {}
 //+------------------------------------------------------------------+
 void CSignalLogger::Init(string symbol, int gmtOffsetOverrideHours)
   {
    m_filename = "MedisTouch_Signals_" + symbol + ".csv";
+    m_smcFilename = "MedisTouch_SMC_Structures_" + symbol + ".csv";
+    m_smcHeaderWritten = FileIsExist(m_smcFilename);
    // Version the outcome stream because the new OutcomeEpoch column is required by the
    // chronological evidence builder. Never append new-schema rows to a legacy header.
    m_outcomeFilename = "MedisTouch_Outcomes_v2_" + symbol + ".csv";
@@ -263,6 +269,18 @@ string CSignalLogger::FillPolicyLabel(ENUM_FILL_POLICY fp)
    return s;
   }
 //+------------------------------------------------------------------+
+string CSignalLogger::SMCStateLabel(ENUM_SMC_STRUCTURE_STATE s)
+  {
+   switch(s)
+     {
+      case SMC_VALID:       return "Valid";
+      case SMC_INVALID:     return "Invalid";
+      case SMC_STALE:       return "Stale";
+      case SMC_INVALIDATED: return "Invalidated";
+      default:              return "Wait";
+     }
+  }
+//+------------------------------------------------------------------+
 bool CSignalLogger::LogSetup(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF, string trendLabel)
   {
    if(!setup.active) return false;
@@ -454,5 +472,62 @@ bool CSignalLogger::LogOutcome(PendingSetup &p, string symbol, ENUM_TIMEFRAMES e
    FileClose(handle);
    return true;
   }
+bool CSignalLogger::LogSMCStructure(TradeSetup &setup, string symbol, ENUM_TIMEFRAMES entryTF)
+  {
+   if(setup.reasons.selected_strategy != STRATEGY_SMC || setup.creation_time <= 0) return false;
+
+   int flags = FILE_CSV | FILE_READ | FILE_WRITE | FILE_SHARE_READ | FILE_ANSI;
+   int handle = FileOpen(m_smcFilename, flags, ',');
+   if(handle == INVALID_HANDLE)
+     {
+      Print("MedisTouch SignalLogger: failed to open ", m_smcFilename, " err=", GetLastError());
+      return false;
+     }
+
+   if(!m_smcHeaderWritten)
+     {
+      FileWrite(handle, "SignalID", "Symbol", "EntryTF", "DateTime", "Direction",
+               "State", "StructuralValid", "HTFStructureValid", "RegimeApplicable",
+               "LiquidityTargetValid", "SweepValid", "DisplacementValid", "BOSValid",
+               "FVGCausal", "OrderBlockCausal", "HTFOBPresent", "PremiumDiscountValid",
+               "FreshnessValid", "InvalidationClear", "ProtectedLevel", "InvalidationLevel",
+               "SweepBarIndex", "BOSBarIndex", "DisplacementBarIndex", "EntryFVGBarIndex", "CausalOBBarIndex",
+               "FailureReason");
+      m_smcHeaderWritten = true;
+     }
+
+   FileSeek(handle, 0, SEEK_END);
+   string dir = (setup.type == ORDER_TYPE_BUY) ? "BUY" : "SELL";
+   string signalId = StringFormat("%s_%s_%d", symbol, dir, (long)setup.creation_time);
+
+   FileWrite(handle, signalId, symbol, EnumToString(entryTF),
+             TimeToString(setup.creation_time, TIME_DATE | TIME_MINUTES), dir,
+             SMCStateLabel(setup.reasons.smc_state),
+             setup.reasons.smc_structural_valid ? "Yes" : "No",
+             setup.reasons.smc_htf_structure_valid ? "Yes" : "No",
+             setup.reasons.smc_regime_applicable ? "Yes" : "No",
+             setup.reasons.smc_liquidity_target_valid ? "Yes" : "No",
+             setup.reasons.smc_sweep_valid ? "Yes" : "No",
+             setup.reasons.smc_displacement_valid ? "Yes" : "No",
+             setup.reasons.smc_bos_valid ? "Yes" : "No",
+             setup.reasons.smc_fvg_causal ? "Yes" : "No",
+             setup.reasons.smc_order_block_causal ? "Yes" : "No",
+             setup.reasons.smc_htf_ob_present ? "Yes" : "No",
+             setup.reasons.smc_premium_discount_valid ? "Yes" : "No",
+             setup.reasons.smc_freshness_valid ? "Yes" : "No",
+             setup.reasons.smc_invalidation_clear ? "Yes" : "No",
+             DoubleToString(setup.reasons.smc_protected_level, _Digits),
+             DoubleToString(setup.reasons.smc_invalidation_level, _Digits),
+             setup.reasons.smc_sweep_bar_index,
+             setup.reasons.smc_bos_bar_index,
+             setup.reasons.smc_displacement_bar_index,
+             setup.reasons.smc_entry_fvg_bar_index,
+             setup.reasons.smc_causal_ob_bar_index,
+             setup.reasons.smc_failure_reason);
+
+   FileClose(handle);
+   return true;
+  }
+//+------------------------------------------------------------------+
 #endif
 //+------------------------------------------------------------------+
