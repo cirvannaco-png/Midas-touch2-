@@ -33,17 +33,22 @@ jobs:
           : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
+          url="${BRIDGE_BASE_URL%/}/execution-ledger/health"
 
-          http_code="$(curl --silent --show-error --connect-timeout 5 --max-time 10 \
-            --output "$response_file" --write-out '%{http_code}' \
-            "${BRIDGE_BASE_URL%/}/execution-ledger/health" || true)"
-
-          if [[ "$http_code" != "422" ]]; then
-            echo "::error::Unauthenticated execution-ledger health request should be rejected for its missing X-API-Key header; HTTP ${http_code} received."
-            exit 1
-          fi
-
-          echo "PASS: production execution-ledger health route is mounted and rejects requests missing X-API-Key."
+          # Render Free instances may need a cold-start window. Retry only this
+          # read-only unauthenticated probe; no action endpoint is replayed.
+          http_code="000"
+          for attempt in $(seq 1 6); do
+            http_code="$(curl --silent --show-error --connect-timeout 5 --max-time 15 --output "$response_file" --write-out '%{http_code}' "$url" 2>/dev/null || true)"
+            if [[ "$http_code" == "422" ]]; then
+              echo "PASS: production execution-ledger health route rejects requests missing X-API-Key."
+              exit 0
+            fi
+            echo "Attempt ${attempt}/6: unauthenticated route probe returned HTTP ${http_code}."
+            sleep 5
+          done
+          echo "::error::Expected HTTP 422 from unauthenticated execution-ledger health route; last HTTP ${http_code}. Check BRIDGE_BASE_URL and service availability."
+          exit 1
       - name: Probe DB-backed production health endpoint
         shell: bash
         run: |
