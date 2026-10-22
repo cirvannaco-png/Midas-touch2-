@@ -126,28 +126,19 @@ def test_smc_rejections_are_auditable_and_do_not_disappear():
     assert "out.creation_time=TimeCurrent();" in trade_zone
 
 
-def test_smc_quality_execution_policy_is_explicit_and_non_smc_thresholds_are_unchanged():
+def test_smc_structural_gate_is_opt_in_and_existing_trading_defaults_are_preserved():
     ea = read("EA/MedisTouch_v2.8.mq5")
+    trade_zone = read("EA/includes/Trading/StrategyTradeZone.mqh")
     decision = read("EA/includes/Decision/DecisionEngine.mqh")
 
-    assert "input bool InpEnableSMCQualityExecution=true;" in ea
-    assert "input double InpSMCQualityMinConfidence=50.0;" in ea
-    assert "InpRequirePremiumDiscount=false;" in ea
-    assert "InpRequireVolumeConfirmation=false;" in ea
-    assert "InpRequireFibonacciZone=false;" in ea
-    assert "InpRequireMinSweepGrade=true;" in ea
-    assert "InpMinSweepGrade=2;" in ea
-    assert "InpMinConfidenceExecute=68.0;" in ea
-    assert "InpMinConfidenceSignal=58.0;" in ea
+    assert "input bool InpRequireSMCStructuralValidity=false;" in ea
+    assert "ConfigureSMCStructuralGate(InpRequireSMCStructuralValidity)" in ea
+    assert "m_requireSmcStructuralValidity;" in trade_zone
+    assert "m_requireSmcStructuralValidity=false;" in trade_zone
 
-    assert "bool              m_enableSMCQualityExecution;" in decision
-    assert "double            m_smcQualityMinConfidence;" in decision
-    assert "void ConfigureSMCQualityExecution(bool enabled, double minConfidence);" in decision
-    assert "setup.reasons.selected_strategy == STRATEGY_SMC" in decision
-    assert "setup.reasons.sweep_grade >= SWEEP_GRADE_A" in decision
-    assert "setup.reasons.bos_strength >= 0.70" in decision
-    assert "setup.reasons.time_decay >= 0.75" in decision
-    assert "setup.reasons.fresh_fvg" in decision
-    assert "!setup.reasons.value_area_contradiction" in decision
-    assert "m_environment.Classify(setup) == ENV_NORMAL" in decision
-    assert "setup.confidence >= executeThreshold || smcQualityPass" in decision
+    # This port is diagnostic-only: don't change unvalidated live defaults.
+    assert "InpRequirePremiumDiscount=true;" in ea
+    assert "InpRequireVolumeConfirmation=true;" in ea
+    assert "InpRequireFibonacciZone=true;" in ea
+    assert "InpRequireMinSweepGrade=false;" in ea
+    assert "m_enableSMCQualityExecution" not in decision
