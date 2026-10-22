@@ -48,35 +48,27 @@ class RegimeShadowContractTests(unittest.TestCase):
         self.assertNotIn("trade.Buy(", availability)
         self.assertNotIn("trade.Sell(", availability)
 
-    def test_setup_generation_logs_rejections_and_does_not_gate_on_shadow_flag(self):
+    def test_live_routing_remains_unchanged_until_shadow_telemetry_is_integrated(self):
         source = read("EA/includes/Trading/StrategyTradeZone.mqh")
         main = read("EA/MedisTouch_v2.8.mq5")
-        self.assertIn("REGIME_UNDEFINED_FAIL_CLOSED", source)
-        self.assertIn("SELECTED_STRATEGY_BUILDER_FAILED", source)
-        self.assertIn("SMC_SETUP_BUILD_FAILED", source)
-        self.assertIn("m_regimeShadowLogger.Log", source)
-        self.assertIn("InpEnableRegimeShadowLogging=true", main)
-        self.assertIn("ConfigureRegimeShadowLogger(InpEnableRegimeShadowLogging)", main)
-        self.assertIn("RISK_VALIDATED_CANDIDATE", main)
-        self.assertIn("RISK_VALIDATION_FAILED", main)
-        self.assertIn("DIRECTIONAL_ADVANTAGE_BELOW_MINIMUM", main)
-        self.assertIn("POLICY_AUTHORIZED", main)
-        self.assertIn("POLICY_REJECTED", main)
-        # The input is passed to the observer; it is not a conditional around
-        # the executable setup selection / order-routing path.
-        self.assertNotIn("if(InpEnableRegimeShadowLogging)", main)
+        # This PR adds passive helper classes only. Wiring belongs in a
+        # separately reviewed change because it touches the live EA source.
+        self.assertNotIn("RegimeShadowLogger", source)
+        self.assertNotIn("InpEnableRegimeShadowLogging", main)
+        self.assertNotIn("InpEnableBrokerAwareEntryGate", main)
+        self.assertNotIn("m_regimeShadowLogger.Log", source)
 
     def test_rollover_window_is_telemetry_only_and_validated(self):
         logger = read("EA/includes/Decision/RegimeShadowLogger.mqh")
-        decision = read("EA/includes/Trading/StrategyTradeZone.mqh")
-        main = read("EA/MedisTouch_v2.8.mq5")
         self.assertIn("ConfigureRolloverTelemetry", logger)
         self.assertIn("startHour<0 || startHour>23", logger)
         self.assertIn("m_rolloverStartMinute==m_rolloverEndMinute", logger)
-        self.assertIn("ConfigureRegimeRolloverTelemetry", decision)
-        self.assertIn("InpRolloverShadowWindowEnabled=false", main)
-        self.assertIn("ConfigureRegimeRolloverTelemetry(InpRolloverShadowWindowEnabled", main)
         self.assertIn("IN_CONFIGURED_WINDOW_TELEMETRY_ONLY", logger)
+        # No timing input or live routing hook is added in this additive port.
+        decision = read("EA/includes/Trading/StrategyTradeZone.mqh")
+        main = read("EA/MedisTouch_v2.8.mq5")
+        self.assertNotIn("ConfigureRegimeRolloverTelemetry", decision)
+        self.assertNotIn("InpRolloverShadowWindowEnabled", main)
 
     def test_overnight_broker_schedule_respects_current_vs_previous_day(self):
         source = read("EA/includes/Core/BrokerMarketAvailability.mqh")
@@ -88,9 +80,10 @@ class RegimeShadowContractTests(unittest.TestCase):
     def test_broker_aware_entry_gate_is_separate_and_default_off(self):
         policy = read("EA/includes/Decision/MarketConditionsPolicy.mqh")
         main = read("EA/MedisTouch_v2.8.mq5")
-        self.assertIn("InpEnableBrokerAwareEntryGate=false", main)
-        self.assertIn("InpBrokerGateMaxSpreadPoints=0.0", main)
-        self.assertIn("InpBrokerGateMaxSpreadToATR=0.0", main)
+        # Policy is unit-testable but not wired into trade eligibility here.
+        self.assertNotIn("InpEnableBrokerAwareEntryGate", main)
+        self.assertNotIn("InpBrokerGateMaxSpreadPoints", main)
+        self.assertNotIn("InpBrokerGateMaxSpreadToATR", main)
         self.assertIn("BLOCK_INVALID_OR_INCOMPLETE_POLICY_CONFIGURATION", policy)
         self.assertIn("BLOCK_MARKET_AVAILABILITY_", policy)
         self.assertIn("BLOCK_LIQUIDITY_SESSION_POLICY", policy)
@@ -101,8 +94,8 @@ class RegimeShadowContractTests(unittest.TestCase):
         self.assertIn("BLOCK_UNDEFINED_VOLATILITY", policy)
         self.assertNotIn("OrderSend(", policy)
         self.assertNotIn("trade.Buy(", policy)
-        self.assertIn("if(InpEnableBrokerAwareEntryGate)", main)
-        self.assertIn("BROKER_CONDITIONS_REJECTED", main)
+        self.assertNotIn("if(InpEnableBrokerAwareEntryGate)", main)
+        self.assertNotIn("BROKER_CONDITIONS_REJECTED", main)
 
     def test_existing_outcome_export_contains_join_key_and_cost_fields(self):
         source = read("EA/includes/Core/SignalLogger.mqh")
