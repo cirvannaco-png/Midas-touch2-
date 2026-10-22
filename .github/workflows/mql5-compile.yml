@@ -388,3 +388,16 @@ jobs:
           path: ${{ runner.temp }}/MedisTouch_v2.8.log
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Upload native Strategy Tester policy reports and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metatrader5-policy-tester-evidence
+          path: |
+            ${{ runner.temp }}/MetaTrader5/reports/policy-*.htm
+            ${{ runner.temp }}/MetaTrader5/MQL5/Experts/MidasTouch/tests/*.log
+            ${{ runner.temp }}/MetaTrader5/Tester/logs/*.log
+            ${{ runner.temp }}/MetaTrader5/Tester/Agent-*/logs/*.log
+          if-no-files-found: warn
+          retention-days: 30
