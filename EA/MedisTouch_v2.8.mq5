@@ -154,7 +154,7 @@ input double InpMinConfidenceSignal=58.0;
 input double InpFullRiskConfidence=85.0;
 input int InpMaxSpreadPoints=0;
 input group "Account Risk Profile"
-input ENUM_ACCOUNT_RISK_PROFILE InpAccountRiskProfile=ACCOUNT_RISK_PROFILE_LEGACY_INPUTS; // default preserves historical EA input behavior
+input ENUM_ACCOUNT_RISK_PROFILE InpAccountRiskProfile=ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT; // conservative small-account preset is the default
 
 input group "Execution — Legacy Risk Inputs"
 input bool InpUseMarketOrders=true;
@@ -187,20 +187,22 @@ input double InpMaxPortfolioRiskPercent=3.0;
 input int InpMaxPositionsPerSymbol=3;
 input int InpMaxPositionsPerGroup=3;
 
-// These profiles intentionally start at the preserved legacy values. Configure the
-// small-account profile from validated small-account evidence, and the prop-firm
-// profile from the exact firm's published limits before selecting either one.
+// Conservative defaults for the stated KSh 1,500 starting account.
+// These are risk controls, not a profitability guarantee. The independent
+// hard ceiling in AccountRiskProfilePolicy rejects >2% per-trade risk;
+// 30% risk is not supported. If broker minimum volume would exceed the
+// budget, the engine rejects the trade instead of forcing minimum lot size.
 input group "Risk Profile — Small Account (independently configurable)"
-input double InpSmallRiskPercentPerTrade=0.5;
-input int    InpSmallMaxOpenTrades=3;
-input double InpSmallMaxDailyLossPercent=3.0;
-input double InpSmallMaxDrawdownPercent=10.0;
-input double InpSmallDeriskStartPercent=5.0;
+input double InpSmallRiskPercentPerTrade=0.5;  // KSh 7.50 planned stop risk on KSh 1,500 equity
+input int    InpSmallMaxOpenTrades=1;
+input double InpSmallMaxDailyLossPercent=1.5;
+input double InpSmallMaxDrawdownPercent=5.0;
+input double InpSmallDeriskStartPercent=2.0;
 input double InpSmallDeriskFloor=0.25;
-input double InpSmallMaxPortfolioRiskPercent=3.0;
-input int    InpSmallMaxPositionsPerSymbol=3;
-input int    InpSmallMaxPositionsPerGroup=3;
-input bool   InpSmallAccountProfileConfigured=false; // Set true only after reviewing these limits for the intended small account
+input double InpSmallMaxPortfolioRiskPercent=0.5;
+input int    InpSmallMaxPositionsPerSymbol=1;
+input int    InpSmallMaxPositionsPerGroup=1;
+input bool   InpSmallAccountProfileConfigured=true; // Conservative shipped preset with explicit limits above
 
 input group "Risk Profile — Prop Firm (configure exact firm rules)"
 input double InpPropRiskPercentPerTrade=0.5;
