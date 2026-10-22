@@ -203,3 +203,8 @@
 - “Closed unmerged” means that pull request was not merged, not necessarily that no later port or successor integrated a subset of the same behavior.
 - “No associated PR” or “unreviewed diverged ref” means the branch is recorded and retained; it must not be promoted merely because it exists.
 - This is a point-in-time accounting register, not a permanent statement that refs cannot move. Re-run the inventory before the next integration wave.
+
+
+## Audit-output branch (self-reference)
+
+The live repository now also contains `audit/branch-accounting-20261022`, created after the 158-ref snapshot above. Its only change is this audit document; it is separately accounted for here, based on `726be44a5c6706b72102f6d2e788b33930900b3d`. It is intentionally excluded from the table snapshot because it did not exist at snapshot time. After the audit PR is merged, that source branch should compare behind `main` with no unique code changes.
