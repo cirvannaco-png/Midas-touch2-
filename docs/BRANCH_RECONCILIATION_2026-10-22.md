@@ -24,8 +24,16 @@ This is a reconciliation, not a blanket approval to ship every branch tip. A bra
 - #126 — tester-only MT5 deal exporter
 - #127 — cost stress, risk-adjusted metrics and locked-OOS tooling
 - #36 — research-only win/loss asymmetry experiment record
+- #128 — restart duplicate-fill replay and broker-history reconciliation regression tests
 
 Important boundary: merging research tooling or experiment documentation does **not** mean its strategy candidate is profitable or approved for live execution. Actual real-tick strategy results and Exness demo-forward reconciliation remain outstanding.
+
+## Verification after the initial report commit
+
+- Additional test-only PR [#128](https://github.com/cirvannaco-png/Midas-touch2-/pull/128) merged at `f76d12afd40850fe1a2dca657f7b916a32b4bc4a`. Its fresh PR checks finished successfully, including Python tests. It adds duplicate-fill replay and fail-closed broker-history reconciliation regression tests; this is not a real broker-forward validation.
+- At that verification point, GitHub reported 154 branch refs / 147 unique branch-head SHAs, 18 open PRs (all drafts), and no ready-to-merge PRs.
+- On `f76d12afd40850fe1a2dca657f7b916a32b4bc4a`, five of six normal CI jobs were complete and successful; Python tests were still running at the last poll. Do not call the whole main pipeline green until that final job completes.
+- The GitHub-to-private-GitLab mirror job failed on commit `a00ae4836aa8031a336ca32664ed3614312408a1` during the clone step with `HTTP Basic: Access denied`. The workflow log says to verify GitLab token expiry/scope/project access and `GITLAB_SYNC_USER` compatibility. Source validation itself passed, but cross-provider mirror parity is **not verified**. Fix requires a valid authorized GitLab sync token/username through the repository's secret settings; no token was exposed or changed here.
 
 ## Current branch register
 
@@ -184,7 +192,7 @@ Each live branch is listed below with its current ref SHA and its reconciliation
 | `sync/bootstrap` | `eca74e21d5` | No current open PR matched this branch. Branch tip is preserved; divergent/unreviewed changes were not fast-forwarded blindly. Requires targeted review/PR or explicit retirement. |
 | `test/native-dynamic-stop-policy-20261014` | `0657180a78` | Merged via PR #97 (test(mql5): execute dynamic-stop policy assertions in native tester); merge commit 11ebcaeabb. |
 | `test/partial-close-recovery-contract-20261013` | `39a921f05c` | Merged via PR #79 (test: cover partial-close recovery accounting invariants); merge commit 34dede1bcc. |
-| `test/recovery-fault-reconciliation-20261013` | `61cf918de4` | Merged via PR #80 (test(recovery): add restart and reconciliation fault injection); merge commit 8d81d83916. |
+| `test/recovery-fault-reconciliation-20261013` | `61cf918de4` | Earlier PR #80 is superseded for the latest test commit; new restart replay and missing-fill evidence tests merged via PR #128, merge commit `f76d12afd408`. |
 | `test/scoring-evidence-authority` | `9ccc515147` | Merged via PR #62 (Guard scoring evidence authority against double-counting); merge commit e7a14e6de9. |
 | `tmp-check` | `0809c59cfb` | Compare audit found no commits ahead of main; historical/redundant branch, no merge needed. Retained, not deleted. |
 
