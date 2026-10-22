@@ -7,6 +7,7 @@ removes explicit contracts that make the strategy and signal path auditable.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -28,6 +29,7 @@ REQUIRED = {
         "ValidateCandidate",
     ],
     "EA/includes/Trading/StrategyTradeZone.mqh": [
+        "BuildAuthoritativeStrategy",
         "SelectPeerStrategy",
         "BuildNonSMC",
         "BuildSMC",
@@ -93,16 +95,16 @@ def main() -> int:
                 errors.append(f"{rel}: required contract token missing: {token}")
 
     trade_zone = texts.get("EA/includes/Trading/StrategyTradeZone.mqh", "")
-    if "SelectPeerStrategy(forBuy,reasons,selected,selectedScore)" not in trade_zone:
+    if not re.search(r"SelectPeerStrategy\s*\(\s*forBuy\s*,\s*reasons\s*,\s*selected\s*,\s*selectedScore\s*\)", trade_zone):
         errors.append("TradeZone: authoritative strategy selection is not explicitly wired")
     smc_build_contract = ("if(selected==STRATEGY_SMC)" in trade_zone and "BuildSMC(forBuy,selectedScore,reasons)" in trade_zone)
     if not smc_build_contract:
         errors.append("TradeZone: selected SMC strategy is not built through its owned builder")
-    if "else if(!BuildNonSMC(forBuy,selected,selectedScore,reasons,out))" not in trade_zone:
+    if not re.search(r"else\s+if\s*\(\s*!BuildNonSMC\s*\(\s*forBuy\s*,\s*selected\s*,\s*selectedScore\s*,\s*reasons\s*,\s*owned\s*\)\s*\)", trade_zone):
         errors.append("TradeZone: selected challenger strategy is not built through its owned builder")
-    if "out.reasons.selected_strategy=selected" not in trade_zone:
+    if not re.search(r"owned\.reasons\.selected_strategy\s*=\s*selected", trade_zone):
         errors.append("TradeZone: selected strategy provenance is not retained on the completed setup")
-    if "m_lastSetup=out;return out;" not in trade_zone:
+    if not re.search(r"m_lastSetup\s*=\s*owned\s*;\s*return\s+owned\s*;", trade_zone):
         errors.append("TradeZone: completed setup is not returned through the owned last-setup path")
     if "return TradeSetup();" in trade_zone:
         errors.append("TradeZone: temporary TradeSetup return reintroduced in a fail-closed path")

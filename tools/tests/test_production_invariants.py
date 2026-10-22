@@ -71,8 +71,10 @@ def test_legacy_decisions_do_not_fabricate_invalidation():
 
 def test_strategy_trade_zone_fail_closed_paths_do_not_return_temporary_structs():
     t=TRADE_ZONE.read_text()
-    assert "TradeSetup out;ZeroMemory(out);" in t
-    assert "m_lastSetup=out;return out;" in t
+    assert "TradeSetup BuildAuthoritativeStrategy(bool forBuy);" in t
+    assert "TradeSetup CTradeDecision::BuildAuthoritativeStrategy(bool forBuy)" in t
+    assert "TradeSetup owned;ZeroMemory(owned);" in t
+    assert "m_lastSetup=owned;return owned;" in t
     assert "return TradeSetup();" not in t
 
 def test_strategy_trade_zone_applies_spread_floor_then_rechecks_invalidation():

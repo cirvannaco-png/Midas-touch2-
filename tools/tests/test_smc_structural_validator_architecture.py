@@ -22,7 +22,7 @@ def test_smc_validator_is_wired_into_production_diagnostics_only():
 
     # Structural validation remains non-binding unless the explicit research
     # switch is enabled. The only execution rejection is guarded by that switch.
-    generate_start = trade_zone.index("TradeSetup CTradeDecision::Generate(bool forBuy)")
+    generate_start = trade_zone.index("TradeSetup CTradeDecision::BuildAuthoritativeStrategy(bool forBuy)")
     generate_end = trade_zone.index("TradeSetup CTradeDecision::GenerateBuySetup", generate_start)
     generate_body = trade_zone[generate_start:generate_end]
     assert "if(m_requireSmcStructuralValidity&&!reasons.smc_structural_valid)" in generate_body
@@ -85,11 +85,11 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
     assert gate_index > trade_zone.index("m_scoring.PopulateStructuralValidation(forBuy,reasons)")
     # The rejection preserves audit context instead of returning an empty setup.
     gate_body = trade_zone[gate_index:gate_index+700]
-    assert "out.type=forBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL;" in gate_body
-    assert "out.creation_time=TimeCurrent();" in gate_body
-    assert "out.reasons=reasons;" in gate_body
-    assert 'out.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in gate_body
-    assert "out=BuildSMC" in trade_zone[gate_index:gate_index+900]
+    assert "owned.type=forBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL;" in gate_body
+    assert "owned.creation_time=TimeCurrent();" in gate_body
+    assert "owned.reasons=reasons;" in gate_body
+    assert 'owned.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in gate_body
+    assert "owned=BuildSMC" in trade_zone[gate_index:gate_index+900]
     assert "bool FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out,int requiredBarIndex=-1);" in trade_zone
     assert "requiredBarIndex>0&&z.bar_index!=requiredBarIndex" in trade_zone
     assert "if(!reasons.smc_structural_valid||!reasons.smc_fvg_causal||reasons.smc_entry_fvg_bar_index<=0)return setup;" in trade_zone
@@ -101,7 +101,7 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
     # from a rejected SMC setup.
     smc_start = trade_zone.index("if(selected==STRATEGY_SMC)")
     gate_index = trade_zone.index(gate, smc_start)
-    smc_build_index = trade_zone.index("out=BuildSMC", gate_index)
+    smc_build_index = trade_zone.index("owned=BuildSMC", gate_index)
     nonsmc_index = trade_zone.index("BuildNonSMC", smc_build_index)
     assert smc_start < gate_index < smc_build_index < nonsmc_index
 
@@ -122,8 +122,8 @@ def test_smc_rejections_are_auditable_and_do_not_disappear():
 
     # Hard-gate rejection preserves the complete SetupReasons payload and
     # annotates the reason instead of returning an informationless zero setup.
-    assert 'out.reasons=reasons;out.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in trade_zone
-    assert "out.creation_time=TimeCurrent();" in trade_zone
+    assert 'owned.reasons=reasons;owned.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in trade_zone
+    assert "owned.creation_time=TimeCurrent();" in trade_zone
 
 
 def test_smc_structural_gate_is_opt_in_and_existing_trading_defaults_are_preserved():
