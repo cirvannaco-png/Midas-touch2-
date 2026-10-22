@@ -89,7 +89,7 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
     assert "owned.creation_time=TimeCurrent();" in gate_body
     assert "owned.reasons=reasons;" in gate_body
     assert 'owned.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in gate_body
-    assert "out=BuildSMC" in trade_zone[gate_index:gate_index+900]
+    assert "owned=BuildSMC" in trade_zone[gate_index:gate_index+900]
     assert "bool FindEntryFVG(ENUM_FVG_DIR dir,FVGZone &out,int requiredBarIndex=-1);" in trade_zone
     assert "requiredBarIndex>0&&z.bar_index!=requiredBarIndex" in trade_zone
     assert "if(!reasons.smc_structural_valid||!reasons.smc_fvg_causal||reasons.smc_entry_fvg_bar_index<=0)return setup;" in trade_zone
@@ -123,7 +123,7 @@ def test_smc_rejections_are_auditable_and_do_not_disappear():
     # Hard-gate rejection preserves the complete SetupReasons payload and
     # annotates the reason instead of returning an informationless zero setup.
     assert 'owned.reasons=reasons;owned.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in trade_zone
-    assert "out.creation_time=TimeCurrent();" in trade_zone
+    assert "owned.creation_time=TimeCurrent();" in trade_zone
 
 
 def test_smc_structural_gate_is_opt_in_and_existing_trading_defaults_are_preserved():
