@@ -6,6 +6,7 @@
 #define RISKENGINE_MQH
 
 #include "../Core/Config.mqh"
+#include "../Portfolio/AccountRiskProfilePolicy.mqh"
 
 class CRiskEngine
   {
@@ -64,7 +65,8 @@ double CRiskEngine::CalculateLotSize(string symbol,double riskPercent,double ent
   {
    exceededRiskBudget=false;
    if(!MathIsValidNumber(riskPercent) || !MathIsValidNumber(sizeMultiplier) ||
-      riskPercent<=0.0 || entry<=0.0 || stopLoss<=0.0 || entry==stopLoss)
+      riskPercent<=0.0 || riskPercent>MIDAS_MAX_RISK_PERCENT_PER_TRADE ||
+      entry<=0.0 || stopLoss<=0.0 || entry==stopLoss)
       return 0.0;
 
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
