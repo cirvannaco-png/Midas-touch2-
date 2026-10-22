@@ -74,3 +74,10 @@ def test_hard_risk_ceiling_is_shared_by_policy_and_lot_sizing() -> None:
     assert "#define MIDAS_MAX_RISK_PERCENT_PER_TRADE 2.0" in policy
     assert "limits.riskPercentPerTrade>MIDAS_MAX_RISK_PERCENT_PER_TRADE" in policy
     assert "riskPercent>MIDAS_MAX_RISK_PERCENT_PER_TRADE" in engine
+
+def test_dynamic_trailing_stop_remains_enabled_by_default() -> None:
+    root = Path(__file__).resolve().parents[2]
+    inputs = (root / "EA/includes/Execution/DynamicStopInputs.mqh").read_text(encoding="utf-8")
+    manager = (root / "EA/includes/Execution/PositionManager.mqh").read_text(encoding="utf-8")
+    assert "InpEnableDynamicStop = true" in inputs
+    assert "if(InpEnableDynamicStop && CanModifyNow(ticket))" in manager
