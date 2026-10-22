@@ -86,7 +86,7 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
     # The rejection preserves audit context instead of returning an empty setup.
     gate_body = trade_zone[gate_index:gate_index+700]
     assert "owned.type=forBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL;" in gate_body
-    assert "out.creation_time=TimeCurrent();" in gate_body
+    assert "owned.creation_time=TimeCurrent();" in gate_body
     assert "owned.reasons=reasons;" in gate_body
     assert 'owned.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in gate_body
     assert "out=BuildSMC" in trade_zone[gate_index:gate_index+900]
@@ -122,7 +122,7 @@ def test_smc_rejections_are_auditable_and_do_not_disappear():
 
     # Hard-gate rejection preserves the complete SetupReasons payload and
     # annotates the reason instead of returning an informationless zero setup.
-    assert 'out.reasons=reasons;out.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in trade_zone
+    assert 'owned.reasons=reasons;owned.reasons.smc_failure_reason="Execution gate rejected: "+reasons.smc_failure_reason;' in trade_zone
     assert "out.creation_time=TimeCurrent();" in trade_zone
 
 
