@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "reservation_id": "midas-touch2-oos-2026-09-01-to-2026-10-01",
+  "status": "reserved_unscored",
+  "locked_oos_start": "2026-09-01T00:00:00Z",
+  "locked_oos_end": "2026-10-01T00:00:00Z",
+  "maturity_end": "2026-10-14T00:00:00Z",
+  "external_freshness_attestation_required": true
+}
