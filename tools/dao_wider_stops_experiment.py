@@ -312,8 +312,18 @@ def compare_manifest(manifest_path: str | Path) -> dict:
     _validate_preset_arms(presets, profile)
     results = {}
     for role in ROLES:
-        full, unresolved_full = _read_deals(deal_paths[role], ctx["period_start"], ctx["period_end"])
-        oos, unresolved_oos = _read_deals(deal_paths[role], ctx["locked_oos_start"], ctx["locked_oos_end"])
+        cost_model = {
+            "baseline_spread_points": float(ctx["baseline_spread_points"]),
+            "cash_per_point_per_lot": float(ctx["cash_per_point_per_lot"]),
+            "spread_widening_multiplier": float(ctx["spread_widening_multiplier"]),
+            "slippage_points": float(ctx["slippage_points"]),
+        }
+        full, unresolved_full = _read_deals(
+            deal_paths[role], ctx["period_start"], ctx["period_end"], **cost_model
+        )
+        oos, unresolved_oos = _read_deals(
+            deal_paths[role], ctx["locked_oos_start"], ctx["locked_oos_end"], **cost_model
+        )
         results[role] = {
             "preset_sha256": _sha256((path.parent / by_role[role]["input_preset"]).resolve()),
             "deals_sha256": _sha256(deal_paths[role]),
