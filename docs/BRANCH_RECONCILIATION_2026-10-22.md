@@ -32,12 +32,12 @@ Important boundary: merging research tooling or experiment documentation does **
 
 - Additional test-only PR [#128](https://github.com/cirvannaco-png/Midas-touch2-/pull/128) merged at `f76d12afd40850fe1a2dca657f7b916a32b4bc4a`. Its fresh PR checks finished successfully, including Python tests. It adds duplicate-fill replay and fail-closed broker-history reconciliation regression tests; this is not a real broker-forward validation.
 - At that verification point, GitHub reported 154 branch refs / 147 unique branch-head SHAs, 18 open PRs (all drafts), and no ready-to-merge PRs.
-- On `f76d12afd40850fe1a2dca657f7b916a32b4bc4a`, five of six normal CI jobs were complete and successful; Python tests were still running at the last poll. Do not call the whole main pipeline green until that final job completes.
+- On `f76d12afd40850fe1a2dca657f7b916a32b4bc4a`, all six normal CI jobs subsequently completed successfully, including Python tests. The separate GitLab mirror-sync job remains a distinct failed check because GitLab clone authentication was denied.
 - The GitHub-to-private-GitLab mirror job failed on commit `a00ae4836aa8031a336ca32664ed3614312408a1` during the clone step with `HTTP Basic: Access denied`. The workflow log says to verify GitLab token expiry/scope/project access and `GITLAB_SYNC_USER` compatibility. Source validation itself passed, but cross-provider mirror parity is **not verified**. Fix requires a valid authorized GitLab sync token/username through the repository's secret settings; no token was exposed or changed here.
 
 ## Current branch register
 
-Each live branch is listed below with its current ref SHA and its reconciliation disposition. The audit intentionally does not delete branches.
+The table records the branch-head SHAs from the original inventory snapshot (main at `604d2a268103df92c23eb8d9e073e7d232e4be64`), not mutable live refs. The branch-name set was rechecked after the later merges: all 154 live branch names are represented, with no missing or extra rows; non-main heads still match their captured 10-character SHAs. The `main` row is intentionally a snapshot anchor because a report commit cannot contain its own final SHA without changing that SHA again. The audit intentionally does not delete branches.
 
 | Branch | Head (short SHA) | Disposition |
 |---|---|---|
