@@ -101,7 +101,7 @@ def test_smc_structural_gate_is_explicit_default_off_and_applies_only_to_smc():
     # from a rejected SMC setup.
     smc_start = trade_zone.index("if(selected==STRATEGY_SMC)")
     gate_index = trade_zone.index(gate, smc_start)
-    smc_build_index = trade_zone.index("out=BuildSMC", gate_index)
+    smc_build_index = trade_zone.index("owned=BuildSMC", gate_index)
     nonsmc_index = trade_zone.index("BuildNonSMC", smc_build_index)
     assert smc_start < gate_index < smc_build_index < nonsmc_index
 
