@@ -38,7 +38,7 @@ GitHub Actions workflow `.github/workflows/production-maintenance.yml` owns:
 - daily subscription enforcement at 07:00 UTC;
 - explicit manual dispatch from GitHub `main` only.
 
-It uses the GitHub Actions `production` environment and requires environment secrets `BRIDGE_BASE_URL` and `BRIDGE_API_KEY`. The environment's main-branch deployment restriction and secret configuration must be verified in GitHub settings. Remove old GitLab schedules separately; repository YAML alone cannot delete settings already stored in GitLab.
+It uses the GitHub Actions `production` environment and requires only the `BRIDGE_API_KEY` environment secret; the non-secret canonical service URL is configured in workflow YAML. The environment's main-branch deployment restriction and secret configuration must be verified in GitHub settings. Remove old GitLab schedules separately; repository YAML alone cannot delete settings already stored in GitLab.
 
 A successful scheduler run must prove a persisted cycle ID, not just an HTTP 2xx. A cycle does not itself demonstrate candidate approval, EA hash acknowledgement, profitable backtesting or live-trading readiness.
 
