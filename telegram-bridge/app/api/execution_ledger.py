@@ -156,7 +156,7 @@ class BrokerPositionSyncRequest(BaseModel):
     broker_deal_id: str | None = Field(default=None, max_length=100)
     symbol: str = Field(min_length=1, max_length=32)
     direction: Literal["BUY", "SELL"]
-    risk_r: float = Field(gt=0)
+    risk_r: float = Field(ge=0)
     volatility: float = Field(ge=0)
     factors: dict[str, float] = Field(default_factory=dict)
     evidence_ref: str = Field(min_length=1, max_length=256)
@@ -166,7 +166,7 @@ class PositionRiskUpdateRequest(BaseModel):
     portfolio_key: str = Field(min_length=1, max_length=128)
     broker_position_id: str = Field(min_length=1, max_length=100)
     direction: Literal["BUY", "SELL"]
-    risk_r: float = Field(gt=0)
+    risk_r: float = Field(ge=0)
     volatility: float = Field(ge=0)
     factors: dict[str, float] = Field(default_factory=dict)
     evidence_ref: str = Field(min_length=1, max_length=256)
@@ -428,10 +428,10 @@ async def ingest_deal_event(
     )
     if any(not math.isfinite(value) for value in numeric_values):
         raise HTTPException(status_code=422, detail="deal event values must be finite")
-    if body.position_open and (body.remaining_volume <= 0 or body.risk_r <= 0):
+    if body.position_open and (body.remaining_volume <= 0 or body.risk_r < 0):
         raise HTTPException(
             status_code=422,
-            detail="an open position requires positive remaining volume and risk",
+            detail="an open position requires positive remaining volume and non-negative remaining stop risk",
         )
 
     immutable_event = {
