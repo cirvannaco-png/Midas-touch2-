@@ -20,6 +20,7 @@ def test_ea_routes_opposing_exposure_through_the_tested_policy():
     assert "MidasIsOpposingPositionDirection(desiredType,current)" in ea
     assert "MidasIsOpposingOrderDirection(desiredType,current)" in ea
     assert "MidasConcurrentOpposingPolicyAllows(" in ea
+    assert "InpAllowConcurrentOpposingPositions" in ea
     assert "HasForeignChartSymbolExposure()" in ea
     assert "AUTOMATED_BLOCKED_FOREIGN_EXPOSURE" in ea
     assert "MANUAL_BLOCKED_FOREIGN_EXPOSURE" in ea
