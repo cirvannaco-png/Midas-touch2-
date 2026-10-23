@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
+          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
           : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
           python3 - <<'PY'
           import os
@@ -141,7 +141,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
+          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
           : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
           python3 - <<'PY'
           import os
@@ -275,7 +275,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
+          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
           : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
           python3 - <<'PY'
           import os
@@ -393,7 +393,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : "${BRIDGE_BASE_URL:?Missing GitHub Actions secret BRIDGE_BASE_URL}"
+          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
           : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
           python3 - <<'PY'
           import os
