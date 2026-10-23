@@ -53,6 +53,7 @@ def test_concurrent_opposing_positions_require_explicit_input_and_retail_hedging
     assert "CanOpenDirectionWithExposure(decision.setup.type,opposingDirectionReason)" in ea
     assert "CanOpenDirectionWithExposure(manualDirection,opposingDirectionReason)" in ea
     assert "retail-hedging" in readme.lower()
+    assert "InpAllowConcurrentOpposingPositions" in ea
 
 
 def test_both_directions_remain_eligible_and_daily_goal_does_not_override_safety_gates():
