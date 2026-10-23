@@ -296,7 +296,7 @@ bool HasForeignChartSymbolExposure();
 bool HasOpposingChartSymbolExposure(ENUM_ORDER_TYPE desiredType);
 bool CanOpenDirectionWithExposure(ENUM_ORDER_TYPE desiredType,string &reasonOut);
 void RefreshTradeControlPanel();
-bool RiskRFromMoney(double riskMoney,double &riskR);
+bool RiskRFromMoney(double riskMoney,double &riskR,bool allowZero);
 bool ReconcileBrokerStateSnapshot();
 bool SyncHistoricalClosedPositions();
 bool SyncHistoricalDealEvents();
@@ -331,19 +331,18 @@ void ConfigureAccountRiskLimits(AccountRiskLimits &limits,
    limits.maxPositionsPerGroup=maxPerGroup;
   }
 
-bool RiskRFromMoney(double riskMoney,double &riskR)
+bool RiskRFromMoney(double riskMoney,double &riskR,bool allowZero)
   {
    riskR=0.0;
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
    double baseRiskUnit=equity*g_activeRiskLimits.riskPercentPerTrade/100.0;
-   // A stop at or beyond breakeven has zero remaining price-to-stop risk.
-   // Preserve that valid state in the ledger instead of misclassifying it as
-   // unknown risk; gap/slippage risk remains outside this normalized estimate.
-   if(equity<=0.0 || baseRiskUnit<=0.0 || riskMoney<0.0 ||
-      !MathIsValidNumber(riskMoney) || !MathIsValidNumber(baseRiskUnit))
+   // Zero risk is valid only when the caller proves the broker stop is at or
+   // beyond breakeven. New reservations and unprotected stops remain strict.
+   if(equity<=0.0 || baseRiskUnit<=0.0 || !MathIsValidNumber(riskMoney) ||
+      !MathIsValidNumber(baseRiskUnit) || riskMoney<0.0 || (riskMoney==0.0 && !allowZero))
       return false;
    riskR=riskMoney/baseRiskUnit;
-   return (riskR>=0.0 && MathIsValidNumber(riskR));
+   return (MathIsValidNumber(riskR) && (allowZero ? riskR>=0.0 : riskR>0.0));
   }
 
 bool ParseManagedOrderComment(const string comment,long &decisionId,int &legIndex)
@@ -388,7 +387,7 @@ bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legInd
       return !InpRequireExecutionLedger;
 
    double riskR=0.0;
-   if(!RiskRFromMoney(riskMoney,riskR))
+   if(!RiskRFromMoney(riskMoney,riskR,false))
      {
       g_execAudit.Log("EXECUTION_LEDGER_RISK_INVALID",
                       "risk could not be normalized to the configured base risk unit",
@@ -488,7 +487,8 @@ bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string dir
    if(sl<=0.0 || entry<=0.0 || volume<=0.0) return false;
    double riskMoney=g_risk.RiskAmountForLots(_Symbol,volume,entry,sl);
    double riskR=0.0;
-   if(!RiskRFromMoney(riskMoney,riskR)) return false;
+   bool stopLocked=(direction=="BUY" && sl>=entry) || (direction=="SELL" && sl<=entry);
+   if(!RiskRFromMoney(riskMoney,riskR,stopLocked)) return false;
    return g_executionLedger.UpdatePositionRisk(positionIdentifier,direction,riskR,
                                                 MathMax(0.0,volatility),evidenceRef);
   }
@@ -533,7 +533,10 @@ bool ReconcileBrokerStateSnapshot()
         }
       double riskMoney=g_risk.RiskAmountForLots(symbol,volume,entry,sl);
       double riskR=0.0;
-      if(!RiskRFromMoney(riskMoney,riskR))
+      long positionType=PositionGetInteger(POSITION_TYPE);
+      bool stopLocked=(positionType==POSITION_TYPE_BUY && sl>=entry) ||
+                      (positionType==POSITION_TYPE_SELL && sl<=entry);
+      if(!RiskRFromMoney(riskMoney,riskR,stopLocked))
         {
          allOk=false;
          continue;
@@ -1515,7 +1518,9 @@ bool SendLedgerDealEvent(const ulong dealTicket,const ulong positionIdentifier)
       double openPrice=PositionGetDouble(POSITION_PRICE_OPEN);
       if(stop<=0.0 || openPrice<=0.0 || remainingVolume<=0.0) return false;
       double riskMoney=g_risk.RiskAmountForLots(symbol,remainingVolume,openPrice,stop);
-      if(!RiskRFromMoney(riskMoney,riskR)) return false;
+      bool stopLocked=(positionType==POSITION_TYPE_BUY && stop>=openPrice) ||
+                      (positionType==POSITION_TYPE_SELL && stop<=openPrice);
+      if(!RiskRFromMoney(riskMoney,riskR,stopLocked)) return false;
      }
 
    double volume=HistoryDealGetDouble(dealTicket,DEAL_VOLUME);
