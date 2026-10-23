@@ -2,7 +2,7 @@
 
 ## Ownership and operator configuration
 
-GitHub Actions on canonical GitHub `main` owns scheduled production maintenance. The `production` GitHub Environment must be restricted to `main` and configured with environment secrets `BRIDGE_BASE_URL` and `BRIDGE_API_KEY`. The URL must be HTTPS without embedded credentials, whitespace, query, or fragment. Never paste the API key into issues, logs, commits, or this document.
+GitHub Actions on canonical GitHub `main` owns scheduled production maintenance. The `production` GitHub Environment must be restricted to `main` and configured with the `BRIDGE_API_KEY` environment secret. The workflow uses `https://midas-touch2.onrender.com` as its non-secret HTTPS base URL; update the workflow if the deployed service URL changes. Never paste the API key into issues, logs, commits, or this document.
 
 Do not run production maintenance as a casual diagnostic. Recalibration, subscription enforcement, and recovery POSTs can change production data or send notifications. This code change adds guards; it does not itself dispatch those operations, configure secrets, or verify an actual production run.
 
