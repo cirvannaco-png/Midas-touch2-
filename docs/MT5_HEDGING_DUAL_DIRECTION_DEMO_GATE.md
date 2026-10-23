@@ -13,7 +13,7 @@ Status: **not yet run against an Exness demo terminal**. CI tests below exercise
 
 ## 2. Risk-profile constraint
 
-The shipped small-account profile deliberately sets `InpSmallMaxOpenTrades=1` and `InpSmallMaxPositionsPerSymbol=1`, with a 0.5% portfolio open-risk cap. With those limits, concurrent opposing positions are correctly prevented by portfolio caps even on a hedging account. **Do not relax those limits on the live account to enable the feature.**
+The requested small-account profile uses a 20% per-trade target, a 15% drawdown-de-risk floor, a three-position configured ceiling, and a 20% portfolio open-risk cap. Runtime concurrency starts at one and expands only when every existing chart-symbol position is floating-positive and its stop is at or beyond breakeven. These settings are materially higher-risk than the prior baseline and are not validated for live use. **Do not test or enable this profile on live capital.**
 
 For an isolated demo capability test only, explicitly configure a valid profile that permits two positions on the same symbol. The open-risk cap must cover both stop-risk amounts while remaining at or below the daily-loss cap. Keep each stop-defined trade risk small, do not enable minimum-lot overrides, and abort if the broker minimum lot exceeds the configured risk. Profile validation, aggregate portfolio risk and max-position controls are expected to block any configuration that does not satisfy these constraints.
 
