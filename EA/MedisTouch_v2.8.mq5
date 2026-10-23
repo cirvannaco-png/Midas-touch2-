@@ -335,11 +335,14 @@ bool RiskRFromMoney(double riskMoney,double &riskR)
    riskR=0.0;
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
    double baseRiskUnit=equity*g_activeRiskLimits.riskPercentPerTrade/100.0;
-   if(equity<=0.0 || baseRiskUnit<=0.0 || riskMoney<=0.0 ||
+   // A stop at or beyond breakeven has zero remaining price-to-stop risk.
+   // Preserve that valid state in the ledger instead of misclassifying it as
+   // unknown risk; gap/slippage risk remains outside this normalized estimate.
+   if(equity<=0.0 || baseRiskUnit<=0.0 || riskMoney<0.0 ||
       !MathIsValidNumber(riskMoney) || !MathIsValidNumber(baseRiskUnit))
       return false;
    riskR=riskMoney/baseRiskUnit;
-   return (riskR>0.0 && MathIsValidNumber(riskR));
+   return (riskR>=0.0 && MathIsValidNumber(riskR));
   }
 
 bool ParseManagedOrderComment(const string comment,long &decisionId,int &legIndex)
