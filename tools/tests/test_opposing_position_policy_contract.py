@@ -20,6 +20,9 @@ def test_ea_routes_opposing_exposure_through_the_tested_policy():
     assert "MidasIsOpposingPositionDirection(desiredType,current)" in ea
     assert "MidasIsOpposingOrderDirection(desiredType,current)" in ea
     assert "MidasConcurrentOpposingPolicyAllows(" in ea
+    assert "HasForeignChartSymbolExposure()" in ea
+    assert "AUTOMATED_BLOCKED_FOREIGN_EXPOSURE" in ea
+    assert "MANUAL_BLOCKED_FOREIGN_EXPOSURE" in ea
     assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in policy
     assert "ACCOUNT_MARGIN_MODE_RETAIL_NETTING" not in policy  # every non-hedging mode fails closed
 
@@ -42,7 +45,8 @@ def test_native_policy_test_is_compiled_and_executed_in_strategy_tester():
     workflow = read(WORKFLOW)
     assert "Compile opposing-position policy test with MetaEditor" in workflow
     assert "'OpposingPositionPolicy'" in workflow
-    assert "OpposingPositionPolicy tests: 0 failure(s)" in workflow
+    assert '"$testName tests: 0 failure(s)"' in workflow or '$testName tests: 0 failure(s)' in workflow
+    assert 'PrintFormat("OpposingPositionPolicy tests: %d failure(s)",failures);' in read(NATIVE_TEST)
 
 
 def test_demo_protocol_keeps_broker_validation_separate_from_policy_ci():
