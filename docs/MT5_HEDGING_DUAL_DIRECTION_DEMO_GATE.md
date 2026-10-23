@@ -9,7 +9,7 @@ Status: **not yet run against an Exness demo terminal**. CI tests below exercise
 - Deploy the exact compiled EA build from this repository's `main` and record the EA source SHA, EX5 hash, MT5 terminal build, broker server, symbol, account currency, balance, leverage, and symbol contract settings.
 - Confirm the broker execution ledger is healthy if `InpRequireExecutionLedger=true`; otherwise the EA must remain blocked.
 - Leave `InpEnableDynamicStop=true`; do not disable trailing protection.
-- Start with a clean chart-symbol state: no manual positions, other-EA positions, or pending orders on that symbol.
+- Start with a clean chart-symbol state: no manual positions, other-EA positions, or pending orders on that symbol. The EA now fail-closes on foreign same-symbol exposure because that risk cannot be isolated in this instance's ledger.
 
 ## 2. Risk-profile constraint
 
