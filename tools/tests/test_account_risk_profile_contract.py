@@ -79,7 +79,7 @@ def test_user_requested_small_account_profile_is_explicit_and_prop_firm_stays_ga
     assert 'MANUAL_BLOCKED_BELOW_MINIMUM_RISK' in ea
     assert 'remaining daily-loss headroom' in ea
     assert 'remaining peak-drawdown headroom' in ea
-    assert 'if(riskMoney<0.0)' in ea
+    assert 'riskMoney<0.0 || (riskMoney==0.0 && !allowZero)' in ea
     assert 'return (riskR>=0.0 && MathIsValidNumber(riskR));' in ea
     assert "InpPropFirmProfileConfigured=false" in ea
     assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
