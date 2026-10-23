@@ -38,4 +38,4 @@ The earlier manual transport workflow and dedicated `midas-touch2-sync` SHA-1 st
 
 ## Production-maintenance separation
 
-Production maintenance is owned by `.github/workflows/production-maintenance.yml` and requires the GitHub `production` environment plus environment secrets `BRIDGE_BASE_URL` and `BRIDGE_API_KEY`. Disable any old GitLab project schedules separately in GitLab settings. Never treat sync success as evidence that a calibration cycle ran or that an EA configuration was approved or activated.
+Production maintenance is owned by `.github/workflows/production-maintenance.yml` and requires the GitHub `production` environment and the `BRIDGE_API_KEY` environment secret; the canonical URL is configured in workflow YAML. Disable any old GitLab project schedules separately in GitLab settings. Never treat sync success as evidence that a calibration cycle ran or that an EA configuration was approved or activated.
