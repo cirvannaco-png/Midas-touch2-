@@ -42,7 +42,7 @@ jobs:
     steps:
       - name: Validate production bridge secrets without printing them
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -65,7 +65,7 @@ jobs:
 
       - name: Verify runtime key and real database connection
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -136,7 +136,7 @@ jobs:
       - name: Validate production bridge secrets
         if: ${{ steps.parity.outputs.due == 'true' }}
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -160,7 +160,7 @@ jobs:
       - name: Preflight bridge and database health
         if: ${{ steps.parity.outputs.due == 'true' }}
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
         shell: bash
         run: |
           set -euo pipefail
@@ -192,7 +192,7 @@ jobs:
       - name: Run and verify recalibration cycle
         if: ${{ steps.parity.outputs.due == 'true' }}
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -270,7 +270,7 @@ jobs:
     steps:
       - name: Validate production bridge secrets
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -293,7 +293,7 @@ jobs:
 
       - name: Preflight bridge and database health
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
         shell: bash
         run: |
           set -euo pipefail
@@ -324,7 +324,7 @@ jobs:
 
       - name: Run and verify subscription sweep
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -388,7 +388,7 @@ jobs:
     steps:
       - name: Validate production bridge secrets
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
@@ -411,7 +411,7 @@ jobs:
 
       - name: Preflight bridge and database health
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
         shell: bash
         run: |
           set -euo pipefail
@@ -442,7 +442,7 @@ jobs:
 
       - name: Recover failed or stale delivery notifications
         env:
-          BRIDGE_BASE_URL: ${{ secrets.BRIDGE_BASE_URL }}
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
