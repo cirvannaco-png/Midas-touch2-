@@ -49,7 +49,7 @@ The separate DAO wider-stop research branch had a research-test failure because 
 ## Required release gates
 
 1. Merge only after MetaEditor compile, MQL5 policy tests, bridge tests, PostgreSQL migration smoke tests, research tests, and security/dependency checks pass.
-2. Add the correct `BRIDGE_BASE_URL` and `BRIDGE_API_KEY` secrets in GitHub's production environment.
+2. Ensure the canonical bridge URL in workflow YAML matches the deployed Render service, and set `BRIDGE_API_KEY` in GitHub's production environment to the same value as Render `SECRET_KEY`.
 3. Align the intended Render service and production DB in one region, apply migrations, and prove `/health/db` returns `status=online` and `database=connected`.
 4. Prove authenticated `/execution-ledger/health` returns `status=online`, `database=connected`, and `execution_ledger=ready`.
 5. Compile the exact EA source in MetaEditor; attach it to Exness demo first; verify accepted orders, fills, partial exits, trailing-stop modifications, commission/swaps, realized P&L, ledger parity, emergency-stop persistence, and restart recovery.
