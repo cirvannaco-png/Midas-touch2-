@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 EA = ROOT / "EA" / "MedisTouch_v2.8.mq5"
 DAILY = ROOT / "EA" / "includes" / "Trading" / "DailyTradeTarget.mqh"
 README = ROOT / "EA" / "README.md"
+POLICY = ROOT / "EA" / "includes" / "Portfolio" / "OpposingPositionPolicy.mqh"
 
 
 def read(path: Path) -> str:
@@ -45,11 +46,13 @@ def test_qualified_winner_tracking_is_not_disabled_only_because_account_is_netti
 
 def test_concurrent_opposing_positions_require_explicit_input_and_retail_hedging():
     ea = read(EA)
+    policy = read(POLICY)
     readme = read(README)
     assert "input bool InpAllowConcurrentOpposingPositions=false;" in ea
     assert "bool IsRetailHedgingAccount()" in ea
-    assert "MT5 netting/exchange accounts cannot retain independent opposing positions on the same symbol" in ea
-    assert "if(!InpAllowConcurrentOpposingPositions)" in ea
+    assert "MT5 netting/exchange accounts cannot retain independent opposing positions on the same symbol" in policy
+    assert "if(!explicitlyEnabled)" in policy
+    assert "InpAllowConcurrentOpposingPositions,reasonOut" in ea
     assert "CanOpenDirectionWithExposure(decision.setup.type,opposingDirectionReason)" in ea
     assert "CanOpenDirectionWithExposure(manualDirection,opposingDirectionReason)" in ea
     assert "retail-hedging" in readme.lower()

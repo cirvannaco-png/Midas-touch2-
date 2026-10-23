@@ -265,6 +265,29 @@ jobs:
           if (!(Test-Path (Join-Path $expertTestDir 'DynamicStopEngine.ex5'))) { throw 'DynamicStopEngine test EX5 artifact was not produced.' }
           "DynamicStopEngine test compiled: errors=$errors warnings=$warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
+      - name: Compile opposing-position policy test with MetaEditor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $testSource = Join-Path $env:GITHUB_WORKSPACE 'EA/tests/OpposingPositionPolicy.mq5'
+          $expertTestDir = Join-Path $env:MT5_MQL5_ROOT 'Experts/MidasTouch/tests'
+          New-Item -ItemType Directory -Path $expertTestDir -Force | Out-Null
+          $stagedTest = Join-Path $expertTestDir 'OpposingPositionPolicy.mq5'
+          Copy-Item -Path $testSource -Destination $stagedTest -Force
+          $arguments = "/compile:`"$stagedTest`" /include:`"$env:MT5_MQL5_ROOT`" /log"
+          $process = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList $arguments -Wait -PassThru
+          $testLog = Join-Path $expertTestDir 'OpposingPositionPolicy.log'
+          if (!(Test-Path $testLog)) { throw 'MetaEditor did not produce the opposing-position policy compile log.' }
+          $log = Get-Content -Path $testLog -Raw
+          Write-Host $log
+          $result = [regex]::Match($log, '(?im)(\d+)\s+errors?,\s*(\d+)\s+warnings?')
+          if (!$result.Success) { throw 'Could not parse opposing-position policy compile summary.' }
+          $errors = [int]$result.Groups[1].Value
+          $warnings = [int]$result.Groups[2].Value
+          if ($errors -gt 0) { throw "OpposingPositionPolicy test has $errors compile errors and $warnings warnings." }
+          if (!(Test-Path (Join-Path $expertTestDir 'OpposingPositionPolicy.ex5'))) { throw 'OpposingPositionPolicy test EX5 artifact was not produced.' }
+          "OpposingPositionPolicy test compiled: errors=$errors warnings=$warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
       - name: Execute MQL5 policy tests in the native Strategy Tester
         shell: pwsh
         timeout-minutes: 10
@@ -279,7 +302,7 @@ jobs:
           New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
           if (!(Test-Path $terminal)) { throw "MetaTrader terminal missing: $terminal" }
 
-          $testNames = @('PositionManagementPolicy', 'AccountRiskProfilePolicy', 'DynamicStopEngine')
+          $testNames = @('PositionManagementPolicy', 'AccountRiskProfilePolicy', 'DynamicStopEngine', 'OpposingPositionPolicy')
           foreach ($testName in $testNames) {
             $expert = Join-Path $mql5Root ("Experts/MidasTouch/tests/" + $testName + ".ex5")
             if (!(Test-Path $expert)) { throw "Compiled policy-test artifact missing: $expert" }
