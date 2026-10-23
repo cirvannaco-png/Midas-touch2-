@@ -26,7 +26,7 @@ GitHub `main` is the canonical source-control branch for Midas Touch. GitHub Act
 
 - Resolve the exact GitHub `main` commit SHA at release time; do not rely on a remembered SHA.
 - GitHub branch-protection/ruleset settings have not been independently verified by this document.
-- The `production` GitHub Actions environment, its main-branch deployment restriction, and the `BRIDGE_BASE_URL` / `BRIDGE_API_KEY` environment secrets require configuration in GitHub settings. Their presence and values are not verified by repository YAML.
+- The `production` GitHub Actions environment and its main-branch deployment restriction require configuration in GitHub settings. The canonical non-secret URL `https://midas-touch2.onrender.com` is defined in workflow YAML; only `BRIDGE_API_KEY` remains an environment secret, and its presence/value cannot be verified by repository YAML.
 - The last documented GitHub-to-GitLab sync failure was an authentication rejection (`HTTP Basic: Access denied`). Do not claim mirror parity until a later run reports `SYNC_VERIFIED`; repair the GitLab token/username in GitHub Actions settings without exposing credentials.
 - The previous GitLab production baseline `b5d715bd` and test ID `SYNC-2026-09-18-001` are historical references only, not the current canonical release baseline.
 
