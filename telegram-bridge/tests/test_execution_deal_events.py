@@ -154,3 +154,27 @@ def test_execution_ledger_health_verifies_api_key_and_database(client):
         "database": "connected",
         "execution_ledger": "ready",
     }
+
+def test_breakeven_protected_open_position_accepts_zero_remaining_stop_risk(client):
+    payload = _deal_payload()
+    payload.update(
+        {
+            "broker_deal_id": "7099",
+            "broker_order_id": "6099",
+            "entry_type": "OUT",
+            "deal_type": "SELL",
+            "position_open": True,
+            "remaining_volume": 0.4,
+            "risk_r": 0.0,
+            "evidence_ref": "mt5-breakeven-stop:5001",
+        }
+    )
+    response = client.post(
+        "/execution-ledger/deal-event",
+        json=payload,
+        headers={"X-API-Key": "test-secret-key"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["stored"] is True
+    assert response.json()["reconciled"] is True
+    assert response.json()["portfolio_heat_r"] == 0.0
