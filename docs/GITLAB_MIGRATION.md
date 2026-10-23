@@ -42,9 +42,9 @@ GitLab is an optional source-tree mirror, not the production control plane. The 
 
 ## Required GitHub Actions repository secrets
 
-In GitHub, create an environment named production under Settings → Environments and restrict deployments to the main branch. Add these environment secrets:
+In GitHub, create an environment named production under Settings → Environments and restrict deployments to the main branch. Add only this environment secret:
 
-- BRIDGE_BASE_URL: the actual HTTPS base URL for the deployed bridge service (no trailing slash required).
+- The canonical non-secret base URL is configured in workflow YAML as `https://midas-touch2.onrender.com`; do not create a `BRIDGE_BASE_URL` secret.
 - BRIDGE_API_KEY: the same secret value as the deployed bridge's SECRET_KEY setting.
 
 These secrets must not be committed or exposed in logs/chat. The scheduled workflow uses the production environment, restricts manual dispatch jobs to main, validates HTTPS, applies bounded network timeouts, avoids automatic POST retries, and validates response JSON. To manually execute a production job, use Actions → Midas Touch Production Maintenance → Run workflow on main and choose the intended task. Manual recalibration immediately calls the production bridge; do not use it as a casual dry run.
