@@ -9,8 +9,10 @@ class CDailyTradeTarget
   {
 private:
    int      m_target;
-   int      m_count;
+   int      m_count;          // qualified, fully closed winners at/above the R threshold
+   int      m_entryCount;     // distinct broker entry orders that actually received a fill
    int      m_dateKey;
+   datetime m_lastSearchLogAt;
    bool     m_weekday;
    bool     m_reported;
    double   m_minQualifiedR;
@@ -43,6 +45,17 @@ private:
    string CountKey(int dateKey)
      {
       return m_storageKey+".C."+IntegerToString(dateKey);
+     }
+
+   string EntryCountKey(int dateKey)
+     {
+      return m_storageKey+".N."+IntegerToString(dateKey);
+     }
+
+   string EntryMarker(ulong orderId)
+     {
+      // One marker per broker order: partial fills of the same order remain one entry.
+      return m_storageKey+".I."+StringFormat("%I64u",orderId);
      }
 
    string BaselineKey(int dateKey)
@@ -146,6 +159,22 @@ private:
       return count;
      }
 
+   int CountEntryMarkersForDateLocked(int dateKey)
+     {
+      int count=0;
+      string prefix=m_storageKey+".I.";
+      int total=GlobalVariablesTotal();
+      for(int i=0;i<total;i++)
+        {
+         string name=GlobalVariableName(i);
+         if(StringFind(name,prefix)!=0)continue;
+         double storedAt=GlobalVariableGet(name);
+         if(storedAt<1000000000.0)continue;
+         if(DateKey((datetime)storedAt)==dateKey)count++;
+        }
+      return count;
+     }
+
    void PruneOldMarkersLocked(datetime now)
      {
       // Keep a 90-day deduplication window without growing terminal globals forever.
@@ -154,7 +183,10 @@ private:
       for(int i=GlobalVariablesTotal()-1;i>=0;i--)
         {
          string name=GlobalVariableName(i);
-         if(StringFind(name,prefix)!=0)continue;
+         bool qualifiedMarker=(StringFind(name,prefix)==0);
+         string entryPrefix=m_storageKey+".I.";
+         bool entryMarker=(StringFind(name,entryPrefix)==0);
+         if(!qualifiedMarker && !entryMarker)continue;
          double storedAt=GlobalVariableGet(name);
          // Previous versions stored 1.0 as a marker flag without a timestamp.
          // Retire those legacy flags after rollover, as well as expired timestamp markers.
@@ -178,14 +210,16 @@ private:
       double baseline=GlobalVariableGet(BaselineKey(dateKey));
       int markerCount=CountMarkersForDateLocked(dateKey);
       int currentCount=(int)MathMax(0.0,baseline)+(int)MathMax(0,markerCount);
-      bool saved=(GlobalVariableSet(CountKey(dateKey),(double)currentCount)>0);
+      bool winnersSaved=(GlobalVariableSet(CountKey(dateKey),(double)currentCount)>0);
+      int entryCount=CountEntryMarkersForDateLocked(dateKey);
+      bool entriesSaved=(GlobalVariableSet(EntryCountKey(dateKey),(double)entryCount)>0);
       if(pruneOldMarkers)PruneOldMarkersLocked(TimeCurrent());
-      if(saved)GlobalVariablesFlush();
+      if(winnersSaved && entriesSaved)GlobalVariablesFlush();
       ReleaseLock();
 
-      if(!saved)
-         Print("Midas Touch daily target: could not reconcile persisted daily count.");
-      return saved;
+      if(!winnersSaved || !entriesSaved)
+         Print("Midas Touch daily target: could not reconcile both entry and qualified-winner counts.");
+      return (winnersSaved && entriesSaved);
      }
 
    void SyncStoredState()
@@ -198,6 +232,9 @@ private:
         }
       if(GlobalVariableCheck(key))
          m_count=MathMax(0,(int)GlobalVariableGet(key));
+      string entryKey=EntryCountKey(m_dateKey);
+      if(GlobalVariableCheck(entryKey))
+         m_entryCount=MathMax(0,(int)GlobalVariableGet(entryKey));
       if(m_target>0 && m_weekday && m_count>=m_target)m_reported=true;
      }
 
@@ -219,14 +256,18 @@ private:
       m_dateKey=nextKey;
       m_weekday=(t.day_of_week>=1 && t.day_of_week<=5);
       m_count=0;
+      m_entryCount=0;
+      m_lastSearchLogAt=0;
       m_reported=false;
       ReconcileDate(m_dateKey,true);
       SyncStoredState();
      }
 
 public:
-   CDailyTradeTarget():m_target(3),m_count(0),m_dateKey(0),m_weekday(false),
-      m_reported(false),m_minQualifiedR(0.25),m_storageKey(""),m_lockKey(""),m_lockValue(0.0),m_legacyLockSeenAt(0.0),m_reconcilePending(false){}
+   CDailyTradeTarget():m_target(3),m_count(0),m_entryCount(0),m_dateKey(0),
+      m_lastSearchLogAt(0),m_weekday(false),m_reported(false),m_minQualifiedR(0.25),
+      m_storageKey(""),m_lockKey(""),m_lockValue(0.0),m_legacyLockSeenAt(0.0),
+      m_reconcilePending(false){}
 
    void Init(int target,double minQualifiedR,ulong magic)
      {
@@ -236,7 +277,9 @@ public:
       m_storageKey=StringFormat("MT2DT.%I64d.%I64u",AccountInfoInteger(ACCOUNT_LOGIN),magic);
       m_lockKey=m_storageKey+".L";
       m_count=0;
+      m_entryCount=0;
       m_dateKey=0;
+      m_lastSearchLogAt=0;
       m_weekday=false;
       m_reported=false;
       m_lockValue=0.0;
@@ -260,6 +303,45 @@ public:
       SyncStoredState();
       if(m_target>0 && m_weekday && m_count>=m_target)
          PrintFormat("Midas Touch daily qualified-trade target restored: %d/%d.",m_count,m_target);
+     }
+
+   // Count a distinct broker order only after it has at least one actual entry fill.
+   // A unique order marker makes repeated/partial-fill deal callbacks idempotent.
+   void OnEntry(datetime at,ulong orderId)
+     {
+      if(at<=0 || orderId==0 || !IsWeekday(at))return;
+      int entryDateKey=DateKey(at);
+      if(entryDateKey<=0 || !AcquireLock())return;
+
+      string marker=EntryMarker(orderId);
+      if(GlobalVariableCheck(marker))
+        {
+         ReleaseLock();
+         return;
+        }
+
+      if(GlobalVariableSet(marker,(double)at)<=0)
+        {
+         ReleaseLock();
+         Print("Midas Touch daily target: failed to persist executed-entry marker.");
+         return;
+        }
+      GlobalVariablesFlush();
+
+      int entries=CountEntryMarkersForDateLocked(entryDateKey);
+      bool saved=(GlobalVariableSet(EntryCountKey(entryDateKey),(double)entries)>0);
+      if(saved)GlobalVariablesFlush();
+      ReleaseLock();
+
+      if(!saved)
+        {
+         m_reconcilePending=true;
+         Print("Midas Touch daily target: entry marker saved but entry count needs reconciliation.");
+         return;
+        }
+
+      if(entryDateKey==m_dateKey)
+         m_entryCount=entries;
      }
 
    // A count is added only after a complete tracked decision closes profitably
@@ -325,10 +407,25 @@ public:
         }
      }
 
+   // This is telemetry, not an entry gate: setup evaluation continues under the EA's
+   // ordinary session, news, spread, stop, risk, and execution safeguards.
+   void LogSearchProgress()
+     {
+      Rollover();
+      if(!m_weekday || m_target<=0 || m_count>=m_target)return;
+      datetime now=TimeCurrent();
+      if(now<=0 || (m_lastSearchLogAt>0 && now-m_lastSearchLogAt<900))return;
+      m_lastSearchLogAt=now;
+      PrintFormat("Midas Touch daily objective outstanding: executed entries=%d, qualified closed winners=%d/%d (minimum %.2fR); continuing normal setup search, no entries forced.",
+                  m_entryCount,m_count,m_target,m_minQualifiedR);
+     }
+
    void OnTick(){Rollover();}
+   int EntryCountToday(){Rollover();return m_entryCount;}
    int CountToday(){Rollover();return m_count;}
    int Target(){return m_target;}
    int Deficit(){Rollover();return MathMax(0,m_target-m_count);}
+   bool ObjectiveOutstanding(){Rollover();return m_weekday && m_target>0 && m_count<m_target;}
    bool Met(){Rollover();return !m_weekday || m_target<=0 || m_count>=m_target;}
   };
 
