@@ -128,7 +128,9 @@ def paired_mean_test(
     sd = stdev(deltas)
     se = sd / math.sqrt(n)
     if se == 0.0:
-        t_statistic = 0.0
+        # Retain the signed infinite ratio for compatibility, but do not
+        # infer significance from a variance estimate of exactly zero.
+        t_statistic = math.inf if avg > 0.0 else -math.inf if avg < 0.0 else 0.0
         p_value = 1.0
     else:
         t_statistic = avg / se
