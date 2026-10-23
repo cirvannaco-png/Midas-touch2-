@@ -73,6 +73,14 @@ def test_user_requested_small_account_profile_is_explicit_and_prop_firm_stays_ga
     assert "if(!allSecuredAndProfitable)" in ea
     assert "return tracked+1;" in ea
     assert 'AUTOMATED_BLOCKED_ADAPTIVE_OPEN_TRADE_CAP' in ea
+    assert 'AUTOMATED_BLOCKED_SMALL_ACCOUNT_RISK_ADMISSION' in ea
+    assert 'MANUAL_BLOCKED_SMALL_ACCOUNT_RISK_ADMISSION' in ea
+    assert 'AUTOMATED_BLOCKED_BELOW_MINIMUM_RISK' in ea
+    assert 'MANUAL_BLOCKED_BELOW_MINIMUM_RISK' in ea
+    assert 'remaining daily-loss headroom' in ea
+    assert 'remaining peak-drawdown headroom' in ea
+    assert 'if(riskMoney<0.0)' in ea
+    assert 'return (riskR>=0.0 && MathIsValidNumber(riskR));' in ea
     assert "InpPropFirmProfileConfigured=false" in ea
     assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
     assert "small-account risk inputs must be configured before selecting this profile" in policy
