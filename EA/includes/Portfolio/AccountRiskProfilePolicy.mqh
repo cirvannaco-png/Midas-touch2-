@@ -40,7 +40,7 @@ bool ValidateAccountRiskLimits(const AccountRiskLimits &limits,string &reason)
       { reason="riskPercentPerTrade must be finite and positive"; return false; }
    if(limits.riskPercentPerTrade>MIDAS_MAX_RISK_PERCENT_PER_TRADE)
       {
-       reason=StringFormat("riskPercentPerTrade %.2f%% exceeds the hard safety ceiling of %.2f%%; 30%% risk is unsupported",
+       reason=StringFormat("riskPercentPerTrade %.2f%% exceeds the hard safety ceiling of %.2f%%; risk above the configured ceiling is unsupported",
                            limits.riskPercentPerTrade,MIDAS_MAX_RISK_PERCENT_PER_TRADE);
        return false;
       }
