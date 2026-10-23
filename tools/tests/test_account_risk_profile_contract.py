@@ -81,3 +81,14 @@ def test_dynamic_trailing_stop_remains_enabled_by_default() -> None:
     manager = (root / "EA/includes/Execution/PositionManager.mqh").read_text(encoding="utf-8")
     assert "InpEnableDynamicStop = true" in inputs
     assert "if(InpEnableDynamicStop && CanModifyNow(ticket))" in manager
+
+
+def test_dynamic_trailing_stop_cannot_be_disabled_outside_strategy_tester() -> None:
+    root = Path(__file__).resolve().parents[2]
+    ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
+    runtime = ea[ea.index("int OnInit()"):]
+    guard = "if(!InpEnableDynamicStop && !MQLInfoInteger(MQL_TESTER))"
+    assert guard in runtime
+    assert "dynamic trailing stop is mandatory outside the Strategy Tester" in runtime
+    assert "return INIT_PARAMETERS_INCORRECT;" in runtime
+    assert runtime.index(guard) < runtime.index("g_testerDealExport.Init")

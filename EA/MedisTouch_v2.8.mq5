@@ -786,6 +786,13 @@ bool ResolveSelectedAccountRiskProfile()
 
 int OnInit()
   {
+   // Dynamic trailing is mandatory for every attached EA instance. The
+   // Strategy Tester alone may disable it for a controlled matched ablation.
+   if(!InpEnableDynamicStop && !MQLInfoInteger(MQL_TESTER))
+     {
+      Print("Midas Touch: CRITICAL — dynamic trailing stop is mandatory outside the Strategy Tester; refusing to initialize.");
+      return INIT_PARAMETERS_INCORRECT;
+     }
    if(!ResolveSelectedAccountRiskProfile()) return INIT_PARAMETERS_INCORRECT;
    g_testerDealExport.Init(InpTesterExportRunId,_Symbol,InpMagicNumber,
                            (bool)MQLInfoInteger(MQL_TESTER));
