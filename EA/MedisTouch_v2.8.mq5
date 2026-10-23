@@ -607,7 +607,7 @@ bool ReconcileBrokerStateSnapshot()
         }
       double riskMoney=g_risk.RiskAmountForLots(symbol,volume,entry,sl);
       double riskR=0.0;
-      if(!RiskRFromMoney(riskMoney,riskR))
+      if(!RiskRFromMoney(riskMoney,riskR,false))
         {
          allOk=false;
          continue;
