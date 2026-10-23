@@ -26,6 +26,7 @@
 #include "includes/Portfolio/PortfolioManager.mqh"
 #include "includes/Portfolio/RiskGuard.mqh"
 #include "includes/Portfolio/AccountRiskProfilePolicy.mqh"
+#include "includes/Portfolio/OpposingPositionPolicy.mqh"
 #include "includes/Core/NewsFilter.mqh"
 #include "includes/Signals/SubscriberPlatform.mqh"
 #include "includes/Signals/SignalPublisher.mqh"
@@ -1167,8 +1168,7 @@ bool HasOpposingChartSymbolExposure(ENUM_ORDER_TYPE desiredType)
       if(ticket==0 || !PositionSelectByTicket(ticket))continue;
       if(PositionGetString(POSITION_SYMBOL)!=_Symbol)continue;
       ENUM_POSITION_TYPE current=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      if((desiredBuy && current==POSITION_TYPE_SELL) ||
-         (!desiredBuy && current==POSITION_TYPE_BUY))
+      if(MidasIsOpposingPositionDirection(desiredType,current))
          return true;
      }
 
@@ -1178,29 +1178,17 @@ bool HasOpposingChartSymbolExposure(ENUM_ORDER_TYPE desiredType)
       if(ticket==0)continue;
       if(OrderGetString(ORDER_SYMBOL)!=_Symbol)continue;
       ENUM_ORDER_TYPE current=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      bool isBuy=IsOrderBuyDirection(current);
-      bool isSell=(current==ORDER_TYPE_SELL || current==ORDER_TYPE_SELL_LIMIT ||
-                   current==ORDER_TYPE_SELL_STOP || current==ORDER_TYPE_SELL_STOP_LIMIT);
-      if((desiredBuy && isSell) || (!desiredBuy && isBuy))return true;
+      if(MidasIsOpposingOrderDirection(desiredType,current))return true;
      }
    return false;
   }
 
 bool CanOpenDirectionWithExposure(ENUM_ORDER_TYPE desiredType,string &reasonOut)
   {
-   reasonOut="";
-   if(!HasOpposingChartSymbolExposure(desiredType))return true;
-   if(!IsRetailHedgingAccount())
-     {
-      reasonOut="MT5 netting/exchange accounts cannot retain independent opposing positions on the same symbol";
-      return false;
-     }
-   if(!InpAllowConcurrentOpposingPositions)
-     {
-      reasonOut="opposing same-symbol exposure exists; set InpAllowConcurrentOpposingPositions=true to permit hedging explicitly";
-      return false;
-     }
-   return true;
+   return MidasConcurrentOpposingPolicyAllows(
+      (ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE),
+      HasOpposingChartSymbolExposure(desiredType),
+      InpAllowConcurrentOpposingPositions,reasonOut);
   }
 
 // Netting/exchange accounts aggregate all activity for a symbol into one position.
