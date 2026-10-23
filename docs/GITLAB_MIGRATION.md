@@ -101,8 +101,8 @@ The scheduler is implemented in GitHub Actions on the canonical GitHub main bran
 
 Before calling the production engine autonomously active, confirm:
 
-1. BRIDGE_BASE_URL points to the actual deployed bridge and uses HTTPS.
-2. BRIDGE_API_KEY matches the deployed bridge's SECRET_KEY; the workflow never logs this value.
+1. The workflow's configured `https://midas-touch2.onrender.com` URL must match the deployed production service; update the workflow if the service URL changes.
+2. `BRIDGE_API_KEY` matches the deployed bridge's `SECRET_KEY`; the workflow never logs this value.
 3. GitHub Actions shows the maintenance workflow enabled on the default branch, with both cron schedules present.
 4. The latest due recalibration run returned status "ok" and a non-empty cycle_id; a no_data response is not a completed persisted cycle.
 5. A CalibrationCycle record and registered-challenger evaluation can be verified in the production database/logs. Promotions remain gated and may require explicit Telegram approval.
