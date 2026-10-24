@@ -46,9 +46,11 @@ def test_paired_mean_test_reports_positive_consistent_improvement():
     assert result.n == 4
     assert result.mean_delta == pytest.approx(1.0)
     assert result.standard_error == 0.0
+    # A zero-variance sample cannot estimate the sampling distribution.
+    # Preserve the infinite ratio convention but fail closed on significance.
     assert math.isinf(result.t_statistic)
-    assert result.p_value == 0.0
-    assert result.significant is True
+    assert result.p_value == 1.0
+    assert result.significant is False
 
 
 def test_paired_mean_test_does_not_call_a_non_improvement_significant():
