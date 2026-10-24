@@ -55,7 +55,11 @@ on the same chart together.
 
 Compiled `.ex5` output is git-ignored on purpose — build it locally.
 
-## Multi-symbol
+## Multi-symbol portfolio trading (forex, metals, indices, crypto where broker-supported)
+
+The account is intended to take qualified trades across multiple symbols, not just multiple legs on one chart. **Attach one EA instance to each symbol chart you want it to trade** (for example XAUUSD, EURUSD, GBPUSD, USDJPY, and supported indices); this EA build does not independently scan and execute a user-defined watchlist from a single chart. Keep the same `InpMagicNumber` and the same account risk-profile settings across those instances so the portfolio manager can aggregate their open positions and pending orders. The portfolio manager checks existing EA exposure across symbols, applies per-symbol and correlation-group position limits, and enforces the configured account-equity open-risk cap. Do not run instances with inconsistent risk caps or magic numbers if you expect them to share a portfolio budget. Forex pairs can be correlated (for example, several USD exposures), so correlation grouping is deliberately conservative and should be validated against the actual symbols offered by the broker.
+
+“Multiple successful trades” means the EA should keep evaluating valid setups on all enabled symbol charts and record winners separately; it cannot guarantee a specific number of profitable trades. Each entry must still pass strategy qualification, session/news/spread checks, protective-stop validation, execution-ledger health, and portfolio risk gates. The daily target is an objective, never a reason to force an entry.
 
 Nothing in the engine is XAUUSD-specific: pip/point sizing
 (`Core/PipCalculator.mqh`) is derived from broker symbol properties, and
