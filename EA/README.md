@@ -1,7 +1,8 @@
-# EA — MedisTouch v2.8 (MQL5)
+# EA — Midas Touch 2 (MQL5; packaged build 2.81)
 
-MetaTrader 5 source for the Medis Touch engine. The backend that receives
-its signals lives in [`../telegram-bridge`](../telegram-bridge).
+The authoritative package version is recorded in the repository-root [`VERSION`](../VERSION) file and must match the `#property version` metadata in both MQL5 artifacts. The filenames retain the legacy `v2.8` suffix because packaging, install instructions, and tooling reference those exact paths; do not rename them outside an atomic source + tooling + CI migration.
+
+MetaTrader 5 source for the Midas Touch 2 engine. The backend that receives its signals lives in [`../telegram-bridge`](../telegram-bridge).
 
 ## Layout
 
@@ -27,8 +28,8 @@ EA/
     └── UI/                          # Dashboard, Visuals (indicator only)
 ```
 
-The three facade headers are the stable include paths for the v2.8
-additions. They only `#include` the real implementation next to the
+The three facade headers are stable include paths for the historical v2.8
+additions; this label does not identify the current packaged build version. They only `#include` the real implementation next to the
 concepts it depends on, so the internal folder layout can move without
 breaking call sites. Every underlying header has an include guard, so
 including a facade and the concrete header together is safe.
