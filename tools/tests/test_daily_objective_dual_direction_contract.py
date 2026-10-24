@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 EA = ROOT / "EA" / "MedisTouch_v2.8.mq5"
 DAILY = ROOT / "EA" / "includes" / "Trading" / "DailyTradeTarget.mqh"
 README = ROOT / "EA" / "README.md"
+PORTFOLIO = ROOT / "EA" / "includes" / "Portfolio" / "PortfolioManager.mqh"
 POLICY = ROOT / "EA" / "includes" / "Portfolio" / "OpposingPositionPolicy.mqh"
 
 
@@ -66,3 +67,18 @@ def test_both_directions_remain_eligible_and_daily_goal_does_not_override_safety
     assert "if(InpUseNewsFilter&&g_newsFilter.IsLocked(newsReason))return;" in ea
     assert "if(!IsConfiguredSessionAllowed())" in ea
     assert "g_portfolio.AllowNewTradeBatch(_Symbol,totalProposedRisk,plan.legCount,block)" in ea
+
+
+def test_multi_symbol_trading_uses_chart_instances_and_shared_portfolio_limits():
+    ea = read(EA)
+    readme = read(README)
+    portfolio = read(PORTFOLIO)
+    assert "Attach one EA instance to each symbol chart" in readme
+    assert "same `InpMagicNumber`" in readme
+    assert "for(int i=0;i<PositionsTotal();i++)" in portfolio
+    assert "for(int i=0;i<OrdersTotal();i++)" in portfolio
+    assert "CorrelationGroup(posSymbol)==group" in portfolio
+    assert "m_maxPositionsPerSymbol" in portfolio
+    assert "m_maxPositionsPerGroup" in portfolio
+    assert "m_maxPortfolioRiskPercent" in portfolio
+    assert "InpAllowConcurrentOpposingPositions=true;" in ea
