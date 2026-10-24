@@ -16,6 +16,8 @@ def test_production_maintenance_has_health_preflight_and_strict_cycle_identity()
     assert "not cycle_id.strip()" in workflow
     assert "GITHUB_STEP_SUMMARY" in workflow
     assert "--retry 0" in workflow
+    assert workflow.count("for attempt in 1 2 3 4 5; do") >= 3
+    assert workflow.count("retrying a read-only GET") >= 3
 
 
 def test_delivery_recovery_schedule_and_contract_are_wired():
