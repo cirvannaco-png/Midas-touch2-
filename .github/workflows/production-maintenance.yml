@@ -166,10 +166,27 @@ jobs:
           set -euo pipefail
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
-          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-            --request GET --connect-timeout 8 --max-time 15 --retry 0 \
-            "${BRIDGE_BASE_URL%/}/health/db")"; then
-            echo "::error::Bridge health preflight failed; no maintenance POST was attempted."
+          http_code="000"
+          for attempt in 1 2 3 4 5; do
+            if http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+              --request GET --connect-timeout 8 --max-time 15 --retry 0 \
+              "${BRIDGE_BASE_URL%/}/health/db")"; then
+              case "$http_code" in
+                2*) break ;;
+              esac
+            else
+              http_code="000"
+            fi
+            if [[ "$http_code" == "000" || "$http_code" =~ ^5[0-9][0-9]$ ]] && [[ "$attempt" -lt 5 ]]; then
+              echo "Bridge health transport/server failure (attempt ${attempt}/5); retrying a read-only GET."
+              sleep 5
+              continue
+            fi
+            echo "::error::Bridge health preflight returned HTTP $http_code; no maintenance POST was attempted."
+            exit 1
+          done
+          if [[ "$http_code" != 2* ]]; then
+            echo "::error::Bridge health preflight never returned a successful 2xx response; no maintenance POST was attempted."
             exit 1
           fi
           case "$http_code" in
@@ -299,10 +316,27 @@ jobs:
           set -euo pipefail
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
-          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-            --request GET --connect-timeout 8 --max-time 15 --retry 0 \
-            "${BRIDGE_BASE_URL%/}/health/db")"; then
-            echo "::error::Bridge health preflight failed; no subscription POST was attempted."
+          http_code="000"
+          for attempt in 1 2 3 4 5; do
+            if http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+              --request GET --connect-timeout 8 --max-time 15 --retry 0 \
+              "${BRIDGE_BASE_URL%/}/health/db")"; then
+              case "$http_code" in
+                2*) break ;;
+              esac
+            else
+              http_code="000"
+            fi
+            if [[ "$http_code" == "000" || "$http_code" =~ ^5[0-9][0-9]$ ]] && [[ "$attempt" -lt 5 ]]; then
+              echo "Bridge health transport/server failure (attempt ${attempt}/5); retrying a read-only GET."
+              sleep 5
+              continue
+            fi
+            echo "::error::Bridge health preflight returned HTTP $http_code; no maintenance POST was attempted."
+            exit 1
+          done
+          if [[ "$http_code" != 2* ]]; then
+            echo "::error::Bridge health preflight never returned a successful 2xx response; no maintenance POST was attempted."
             exit 1
           fi
           case "$http_code" in
@@ -417,10 +451,27 @@ jobs:
           set -euo pipefail
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
-          if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-            --request GET --connect-timeout 8 --max-time 15 --retry 0 \
-            "${BRIDGE_BASE_URL%/}/health/db")"; then
-            echo "::error::Recovery preflight failed; no recovery POST was attempted."
+          http_code="000"
+          for attempt in 1 2 3 4 5; do
+            if http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+              --request GET --connect-timeout 8 --max-time 15 --retry 0 \
+              "${BRIDGE_BASE_URL%/}/health/db")"; then
+              case "$http_code" in
+                2*) break ;;
+              esac
+            else
+              http_code="000"
+            fi
+            if [[ "$http_code" == "000" || "$http_code" =~ ^5[0-9][0-9]$ ]] && [[ "$attempt" -lt 5 ]]; then
+              echo "Bridge health transport/server failure (attempt ${attempt}/5); retrying a read-only GET."
+              sleep 5
+              continue
+            fi
+            echo "::error::Bridge health preflight returned HTTP $http_code; no maintenance POST was attempted."
+            exit 1
+          done
+          if [[ "$http_code" != 2* ]]; then
+            echo "::error::Bridge health preflight never returned a successful 2xx response; no maintenance POST was attempted."
             exit 1
           fi
           case "$http_code" in
