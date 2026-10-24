@@ -44,11 +44,11 @@ def test_qualified_winner_tracking_is_not_disabled_only_because_account_is_netti
     assert "qualifiedTradeTrackingSupported=InpTrackOutcomes && InpEnableExecution && ((ENUM_ACCOUNT_MARGIN_MODE)" not in ea
 
 
-def test_concurrent_opposing_positions_require_explicit_input_and_retail_hedging():
+def test_concurrent_opposing_positions_default_on_but_require_retail_hedging():
     ea = read(EA)
     policy = read(POLICY)
     readme = read(README)
-    assert "input bool InpAllowConcurrentOpposingPositions=false;" in ea
+    assert "input bool InpAllowConcurrentOpposingPositions=true;" in ea
     assert "bool IsRetailHedgingAccount()" in ea
     assert "MT5 netting/exchange accounts cannot retain independent opposing positions on the same symbol" in policy
     assert "if(!explicitlyEnabled)" in policy
