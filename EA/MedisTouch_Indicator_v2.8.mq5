@@ -3,7 +3,7 @@
 //|                                            Medis Touch Indicator  |
 //+------------------------------------------------------------------+
 #property copyright "Medis Touch"
-#property version   "2.80"
+#property version   "2.81"
 #property indicator_chart_window
 #property indicator_buffers 0
 #property indicator_plots   0
