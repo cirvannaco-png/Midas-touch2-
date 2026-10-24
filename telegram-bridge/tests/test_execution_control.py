@@ -511,3 +511,68 @@ async def test_sent_intent_releases_risk_only_with_proof_no_broker_call_was_atte
             assert reservation.status == "RELEASED"
     finally:
         await engine.dispose()
+
+@pytest.mark.asyncio
+async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            request_id, heat, over_limit = await reconcile_open_position(
+                session,
+                portfolio_key="Exness:123:magic-79",
+                request_id="brokerpos:Exness:123:magic-79:9003",
+                broker_position_id="9003",
+                broker_order_id="8003",
+                broker_deal_id="7006",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=0.0,
+                volatility=0.4,
+                factors={"usd": 0.0},
+                evidence_ref="mt5-breakeven-position:9003",
+            )
+            assert request_id == "brokerpos:Exness:123:magic-79:9003"
+            assert heat == 0.0
+            assert not over_limit
+            await session.commit()
+
+        async with factory() as session:
+            updated = await update_position_risk(
+                session,
+                portfolio_key="Exness:123:magic-79",
+                broker_position_id="9003",
+                direction="BUY",
+                risk_r=0.0,
+                volatility=0.3,
+                factors={"usd": 0.0},
+                evidence_ref="mt5-breakeven-stop:9003",
+            )
+            assert updated
+            await session.commit()
+
+        async with factory() as session:
+            reservation = await session.scalar(
+                select(PortfolioReservation).where(
+                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-79:9003"
+                )
+            )
+            assert reservation is not None
+            assert reservation.status == "ACTIVE"
+            assert reservation.risk_r == 0.0
+
+        async with factory() as session:
+            with pytest.raises(ValueError, match="greater than zero"):
+                await reserve_execution(
+                    session,
+                    portfolio_key="Exness:123:magic-79",
+                    request_id="must-not-reserve-zero-risk",
+                    signal_id="signal-zero-risk",
+                    symbol="EURUSD",
+                    direction="BUY",
+                    risk_r=0.0,
+                    volatility=0.0,
+                    factors={},
+                )
+            await session.rollback()
+    finally:
+        await engine.dispose()

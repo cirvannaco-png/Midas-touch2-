@@ -16,9 +16,9 @@ def test_automated_and_manual_orders_use_the_resolved_profile() -> None:
     assert "g_orders.Init(&g_broker,g_activeRiskLimits.maxOpenTrades" in runtime
     assert "g_portfolio.Init(g_activeRiskLimits.maxPortfolioRiskPercent,g_activeRiskLimits.maxPositionsPerSymbol,g_activeRiskLimits.maxPositionsPerGroup" in runtime
     assert "g_riskGuard.Init(_Symbol,g_activeRiskLimits.maxDailyLossPercent,g_activeRiskLimits.maxDrawdownPercent,g_activeRiskLimits.deriskStartPercent,g_activeRiskLimits.deriskFloor,InpEnableProgressiveDailyLossDeRisk)" in runtime
-    assert "availableSlots=g_activeRiskLimits.maxOpenTrades-g_orders.OpenCount()" in runtime
+    assert "availableSlots=EffectiveMaxOpenTrades()-g_orders.OpenCount()" in runtime
     assert "CalculateLotSize(_Symbol,g_activeRiskLimits.riskPercentPerTrade*fraction" in runtime
-    assert "if(g_orders.OpenCount()>=g_activeRiskLimits.maxOpenTrades)" in runtime
+    assert "if(g_orders.OpenCount()>=EffectiveMaxOpenTrades())" in runtime
     assert "CalculateLotSize(_Symbol,g_activeRiskLimits.riskPercentPerTrade,entry,setup.stop_loss" in runtime
     # Raw legacy inputs must not bypass resolution after OnInit begins. They remain
     # available only as backward-compatible inputs consumed by the resolver above it.
@@ -52,16 +52,37 @@ def test_startup_ledger_reconciliation_uses_selected_profile_risk() -> None:
     assert "InpRiskPercentPerTrade" not in reconciliation
 
 
-def test_safe_small_account_preset_is_explicit_and_prop_firm_stays_gated() -> None:
+def test_user_requested_small_account_profile_is_explicit_and_prop_firm_stays_gated() -> None:
     root = Path(__file__).resolve().parents[2]
     ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
     policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
     assert "InpSmallAccountProfileConfigured=true" in ea
-    assert "InpSmallRiskPercentPerTrade=0.5" in ea
-    assert "InpSmallMaxOpenTrades=1" in ea
-    assert "InpSmallMaxDailyLossPercent=1.5" in ea
-    assert "InpSmallMaxDrawdownPercent=5.0" in ea
-    assert "InpSmallMaxPortfolioRiskPercent=0.5" in ea
+    assert "InpSmallMinimumRiskPercentPerTrade=15.0" in ea
+    assert "InpSmallRiskPercentPerTrade=20.0" in ea
+    assert "InpSmallMaxOpenTrades=3" in ea
+    assert "InpSmallMaxDailyLossPercent=25.0" in ea
+    assert "InpSmallMaxDrawdownPercent=35.0" in ea
+    assert "InpSmallDeriskFloor=0.75" in ea
+    assert "InpSmallMaxPortfolioRiskPercent=20.0" in ea
+    assert "InpSmallMaxPositionsPerSymbol=3" in ea
+    assert "InpSmallMaxPositionsPerGroup=3" in ea
+    assert "InpSmallRiskPercentPerTrade*InpSmallDeriskFloor+0.000001<InpSmallMinimumRiskPercentPerTrade" in ea
+    assert "MIDAS_SMALL_ACCOUNT_MIN_RISK_PERCENT_PER_TRADE" in policy
+    assert "EffectiveMaxOpenTrades()-g_orders.OpenCount()" in ea
+    assert "return (activePositions>0 ? 0 : 1);" in ea
+    assert "if(!allSecuredAndProfitable)" in ea
+    assert "return tracked+1;" in ea
+    assert 'AUTOMATED_BLOCKED_ADAPTIVE_OPEN_TRADE_CAP' in ea
+    assert 'AUTOMATED_BLOCKED_SMALL_ACCOUNT_RISK_ADMISSION' in ea
+    assert 'MANUAL_BLOCKED_SMALL_ACCOUNT_RISK_ADMISSION' in ea
+    assert 'AUTOMATED_BLOCKED_BELOW_MINIMUM_RISK' in ea
+    assert "combined execution plan yields" in ea
+    assert "achievedRiskPercent+0.000001<InpSmallMinimumRiskPercentPerTrade" in ea
+    assert 'MANUAL_BLOCKED_BELOW_MINIMUM_RISK' in ea
+    assert 'remaining daily-loss headroom' in ea
+    assert 'remaining peak-drawdown headroom' in ea
+    assert 'riskMoney<0.0 || (riskMoney==0.0 && !allowZero)' in ea
+    assert 'return (MathIsValidNumber(riskR) && (allowZero ? riskR>=0.0 : riskR>0.0));' in ea
     assert "InpPropFirmProfileConfigured=false" in ea
     assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
     assert "small-account risk inputs must be configured before selecting this profile" in policy
@@ -71,7 +92,7 @@ def test_hard_risk_ceiling_is_shared_by_policy_and_lot_sizing() -> None:
     root = Path(__file__).resolve().parents[2]
     policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
     engine = (root / "EA/includes/Trading/RiskEngine.mqh").read_text(encoding="utf-8")
-    assert "#define MIDAS_MAX_RISK_PERCENT_PER_TRADE 2.0" in policy
+    assert "#define MIDAS_MAX_RISK_PERCENT_PER_TRADE 20.0" in policy
     assert "limits.riskPercentPerTrade>MIDAS_MAX_RISK_PERCENT_PER_TRADE" in policy
     assert "riskPercent>MIDAS_MAX_RISK_PERCENT_PER_TRADE" in engine
 

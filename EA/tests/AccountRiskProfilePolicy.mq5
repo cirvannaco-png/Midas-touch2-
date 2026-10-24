@@ -41,10 +41,14 @@ int OnInit()
       "30 percent per-trade risk is rejected by the hard safety ceiling");
    AssertTrue(StringFind(reason,"hard safety ceiling")>=0,
       "excessive risk reports the hard-ceiling remediation");
-   SetLimits(unsafeRisk,2.0,3,3.0,10.0,5.0,0.25,3.0,3,3);
+   SetLimits(unsafeRisk,20.0,3,25.0,35.0,10.0,0.75,20.0,3,3);
    reason="";
    AssertTrue(ValidateAccountRiskLimits(unsafeRisk,reason),
-      "risk at the 2 percent hard ceiling remains valid when other limits are coherent");
+      "risk at the 20 percent hard ceiling remains valid when other limits are coherent");
+   SetLimits(unsafeRisk,20.01,3,30.0,40.0,10.0,0.75,20.01,3,3);
+   reason="";
+   AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
+      "risk above the 20 percent hard ceiling is rejected");
 
    AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_LEGACY_INPUTS,
       legacy,smallAccount,propFirm,selected,reason),"legacy profile resolves");

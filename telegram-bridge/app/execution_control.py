@@ -37,8 +37,17 @@ async def _portfolio_lock(session: AsyncSession, portfolio_key: str) -> None:
         )
 
 
-def _validate_risk(risk_r: float, volatility: float, factors: dict[str, float]) -> None:
-    if not math.isfinite(risk_r) or risk_r <= 0:
+def _validate_risk(
+    risk_r: float,
+    volatility: float,
+    factors: dict[str, float],
+    *,
+    allow_zero: bool = False,
+) -> None:
+    lower_bound_invalid = risk_r < 0 if allow_zero else risk_r <= 0
+    if not math.isfinite(risk_r) or lower_bound_invalid:
+        if allow_zero:
+            raise ValueError("risk_r must be finite and non-negative")
         raise ValueError("risk_r must be finite and greater than zero")
     if not math.isfinite(volatility) or volatility < 0:
         raise ValueError("volatility must be finite and non-negative")
@@ -365,7 +374,7 @@ async def reconcile_open_position(
         raise ValueError("request_id must be 1-128 characters")
     if not broker_position_id or not evidence_ref:
         raise ValueError("broker_position_id and evidence_ref are required")
-    _validate_risk(risk_r, volatility, factors)
+    _validate_risk(risk_r, volatility, factors, allow_zero=True)
     await _portfolio_lock(session, portfolio_key)
 
     row = await _lookup_broker_record(
@@ -478,7 +487,7 @@ async def update_position_risk(
     factors: dict[str, float],
     evidence_ref: str,
 ) -> bool:
-    _validate_risk(risk_r, volatility, factors)
+    _validate_risk(risk_r, volatility, factors, allow_zero=True)
     if not evidence_ref:
         raise ValueError("evidence_ref is required")
     await _portfolio_lock(session, portfolio_key)

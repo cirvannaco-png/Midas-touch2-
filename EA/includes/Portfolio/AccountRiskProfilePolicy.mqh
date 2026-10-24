@@ -5,10 +5,11 @@
 #ifndef ACCOUNTRISKPROFILEPOLICY_MQH
 #define ACCOUNTRISKPROFILEPOLICY_MQH
 
-// Absolute safety ceiling shared by profile validation and the lot-sizing engine.
-// A per-trade loss budget above 2% is unsupported; in particular, 30% risk
-// is rejected regardless of how the daily/portfolio limits are edited.
-#define MIDAS_MAX_RISK_PERCENT_PER_TRADE 2.0
+// Absolute hard ceiling shared by profile validation and lot sizing.
+// The user-requested small-account profile targets 20% of equity per trade;
+// larger percentages remain rejected regardless of daily/portfolio limits.
+#define MIDAS_MAX_RISK_PERCENT_PER_TRADE 20.0
+#define MIDAS_SMALL_ACCOUNT_MIN_RISK_PERCENT_PER_TRADE 15.0
 
 enum ENUM_ACCOUNT_RISK_PROFILE
   {
@@ -39,7 +40,7 @@ bool ValidateAccountRiskLimits(const AccountRiskLimits &limits,string &reason)
       { reason="riskPercentPerTrade must be finite and positive"; return false; }
    if(limits.riskPercentPerTrade>MIDAS_MAX_RISK_PERCENT_PER_TRADE)
       {
-       reason=StringFormat("riskPercentPerTrade %.2f%% exceeds the hard safety ceiling of %.2f%%; 30%% risk is unsupported",
+       reason=StringFormat("riskPercentPerTrade %.2f%% exceeds the hard safety ceiling of %.2f%%; risk above the configured ceiling is unsupported",
                            limits.riskPercentPerTrade,MIDAS_MAX_RISK_PERCENT_PER_TRADE);
        return false;
       }

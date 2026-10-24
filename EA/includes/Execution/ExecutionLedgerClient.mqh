@@ -131,7 +131,7 @@ public:
                      const double volatility,const string evidenceRef,
                      const string requestIdOverride="")
      {
-      if(!m_ready || positionIdentifier==0 || riskR<=0.0 || !MathIsValidNumber(riskR)) return false;
+      if(!m_ready || positionIdentifier==0 || riskR<0.0 || !MathIsValidNumber(riskR)) return false;
       string requestId=requestIdOverride;
       if(StringLen(requestId)==0) requestId=RequestIdForPosition(positionIdentifier);
       string orderIdJson=(orderId>0)?StringFormat("\"%I64u\"",orderId):"null";
@@ -160,7 +160,7 @@ public:
    bool UpdatePositionRisk(const ulong positionIdentifier,const string direction,
                            const double riskR,const double volatility,const string evidenceRef)
      {
-      if(!m_ready || positionIdentifier==0 || riskR<=0.0 || !MathIsValidNumber(riskR)) return false;
+      if(!m_ready || positionIdentifier==0 || riskR<0.0 || !MathIsValidNumber(riskR)) return false;
       string payload=StringFormat(
          "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
          JsonSafe(m_portfolioKey),positionIdentifier,JsonSafe(direction),riskR,
@@ -211,7 +211,7 @@ public:
          !MathIsValidNumber(remainingVolume) || !MathIsValidNumber(riskR) ||
          !MathIsValidNumber(volatility) || remainingVolume<0.0 || riskR<0.0 || volatility<0.0)
          return false;
-      if(positionOpen && (remainingVolume<=0.0 || riskR<=0.0)) return false;
+      if(positionOpen && (remainingVolume<=0.0 || riskR<0.0)) return false;
       string payload=StringFormat(
          "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_deal_id\":\"%I64u\",\"broker_order_id\":\"%I64u\",\"broker_position_id\":\"%I64u\",\"symbol\":\"%s\",\"entry_type\":\"%s\",\"deal_type\":\"%s\",\"direction\":\"%s\",\"volume\":%.8f,\"price\":%.8f,\"profit_cashflow\":%.8f,\"commission_cashflow\":%.8f,\"swap_cashflow\":%.8f,\"fee_cashflow\":%.8f,\"cashflows_known\":%s,\"position_open\":%s,\"remaining_volume\":%.8f,\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),dealId,orderId,positionIdentifier,
