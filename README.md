@@ -4,11 +4,15 @@ Midas Touch is an MT5 Expert Advisor (EA) suite with a FastAPI Telegram signal b
 
 **Operational status is evidence-gated.** Source code, successful CI, and a live Render deployment do not by themselves prove production readiness. Do not enable live trading until the exact EA build compiles, the configured bridge reports a healthy live database and authenticated execution ledger, broker-side orders reconcile with the ledger, and Exness demo forward-testing plus emergency-stop/restart recovery pass. See [the production readiness audit](docs/PRODUCTION_READINESS_AUDIT_2026-10-22.md).
 
+**Performance gate:** cost-inclusive positive net expectancy has not been demonstrated. The 87% win-rate and 600% return figures are unvalidated targets, not achieved results. Do not enable live trading until the evidence gates in `docs/PRODUCTION_READINESS_AUDIT_2026-10-22.md` pass.
+
+**Canonical source and deployment map:** see [`docs/SOURCE_OF_TRUTH_AND_RELEASE_IDENTITY.md`](docs/SOURCE_OF_TRUTH_AND_RELEASE_IDENTITY.md). The GitHub repository `cirvannaco-png/Midas-touch2-`, `main` branch, and root `render.yaml` are canonical; GitLab is secondary and must not independently drive production deployment.
+
 ## Subprojects
 
 | Directory | What it is |
 |-----------|------------|
-| [`EA/`](EA/) | MQL5 source for Midas Touch (v2.10 engine) — Expert Advisor, indicator, and the `includes/` engine tree |
+| [`EA/`](EA/) | MQL5 Expert Advisor and indicator source for Midas Touch 2; packaged build metadata is 2.81, while the filenames retain their legacy `v2.8` suffix |
 | [`tools/`](tools/) | CI include-tree validator, offline confidence-model comparison script, and the trade-tagging recalibration suite (`metrics_engine.py`, `calibration_matrix.py`, `gating.py`, `stats.py`) — copied into the bridge's Docker image and driven in production by `telegram-bridge/app/calibration.py`; also runnable standalone against the production DB for ad-hoc reports |
 | [`mql5/`](mql5/) | Legacy placeholder tree mirroring the MT5 terminal layout (Experts / Include / Scripts) |
 | [`telegram-bridge/`](telegram-bridge/) | Production FastAPI service: receives signals from the EA and posts them to Telegram |
@@ -58,8 +62,11 @@ See [`telegram-bridge/README.md`](telegram-bridge/README.md) for full environmen
 - **medis_touch**: non-production Midas Touch reference/handbook implementation. It intentionally contains incomplete integrations and must not be treated as the live trading runtime.
 - **EA/**: the EA (`MedisTouch_v2.8.mq5`), the visuals-only indicator
   (`MedisTouch_Indicator_v2.8.mq5`) and the full `includes/` engine tree.
-  Filenames still say v2.8; the engine inside is **v2.10**. Compiled `.ex5`
-  output is git-ignored; build it in MetaEditor. CI runs a structural check
+  Both compiled-source metadata declarations and root `VERSION` identify the
+  packaged build as **2.81**. The `v2.8` filename suffix is a compatibility
+  path, not the current build version. Changelog headings such as `v2.21`
+  identify historical feature milestones, not the packaged artifact version.
+  Compiled `.ex5` output is git-ignored; build it in MetaEditor. CI runs a structural check
   on every push (see `EA/README.md`).
 - **Small-account risk**: default inputs now select a conservative small-account profile (0.5% per trade, one open position, 1.5% daily-loss limit, 5% hard drawdown limit, and 0.5% portfolio open-risk cap). The EA enforces a hard 2% per-trade ceiling; 30% risk is rejected. Broker minimum-volume constraints may still legitimately block entries when the KSh 1,500 account is too small for the symbol and stop distance.\n- **Confidence engine**: **v2.10 is diagnostic-only.** The contradiction /
   environment / execution model and the confidence decay are computed and
