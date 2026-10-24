@@ -21,14 +21,14 @@ For an isolated demo capability test only, explicitly configure a valid profile 
 
 Record the Experts/Journal logs, execution-audit CSV, broker deal history, position tickets, SL/TP and order/position identifiers for every step.
 
-1. **Default-off check:** set `InpAllowConcurrentOpposingPositions=false`. When a valid opposite-side entry is attempted while a same-symbol position exists, it must be blocked with `AUTOMATED_BLOCKED_OPPOSING_EXPOSURE` or `MANUAL_BLOCKED_OPPOSING_EXPOSURE`; there must be no second opposite ticket.
+1. **Default-on hedging check:** confirm `InpAllowConcurrentOpposingPositions=true` is the shipped default. On a verified retail-hedging demo, a separately authorized valid opposite-side entry may open a second independent ticket only if every strategy, stop, ledger and portfolio-risk gate passes. If any gate fails, it must be blocked and logged; default-on must not force an entry.
 2. **Netting fail-closed check:** on a separate netting demo account, request the input on but keep existing same-symbol exposure. The EA must refuse the additional entry and must not claim both sides are independently open.
 3. **Hedging buy-then-sell check:** on the verified hedging demo, enable the input and configured two-position risk envelope. Open one small BUY, then a separately authorized valid SELL. Verify two distinct position identifiers/tickets, the expected direction of each, separate SL/TP, separate ledger attribution, and aggregate stop risk within the configured portfolio cap.
 4. **Hedging sell-then-buy check:** reverse the sequence. Verify the same properties in the opposite order.
 5. **Trailing-stop check:** allow a position to pass the configured stop-activation condition, then confirm the broker SL modification is accepted per ticket. Verify a tighter stop is never widened, and one position's update is not applied to the other ticket.
 6. **Partial close and restart:** on demo only, execute a supported partial close and restart the EA/terminal. Confirm each remaining position is reconciled once, its SL is still present, position ownership is not cross-bound, and entry/exit deals are not duplicated in the ledger.
 7. **Risk-cap rejection:** construct a candidate whose addition would breach the open-risk or position limit. It must be rejected; the daily trade target must not bypass the rejection.
-8. **Disable / emergency stop:** turn the input off while opposite positions already exist. Verify no new opposite entry is admitted; do not assume existing positions are automatically closed. Trigger the emergency stop and verify new entry admission stays blocked after restart.
+8. **Opt-out / emergency stop:** set the input false and verify no new opposite entry is admitted; do not assume existing positions are automatically closed. Trigger the emergency stop and verify new entry admission stays blocked after restart.
 
 ## 4. Acceptance criteria
 
