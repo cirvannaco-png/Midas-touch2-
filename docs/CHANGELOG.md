@@ -1,5 +1,7 @@
 # Changelog
 
+> **Versioning contract:** headings such as `v2.21` and `v2.20` are legacy feature-milestone labels, not the packaged MQL5 release identifier. The authoritative package version is the root `VERSION` file and must match `#property version` in both EA and indicator source files. Artifact evidence must additionally record the exact Git commit SHA and compiled `.ex5` checksum.
+
 ## v2.21 — Multi-asset policy hardening
 
 ### Fixed
