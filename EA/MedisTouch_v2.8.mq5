@@ -237,7 +237,7 @@ input double InpMultiTradeMinRawConfidence=85.0;
 input int InpMultiTradeMinCalibrationSample=30;
 input bool InpRequireHedgingForMultiTrade=true;
 input group "Opposing positions — explicit hedge mode"
-input bool InpAllowConcurrentOpposingPositions=false; // Simultaneous long/short on the same symbol is allowed only on MT5 retail-hedging accounts.
+input bool InpAllowConcurrentOpposingPositions=true; // Requested default: simultaneous long/short only on MT5 retail-hedging accounts; netting remains fail-closed.
 input double InpMultiTradeDualLeg0RiskFraction=0.60;
 input double InpMultiTradeDualLeg1RiskFraction=0.40;
 input double InpMultiTradeTripleLeg0RiskFraction=0.50;
