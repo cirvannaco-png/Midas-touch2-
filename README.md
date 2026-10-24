@@ -6,6 +6,8 @@ Midas Touch is an MT5 Expert Advisor (EA) suite with a FastAPI Telegram signal b
 
 **Performance gate:** cost-inclusive positive net expectancy has not been demonstrated. The 87% win-rate and 600% return figures are unvalidated targets, not achieved results. Do not enable live trading until the evidence gates in `docs/PRODUCTION_READINESS_AUDIT_2026-10-22.md` pass.
 
+The latest reproducible research summary, including incomplete runs and attribution mismatches, is recorded in [`docs/RESEARCH_EVIDENCE_AUDIT_2026-10-24.md`](docs/RESEARCH_EVIDENCE_AUDIT_2026-10-24.md). Those StrategyTune results are research proxies, not the MT5 EA, and do not prove after-cost profitability.
+
 **Canonical source and deployment map:** see [`docs/SOURCE_OF_TRUTH_AND_RELEASE_IDENTITY.md`](docs/SOURCE_OF_TRUTH_AND_RELEASE_IDENTITY.md). The GitHub repository `cirvannaco-png/Midas-touch2-`, `main` branch, and root `render.yaml` are canonical; GitLab is secondary and must not independently drive production deployment.
 
 ## Subprojects
