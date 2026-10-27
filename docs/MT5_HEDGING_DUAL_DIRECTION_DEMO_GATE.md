@@ -13,9 +13,11 @@ Status: **not yet run against an Exness demo terminal**. CI tests below exercise
 
 ## 2. Risk-profile constraint
 
-The requested small-account profile uses a 20% per-trade target, a 15% drawdown-de-risk floor, a three-position configured ceiling, and a 20% portfolio open-risk cap. The relevant EA inputs are `InpSmallMinimumRiskPercentPerTrade=15.0`, `InpSmallRiskPercentPerTrade=20.0`, and `InpSmallMaxOpenTrades=3`. Runtime concurrency starts at one and expands only when every existing chart-symbol position is floating-positive and its stop is at or beyond breakeven. These settings are materially higher-risk than the prior baseline and are not validated for live use. **Do not test or enable this profile on live capital.**
+**Small account — default:** the KSh 1,500 account uses the conservative small-account profile: 0.5% planned stop risk per trade (KSh 7.50 at KSh 1,500 equity), one open position, 1.5% daily-loss cap, 5% hard drawdown cap, and 0.5% portfolio open-risk cap. This profile deliberately cannot open simultaneous opposing positions; its maximum is one trade.
 
-For an isolated demo capability test only, explicitly configure a valid profile that permits two positions on the same symbol. The open-risk cap must cover both stop-risk amounts while remaining at or below the daily-loss cap. Keep each stop-defined trade risk small, do not enable minimum-lot overrides, and abort if the broker minimum lot exceeds the configured risk. Profile validation, aggregate portfolio risk and max-position controls are expected to block any configuration that does not satisfy these constraints.
+**Large account — separate high-risk profile:** `ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT` (enum 3) retains `InpLargeMinimumRiskPercentPerTrade=15.0`, `InpLargeRiskPercentPerTrade=20.0`, three configured positions, 25% daily-loss cap, 35% hard drawdown cap, and 20% portfolio open-risk cap. This profile is not for the KSh 1,500 account and must not be selected on live capital while the validation gates remain open.
+
+For opposing-position capability testing, use a dedicated Exness demo hedging account and isolate the test from all live funds. The two-direction test must use an explicitly reviewed demo preset with coherent risk caps; do not simply select the large-account 15–20% profile to bypass the small-account one-position ceiling. If no dedicated low-risk demo test preset is available, mark the hedging scenario **not exercised** until one exists. Do not enable minimum-lot overrides, and abort whenever broker volume would breach the approved stop-risk budget.
 
 ## 3. Required demo scenarios
 
