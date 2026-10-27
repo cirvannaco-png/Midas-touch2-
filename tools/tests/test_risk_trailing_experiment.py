@@ -315,7 +315,7 @@ def test_large_account_profile_selector_and_research_arms_are_supported(tmp_path
                 "InpLargeMaxPositionsPerGroup": "5",
             })
         preset_path.write_text(
-            "".join(f"{key}={value}\\n" for key, value in values.items()),
+            "".join(f"{key}={value}\n" for key, value in values.items()),
             encoding="utf-8",
         )
     manifest.write_text(json.dumps(payload), encoding="utf-8")
