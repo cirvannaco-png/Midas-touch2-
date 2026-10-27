@@ -13,9 +13,9 @@ Status: **not yet run against an Exness demo terminal**. CI tests below exercise
 
 ## 2. Risk-profile constraint
 
-**Small account — default:** the KSh 1,500 account uses the conservative small-account profile: 0.5% planned stop risk per trade (KSh 7.50 at KSh 1,500 equity), one open position, 1.5% daily-loss cap, 5% hard drawdown cap, and 0.5% portfolio open-risk cap. This profile deliberately cannot open simultaneous opposing positions; its maximum is one trade.
+**Small account — default:** the KSh 1,500 account uses the conservative small-account profile: `InpSmallRiskPercentPerTrade=0.5` (KSh 7.50 at KSh 1,500 equity), `InpSmallMaxOpenTrades=1`, `InpSmallMaxDailyLossPercent=1.5`, `InpSmallMaxDrawdownPercent=5.0`, and `InpSmallMaxPortfolioRiskPercent=0.5`. This profile deliberately cannot open simultaneous opposing positions; its maximum is one trade.
 
-**Large account — separate high-risk profile:** `ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT` (enum 3) retains `InpLargeMinimumRiskPercentPerTrade=15.0`, `InpLargeRiskPercentPerTrade=20.0`, three configured positions, 25% daily-loss cap, 35% hard drawdown cap, and 20% portfolio open-risk cap. This profile is not for the KSh 1,500 account and must not be selected on live capital while the validation gates remain open.
+**Large account — separate high-risk profile:** `ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT` (enum 3) retains `InpLargeMinimumRiskPercentPerTrade=15.0`, `InpLargeRiskPercentPerTrade=20.0`, `InpLargeMaxOpenTrades=3`, `InpLargeMaxDailyLossPercent=25.0`, `InpLargeMaxDrawdownPercent=35.0`, and `InpLargeMaxPortfolioRiskPercent=20.0`. This profile is not for the KSh 1,500 account and must not be selected on live capital while the validation gates remain open.
 
 For opposing-position capability testing, use a dedicated Exness demo hedging account and isolate the test from all live funds. The two-direction test must use an explicitly reviewed demo preset with coherent risk caps; do not simply select the large-account 15–20% profile to bypass the small-account one-position ceiling. If no dedicated low-risk demo test preset is available, mark the hedging scenario **not exercised** until one exists. Do not enable minimum-lot overrides, and abort whenever broker volume would breach the approved stop-risk budget.
 
