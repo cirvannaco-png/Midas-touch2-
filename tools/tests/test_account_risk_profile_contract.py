@@ -91,7 +91,11 @@ def test_small_account_risk_minimum_is_not_conflated_with_large_account_risk() -
     ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
     assert "if(g_activeRiskLimits.profile==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT)" in ea
     assert "if(g_activeRiskLimits.profile!=ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT)" in ea
-    assert "if(g_activeRiskLimits.profile==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT)\\n     {\\n      double sizingEquity=AccountInfoDouble(ACCOUNT_EQUITY);\\n      double achievedRiskPercent=(sizingEquity>0.0?proposedRisk/sizingEquity*100.0:0.0);" in ea
+    manual_start = ea.index("double proposedRisk=g_risk.RiskAmountForLots(_Symbol,lots,entry,setup.stop_loss);")
+    manual_end = ea.index("string portfolioReason;", manual_start)
+    manual_entry = ea[manual_start:manual_end]
+    assert "if(g_activeRiskLimits.profile==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT)" in manual_entry
+    assert "InpLargeMinimumRiskPercentPerTrade" in manual_entry
     assert "ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT" in ea
     assert "SmallAccountRiskAdmission" not in ea
     assert "InpSmallMinimumRiskPercentPerTrade" not in ea
