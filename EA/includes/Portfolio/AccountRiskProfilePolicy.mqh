@@ -61,6 +61,12 @@ bool ValidateAccountRiskLimits(const AccountRiskLimits &limits,string &reason)
       if(limits.maxPortfolioRiskPercent>MIDAS_SMALL_ACCOUNT_MAX_PORTFOLIO_RISK_PERCENT)
         { reason="small-account portfolio open risk exceeds the 0.5% safety ceiling"; return false; }
      }
+   if(limits.profile==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT &&
+      limits.riskPercentPerTrade<MIDAS_LARGE_ACCOUNT_MIN_RISK_PERCENT_PER_TRADE)
+     {
+      reason="large-account base risk is below the configured 15% profile floor";
+      return false;
+     }
    if(limits.maxOpenTrades<1)
       { reason="maxOpenTrades must be at least one"; return false; }
    if(!MathIsValidNumber(limits.maxDailyLossPercent) || limits.maxDailyLossPercent<=0.0)
