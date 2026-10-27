@@ -28,11 +28,17 @@ def _base_preset() -> dict[str, str]:
         "InpDeriskStartPercent": "5", "InpDeriskFloor": "0.25",
         "InpMaxPortfolioRiskPercent": "3", "InpMaxPositionsPerSymbol": "3",
         "InpMaxPositionsPerGroup": "3",
-        "InpSmallRiskPercentPerTrade": "0.5", "InpSmallMaxOpenTrades": "3",
-        "InpSmallMaxDailyLossPercent": "3", "InpSmallMaxDrawdownPercent": "10",
-        "InpSmallDeriskStartPercent": "5", "InpSmallDeriskFloor": "0.25",
-        "InpSmallMaxPortfolioRiskPercent": "3", "InpSmallMaxPositionsPerSymbol": "3",
-        "InpSmallMaxPositionsPerGroup": "3",
+        "InpSmallRiskPercentPerTrade": "0.5", "InpSmallMaxOpenTrades": "1",
+        "InpSmallMaxDailyLossPercent": "1.5", "InpSmallMaxDrawdownPercent": "5",
+        "InpSmallDeriskStartPercent": "2", "InpSmallDeriskFloor": "0.25",
+        "InpSmallMaxPortfolioRiskPercent": "0.5", "InpSmallMaxPositionsPerSymbol": "1",
+        "InpSmallMaxPositionsPerGroup": "1",
+        "InpLargeMinimumRiskPercentPerTrade": "15",
+        "InpLargeRiskPercentPerTrade": "20", "InpLargeMaxOpenTrades": "3",
+        "InpLargeMaxDailyLossPercent": "25", "InpLargeMaxDrawdownPercent": "35",
+        "InpLargeDeriskStartPercent": "10", "InpLargeDeriskFloor": "0.75",
+        "InpLargeMaxPortfolioRiskPercent": "20", "InpLargeMaxPositionsPerSymbol": "3",
+        "InpLargeMaxPositionsPerGroup": "3",
         "InpPropRiskPercentPerTrade": "0.5", "InpPropMaxOpenTrades": "3",
         "InpPropMaxDailyLossPercent": "3", "InpPropMaxDrawdownPercent": "10",
         "InpPropDeriskStartPercent": "5", "InpPropDeriskFloor": "0.25",
@@ -96,20 +102,20 @@ def _manifest(folder: Path) -> Path:
     presets["B_trailing_off"]["InpEnableDynamicStop"] = "false"
     presets["C_trailing_candidate"]["InpDynamicStopATRMult"] = "1.75"
     presets["D_tight_risk"].update({
-        "InpSmallRiskPercentPerTrade": "0.35", "InpSmallMaxOpenTrades": "2",
-        "InpSmallMaxDailyLossPercent": "2", "InpSmallMaxDrawdownPercent": "8",
-        "InpSmallDeriskStartPercent": "3", "InpSmallDeriskFloor": "0.15",
-        "InpSmallMaxPortfolioRiskPercent": "1.5", "InpSmallMaxPositionsPerSymbol": "2",
-        "InpSmallMaxPositionsPerGroup": "2",
+        "InpSmallRiskPercentPerTrade": "0.35", "InpSmallMaxOpenTrades": "1",
+        "InpSmallMaxDailyLossPercent": "1", "InpSmallMaxDrawdownPercent": "4",
+        "InpSmallDeriskStartPercent": "1.5", "InpSmallDeriskFloor": "0.2",
+        "InpSmallMaxPortfolioRiskPercent": "0.35", "InpSmallMaxPositionsPerSymbol": "1",
+        "InpSmallMaxPositionsPerGroup": "1",
     })
     # Opportunity-capacity challenger: same per-trade, daily, hard-DD,
     # de-risk and aggregate open-risk budget as A; only more slots are allowed.
     presets["E_calibrated_risk"].update({
-        "InpSmallRiskPercentPerTrade": "0.5", "InpSmallMaxOpenTrades": "5",
-        "InpSmallMaxDailyLossPercent": "3", "InpSmallMaxDrawdownPercent": "10",
-        "InpSmallDeriskStartPercent": "5", "InpSmallDeriskFloor": "0.25",
-        "InpSmallMaxPortfolioRiskPercent": "3",
-        "InpSmallMaxPositionsPerSymbol": "4", "InpSmallMaxPositionsPerGroup": "4",
+        "InpSmallRiskPercentPerTrade": "0.4", "InpSmallMaxOpenTrades": "1",
+        "InpSmallMaxDailyLossPercent": "1.25", "InpSmallMaxDrawdownPercent": "4.5",
+        "InpSmallDeriskStartPercent": "1.5", "InpSmallDeriskFloor": "0.2",
+        "InpSmallMaxPortfolioRiskPercent": "0.4",
+        "InpSmallMaxPositionsPerSymbol": "1", "InpSmallMaxPositionsPerGroup": "1",
     })
     variants = []
     for i, role in enumerate(ROLES):
@@ -257,14 +263,16 @@ def test_walk_forward_slices_are_chronological_and_censor_boundary_positions():
                for row in folds)
 
 
-def test_small_account_calibrated_candidate_can_test_more_slots_without_more_money_risk(tmp_path):
+def test_small_account_calibrated_candidate_stays_within_hard_guardrails(tmp_path):
     manifest = _manifest(tmp_path)
     report, summary = compare_manifest(manifest, simulations=10)
     baseline = report["variants"]["A_current_baseline"]["input_parameters"]
     calibrated = report["variants"]["E_calibrated_risk"]["input_parameters"]
-    assert calibrated["InpSmallRiskPercentPerTrade"] == baseline["InpSmallRiskPercentPerTrade"]
-    assert calibrated["InpSmallMaxDailyLossPercent"] == baseline["InpSmallMaxDailyLossPercent"]
-    assert calibrated["InpSmallMaxDrawdownPercent"] == baseline["InpSmallMaxDrawdownPercent"]
-    assert calibrated["InpSmallMaxPortfolioRiskPercent"] == baseline["InpSmallMaxPortfolioRiskPercent"]
-    assert float(calibrated["InpSmallMaxOpenTrades"]) > float(baseline["InpSmallMaxOpenTrades"])
-    assert float(calibrated["InpSmallMaxPositionsPerSymbol"]) > float(baseline["InpSmallMaxPositionsPerSymbol"])
+    assert float(calibrated["InpSmallRiskPercentPerTrade"]) <= 0.5
+    assert float(calibrated["InpSmallMaxOpenTrades"]) == 1
+    assert float(calibrated["InpSmallMaxDailyLossPercent"]) <= 1.5
+    assert float(calibrated["InpSmallMaxDrawdownPercent"]) <= 5.0
+    assert float(calibrated["InpSmallMaxPortfolioRiskPercent"]) <= 0.5
+    assert float(calibrated["InpSmallMaxPositionsPerSymbol"]) == 1
+    assert float(calibrated["InpSmallMaxPositionsPerGroup"]) == 1
+    assert float(calibrated["InpSmallRiskPercentPerTrade"]) < float(baseline["InpSmallRiskPercentPerTrade"])
