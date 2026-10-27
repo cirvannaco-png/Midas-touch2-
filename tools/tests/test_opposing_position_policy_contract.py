@@ -54,6 +54,8 @@ def test_demo_protocol_keeps_broker_validation_separate_from_policy_ci():
     gate = read(DEMO_GATE)
     assert "not yet run against an Exness demo terminal" in gate
     assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in gate
-    assert "InpSmallMaxOpenTrades=3" in gate
+    assert "InpSmallMaxOpenTrades=1" in gate
+    assert "InpLargeMaxOpenTrades=3" in gate
+    assert "ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT" in gate
     assert "two distinct position identifiers/tickets" in gate
     assert "No scenario should be run on live capital" in gate
