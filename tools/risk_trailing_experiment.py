@@ -303,10 +303,10 @@ def _risk_is_no_looser(
             k = suffix
         else:
             prefix = (
-            "InpSmall" if keys == SMALL_ACCOUNT_RISK_KEYS else
-            "InpLarge" if keys == LARGE_ACCOUNT_RISK_KEYS else
-            "InpProp" if keys == PROP_FIRM_RISK_KEYS else ""
-        )
+                "InpSmall" if keys == SMALL_ACCOUNT_RISK_KEYS else
+                "InpLarge" if keys == LARGE_ACCOUNT_RISK_KEYS else
+                "InpProp" if keys == PROP_FIRM_RISK_KEYS else ""
+            )
             k = prefix + suffix.removeprefix("Inp")
         return _float_setting(p, k, role)
 
@@ -318,9 +318,8 @@ def _risk_is_no_looser(
     if any(value(candidate, key) > value(baseline, key) for key in core_limits):
         return False
 
-    # The small-account experiment may test whether wider opportunity capacity
-    # helps, but only while per-trade risk, daily/hard loss controls, de-risking,
-    # and the aggregate portfolio open-risk cap remain no looser than A.
+    # More opportunity slots are allowed only in the dedicated large-account
+    # research profile. The small account remains capped at one position.
     # Actual portfolio admission remains authoritative at execution time.
     slot_limits = ("InpMaxOpenTrades", "InpMaxPositionsPerSymbol", "InpMaxPositionsPerGroup")
     if not allow_more_slots and any(value(candidate, key) > value(baseline, key) for key in slot_limits):
