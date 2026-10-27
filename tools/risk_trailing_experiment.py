@@ -32,6 +32,11 @@ SMALL_ACCOUNT_RISK_KEYS = {
     "InpSmallMaxDrawdownPercent", "InpSmallDeriskStartPercent", "InpSmallDeriskFloor",
     "InpSmallMaxPortfolioRiskPercent", "InpSmallMaxPositionsPerSymbol", "InpSmallMaxPositionsPerGroup",
 }
+LARGE_ACCOUNT_RISK_KEYS = {
+    "InpLargeRiskPercentPerTrade", "InpLargeMaxOpenTrades", "InpLargeMaxDailyLossPercent",
+    "InpLargeMaxDrawdownPercent", "InpLargeDeriskStartPercent", "InpLargeDeriskFloor",
+    "InpLargeMaxPortfolioRiskPercent", "InpLargeMaxPositionsPerSymbol", "InpLargeMaxPositionsPerGroup",
+}
 PROP_FIRM_RISK_KEYS = {
     "InpPropRiskPercentPerTrade", "InpPropMaxOpenTrades", "InpPropMaxDailyLossPercent",
     "InpPropMaxDrawdownPercent", "InpPropDeriskStartPercent", "InpPropDeriskFloor",
@@ -39,9 +44,10 @@ PROP_FIRM_RISK_KEYS = {
 }
 PROFILE_RISK_KEYS = {
     "small_account": SMALL_ACCOUNT_RISK_KEYS,
+    "large_account": LARGE_ACCOUNT_RISK_KEYS,
     "prop_firm": PROP_FIRM_RISK_KEYS,
 }
-RISK_KEYS = LEGACY_RISK_KEYS | SMALL_ACCOUNT_RISK_KEYS | PROP_FIRM_RISK_KEYS
+RISK_KEYS = LEGACY_RISK_KEYS | SMALL_ACCOUNT_RISK_KEYS | LARGE_ACCOUNT_RISK_KEYS | PROP_FIRM_RISK_KEYS
 
 TRAILING_KEYS = {
     "InpEnableDynamicStop", "InpDynamicStopActivateAtR", "InpDynamicStopBreakevenAtR",
@@ -134,8 +140,8 @@ def _context(raw: object, name: str) -> dict[str, Any]:
         if not isinstance(value, str) or not value.strip():
             raise ExperimentError(f"{name}.{key} must be a non-empty string")
         result[key] = value.strip()
-    if result["account_profile"] not in {"small_account", "prop_firm"}:
-        raise ExperimentError(f"{name}.account_profile must be small_account or prop_firm")
+    if result["account_profile"] not in {"small_account", "large_account", "prop_firm"}:
+        raise ExperimentError(f"{name}.account_profile must be small_account, large_account or prop_firm")
     for key in ("period_start", "period_end", "locked_oos_start", "locked_oos_end"):
         result[key] = _time(raw[key], f"{name}.{key}")
     if not result["period_start"] < result["locked_oos_start"] < result["locked_oos_end"] <= result["period_end"]:
@@ -221,7 +227,11 @@ def _validate_risk_values(p: dict[str, str], keys: set[str], role: str) -> None:
     def key(suffix: str) -> str:
         if suffix in keys:
             return suffix
-        prefix = "InpSmall" if keys == SMALL_ACCOUNT_RISK_KEYS else "InpProp" if keys == PROP_FIRM_RISK_KEYS else ""
+        prefix = (
+            "InpSmall" if keys == SMALL_ACCOUNT_RISK_KEYS else
+            "InpLarge" if keys == LARGE_ACCOUNT_RISK_KEYS else
+            "InpProp" if keys == PROP_FIRM_RISK_KEYS else ""
+        )
         return prefix + suffix.removeprefix("Inp")
 
     risk = _float_setting(p, key("InpRiskPercentPerTrade"), role)
@@ -254,11 +264,30 @@ def _validate_risk_values(p: dict[str, str], keys: set[str], role: str) -> None:
             raise ExperimentError(f"{role} {label} must be a positive integer")
     if per_symbol > open_trades or per_group > open_trades:
         raise ExperimentError(f"{role} per-symbol and per-group limits cannot exceed max open trades")
+    if keys == SMALL_ACCOUNT_RISK_KEYS:
+        small_caps = (
+            (risk, 0.5, "per-trade risk"),
+            (open_trades, 1.0, "max open trades"),
+            (daily, 1.5, "daily-loss cap"),
+            (drawdown, 5.0, "hard drawdown cap"),
+            (portfolio, 0.5, "portfolio open-risk cap"),
+            (per_symbol, 1.0, "positions per symbol"),
+            (per_group, 1.0, "positions per group"),
+        )
+        for value, cap, label in small_caps:
+            if value > cap:
+                raise ExperimentError(f"{role} small-account {label} exceeds safety cap {cap:g}")
+    if keys == LARGE_ACCOUNT_RISK_KEYS:
+        large_min = _float_setting(p, "InpLargeMinimumRiskPercentPerTrade", role)
+        if large_min < 15 or large_min > risk or risk > 20:
+            raise ExperimentError(f"{role} large-account risk must preserve the 15-20% base/minimum contract")
+        if risk * floor + 1e-6 < large_min:
+            raise ExperimentError(f"{role} large-account risk after de-risk floor falls below configured minimum")
 
 
 def _profile_selector_value(profile: str) -> str:
-    # These enum values are pinned to ENUM_ACCOUNT_RISK_PROFILE in the MQL5 EA.
-    return {"small_account": "1", "prop_firm": "2"}[profile]
+    # Keep enum values aligned with ENUM_ACCOUNT_RISK_PROFILE in the MQL5 EA.
+    return {"small_account": "1", "prop_firm": "2", "large_account": "3"}[profile]
 
 
 def _risk_is_no_looser(
@@ -273,7 +302,11 @@ def _risk_is_no_looser(
         if suffix in keys:
             k = suffix
         else:
-            prefix = "InpSmall" if keys == SMALL_ACCOUNT_RISK_KEYS else "InpProp" if keys == PROP_FIRM_RISK_KEYS else ""
+            prefix = (
+            "InpSmall" if keys == SMALL_ACCOUNT_RISK_KEYS else
+            "InpLarge" if keys == LARGE_ACCOUNT_RISK_KEYS else
+            "InpProp" if keys == PROP_FIRM_RISK_KEYS else ""
+        )
             k = prefix + suffix.removeprefix("Inp")
         return _float_setting(p, k, role)
 
@@ -322,7 +355,7 @@ def _validate_presets(presets: dict[str, dict[str, str]], account_profile: str) 
         # profile is allowed to differ across experiment arms.
         _validate_risk_values(p, LEGACY_RISK_KEYS, role)
         _validate_risk_values(p, SMALL_ACCOUNT_RISK_KEYS, role)
-        _validate_risk_values(p, PROP_FIRM_RISK_KEYS, role)
+        _validate_risk_values(p, LARGE_ACCOUNT_RISK_KEYS, role)\n        _validate_risk_values(p, PROP_FIRM_RISK_KEYS, role)
 
     non_policy = set(base) - RISK_KEYS - TRAILING_KEYS
     for role, p in presets.items():
@@ -358,17 +391,17 @@ def _validate_presets(presets: dict[str, dict[str, str]], account_profile: str) 
         raise ExperimentError("D must retain A's trailing/partial settings")
     if account_profile == "small_account":
         tight = {
-            "InpSmallRiskPercentPerTrade": "0.35", "InpSmallMaxOpenTrades": "2",
-            "InpSmallMaxDailyLossPercent": "2", "InpSmallMaxDrawdownPercent": "8",
-            "InpSmallDeriskStartPercent": "3", "InpSmallDeriskFloor": "0.15",
-            "InpSmallMaxPortfolioRiskPercent": "1.5", "InpSmallMaxPositionsPerSymbol": "2",
-            "InpSmallMaxPositionsPerGroup": "2",
+            "InpSmallRiskPercentPerTrade": "0.35", "InpSmallMaxOpenTrades": "1",
+            "InpSmallMaxDailyLossPercent": "1", "InpSmallMaxDrawdownPercent": "4",
+            "InpSmallDeriskStartPercent": "1.5", "InpSmallDeriskFloor": "0.2",
+            "InpSmallMaxPortfolioRiskPercent": "0.35", "InpSmallMaxPositionsPerSymbol": "1",
+            "InpSmallMaxPositionsPerGroup": "1",
         }
         if any(d[k] != v for k, v in tight.items()):
-            raise ExperimentError("D_tight_risk must use the predeclared small-account tight-risk candidate")
+            raise ExperimentError("D_tight_risk must use the predeclared small-account conservative candidate")
     else:
         if not _risk_is_no_looser(d, base, active_risk_keys, "D_tight_risk") or all(d[k] == base[k] for k in active_risk_keys):
-            raise ExperimentError("prop-firm D must be strictly no looser than its verified firm-specific baseline")
+            raise ExperimentError(f"{account_profile} D must be strictly no looser than its selected-profile baseline")
 
     e = presets["E_calibrated_risk"]
     changed_e = {k for k in base if e[k] != base[k]}
@@ -376,11 +409,13 @@ def _validate_presets(presets: dict[str, dict[str, str]], account_profile: str) 
         raise ExperimentError("E may change only the active profile's risk inputs")
     if any(e[k] != base[k] for k in TRAILING_KEYS):
         raise ExperimentError("E must retain A's trailing/partial settings")
-    allow_more_slots = account_profile == "small_account"
+    # Only the large-account research profile may test additional opportunity slots;
+    # small-account guardrails keep max-open and per-symbol/group capacity at one.
+    allow_more_slots = account_profile == "large_account"
     if not _risk_is_no_looser(
         e, base, active_risk_keys, "E_calibrated_risk", allow_more_slots=allow_more_slots
     ):
-        raise ExperimentError("E may not loosen core loss limits; prop-firm slot limits must also stay within baseline")
+        raise ExperimentError("E may not loosen core loss limits; non-large-profile slot limits must also stay within baseline")
     if all(e[k] == d[k] for k in active_risk_keys):
         raise ExperimentError("E must not duplicate D's risk settings")
 
