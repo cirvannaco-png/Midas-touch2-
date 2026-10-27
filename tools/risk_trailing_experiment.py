@@ -355,7 +355,8 @@ def _validate_presets(presets: dict[str, dict[str, str]], account_profile: str) 
         # profile is allowed to differ across experiment arms.
         _validate_risk_values(p, LEGACY_RISK_KEYS, role)
         _validate_risk_values(p, SMALL_ACCOUNT_RISK_KEYS, role)
-        _validate_risk_values(p, LARGE_ACCOUNT_RISK_KEYS, role)\n        _validate_risk_values(p, PROP_FIRM_RISK_KEYS, role)
+        _validate_risk_values(p, LARGE_ACCOUNT_RISK_KEYS, role)
+        _validate_risk_values(p, PROP_FIRM_RISK_KEYS, role)
 
     non_policy = set(base) - RISK_KEYS - TRAILING_KEYS
     for role, p in presets.items():
