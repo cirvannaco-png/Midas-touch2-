@@ -13,6 +13,22 @@ The latest research used USD-denominated StrategyTune capital and IC Markets dat
 - **Horizon:** declare the test start and end dates in the experiment manifest before running. Use a one-year horizon for the initial planning target unless a different horizon is explicitly approved. Never change the horizon after inspecting results to make a target appear achieved.
 - **Account profile:** record the selected EA profile and account balance/currency. A result from the large-account 15–20% profile cannot be used as evidence for the conservative KSh 1,500 small-account profile.
 
+## Latest candidate challenge-window check (not a production promotion)
+
+Gold, M15, IC Markets, $1,500 USD simulated starting equity, 2026-09-16 through 2026-10-16:
+
+| Measure | Baseline TP1/TP2 40%/20% | Candidate TP1/TP2 60%/20% |
+|---|---:|---:|
+| Net realized P&L | -$6.39 | -$5.05 |
+| Maximum drawdown | $12.92 | $10.32 |
+| Finalized positions | 8 | 8 |
+| Position-level net win rate | 50% | 50% |
+| Open positions at window end | 1 | 1 |
+
+The candidate improved reported P&L by $1.34 and maximum drawdown by $2.60 versus the baseline, but it still lost money. Its position-level estimate is based on only eight finalized positions and is therefore far too small to support an 87% accuracy claim. The platform's 13 closed execution rows are deal/partial-exit records, not 13 independent position outcomes. One position remained open, so this is a censored end-of-window result. This is an additional candidate challenge check, **not** an untouched blind holdout: baseline results for this date range were already inspected. It is also USD/IC Markets research and cannot validate the KSh 1,500 Exness profile.
+
+For a 12-month 600% cumulative-return objective, final equity would have to be seven times the initial equity. That implies a compounded monthly return of approximately 17.6% for 12 consecutive months. This arithmetic defines the target; it does not mean that return is feasible or safe under the current evidence.
+
 ## Experimental protocol
 
 1. **Lock the baseline.** Save the exact EA source SHA, compiled EX5 hash, terminal build, symbol, timeframe, profile, tick-data hash, spread, commission, slippage, swaps, order-fill rules and volume contract. Keep a copy of every input preset and report.
