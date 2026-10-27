@@ -276,3 +276,54 @@ def test_small_account_calibrated_candidate_stays_within_hard_guardrails(tmp_pat
     assert float(calibrated["InpSmallMaxPositionsPerSymbol"]) == 1
     assert float(calibrated["InpSmallMaxPositionsPerGroup"]) == 1
     assert float(calibrated["InpSmallRiskPercentPerTrade"]) < float(baseline["InpSmallRiskPercentPerTrade"])
+
+
+def test_large_account_profile_selector_and_research_arms_are_supported(tmp_path):
+    manifest = _manifest(tmp_path)
+    payload = json.loads(manifest.read_text())
+    payload["test_context"]["account_profile"] = "large_account"
+    for variant in payload["variants"]:
+        variant["observed_context"]["account_profile"] = "large_account"
+        preset_path = tmp_path / variant["input_preset"]
+        values = {}
+        for line in preset_path.read_text().splitlines():
+            key, value = line.split("=", 1)
+            values[key] = value
+        values["InpAccountRiskProfile"] = "3"
+        if variant["role"] == "D_tight_risk":
+            values.update({
+                "InpLargeRiskPercentPerTrade": "20",
+                "InpLargeMaxOpenTrades": "3",
+                "InpLargeMaxDailyLossPercent": "22",
+                "InpLargeMaxDrawdownPercent": "32",
+                "InpLargeDeriskStartPercent": "9",
+                "InpLargeDeriskFloor": "0.75",
+                "InpLargeMaxPortfolioRiskPercent": "20",
+                "InpLargeMaxPositionsPerSymbol": "3",
+                "InpLargeMaxPositionsPerGroup": "3",
+            })
+        elif variant["role"] == "E_calibrated_risk":
+            values.update({
+                "InpLargeRiskPercentPerTrade": "20",
+                "InpLargeMaxOpenTrades": "5",
+                "InpLargeMaxDailyLossPercent": "24",
+                "InpLargeMaxDrawdownPercent": "34",
+                "InpLargeDeriskStartPercent": "9.5",
+                "InpLargeDeriskFloor": "0.75",
+                "InpLargeMaxPortfolioRiskPercent": "20",
+                "InpLargeMaxPositionsPerSymbol": "5",
+                "InpLargeMaxPositionsPerGroup": "5",
+            })
+        preset_path.write_text(
+            "".join(f"{key}={value}\\n" for key, value in values.items()),
+            encoding="utf-8",
+        )
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+    report, _summary = compare_manifest(manifest, simulations=10)
+    baseline = report["variants"]["A_current_baseline"]["input_parameters"]
+    calibrated = report["variants"]["E_calibrated_risk"]["input_parameters"]
+    assert baseline["InpAccountRiskProfile"] == "3"
+    assert float(baseline["InpLargeRiskPercentPerTrade"]) == 20.0
+    assert float(calibrated["InpLargeMaxOpenTrades"]) == 5.0
+    assert float(calibrated["InpLargeMaxDailyLossPercent"]) <= 25.0
+    assert float(calibrated["InpLargeMaxDrawdownPercent"]) <= 35.0
