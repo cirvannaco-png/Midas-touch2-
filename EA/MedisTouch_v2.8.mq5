@@ -200,16 +200,18 @@ input double InpMaxPortfolioRiskPercent=3.0;
 input int InpMaxPositionsPerSymbol=3;
 input int InpMaxPositionsPerGroup=3;
 
-// User-requested aggressive profile for the KSh 1,500 starting account.
+// User-requested high-risk profile for the KSh 1,500 small account.
 // A 20% planned stop-risk budget is KSh 300; 15% is KSh 225, both before
-// gaps, slippage, commission and swaps. These are not profit guarantees.
+// gaps, slippage, commission and swaps. The 50% daily cap and 55% drawdown
+// ceiling are research-only and can permit catastrophic loss; never merge or
+// deploy these values without a separately approved live-risk policy.
 // The EA rejects a trade if broker minimum volume would exceed its budget.
 input group "Risk Profile — Small Account (high-risk; validate on demo first)"
 input double InpSmallMinimumRiskPercentPerTrade=15.0;
 input double InpSmallRiskPercentPerTrade=20.0; // Target; hard cap is shared with lot sizing
 input int    InpSmallMaxOpenTrades=3;           // Ceiling; runtime admits one initially and expands conditionally
-input double InpSmallMaxDailyLossPercent=25.0;
-input double InpSmallMaxDrawdownPercent=35.0;
+input double InpSmallMaxDailyLossPercent=50.0; // Research-only requested cap; permits severe daily equity loss
+input double InpSmallMaxDrawdownPercent=55.0; // Must exceed daily cap for policy validation; do not use live without separate approval
 input double InpSmallDeriskStartPercent=10.0;
 input double InpSmallDeriskFloor=0.75;          // 20% * 0.75 = 15% at the configured drawdown-de-risk floor
 input double InpSmallMaxPortfolioRiskPercent=20.0;
