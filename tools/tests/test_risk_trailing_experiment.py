@@ -290,6 +290,19 @@ def test_large_account_profile_selector_and_research_arms_are_supported(tmp_path
             key, value = line.split("=", 1)
             values[key] = value
         values["InpAccountRiskProfile"] = "3"
+        # Keep the inactive small-account profile identical across all arms.
+        # D/E are only permitted to vary the selected large-account inputs here.
+        values.update({
+            "InpSmallRiskPercentPerTrade": "0.5",
+            "InpSmallMaxOpenTrades": "1",
+            "InpSmallMaxDailyLossPercent": "1.5",
+            "InpSmallMaxDrawdownPercent": "5",
+            "InpSmallDeriskStartPercent": "2",
+            "InpSmallDeriskFloor": "0.25",
+            "InpSmallMaxPortfolioRiskPercent": "0.5",
+            "InpSmallMaxPositionsPerSymbol": "1",
+            "InpSmallMaxPositionsPerGroup": "1",
+        })
         if variant["role"] == "D_tight_risk":
             values.update({
                 "InpLargeRiskPercentPerTrade": "20",
