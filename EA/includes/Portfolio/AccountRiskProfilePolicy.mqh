@@ -5,17 +5,21 @@
 #ifndef ACCOUNTRISKPROFILEPOLICY_MQH
 #define ACCOUNTRISKPROFILEPOLICY_MQH
 
-// Absolute hard ceiling shared by profile validation and lot sizing.
-// The user-requested small-account profile targets 20% of equity per trade;
-// larger percentages remain rejected regardless of daily/portfolio limits.
+// Shared hard ceiling; the small-account profile has stricter local ceilings.
 #define MIDAS_MAX_RISK_PERCENT_PER_TRADE 20.0
-#define MIDAS_SMALL_ACCOUNT_MIN_RISK_PERCENT_PER_TRADE 15.0
+#define MIDAS_SMALL_ACCOUNT_MAX_RISK_PERCENT_PER_TRADE 0.5
+#define MIDAS_SMALL_ACCOUNT_MAX_DAILY_LOSS_PERCENT 1.5
+#define MIDAS_SMALL_ACCOUNT_MAX_DRAWDOWN_PERCENT 5.0
+#define MIDAS_SMALL_ACCOUNT_MAX_PORTFOLIO_RISK_PERCENT 0.5
+#define MIDAS_SMALL_ACCOUNT_MAX_OPEN_TRADES 1
+#define MIDAS_LARGE_ACCOUNT_MIN_RISK_PERCENT_PER_TRADE 15.0
 
 enum ENUM_ACCOUNT_RISK_PROFILE
   {
    ACCOUNT_RISK_PROFILE_LEGACY_INPUTS = 0, // existing EA inputs; default preserves prior behavior
    ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT = 1,
-   ACCOUNT_RISK_PROFILE_PROP_FIRM     = 2
+   ACCOUNT_RISK_PROFILE_PROP_FIRM     = 2, // preserve legacy enum value for existing .set files
+   ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT  = 3
   };
 
 struct AccountRiskLimits
@@ -44,6 +48,19 @@ bool ValidateAccountRiskLimits(const AccountRiskLimits &limits,string &reason)
                            limits.riskPercentPerTrade,MIDAS_MAX_RISK_PERCENT_PER_TRADE);
        return false;
       }
+   if(limits.profile==ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT)
+     {
+      if(limits.riskPercentPerTrade>MIDAS_SMALL_ACCOUNT_MAX_RISK_PERCENT_PER_TRADE)
+        { reason="small-account per-trade risk exceeds the 0.5% safety ceiling"; return false; }
+      if(limits.maxOpenTrades>MIDAS_SMALL_ACCOUNT_MAX_OPEN_TRADES)
+        { reason="small-account max open trades exceeds the one-position safety ceiling"; return false; }
+      if(limits.maxDailyLossPercent>MIDAS_SMALL_ACCOUNT_MAX_DAILY_LOSS_PERCENT)
+        { reason="small-account daily-loss cap exceeds the 1.5% safety ceiling"; return false; }
+      if(limits.maxDrawdownPercent>MIDAS_SMALL_ACCOUNT_MAX_DRAWDOWN_PERCENT)
+        { reason="small-account hard drawdown exceeds the 5% safety ceiling"; return false; }
+      if(limits.maxPortfolioRiskPercent>MIDAS_SMALL_ACCOUNT_MAX_PORTFOLIO_RISK_PERCENT)
+        { reason="small-account portfolio open risk exceeds the 0.5% safety ceiling"; return false; }
+     }
    if(limits.maxOpenTrades<1)
       { reason="maxOpenTrades must be at least one"; return false; }
    if(!MathIsValidNumber(limits.maxDailyLossPercent) || limits.maxDailyLossPercent<=0.0)
@@ -70,12 +87,12 @@ bool ValidateAccountRiskLimits(const AccountRiskLimits &limits,string &reason)
    return true;
   }
 
-// Select exactly one complete profile. The caller constructs all three from
-// the EA inputs and validates the selected profile before any order routing.
-// Global account-wide RiskGuard persistence remains account-scoped across restarts.
+// Select exactly one complete profile. The caller constructs each from the EA inputs.
+// Existing saved .set files retain the legacy enum number for prop-firm mode.
 bool ResolveAccountRiskLimits(ENUM_ACCOUNT_RISK_PROFILE selected,
                               const AccountRiskLimits &legacy,
                               const AccountRiskLimits &smallAccount,
+                              const AccountRiskLimits &largeAccount,
                               const AccountRiskLimits &propFirm,
                               AccountRiskLimits &out,
                               string &reason)
@@ -84,6 +101,8 @@ bool ResolveAccountRiskLimits(ENUM_ACCOUNT_RISK_PROFILE selected,
       out=legacy;
    else if(selected==ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT)
       out=smallAccount;
+   else if(selected==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT)
+      out=largeAccount;
    else if(selected==ACCOUNT_RISK_PROFILE_PROP_FIRM)
       out=propFirm;
    else
@@ -92,6 +111,7 @@ bool ResolveAccountRiskLimits(ENUM_ACCOUNT_RISK_PROFILE selected,
    out.profile=selected;
    if(selected==ACCOUNT_RISK_PROFILE_LEGACY_INPUTS) out.profileName="legacy_inputs";
    else if(selected==ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT) out.profileName="small_account";
+   else if(selected==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT) out.profileName="large_account";
    else out.profileName="prop_firm";
 
    if(!ValidateAccountRiskLimits(out,reason))
@@ -99,15 +119,15 @@ bool ResolveAccountRiskLimits(ENUM_ACCOUNT_RISK_PROFILE selected,
    return true;
   }
 
-
-// Non-legacy profiles have separately editable inputs whose shipped values are
-// placeholders copied from legacy settings. Fail closed until the operator has
-// explicitly marked each profile configured against the intended account rules.
+// Non-legacy profiles have separately editable inputs. Fail closed until each
+// profile has been marked configured against its intended account rules.
 bool ResolveConfiguredAccountRiskLimits(ENUM_ACCOUNT_RISK_PROFILE selected,
                                         const AccountRiskLimits &legacy,
                                         const AccountRiskLimits &smallAccount,
+                                        const AccountRiskLimits &largeAccount,
                                         const AccountRiskLimits &propFirm,
                                         bool smallProfileConfigured,
+                                        bool largeProfileConfigured,
                                         bool propProfileConfigured,
                                         AccountRiskLimits &out,
                                         string &reason)
@@ -118,12 +138,17 @@ bool ResolveConfiguredAccountRiskLimits(ENUM_ACCOUNT_RISK_PROFILE selected,
       reason="small-account risk inputs must be configured before selecting this profile";
       return false;
      }
+   if(selected==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT && !largeProfileConfigured)
+     {
+      reason="large-account risk inputs must be configured before selecting this profile";
+      return false;
+     }
    if(selected==ACCOUNT_RISK_PROFILE_PROP_FIRM && !propProfileConfigured)
      {
       reason="exact prop-firm limits must be configured before selecting this profile";
       return false;
      }
-   return ResolveAccountRiskLimits(selected,legacy,smallAccount,propFirm,out,reason);
+   return ResolveAccountRiskLimits(selected,legacy,smallAccount,largeAccount,propFirm,out,reason);
   }
 
 #endif
