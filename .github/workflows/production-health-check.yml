@@ -58,6 +58,8 @@ jobs:
               "database",
               "status",
               "401|403|422",
+              "X-API-Key",
+              "/execution-ledger/health",
               "/health/db",
           ):
               assert required in path.read_text(encoding="utf-8"), f"required release-gate contract missing: {required}"
