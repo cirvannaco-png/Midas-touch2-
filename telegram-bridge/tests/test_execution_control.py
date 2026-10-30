@@ -224,6 +224,34 @@ async def test_expired_lease_requires_reconciliation_and_keeps_risk_reserved():
         await engine.dispose()
 
 
+def test_canonical_bridge_api_key_takes_precedence_with_legacy_fallback(client, monkeypatch):
+    from app.config import settings
+
+    original = settings.BRIDGE_API_KEY
+    try:
+        settings.BRIDGE_API_KEY = "dedicated-bridge-key"
+        accepted = client.get(
+            "/execution-ledger/health",
+            headers={"X-API-Key": "dedicated-bridge-key"},
+        )
+        assert accepted.status_code == 200, accepted.text
+
+        legacy_rejected = client.get(
+            "/execution-ledger/health",
+            headers={"X-API-Key": settings.SECRET_KEY},
+        )
+        assert legacy_rejected.status_code == 401
+
+        settings.BRIDGE_API_KEY = ""
+        legacy_accepted = client.get(
+            "/execution-ledger/health",
+            headers={"X-API-Key": settings.SECRET_KEY},
+        )
+        assert legacy_accepted.status_code == 200, legacy_accepted.text
+    finally:
+        settings.BRIDGE_API_KEY = original
+
+
 def test_execution_ledger_route_requires_api_key(client):
     payload = {
         "portfolio_key": "account:test:magic:test",
