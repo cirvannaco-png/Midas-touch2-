@@ -5,7 +5,7 @@ an EA-owned action; the native EA still performs its own ledger reservation,
 risk checks, order checks, and broker call.
 """
 from dataclasses import dataclass
-from typing import Iterable
+from collections.abc import Iterable
 
 
 @dataclass(frozen=True)
