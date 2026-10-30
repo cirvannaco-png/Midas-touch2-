@@ -76,7 +76,15 @@ def collect_secrets(env: dict[str, str]) -> dict[str, str]:
             + ". Add them as protected/masked GitLab CI/CD variables."
         )
 
+    # Workflows and the EA use BRIDGE_API_KEY; the bridge retains SECRET_KEY
+    # as a compatibility fallback. Keep both Render variables identical so a
+    # partial secret rotation cannot strand authenticated production workflows.
+    bridge_key = env.get("BRIDGE_API_KEY") or env["SECRET_KEY"]
+    if not bridge_key.strip():
+        raise RenderSyncError("BRIDGE_API_KEY/SECRET_KEY must be non-empty.")
     payload = {k: env[k] for k in REQUIRED_SECRETS}
+    payload["BRIDGE_API_KEY"] = bridge_key
+    payload["SECRET_KEY"] = bridge_key
 
     for key in GENERATED_SECRETS:
         value = env.get(key) or generate_webhook_secret_token()
