@@ -525,6 +525,104 @@ async def update_position_risk(
     return True
 
 
+async def record_position_modification(
+    session: AsyncSession,
+    *,
+    portfolio_key: str,
+    broker_position_id: str,
+    symbol: str,
+    direction: str,
+    modification_id: str,
+    old_stop_loss: float,
+    new_stop_loss: float,
+    old_take_profit: float,
+    new_take_profit: float,
+    risk_r: float,
+    volatility: float,
+    evidence_ref: str,
+) -> bool:
+    """Append broker-confirmed SL/TP changes and refresh reserved stop risk atomically.
+
+    The caller must invoke this only after MT5 confirms the broker modification.
+    Retries are idempotent by modification_id; conflicting reuse is rejected.
+    """
+    _validate_risk(risk_r, volatility, {}, allow_zero=True)
+    if not portfolio_key or not broker_position_id or not symbol or not evidence_ref:
+        raise ValueError("portfolio, position, symbol, and evidence_ref are required")
+    if not modification_id or len(modification_id) > 160:
+        raise ValueError("modification_id must be 1-160 characters")
+    values = (old_stop_loss, new_stop_loss, old_take_profit, new_take_profit)
+    if any(not math.isfinite(value) or value < 0 for value in values):
+        raise ValueError("position modification prices must be finite and non-negative")
+    if new_stop_loss <= 0:
+        raise ValueError("broker-confirmed protective stop must be positive")
+    epsilon = 1e-9
+    if old_stop_loss > 0:
+        if direction == "BUY" and new_stop_loss + epsilon < old_stop_loss:
+            raise ValueError("BUY protective stop cannot be loosened")
+        if direction == "SELL" and new_stop_loss - epsilon > old_stop_loss:
+            raise ValueError("SELL protective stop cannot be loosened")
+    if direction not in {"BUY", "SELL"}:
+        raise ValueError("direction must be BUY or SELL")
+
+    await _portfolio_lock(session, portfolio_key)
+    row = await _lookup_broker_record(
+        session,
+        portfolio_key=portfolio_key,
+        broker_position_id=broker_position_id,
+    )
+    if row is None or row.state != "FILLED" or row.symbol != symbol:
+        return False
+
+    event = {
+        "modification_id": modification_id,
+        "broker_position_id": broker_position_id,
+        "symbol": symbol,
+        "direction": direction,
+        "old_stop_loss": old_stop_loss,
+        "new_stop_loss": new_stop_loss,
+        "old_take_profit": old_take_profit,
+        "new_take_profit": new_take_profit,
+        "risk_r": risk_r,
+        "volatility": volatility,
+        "evidence_ref": evidence_ref,
+    }
+    merged = dict(row.result_json or {})
+    history = list(merged.get("position_modifications") or [])
+    existing = next(
+        (item for item in history if item.get("modification_id") == modification_id),
+        None,
+    )
+    if existing is not None:
+        if any(existing.get(key) != value for key, value in event.items()):
+            raise ValueError("modification_id was reused with conflicting broker evidence")
+        return True
+
+    history.append({**event, "recorded_at": datetime.now(timezone.utc).isoformat()})
+    merged.update(
+        {
+            "broker_reconciled": True,
+            "position_modification_reconciled": True,
+            "last_position_modification_id": modification_id,
+            "position_modifications": history,
+            "evidence_ref": evidence_ref,
+        }
+    )
+    row.result_json = merged
+    await _upsert_active_reservation(
+        session,
+        request_id=row.request_id,
+        portfolio_key=portfolio_key,
+        symbol=symbol,
+        direction=direction,
+        risk_r=risk_r,
+        volatility=volatility,
+        factors={},
+    )
+    await session.flush()
+    return True
+
+
 async def reconcile_closed_position(
     session: AsyncSession,
     *,
