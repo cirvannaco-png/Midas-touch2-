@@ -11,7 +11,7 @@ ended up booting with a WEBHOOK_SECRET_TOKEN that Telegram rejected.
 
 This script makes that step reproducible:
 
-  * values come from the environment (GitLab CI/CD variables in automation),
+  * BRIDGE_API_KEY is canonical (legacy SECRET_KEY is accepted as fallback),\n  * the same value is written to both BRIDGE_API_KEY and SECRET_KEY,\n  * values come from the environment (GitLab CI/CD variables in automation),
   * WEBHOOK_SECRET_TOKEN is generated when absent and always validated
     against Telegram's ``^[A-Za-z0-9_-]{1,256}$`` before it is uploaded,
   * env vars are PUT to the Render API, then a deploy is triggered so the
