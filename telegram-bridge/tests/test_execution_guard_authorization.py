@@ -6,8 +6,8 @@ from app.services.architecture import ArchitectureViolation, EXECUTION_GATE_ORDE
 from app.services.execution_guard import require_broker_execution_authority
 
 
-def _gates() -> set[str]:
-    return set(EXECUTION_GATE_ORDER)
+def _gates() -> list[str]:
+    return list(EXECUTION_GATE_ORDER)
 
 
 def _authorize(**overrides):
@@ -59,3 +59,13 @@ def test_production_requires_demo_validation_and_human_approval():
 
 def test_midas_ea_can_execute_on_demo_only_after_all_gates():
     _authorize()
+
+
+
+def test_midas_execution_rejects_out_of_order_or_duplicate_gates():
+    gates = _gates()
+    gates[0], gates[1] = gates[1], gates[0]
+    with pytest.raises(ArchitectureViolation, match="canonical order"):
+        _authorize(completed_gates=gates)
+    with pytest.raises(ArchitectureViolation, match="canonical order"):
+        _authorize(completed_gates=_gates() + ["signal"])
