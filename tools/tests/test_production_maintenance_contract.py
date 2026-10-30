@@ -39,7 +39,7 @@ def test_each_production_mutation_is_behind_authenticated_ledger_preflight():
         ("daily-delivery-recovery", "Recover failed or stale delivery notifications"),
     ):
         match = re.search(
-            rf"(?ms)^  {job_name}:\\n(.*?)(?=^  [a-z][a-z0-9-]*:\\n|\\Z)",
+            rf"(?ms)^  {job_name}:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
             workflow,
         )
         assert match is not None, f"missing production job: {job_name}"
