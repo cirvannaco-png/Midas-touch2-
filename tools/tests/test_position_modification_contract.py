@@ -17,6 +17,7 @@ def test_stop_modification_queue_is_durable_and_fail_closed():
     assert "FILE_COMMON" in manager
     assert "LoadPendingModifications();" in manager
     assert "SavePendingModifications()" in manager
+    assert "m_pendingPersistenceHealthy=SavePendingModifications();" in manager
     assert "FileMove(temporary,FILE_COMMON" in manager
     assert "RetryPendingLedgerReconciliation" in manager
     assert "HasPendingModification(currentPositionIdentifier)" in manager
