@@ -14,7 +14,7 @@ A successful trade-server result for a trailing-stop update is not, by itself, a
 
 Each event has a unique evidence reference and a canonical payload fingerprint. Identical retries are idempotent; reusing a reference for different broker state is rejected. The service updates the durable risk reservation and stores immutable modification evidence in the same transaction. It rejects stop changes that worsen the existing protective stop.
 
-The EA writes unacknowledged events to a per-account/per-magic common-files queue. It retries the same evidence after transport failure or restart. While an event is pending, the EA blocks another modification for that position and blocks new entries until the queue is acknowledged and the full broker snapshot reconciles.
+The EA writes unacknowledged events to a per-account/per-magic/symbol/timeframe common-files queue. It retries the same evidence after transport failure or restart. While an event is pending, the EA blocks another modification for that position and blocks new entries until the queue is acknowledged and the full broker snapshot reconciles.
 
 ## Production authentication configuration
 
