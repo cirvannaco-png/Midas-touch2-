@@ -87,3 +87,48 @@ def test_position_modification_endpoint_requires_bridge_authentication(client):
         json=_modification_payload(),
     )
     assert response.status_code == 401
+
+
+
+def test_buy_position_modification_cannot_loosen_protective_stop(client):
+    _register_position(client)
+    payload = {**_modification_payload(), "applied_sl": 2279.0}
+
+    response = client.post("/execution-ledger/position-modification", headers=HEADERS, json=payload)
+
+    assert response.status_code == 422
+    assert "must not loosen the stop" in response.json()["detail"]
+
+
+def test_sell_position_modification_cannot_loosen_protective_stop(client):
+    payload = {
+        **_modification_payload(),
+        "broker_position_id": "5002",
+        "direction": "SELL",
+        "previous_sl": 2320.0,
+        "applied_sl": 2321.0,
+        "evidence_ref": "mt5-position-modification:5002:100:1",
+    }
+    registration = client.post(
+        "/execution-ledger/sync-position",
+        headers=HEADERS,
+        json={
+            "portfolio_key": payload["portfolio_key"],
+            "request_id": "position-mod-test-2",
+            "broker_position_id": payload["broker_position_id"],
+            "broker_order_id": "6002",
+            "broker_deal_id": "7002",
+            "symbol": "XAUUSD",
+            "direction": "SELL",
+            "risk_r": 1.0,
+            "volatility": 0.8,
+            "factors": {},
+            "evidence_ref": "mt5-position-open:5002",
+        },
+    )
+    assert registration.status_code == 200, registration.text
+
+    response = client.post("/execution-ledger/position-modification", headers=HEADERS, json=payload)
+
+    assert response.status_code == 422
+    assert "must not loosen the stop" in response.json()["detail"]
