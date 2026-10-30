@@ -168,6 +168,28 @@ public:
       return PostJson("/execution-ledger/position-risk",payload);
      }
 
+   bool PositionModification(const ulong positionIdentifier,const string symbol,const string direction,
+                              const string modificationId,const double oldStopLoss,const double newStopLoss,
+                              const double oldTakeProfit,const double newTakeProfit,const double riskR,
+                              const double volatility,const string evidenceRef)
+     {
+      if(!m_ready || positionIdentifier==0 || StringLen(modificationId)==0 ||
+         StringLen(modificationId)>160 || symbol=="" ||
+         (direction!="BUY" && direction!="SELL") ||
+         oldStopLoss<0.0 || newStopLoss<=0.0 || oldTakeProfit<0.0 || newTakeProfit<0.0 ||
+         riskR<0.0 || volatility<0.0 ||
+         !MathIsValidNumber(oldStopLoss) || !MathIsValidNumber(newStopLoss) ||
+         !MathIsValidNumber(oldTakeProfit) || !MathIsValidNumber(newTakeProfit) ||
+         !MathIsValidNumber(riskR) || !MathIsValidNumber(volatility))
+         return false;
+      string payload=StringFormat(
+         "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"modification_id\":\"%s\",\"old_stop_loss\":%.10f,\"new_stop_loss\":%.10f,\"old_take_profit\":%.10f,\"new_take_profit\":%.10f,\"risk_r\":%.8f,\"volatility\":%.8f,\"evidence_ref\":\"%s\"}",
+         JsonSafe(m_portfolioKey),positionIdentifier,JsonSafe(symbol),JsonSafe(direction),
+         JsonSafe(modificationId),oldStopLoss,newStopLoss,oldTakeProfit,newTakeProfit,
+         riskR,volatility,JsonSafe(evidenceRef));
+      return PostJson("/execution-ledger/position-modification",payload);
+     }
+
    bool ClosePosition(const ulong positionIdentifier,const ulong closingDealId,const string evidenceRef,
                       const string requestIdOverride="")
      {
