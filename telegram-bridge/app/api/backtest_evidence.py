@@ -462,6 +462,16 @@ async def ingest_backtest_evidence(
                 detail=f"trade {row.trade_id} resolves after the declared Tester period",
             )
         if row.partition == "locked_oos":
+            if row.timestamp < payload.provenance.locked_oos_start:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"locked_oos trade {row.trade_id} starts before locked_oos_start",
+                )
+            if row.timestamp >= payload.provenance.locked_oos_end:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"locked_oos trade {row.trade_id} starts at or after locked_oos_end",
+                )
             if row.resolved_at >= payload.provenance.locked_oos_end:
                 raise HTTPException(
                     status_code=422,
@@ -501,10 +511,21 @@ async def ingest_backtest_evidence(
         fold_validation = grouped[fold_id]["validation"]
         if not fold_train or not fold_validation:
             raise HTTPException(status_code=422, detail=f"fold {fold_id} must have train and validation rows")
-        if max(row.timestamp for row in fold_train) >= min(row.timestamp for row in fold_validation):
+        validation_start = min(row.timestamp for row in fold_validation)
+        if max(row.timestamp for row in fold_train) >= validation_start:
             raise HTTPException(status_code=422, detail=f"fold {fold_id} violates train-before-validation chronology")
+        if max(row.resolved_at for row in fold_train) >= validation_start:
+            raise HTTPException(
+                status_code=422,
+                detail=f"fold {fold_id} has training outcomes unresolved when validation begins",
+            )
         if max(row.timestamp for row in fold_validation) >= min(row.timestamp for row in holdout):
             raise HTTPException(status_code=422, detail="locked_oos must start after every walk-forward validation window")
+        if max(row.resolved_at for row in fold_validation) >= min(row.timestamp for row in holdout):
+            raise HTTPException(
+                status_code=422,
+                detail="locked_oos cannot begin before all validation outcomes are resolved",
+            )
         verdict = _fold_verdict(fold_train, fold_validation)
         fold_verdicts.append(verdict)
         folds.append({
