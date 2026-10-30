@@ -20,6 +20,7 @@
 #include "includes/Execution/BrokerAdapter.mqh"
 #include "includes/Execution/OrderManager.mqh"
 #include "includes/Portfolio/MultiTradeEngine.mqh"
+bool ReconcilePositionModification(const ulong positionIdentifier,const string symbol,const string direction,const double oldSL,const double newSL,const double oldTP,const double newTP,const double volatility,const string evidenceRef);
 #include "includes/Execution/PositionManager.mqh"
 #include "includes/Execution/TesterDealExport.mqh"
 #include "includes/Recovery/RecoveryEngine.mqh"
@@ -383,6 +384,11 @@ bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legInd
                             const double riskMoney,const double volatility,string &requestId)
   {
    requestId="";
+   if(InpRequireExecutionLedger && !g_executionLedgerHealthy)
+     {
+      g_execAudit.Log("EXECUTION_LEDGER_NOT_READY","ledger reconciliation is pending; new broker submissions are blocked",decision.decision_id);
+      return false;
+     }
    if(!g_executionLedger.Ready())
       return !InpRequireExecutionLedger;
 
@@ -491,6 +497,44 @@ bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string dir
    if(!RiskRFromMoney(riskMoney,riskR,stopLocked)) return false;
    return g_executionLedger.UpdatePositionRisk(positionIdentifier,direction,riskR,
                                                 MathMax(0.0,volatility),evidenceRef);
+  }
+
+bool ReconcilePositionModification(const ulong positionIdentifier,const string symbol,const string direction,
+                                       const double oldSL,const double newSL,const double oldTP,const double newTP,
+                                       const double volatility,const string evidenceRef)
+  {
+   if(!g_executionLedger.Ready())
+     {
+      if(InpRequireExecutionLedger) g_executionLedgerHealthy=false;
+      return !InpRequireExecutionLedger;
+     }
+   ulong ticket=g_broker.PositionTicketForIdentifier(symbol,positionIdentifier);
+   if(ticket==0 || !PositionSelectByTicket(ticket)) return false;
+   double appliedSL=PositionGetDouble(POSITION_SL);
+   double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+   double volume=PositionGetDouble(POSITION_VOLUME);
+   if(appliedSL<=0.0 || entry<=0.0 || volume<=0.0) return false;
+   double riskMoney=g_risk.RiskAmountForLots(symbol,volume,entry,appliedSL);
+   double riskR=0.0;
+   bool stopLocked=(direction=="BUY" && appliedSL>=entry) || (direction=="SELL" && appliedSL<=entry);
+   if(!RiskRFromMoney(riskMoney,riskR,stopLocked)) return false;
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   string modificationId=StringFormat("mt5-posmod:%I64u:%I64u:%s:%s",
+                                      positionIdentifier,(ulong)GetTickCount(),
+                                      DoubleToString(oldSL,digits),DoubleToString(appliedSL,digits));
+   string evidence=StringLen(evidenceRef)>0 ? evidenceRef : modificationId;
+   double appliedTP=PositionGetDouble(POSITION_TP);
+   if(!g_executionLedger.PositionModification(positionIdentifier,symbol,direction,modificationId,
+                                               oldSL,appliedSL,oldTP,appliedTP,
+                                               riskR,MathMax(0.0,volatility),evidence))
+     {
+      g_executionLedgerHealthy=false;
+      g_execAudit.Log("POSITION_MODIFICATION_RECONCILIATION_PENDING",
+                      "broker accepted protective-stop update but durable ledger acknowledgement failed; new entries are blocked",
+                      0,ticket,appliedSL,entry,riskR,0.0);
+      return false;
+     }
+   return true;
   }
 
 bool ReconcileBrokerStateSnapshot()
