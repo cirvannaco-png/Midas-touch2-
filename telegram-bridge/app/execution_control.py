@@ -571,7 +571,7 @@ async def record_position_modification(
         portfolio_key=portfolio_key,
         broker_position_id=broker_position_id,
     )
-    if row is None or row.state != "FILLED" or row.symbol != symbol:
+    if row is None or row.symbol != symbol:
         return False
 
     event = {
@@ -597,6 +597,10 @@ async def record_position_modification(
         if any(existing.get(key) != value for key, value in event.items()):
             raise ValueError("modification_id was reused with conflicting broker evidence")
         return True
+    if row.state != "FILLED":
+        # A late retry for an already-closed position is accepted only when its
+        # exact event was recorded before closure; new modifications are not.
+        return False
 
     history.append({**event, "recorded_at": datetime.now(timezone.utc).isoformat()})
     merged.update(
