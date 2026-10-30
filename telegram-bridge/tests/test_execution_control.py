@@ -8,6 +8,7 @@ from app.database import Base
 from app.execution_control import (
     reconcile_closed_position,
     reconcile_open_position,
+    record_position_modification,
     reconcile_terminal_order,
     recover_expired_leases,
     reserve_execution,
@@ -601,6 +602,129 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
                     volatility=0.0,
                     factors={},
                 )
+            await session.rollback()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_position_modification_reconciliation_is_idempotent_and_updates_reserved_risk():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="DEMO:Exness:123:magic-77",
+                request_id="position-modification-request",
+                broker_position_id="9001",
+                broker_order_id="8001",
+                broker_deal_id="7001",
+                symbol="XAUUSD",
+                direction="BUY",
+                risk_r=1.2,
+                volatility=0.7,
+                factors={"gold": 1.0},
+                evidence_ref="mt5-position-snapshot:9001",
+            )
+            await session.commit()
+
+        event = {
+            "portfolio_key": "DEMO:Exness:123:magic-77",
+            "broker_position_id": "9001",
+            "symbol": "XAUUSD",
+            "direction": "BUY",
+            "modification_id": "mt5-posmod:9001:1",
+            "old_stop_loss": 2300.0,
+            "new_stop_loss": 2310.0,
+            "old_take_profit": 2350.0,
+            "new_take_profit": 2360.0,
+            "risk_r": 0.4,
+            "volatility": 0.5,
+            "evidence_ref": "mt5-position-modification:9001:1",
+        }
+        async with factory() as session:
+            assert await record_position_modification(session, **event)
+            await session.commit()
+
+        async with factory() as session:
+            assert await record_position_modification(session, **event)
+            await session.commit()
+            row = await session.scalar(
+                select(ExecutionLedger).where(
+                    ExecutionLedger.portfolio_key == event["portfolio_key"],
+                    ExecutionLedger.broker_position_id == "9001",
+                )
+            )
+            assert row is not None
+            history = row.result_json["position_modifications"]
+            assert len(history) == 1
+            assert history[0]["new_stop_loss"] == 2310.0
+            reservation = await session.scalar(
+                select(PortfolioReservation).where(
+                    PortfolioReservation.portfolio_key == event["portfolio_key"],
+                    PortfolioReservation.request_id == "position-modification-request",
+                )
+            )
+            assert reservation is not None
+            assert reservation.risk_r == 0.4
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_position_modification_rejects_stop_loosening_and_conflicting_retry():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="DEMO:Exness:123:magic-77",
+                request_id="position-modification-request",
+                broker_position_id="9002",
+                broker_order_id="8002",
+                broker_deal_id="7002",
+                symbol="XAUUSD",
+                direction="BUY",
+                risk_r=1.0,
+                volatility=0.7,
+                factors={},
+                evidence_ref="mt5-position-snapshot:9002",
+            )
+            await session.commit()
+
+        event = {
+            "portfolio_key": "DEMO:Exness:123:magic-77",
+            "broker_position_id": "9002",
+            "symbol": "XAUUSD",
+            "direction": "BUY",
+            "modification_id": "mt5-posmod:9002:1",
+            "old_stop_loss": 2300.0,
+            "new_stop_loss": 2310.0,
+            "old_take_profit": 2350.0,
+            "new_take_profit": 2360.0,
+            "risk_r": 0.4,
+            "volatility": 0.5,
+            "evidence_ref": "mt5-position-modification:9002:1",
+        }
+        async with factory() as session:
+            assert await record_position_modification(session, **event)
+            await session.commit()
+
+        async with factory() as session:
+            conflicting = dict(event, new_stop_loss=2315.0)
+            with pytest.raises(ValueError, match="conflicting broker evidence"):
+                await record_position_modification(session, **conflicting)
+            await session.rollback()
+
+        async with factory() as session:
+            loosening = dict(
+                event,
+                modification_id="mt5-posmod:9002:2",
+                old_stop_loss=2310.0,
+                new_stop_loss=2305.0,
+            )
+            with pytest.raises(ValueError, match="cannot be loosened"):
+                await record_position_modification(session, **loosening)
             await session.rollback()
     finally:
         await engine.dispose()
