@@ -209,12 +209,16 @@ bool CPositionManager::CalculateModificationRisk(PendingPositionModificationReco
 string CPositionManager::PendingModificationFileName()
   {
    string server=AccountInfoString(ACCOUNT_SERVER);
+   string chartSymbol=_Symbol;
    StringReplace(server," ","_");
    StringReplace(server,".","_");
    StringReplace(server,"/","_");
    StringReplace(server,"\\","_");
-   return StringFormat("MidasPositionMods_%s_%I64u_%I64u.csv",
-                       server,(ulong)AccountInfoInteger(ACCOUNT_LOGIN),(ulong)InpMagicNumber);
+   StringReplace(chartSymbol,"/","_");
+   StringReplace(chartSymbol,"\\","_");
+   return StringFormat("MidasPositionMods_%s_%I64u_%I64u_%s_%d.csv",
+                       server,(ulong)AccountInfoInteger(ACCOUNT_LOGIN),(ulong)InpMagicNumber,
+                       chartSymbol,(int)_Period);
   }
 
 void CPositionManager::LoadPendingModifications()
