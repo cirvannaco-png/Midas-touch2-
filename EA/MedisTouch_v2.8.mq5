@@ -863,9 +863,13 @@ int OnInit()
    if(StringLen(InpConfigSyncEndpoint)>0){g_configSync.Init(_Symbol,InpConfigSyncEndpoint,InpBridgeApiKey,InpWeightSetVersion,InpWebRequestTimeoutMs);EventSetTimer(MathMax(60,InpConfigSyncPollMinutes*60));}g_tracker.ConfigurePublishing(&g_publisher,InpWeightSetVersion);g_portfolio.Init(g_activeRiskLimits.maxPortfolioRiskPercent,g_activeRiskLimits.maxPositionsPerSymbol,g_activeRiskLimits.maxPositionsPerGroup,InpMagicNumber,&g_risk);g_riskGuard.Init(_Symbol,g_activeRiskLimits.maxDailyLossPercent,g_activeRiskLimits.maxDrawdownPercent,g_activeRiskLimits.deriskStartPercent,g_activeRiskLimits.deriskFloor,InpEnableProgressiveDailyLossDeRisk);if(InpUseNewsFilter)g_newsFilter.Load(InpNewsFilterFile,InpNewsMinutesBefore,InpNewsMinutesAfter);g_scoring.ConfigureNewsAwareness(GetPointer(g_newsFilter),InpNewsWarnMinutesBefore,InpNewsWarnMinutesAfter,InpNewsWarnMultiplier);g_recovery.Init(&g_store,&g_orders,InpMagicNumber,_Symbol);int restored=g_recovery.Recover();if(restored>0)PrintFormat("MedisTouch EA: recovery restored %d live trade(s).",restored);TradeDecisionRecord prior[];int n=g_store.LoadAll(prior);long maxId=0;for(int i=0;i<n;i++)if(prior[i].decision_id>maxId)maxId=prior[i].decision_id;if(maxId>0)g_router.SeedNextId(maxId+1);
    if(InpEnableExecution && g_executionLedger.Ready())
      {
-      g_executionLedgerHealthy=ReconcileBrokerStateSnapshot();
+      // Recover locally persisted protective-stop modification events before
+      // declaring the broker snapshot reconciled and enabling new entries.
+      g_positions.RetryPendingLedgerReconciliation();
+      g_executionLedgerHealthy=g_positions.LedgerReconciliationHealthy() &&
+                               ReconcileBrokerStateSnapshot();
       if(!g_executionLedgerHealthy)
-         g_execAudit.Log("EXECUTION_LEDGER_NOT_READY","broker/database startup reconciliation incomplete; existing positions remain managed, but new EA entries are blocked");
+         g_execAudit.Log("EXECUTION_LEDGER_NOT_READY","broker/database startup or pending position-modification reconciliation incomplete; existing positions remain managed, but new EA entries are blocked");
       else
          g_execAudit.Log("EXECUTION_LEDGER_READY","startup positions, pending orders and complete closed-history evidence reconciled");
      }
