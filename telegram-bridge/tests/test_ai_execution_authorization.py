@@ -1,6 +1,5 @@
 from app.config import settings
 
-
 DEMO_PORTFOLIO = "DEMO:EXNESS:123456:magic-77"
 
 
