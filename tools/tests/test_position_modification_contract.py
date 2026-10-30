@@ -15,6 +15,7 @@ def test_stop_modification_queue_is_durable_and_fail_closed():
     ea = EA.read_text(encoding="utf-8")
     client = LEDGER_CLIENT.read_text(encoding="utf-8")
     assert "FILE_COMMON" in manager
+    assert "chartSymbol=_Symbol" in manager
     assert "LoadPendingModifications();" in manager
     assert "SavePendingModifications()" in manager
     assert "m_pendingPersistenceHealthy=SavePendingModifications();" in manager
