@@ -337,43 +337,43 @@ void CPositionManager::OnTick(double currentAtr)
          if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
            {
             // Do not treat a successful trade-server retcode as complete
-            // reconciliation: read back the broker-applied SL/TP first.
+            // reconciliation: queue an immutable event and confirm the broker
+            // readback before it can be acknowledged by the remote ledger.
+            m_modificationSequence++;
+            PendingPositionModificationRecord event;
+            event.positionIdentifier=currentPositionIdentifier;
+            event.positionTicket=ticket;
+            event.brokerStateConfirmed=false;
+            event.symbol=dec.symbol;
+            event.direction=isBuy?"BUY":"SELL";
+            event.volume=PositionGetDouble(POSITION_VOLUME);
+            event.entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+            event.previousSL=curSL;
+            event.appliedSL=ds.proposedSL;
+            event.previousTP=previousTP;
+            event.appliedTP=dec.setup.final_tp;
+            event.riskR=-1.0;
+            event.volatility=MathMax(0.0,currentAtr);
+            event.evidenceRef=StringFormat("mt5-position-modification:%I64u:%I64d:%d:%.8f",
+                                           currentPositionIdentifier,(long)TimeCurrent(),
+                                           m_modificationSequence,ds.proposedSL);
             if(PositionSelectByTicket(ticket))
               {
-               double appliedSL=PositionGetDouble(POSITION_SL);
-               double appliedTP=PositionGetDouble(POSITION_TP);
-               ulong positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
-               double appliedVolume=PositionGetDouble(POSITION_VOLUME);
-               double appliedEntry=PositionGetDouble(POSITION_PRICE_OPEN);
-               if(positionIdentifier>0 && appliedSL>0.0 && appliedVolume>0.0 && appliedEntry>0.0)
+               ulong observedIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+               double observedSL=PositionGetDouble(POSITION_SL);
+               if(observedIdentifier==currentPositionIdentifier && observedSL>0.0)
                  {
-                  m_modificationSequence++;
-                  PendingPositionModificationRecord event;
-                  event.positionIdentifier=positionIdentifier;
-                  event.positionTicket=ticket;
-                  event.brokerStateConfirmed=true;
-                  event.symbol=dec.symbol;
-                  event.direction=isBuy?"BUY":"SELL";
-                  event.volume=appliedVolume;
-                  event.entryPrice=appliedEntry;
-                  event.previousSL=curSL;
-                  event.appliedSL=appliedSL;
-                  event.previousTP=previousTP;
-                  event.appliedTP=appliedTP;
-                  event.riskR=-1.0;
-                  event.volatility=MathMax(0.0,currentAtr);
-                  event.evidenceRef=StringFormat("mt5-position-modification:%I64u:%I64d:%d:%.8f",
-                                                 positionIdentifier,(long)TimeCurrent(),
-                                                 m_modificationSequence,appliedSL);
-                  QueueModification(event);
-                  SendPendingModifications();
+                  event.positionIdentifier=observedIdentifier;
+                  event.volume=PositionGetDouble(POSITION_VOLUME);
+                  event.entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+                  event.appliedSL=observedSL;
+                  event.appliedTP=PositionGetDouble(POSITION_TP);
+                  event.brokerStateConfirmed=(event.volume>0.0 && event.entryPrice>0.0);
                  }
-               else
-                  m_ledgerReconciliationHealthy=false;
-               m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,appliedSL,price,r,ds.reason);
               }
-            else
-               m_ledgerReconciliationHealthy=false;
+            QueueModification(event);
+            SendPendingModifications();
+            m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,event.appliedSL,price,r,ds.reason);
             RecordModification(ticket);
             if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);
            }
