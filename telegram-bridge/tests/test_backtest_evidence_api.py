@@ -295,3 +295,43 @@ def test_backtest_evidence_rejects_null_spread_points_for_fixed_spread(client, a
 
     assert response.status_code == 422
     assert "spread_points may be null" in response.text
+
+
+
+def test_backtest_evidence_rejects_training_outcome_unresolved_at_validation_start(client, auth_headers):
+    payload = _valid_payload()
+    train_trade = next(row for row in payload["trades"] if row["partition"] == "train" and row["fold_id"] == 1)
+    validation_trade = next(row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 1)
+    train_trade["resolved_at"] = validation_trade["timestamp"]
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 422
+    assert "training outcomes unresolved when validation begins" in response.json()["detail"]
+
+
+def test_backtest_evidence_rejects_locked_oos_rows_outside_the_locked_window(client, auth_headers):
+    payload = _valid_payload()
+    holdout = next(row for row in payload["trades"] if row["partition"] == "locked_oos")
+    holdout["timestamp"] = (
+        datetime.fromisoformat(payload["provenance"]["locked_oos_start"]) - timedelta(minutes=1)
+    ).isoformat()
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 422
+    assert "starts before locked_oos_start" in response.json()["detail"]
+
+
+def test_backtest_evidence_rejects_non_chronological_validation_folds(client, auth_headers):
+    payload = _valid_payload()
+    validation_fold_1 = next(row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 1)
+    validation_fold_2 = next(row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 2)
+    validation_fold_2["timestamp"] = (
+        datetime.fromisoformat(validation_fold_1["timestamp"]) - timedelta(days=1)
+    ).isoformat()
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 422
+    assert "violates train-before-validation chronology" in response.json()["detail"] or "locked_oos must start" in response.json()["detail"]
