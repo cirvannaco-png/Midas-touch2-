@@ -232,7 +232,7 @@ scheduler must wake the service and trigger the request.
 - Manual dispatch is available for either task, but it calls production endpoints and is not a
   dry run. Use it only when an immediate production operation is intended.
 
-In GitHub, create an environment named production under Settings → Environments and restrict deployments to the main branch. The production workflows use the canonical non-secret service URL `https://midas-touch2.onrender.com` directly, so do not create a `BRIDGE_BASE_URL` secret. Set only `BRIDGE_API_KEY` as an environment secret, matching this service's `SECRET_KEY`; never commit or print it. The workflow uses this environment, limits manual runs to main, enforces HTTPS, bounded timeouts, no automatic POST retries, and response validation.
+In GitHub, create an environment named production under Settings → Environments and restrict deployments to the main branch. The production workflows use the canonical non-secret service URL `https://midas-touch2.onrender.com` directly, so do not create a `BRIDGE_BASE_URL` secret. Set only `BRIDGE_API_KEY` as an environment secret. Configure the Render service's `BRIDGE_API_KEY` environment variable to the exact same value. The bridge prefers `BRIDGE_API_KEY`; `SECRET_KEY` is retained only as a backwards-compatible fallback during rotation. Never commit or print either value. The workflow uses this environment, limits manual runs to main, enforces HTTPS, bounded timeouts, no automatic POST retries, and response validation.
 
 The recalibration job requires HTTP success plus JSON status "ok" and a non-empty cycle_id.
 A status "no_data" response means no live CalibrationCycle was persisted for the two-week
