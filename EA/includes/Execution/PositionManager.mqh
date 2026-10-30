@@ -16,6 +16,8 @@
 struct PendingPositionModificationRecord
   {
    ulong  positionIdentifier;
+   ulong  positionTicket;
+   bool   brokerStateConfirmed;
    string symbol;
    string direction;
    double volume;
@@ -56,6 +58,7 @@ private:
    bool   CalculateModificationRisk(PendingPositionModificationRecord &event);
    void   QueueModification(const PendingPositionModificationRecord &event);
    void   SendPendingModifications();
+   bool   HasPendingModification(ulong positionIdentifier);
    double ConfirmedStructuralAnchor(bool isBuy);
 
 public:
@@ -211,6 +214,27 @@ void CPositionManager::SendPendingModifications()
          continue;
         }
       PendingPositionModificationRecord event=m_pendingModifications[i];
+      if(!event.brokerStateConfirmed)
+        {
+         if(!PositionSelectByTicket(event.positionTicket))
+           {
+            i++;
+            continue;
+           }
+         event.positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         event.volume=PositionGetDouble(POSITION_VOLUME);
+         event.entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+         event.appliedSL=PositionGetDouble(POSITION_SL);
+         event.appliedTP=PositionGetDouble(POSITION_TP);
+         event.brokerStateConfirmed=(event.positionIdentifier>0 && event.appliedSL>0.0 &&
+                                     event.volume>0.0 && event.entryPrice>0.0);
+         m_pendingModifications[i]=event;
+         if(!event.brokerStateConfirmed)
+           {
+            i++;
+            continue;
+           }
+        }
       if(event.riskR<0.0 && !CalculateModificationRisk(event))
         {
          i++;
@@ -232,6 +256,13 @@ void CPositionManager::SendPendingModifications()
                                   (!InpRequireExecutionLedger ||
                                    (m_ledger!=NULL && m_ledger.Ready())));
   }
+
+bool CPositionManager::HasPendingModification(ulong positionIdentifier)
+  {
+   for(int i=0;i<ArraySize(m_pendingModifications);i++)
+      if(m_pendingModifications[i].positionIdentifier==positionIdentifier) return true;
+   return false;
+}
 
 void CPositionManager::RetryPendingLedgerReconciliation()
   {
@@ -292,7 +323,8 @@ void CPositionManager::OnTick(double currentAtr)
       double point=SymbolInfoDouble(dec.symbol,SYMBOL_POINT);
       double spreadPoints=(point>0.0 ? (tick.ask-tick.bid)/point : 0.0);
 
-      if(InpEnableDynamicStop && CanModifyNow(ticket))
+      ulong currentPositionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      if(InpEnableDynamicStop && !HasPendingModification(currentPositionIdentifier) && CanModifyNow(ticket))
         {
          // Source the anchor from the already-running, confirmed swing
          // detector for the entry timeframe. If no confirmed swing exists,
@@ -318,6 +350,8 @@ void CPositionManager::OnTick(double currentAtr)
                   m_modificationSequence++;
                   PendingPositionModificationRecord event;
                   event.positionIdentifier=positionIdentifier;
+                  event.positionTicket=ticket;
+                  event.brokerStateConfirmed=true;
                   event.symbol=dec.symbol;
                   event.direction=isBuy?"BUY":"SELL";
                   event.volume=appliedVolume;
