@@ -474,3 +474,39 @@ class ExecutionDealEvent(Base):
     event_fingerprint = Column(String(64), nullable=False)
     payload_json = Column(JSON, nullable=False)
     received_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class ExecutionPositionModification(Base):
+    """Immutable broker-confirmed protective-stop/TP modification evidence."""
+
+    __tablename__ = "execution_position_modifications"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "portfolio_key",
+            "evidence_ref",
+            name="uq_execution_position_mod_portfolio_evidence",
+        ),
+        Index(
+            "ix_execution_position_modifications_position",
+            "portfolio_key",
+            "broker_position_id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_key = Column(String, nullable=False)
+    broker_position_id = Column(String, nullable=False)
+    symbol = Column(String, nullable=False)
+    direction = Column(String, nullable=False)
+    volume = Column(Float, nullable=False)
+    entry_price = Column(Float, nullable=False)
+    previous_sl = Column(Float, nullable=False)
+    applied_sl = Column(Float, nullable=False)
+    previous_tp = Column(Float, nullable=False)
+    applied_tp = Column(Float, nullable=False)
+    risk_r = Column(Float, nullable=False)
+    volatility = Column(Float, nullable=False)
+    evidence_ref = Column(String(256), nullable=False)
+    event_fingerprint = Column(String(64), nullable=False)
+    payload_json = Column(JSON, nullable=False)
+    received_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
