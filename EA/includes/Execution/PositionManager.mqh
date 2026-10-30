@@ -41,6 +41,7 @@ private:
    double                m_riskPercentPerTrade;
    bool                  m_ledgerReconciliationHealthy;
    bool                  m_pendingPersistenceHealthy;
+   bool                  m_pendingLoadHealthy;
    string                m_pendingModificationFile;
    int                   m_modificationSequence;
    PendingPositionModificationRecord m_pendingModifications[];
@@ -91,6 +92,7 @@ void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
    m_modificationSequence=0;
    ArrayResize(m_pendingModifications,0);
    m_pendingPersistenceHealthy=true;
+   m_pendingLoadHealthy=true;
    m_pendingModificationFile=PendingModificationFileName();
    LoadPendingModifications();
    m_ledgerReconciliationHealthy=(m_pendingPersistenceHealthy &&
@@ -217,8 +219,14 @@ string CPositionManager::PendingModificationFileName()
 
 void CPositionManager::LoadPendingModifications()
   {
+   if(!FileIsExist(m_pendingModificationFile,FILE_COMMON)) return;
    int handle=FileOpen(m_pendingModificationFile,FILE_READ|FILE_CSV|FILE_COMMON|FILE_ANSI,'\t');
-   if(handle==INVALID_HANDLE) return;
+   if(handle==INVALID_HANDLE)
+     {
+      m_pendingLoadHealthy=false;
+      m_pendingPersistenceHealthy=false;
+      return;
+     }
    while(!FileIsEnding(handle))
      {
       PendingPositionModificationRecord event;
@@ -240,6 +248,7 @@ void CPositionManager::LoadPendingModifications()
       if(event.positionIdentifier==0 || event.positionTicket==0 || event.symbol=="" ||
          (event.direction!="BUY" && event.direction!="SELL") || event.evidenceRef=="")
         {
+         m_pendingLoadHealthy=false;
          m_pendingPersistenceHealthy=false;
          continue;
         }
@@ -252,6 +261,9 @@ void CPositionManager::LoadPendingModifications()
 
 bool CPositionManager::SavePendingModifications()
   {
+   // Never overwrite a queue that could not be loaded completely: doing so
+   // could destroy the only copy of a broker-confirmed, unacknowledged event.
+   if(!m_pendingLoadHealthy) return false;
    string temporary=m_pendingModificationFile+".tmp";
    if(FileIsExist(temporary,FILE_COMMON))
       FileDelete(temporary,FILE_COMMON);
@@ -295,7 +307,7 @@ void CPositionManager::QueueModification(const PendingPositionModificationRecord
 
 void CPositionManager::SendPendingModifications()
   {
-   if(!m_pendingPersistenceHealthy)
+   if(!m_pendingPersistenceHealthy && m_pendingLoadHealthy)
       m_pendingPersistenceHealthy=SavePendingModifications();
    if(!m_pendingPersistenceHealthy) return;
    for(int i=0;i<ArraySize(m_pendingModifications);)
