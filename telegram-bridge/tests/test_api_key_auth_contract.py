@@ -51,3 +51,26 @@ def test_render_secret_sync_keeps_legacy_fallback_for_existing_automation():
     prepared = collect_secrets(_base_env())
     assert prepared["BRIDGE_API_KEY"] == "legacy-secret"
     assert prepared["SECRET_KEY"] == "legacy-secret"
+
+
+
+def test_render_secret_sync_accepts_workflow_key_without_legacy_alias():
+    env = {
+        "BOT_TOKEN": "123456:placeholder",
+        "CHAT_ID": "-1000000000",
+        "ADMIN_CHAT_ID": "777000777",
+        "BRIDGE_API_KEY": "workflow-bridge-secret",
+    }
+    prepared = collect_secrets(env)
+    assert prepared["BRIDGE_API_KEY"] == "workflow-bridge-secret"
+    assert prepared["SECRET_KEY"] == "workflow-bridge-secret"
+
+
+def test_render_secret_sync_requires_one_authentication_credential():
+    env = {
+        "BOT_TOKEN": "123456:placeholder",
+        "CHAT_ID": "-1000000000",
+        "ADMIN_CHAT_ID": "777000777",
+    }
+    with pytest.raises(Exception, match="BRIDGE_API_KEY"):
+        collect_secrets(env)
