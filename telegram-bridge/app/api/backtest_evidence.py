@@ -738,6 +738,8 @@ async def ingest_backtest_evidence(
         },
         "walk_forward_folds": folds,
         "parameter_neighbors": neighbors,
+        "selection_data_source": "development_validation_only",
+        "locked_oos_role": "final_acceptance_only",
         "feature_importance": [row.model_dump(mode="json") for row in payload.feature_importance],
         "clustered_mda": [row.model_dump(mode="json") for row in payload.clustered_mda],
         "counterfactual": [row.model_dump(mode="json") for row in payload.counterfactual],
@@ -853,7 +855,7 @@ async def ingest_backtest_evidence(
     evaluation = ConfigurationEvaluation.from_evidence(
         config_hash,
         evidence_version,
-        objective_score={"score": score, "components": components},
+        objective_score={"score": score, "components": components, "selection_data_source": "development_validation_only"},
         performance_metrics=performance_metrics,
         risk_metrics=risk_metrics,
         validation_evidence=validation_evidence,
