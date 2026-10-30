@@ -11,7 +11,7 @@ ended up booting with a WEBHOOK_SECRET_TOKEN that Telegram rejected.
 
 This script makes that step reproducible:
 
-  * values come from the environment (GitLab CI/CD variables in automation),
+  * BRIDGE_API_KEY is canonical (legacy SECRET_KEY is accepted as fallback),\n  * the same value is written to both BRIDGE_API_KEY and SECRET_KEY,\n  * values come from the environment (GitLab CI/CD variables in automation),
   * WEBHOOK_SECRET_TOKEN is generated when absent and always validated
     against Telegram's ``^[A-Za-z0-9_-]{1,256}$`` before it is uploaded,
   * env vars are PUT to the Render API, then a deploy is triggered so the
@@ -39,7 +39,7 @@ RENDER_API = "https://api.render.com/v1"
 TELEGRAM_SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 
 # Secrets render.yaml marks `sync: false`. Optional ones are skipped when unset.
-REQUIRED_SECRETS = ("BOT_TOKEN", "CHAT_ID", "ADMIN_CHAT_ID", "SECRET_KEY")
+REQUIRED_SECRETS = ("BOT_TOKEN", "CHAT_ID", "ADMIN_CHAT_ID")
 GENERATED_SECRETS = ("WEBHOOK_SECRET_TOKEN",)
 
 
@@ -76,7 +76,15 @@ def collect_secrets(env: dict[str, str]) -> dict[str, str]:
             + ". Add them as protected/masked GitLab CI/CD variables."
         )
 
+    # Workflows and the EA use BRIDGE_API_KEY; the bridge retains SECRET_KEY
+    # as a compatibility fallback. A single source value is required and both
+    # Render variables are written identically to avoid a partial rotation.
+    bridge_key = (env.get("BRIDGE_API_KEY") or env.get("SECRET_KEY") or "").strip()
+    if not bridge_key:
+        raise RenderSyncError("Missing BRIDGE_API_KEY (or legacy SECRET_KEY).")
     payload = {k: env[k] for k in REQUIRED_SECRETS}
+    payload["BRIDGE_API_KEY"] = bridge_key
+    payload["SECRET_KEY"] = bridge_key
 
     for key in GENERATED_SECRETS:
         value = env.get(key) or generate_webhook_secret_token()

@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     ADMIN_USER_ID: str = ""
     GROUP_CHAT_ID: str = ""
     SECRET_KEY: str
+    # Canonical credential for authenticated bridge endpoints. SECRET_KEY remains
+    # a backward-compatible fallback for existing Render deployments.
+    BRIDGE_API_KEY: str = ""
+
+    @property
+    def bridge_api_key(self) -> str:
+        return (self.BRIDGE_API_KEY or self.SECRET_KEY).strip()
     DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost:5432/medis_touch"
 
     @field_validator("DATABASE_URL", mode="before")

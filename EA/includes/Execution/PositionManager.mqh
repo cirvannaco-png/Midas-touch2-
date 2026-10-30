@@ -5,6 +5,7 @@
 #define POSITIONMANAGER_MQH
 
 #include "OrderManager.mqh"
+#include "ExecutionLedgerClient.mqh"
 #include "BrokerAdapter.mqh"
 #include "DynamicStopEngine.mqh"
 #include "DynamicStopInputs.mqh"
@@ -12,12 +13,38 @@
 #include "../Monitoring/SLModificationAudit.mqh"
 #include "../Structure/SwingDetector.mqh"
 
+struct PendingPositionModificationRecord
+  {
+   ulong  positionIdentifier;
+   ulong  positionTicket;
+   bool   brokerStateConfirmed;
+   string symbol;
+   string direction;
+   double volume;
+   double entryPrice;
+   double previousSL;
+   double appliedSL;
+   double previousTP;
+   double appliedTP;
+   double riskR;
+   double volatility;
+   string evidenceRef;
+  };
+
 class CPositionManager
   {
 private:
    COrderManager*        m_orders;
    CBrokerAdapter*       m_broker;
    CSwingDetector*       m_structureSwings;
+   CExecutionLedgerClient* m_ledger;
+   double                m_riskPercentPerTrade;
+   bool                  m_ledgerReconciliationHealthy;
+   bool                  m_pendingPersistenceHealthy;
+   bool                  m_pendingLoadHealthy;
+   string                m_pendingModificationFile;
+   int                   m_modificationSequence;
+   PendingPositionModificationRecord m_pendingModifications[];
    CSLModificationAudit  m_audit;
    CDynamicStopEngine    m_dynamicStop;
    double                m_partialAtR;
@@ -31,24 +58,47 @@ private:
    double RMultiple(const TradeDecisionRecord &dec,double entry,double price);
    bool   CanModifyNow(ulong ticket);
    void   RecordModification(ulong ticket);
+   bool   CalculateModificationRisk(PendingPositionModificationRecord &event);
+   void   QueueModification(const PendingPositionModificationRecord &event);
+   void   SendPendingModifications();
+   bool   HasPendingModification(ulong positionIdentifier);
+   string PendingModificationFileName();
+   void   LoadPendingModifications();
+   bool   SavePendingModifications();
    double ConfirmedStructuralAnchor(bool isBuy);
 
 public:
    void Init(COrderManager* orders,CBrokerAdapter* broker,
              double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
              int maxSpreadPoints=0,double minATR=0.0,double maxATR=0.0,
-             int minModifyIntervalSec=5,CSwingDetector* structureSwings=NULL);
+             int minModifyIntervalSec=5,CSwingDetector* structureSwings=NULL,
+             CExecutionLedgerClient* ledger=NULL,double riskPercentPerTrade=0.0);
    void OnTick(double currentAtr);
+   void RetryPendingLedgerReconciliation();
+   bool LedgerReconciliationHealthy() const { return m_ledgerReconciliationHealthy; }
   };
 
 void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
                             double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
                             int maxSpreadPoints,double minATR,double maxATR,int minModifyIntervalSec,
-                            CSwingDetector* structureSwings)
+                            CSwingDetector* structureSwings,CExecutionLedgerClient* ledger,
+                            double riskPercentPerTrade)
   {
    m_orders=orders;
    m_broker=broker;
    m_structureSwings=structureSwings;
+   m_ledger=ledger;
+   m_riskPercentPerTrade=riskPercentPerTrade;
+   m_modificationSequence=0;
+   ArrayResize(m_pendingModifications,0);
+   m_pendingPersistenceHealthy=true;
+   m_pendingLoadHealthy=true;
+   m_pendingModificationFile=PendingModificationFileName();
+   LoadPendingModifications();
+   m_ledgerReconciliationHealthy=(m_pendingPersistenceHealthy &&
+                                  ArraySize(m_pendingModifications)==0 &&
+                                  (!InpRequireExecutionLedger ||
+                                   (m_ledger!=NULL && m_ledger.Ready())));
    m_partialAtR=partialAtR;
    m_partialFraction=partialFraction;
    m_minModifyIntervalSec=MathMax(0,minModifyIntervalSec);
@@ -140,6 +190,206 @@ void CPositionManager::RecordModification(ulong ticket)
    m_lastModifyTimes[n]=TimeCurrent();
   }
 
+bool CPositionManager::CalculateModificationRisk(PendingPositionModificationRecord &event)
+  {
+   if(event.volume<=0.0 || event.entryPrice<=0.0 || event.appliedSL<=0.0 ||
+      m_riskPercentPerTrade<=0.0 || !MathIsValidNumber(m_riskPercentPerTrade))
+      return false;
+   double profitAtStop=0.0;
+   ENUM_ORDER_TYPE orderType=(event.direction=="BUY")?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+   if(!OrderCalcProfit(orderType,event.symbol,event.volume,event.entryPrice,event.appliedSL,profitAtStop) ||
+      !MathIsValidNumber(profitAtStop))
+      return false;
+   double baseRiskUnit=AccountInfoDouble(ACCOUNT_EQUITY)*m_riskPercentPerTrade/100.0;
+   if(baseRiskUnit<=0.0 || !MathIsValidNumber(baseRiskUnit)) return false;
+   event.riskR=MathMax(0.0,-profitAtStop)/baseRiskUnit;
+   return (MathIsValidNumber(event.riskR) && event.riskR>=0.0);
+  }
+
+string CPositionManager::PendingModificationFileName()
+  {
+   string server=AccountInfoString(ACCOUNT_SERVER);
+   string chartSymbol=_Symbol;
+   StringReplace(server," ","_");
+   StringReplace(server,".","_");
+   StringReplace(server,"/","_");
+   StringReplace(server,"\\","_");
+   StringReplace(chartSymbol,"/","_");
+   StringReplace(chartSymbol,"\\","_");
+   return StringFormat("MidasPositionMods_%s_%I64u_%I64u_%s_%d.csv",
+                       server,(ulong)AccountInfoInteger(ACCOUNT_LOGIN),(ulong)InpMagicNumber,
+                       chartSymbol,(int)_Period);
+  }
+
+void CPositionManager::LoadPendingModifications()
+  {
+   if(!FileIsExist(m_pendingModificationFile,FILE_COMMON)) return;
+   int handle=FileOpen(m_pendingModificationFile,FILE_READ|FILE_CSV|FILE_COMMON|FILE_ANSI,'\t');
+   if(handle==INVALID_HANDLE)
+     {
+      m_pendingLoadHealthy=false;
+      m_pendingPersistenceHealthy=false;
+      return;
+     }
+   while(!FileIsEnding(handle))
+     {
+      PendingPositionModificationRecord event;
+      event.positionIdentifier=(ulong)FileReadNumber(handle);
+      if(FileIsEnding(handle)) break;
+      event.positionTicket=(ulong)FileReadNumber(handle);
+      event.brokerStateConfirmed=(FileReadNumber(handle)>0.5);
+      event.symbol=FileReadString(handle);
+      event.direction=FileReadString(handle);
+      event.volume=FileReadNumber(handle);
+      event.entryPrice=FileReadNumber(handle);
+      event.previousSL=FileReadNumber(handle);
+      event.appliedSL=FileReadNumber(handle);
+      event.previousTP=FileReadNumber(handle);
+      event.appliedTP=FileReadNumber(handle);
+      event.riskR=FileReadNumber(handle);
+      event.volatility=FileReadNumber(handle);
+      event.evidenceRef=FileReadString(handle);
+      if(event.positionIdentifier==0 || event.positionTicket==0 || event.symbol=="" ||
+         (event.direction!="BUY" && event.direction!="SELL") || event.evidenceRef=="")
+        {
+         m_pendingLoadHealthy=false;
+         m_pendingPersistenceHealthy=false;
+         continue;
+        }
+      int n=ArraySize(m_pendingModifications);
+      ArrayResize(m_pendingModifications,n+1);
+      m_pendingModifications[n]=event;
+     }
+   FileClose(handle);
+  }
+
+bool CPositionManager::SavePendingModifications()
+  {
+   // Never overwrite a queue that could not be loaded completely: doing so
+   // could destroy the only copy of a broker-confirmed, unacknowledged event.
+   if(!m_pendingLoadHealthy) return false;
+   string temporary=m_pendingModificationFile+".tmp";
+   if(FileIsExist(temporary,FILE_COMMON))
+      FileDelete(temporary,FILE_COMMON);
+   int handle=FileOpen(temporary,FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI,'\t');
+   if(handle==INVALID_HANDLE) return false;
+   for(int i=0;i<ArraySize(m_pendingModifications);i++)
+     {
+      PendingPositionModificationRecord event=m_pendingModifications[i];
+      FileWrite(handle,(long)event.positionIdentifier,(long)event.positionTicket,
+                event.brokerStateConfirmed?1:0,event.symbol,event.direction,
+                event.volume,event.entryPrice,event.previousSL,event.appliedSL,
+                event.previousTP,event.appliedTP,event.riskR,event.volatility,event.evidenceRef);
+     }
+   FileFlush(handle);
+   FileClose(handle);
+   if(ArraySize(m_pendingModifications)==0)
+     {
+      FileDelete(temporary,FILE_COMMON);
+      if(FileIsExist(m_pendingModificationFile,FILE_COMMON))
+         return FileDelete(m_pendingModificationFile,FILE_COMMON);
+      return true;
+     }
+   if(!FileMove(temporary,FILE_COMMON,m_pendingModificationFile,FILE_COMMON|FILE_REWRITE))
+     {
+      FileDelete(temporary,FILE_COMMON);
+      return false;
+     }
+   return true;
+  }
+
+void CPositionManager::QueueModification(const PendingPositionModificationRecord &event)
+  {
+   if(m_ledger==NULL && !InpRequireExecutionLedger) return;
+   if(m_ledger!=NULL && !m_ledger.Ready() && !InpRequireExecutionLedger) return;
+   int n=ArraySize(m_pendingModifications);
+   ArrayResize(m_pendingModifications,n+1);
+   m_pendingModifications[n]=event;
+   m_pendingPersistenceHealthy=SavePendingModifications();
+   m_ledgerReconciliationHealthy=false;
+  }
+
+void CPositionManager::SendPendingModifications()
+  {
+   if(!m_pendingPersistenceHealthy && m_pendingLoadHealthy)
+      m_pendingPersistenceHealthy=SavePendingModifications();
+   if(!m_pendingPersistenceHealthy) return;
+   for(int i=0;i<ArraySize(m_pendingModifications);)
+     {
+      if(m_ledger==NULL || !m_ledger.Ready())
+        {
+         i++;
+         continue;
+        }
+      PendingPositionModificationRecord event=m_pendingModifications[i];
+      if(!event.brokerStateConfirmed)
+        {
+         if(!PositionSelectByTicket(event.positionTicket))
+           {
+            i++;
+            continue;
+           }
+         event.positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         event.volume=PositionGetDouble(POSITION_VOLUME);
+         event.entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+         event.appliedSL=PositionGetDouble(POSITION_SL);
+         event.appliedTP=PositionGetDouble(POSITION_TP);
+         event.brokerStateConfirmed=(event.positionIdentifier>0 && event.appliedSL>0.0 &&
+                                     event.volume>0.0 && event.entryPrice>0.0);
+         m_pendingModifications[i]=event;
+         if(!event.brokerStateConfirmed)
+           {
+            i++;
+            continue;
+           }
+        }
+      if(event.riskR<0.0 && !CalculateModificationRisk(event))
+        {
+         i++;
+         continue;
+        }
+      // Persist the exact risk snapshot before the HTTP call. If the server
+      // commits but the response is lost, an idempotent retry must send the
+      // identical payload and evidence fingerprint.
+      m_pendingModifications[i]=event;
+      m_pendingPersistenceHealthy=SavePendingModifications();
+      if(!m_pendingPersistenceHealthy)
+        {
+         i++;
+         continue;
+        }
+      if(!m_ledger.PositionModification(event.positionIdentifier,event.symbol,event.direction,
+                                        event.volume,event.entryPrice,event.previousSL,event.appliedSL,
+                                        event.previousTP,event.appliedTP,event.riskR,event.volatility,
+                                        event.evidenceRef))
+        {
+         i++;
+         continue;
+        }
+      int last=ArraySize(m_pendingModifications)-1;
+      if(i!=last) m_pendingModifications[i]=m_pendingModifications[last];
+      ArrayResize(m_pendingModifications,last);
+      m_pendingPersistenceHealthy=SavePendingModifications();
+      if(!m_pendingPersistenceHealthy) break;
+     }
+   m_ledgerReconciliationHealthy=(m_pendingPersistenceHealthy &&
+                                  ArraySize(m_pendingModifications)==0 &&
+                                  (!InpRequireExecutionLedger ||
+                                   (m_ledger!=NULL && m_ledger.Ready())));
+  }
+
+bool CPositionManager::HasPendingModification(ulong positionIdentifier)
+  {
+   for(int i=0;i<ArraySize(m_pendingModifications);i++)
+      if(m_pendingModifications[i].positionIdentifier==positionIdentifier) return true;
+   return false;
+}
+
+void CPositionManager::RetryPendingLedgerReconciliation()
+  {
+   SendPendingModifications();
+  }
+
 // Return the newest CONFIRMED swing on the opposite side of the position.
 // CSwingDetector only exposes swings after its left/right strength window
 // has completed, so this is market structure derived from the actual
@@ -165,6 +415,7 @@ double CPositionManager::ConfirmedStructuralAnchor(bool isBuy)
 
 void CPositionManager::OnTick(double currentAtr)
   {
+   SendPendingModifications();
    for(int i=0;i<m_orders.Total();i++)
      {
       ENUM_TRADE_STATE state=m_orders.StateAt(i);
@@ -193,7 +444,8 @@ void CPositionManager::OnTick(double currentAtr)
       double point=SymbolInfoDouble(dec.symbol,SYMBOL_POINT);
       double spreadPoints=(point>0.0 ? (tick.ask-tick.bid)/point : 0.0);
 
-      if(InpEnableDynamicStop && CanModifyNow(ticket))
+      ulong currentPositionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      if(InpEnableDynamicStop && !HasPendingModification(currentPositionIdentifier) && CanModifyNow(ticket))
         {
          // Source the anchor from the already-running, confirmed swing
          // detector for the entry timeframe. If no confirmed swing exists,
@@ -202,17 +454,47 @@ void CPositionManager::OnTick(double currentAtr)
          double structuralAnchor=ConfirmedStructuralAnchor(isBuy);
          DynamicStopDecision ds=m_dynamicStop.Evaluate(dec.symbol,isBuy,entry,dec.setup.stop_loss,
                                                         curSL,price,currentAtr,spreadPoints,structuralAnchor);
+         double previousTP=PositionGetDouble(POSITION_TP);
          if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
            {
-            // Audit the broker-applied stop, which may be directionally rounded
-            // to the symbol's tick grid by BrokerAdapter.
-            double appliedSL=ds.proposedSL;
+            // Do not treat a successful trade-server retcode as complete
+            // reconciliation: queue an immutable event and confirm the broker
+            // readback before it can be acknowledged by the remote ledger.
+            m_modificationSequence++;
+            PendingPositionModificationRecord event;
+            event.positionIdentifier=currentPositionIdentifier;
+            event.positionTicket=ticket;
+            event.brokerStateConfirmed=false;
+            event.symbol=dec.symbol;
+            event.direction=isBuy?"BUY":"SELL";
+            event.volume=PositionGetDouble(POSITION_VOLUME);
+            event.entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+            event.previousSL=curSL;
+            event.appliedSL=ds.proposedSL;
+            event.previousTP=previousTP;
+            event.appliedTP=dec.setup.final_tp;
+            event.riskR=-1.0;
+            event.volatility=MathMax(0.0,currentAtr);
+            event.evidenceRef=StringFormat("mt5-position-modification:%I64u:%I64d:%u:%d:%.8f",
+                                           currentPositionIdentifier,(long)TimeCurrent(),
+                                           GetTickCount(),m_modificationSequence,ds.proposedSL);
             if(PositionSelectByTicket(ticket))
               {
+               ulong observedIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
                double observedSL=PositionGetDouble(POSITION_SL);
-               if(observedSL>0.0) appliedSL=observedSL;
+               if(observedIdentifier==currentPositionIdentifier && observedSL>0.0)
+                 {
+                  event.positionIdentifier=observedIdentifier;
+                  event.volume=PositionGetDouble(POSITION_VOLUME);
+                  event.entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+                  event.appliedSL=observedSL;
+                  event.appliedTP=PositionGetDouble(POSITION_TP);
+                  event.brokerStateConfirmed=(event.volume>0.0 && event.entryPrice>0.0);
+                 }
               }
-            m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,appliedSL,price,r,ds.reason);
+            QueueModification(event);
+            SendPendingModifications();
+            m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,event.appliedSL,price,r,ds.reason);
             RecordModification(ticket);
             if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);
            }

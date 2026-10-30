@@ -295,3 +295,49 @@ def test_backtest_evidence_rejects_null_spread_points_for_fixed_spread(client, a
 
     assert response.status_code == 422
     assert "spread_points may be null" in response.text
+
+
+
+def test_backtest_evidence_rejects_training_outcome_unresolved_at_validation_start(client, auth_headers):
+    payload = _valid_payload()
+    train_trade = next(row for row in payload["trades"] if row["partition"] == "train" and row["fold_id"] == 1)
+    validation_trade = next(row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 1)
+    train_trade["resolved_at"] = validation_trade["timestamp"]
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 422
+    assert "training outcomes unresolved when validation begins" in response.json()["detail"]
+
+
+def test_backtest_evidence_rejects_locked_oos_rows_outside_the_locked_window(client, auth_headers):
+    payload = _valid_payload()
+    holdout = next(row for row in payload["trades"] if row["partition"] == "locked_oos")
+    holdout["timestamp"] = (
+        datetime.fromisoformat(payload["provenance"]["locked_oos_start"]) - timedelta(minutes=1)
+    ).isoformat()
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 422
+    assert "starts before locked_oos_start" in response.json()["detail"]
+
+
+def test_backtest_evidence_rejects_non_chronological_validation_folds(client, auth_headers):
+    payload = _valid_payload()
+    start = datetime.fromisoformat(payload["provenance"]["period_start"])
+    fold_2_train = [row for row in payload["trades"] if row["partition"] == "train" and row["fold_id"] == 2]
+    fold_2_validation = [row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 2]
+    for index, row in enumerate(fold_2_train):
+        timestamp = start + timedelta(hours=index)
+        row["timestamp"] = timestamp.isoformat()
+        row["resolved_at"] = (timestamp + timedelta(minutes=1)).isoformat()
+    for index, row in enumerate(fold_2_validation):
+        timestamp = start + timedelta(days=10, hours=index)
+        row["timestamp"] = timestamp.isoformat()
+        row["resolved_at"] = (timestamp + timedelta(minutes=1)).isoformat()
+
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+
+    assert response.status_code == 422
+    assert "validation folds must be chronological" in response.json()["detail"]

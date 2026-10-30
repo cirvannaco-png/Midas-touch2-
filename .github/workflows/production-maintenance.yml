@@ -206,6 +206,58 @@ jobs:
           print(f"Bridge health verified; version={result.get('version', 'unknown')}, database=connected")
           PY
 
+      - name: Verify authenticated ledger health before production mutation
+        if: ${{ steps.parity.outputs.due == 'true' }}
+        env:
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          http_code="000"
+          for attempt in 1 2 3 4 5; do
+            http_code="$(curl --silent --show-error --connect-timeout 8 --max-time 20 \
+              --output "$response_file" --write-out '%{http_code}' \
+              --request GET --header "X-API-Key: ${BRIDGE_API_KEY}" \
+              --header "Accept: application/json" \
+              "${BRIDGE_BASE_URL%/}/execution-ledger/health" 2>/dev/null || true)"
+            if [[ "$http_code" == "200" ]]; then
+              break
+            fi
+            if [[ "$http_code" =~ ^(000|502|503|504)$ && "$attempt" -lt 5 ]]; then
+              echo "Authenticated ledger health transport failure (attempt ${attempt}/5); retrying a read-only GET."
+              sleep 5
+              continue
+            fi
+            echo "::error::Authenticated execution-ledger health failed with HTTP ${http_code}; no production mutation was attempted."
+            exit 1
+          done
+          if [[ "$http_code" != "200" ]]; then
+            echo "::error::Authenticated execution-ledger health never returned HTTP 200."
+            exit 1
+          fi
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as stream:
+                  payload = json.load(stream)
+          except (OSError, json.JSONDecodeError):
+              raise SystemExit("Authenticated execution-ledger health returned invalid JSON.")
+
+          expected = {
+              "status": "online",
+              "database": "connected",
+              "execution_ledger": "ready",
+          }
+          if any(payload.get(key) != value for key, value in expected.items()):
+              raise SystemExit("Authenticated execution-ledger preflight is not ready; no mutation was attempted.")
+          print("Authenticated bridge credential and execution-ledger database check passed.")
+          PY
+
       - name: Run and verify recalibration cycle
         if: ${{ steps.parity.outputs.due == 'true' }}
         env:
@@ -356,6 +408,57 @@ jobs:
           print(f"Bridge health verified; version={result.get('version', 'unknown')}, database=connected")
           PY
 
+      - name: Verify authenticated ledger health before production mutation
+        env:
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          http_code="000"
+          for attempt in 1 2 3 4 5; do
+            http_code="$(curl --silent --show-error --connect-timeout 8 --max-time 20 \
+              --output "$response_file" --write-out '%{http_code}' \
+              --request GET --header "X-API-Key: ${BRIDGE_API_KEY}" \
+              --header "Accept: application/json" \
+              "${BRIDGE_BASE_URL%/}/execution-ledger/health" 2>/dev/null || true)"
+            if [[ "$http_code" == "200" ]]; then
+              break
+            fi
+            if [[ "$http_code" =~ ^(000|502|503|504)$ && "$attempt" -lt 5 ]]; then
+              echo "Authenticated ledger health transport failure (attempt ${attempt}/5); retrying a read-only GET."
+              sleep 5
+              continue
+            fi
+            echo "::error::Authenticated execution-ledger health failed with HTTP ${http_code}; no production mutation was attempted."
+            exit 1
+          done
+          if [[ "$http_code" != "200" ]]; then
+            echo "::error::Authenticated execution-ledger health never returned HTTP 200."
+            exit 1
+          fi
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as stream:
+                  payload = json.load(stream)
+          except (OSError, json.JSONDecodeError):
+              raise SystemExit("Authenticated execution-ledger health returned invalid JSON.")
+
+          expected = {
+              "status": "online",
+              "database": "connected",
+              "execution_ledger": "ready",
+          }
+          if any(payload.get(key) != value for key, value in expected.items()):
+              raise SystemExit("Authenticated execution-ledger preflight is not ready; no mutation was attempted.")
+          print("Authenticated bridge credential and execution-ledger database check passed.")
+          PY
+
       - name: Run and verify subscription sweep
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
@@ -489,6 +592,57 @@ jobs:
           if result.get("status") != "online" or result.get("database") != "connected":
               raise SystemExit("Bridge/database is degraded; no recovery POST was attempted.")
           print(f"Recovery preflight passed; version={result.get('version', 'unknown')}")
+          PY
+
+      - name: Verify authenticated ledger health before production mutation
+        env:
+          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          http_code="000"
+          for attempt in 1 2 3 4 5; do
+            http_code="$(curl --silent --show-error --connect-timeout 8 --max-time 20 \
+              --output "$response_file" --write-out '%{http_code}' \
+              --request GET --header "X-API-Key: ${BRIDGE_API_KEY}" \
+              --header "Accept: application/json" \
+              "${BRIDGE_BASE_URL%/}/execution-ledger/health" 2>/dev/null || true)"
+            if [[ "$http_code" == "200" ]]; then
+              break
+            fi
+            if [[ "$http_code" =~ ^(000|502|503|504)$ && "$attempt" -lt 5 ]]; then
+              echo "Authenticated ledger health transport failure (attempt ${attempt}/5); retrying a read-only GET."
+              sleep 5
+              continue
+            fi
+            echo "::error::Authenticated execution-ledger health failed with HTTP ${http_code}; no production mutation was attempted."
+            exit 1
+          done
+          if [[ "$http_code" != "200" ]]; then
+            echo "::error::Authenticated execution-ledger health never returned HTTP 200."
+            exit 1
+          fi
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as stream:
+                  payload = json.load(stream)
+          except (OSError, json.JSONDecodeError):
+              raise SystemExit("Authenticated execution-ledger health returned invalid JSON.")
+
+          expected = {
+              "status": "online",
+              "database": "connected",
+              "execution_ledger": "ready",
+          }
+          if any(payload.get(key) != value for key, value in expected.items()):
+              raise SystemExit("Authenticated execution-ledger preflight is not ready; no mutation was attempted.")
+          print("Authenticated bridge credential and execution-ledger database check passed.")
           PY
 
       - name: Recover failed or stale delivery notifications
