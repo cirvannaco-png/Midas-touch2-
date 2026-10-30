@@ -20,6 +20,7 @@ from app.execution_control import (
     reconcile_closed_position,
     reconcile_open_position,
     reconcile_terminal_order,
+    record_position_modification,
     recover_expired_leases,
     reserve_execution,
     sync_pending_order,
@@ -172,6 +173,21 @@ class PositionRiskUpdateRequest(BaseModel):
     evidence_ref: str = Field(min_length=1, max_length=256)
 
 
+class PositionModificationRequest(BaseModel):
+    portfolio_key: str = Field(min_length=1, max_length=128)
+    broker_position_id: str = Field(min_length=1, max_length=100)
+    symbol: str = Field(min_length=1, max_length=32)
+    direction: Literal["BUY", "SELL"]
+    modification_id: str = Field(min_length=1, max_length=160)
+    old_stop_loss: float = Field(ge=0, allow_inf_nan=False)
+    new_stop_loss: float = Field(gt=0, allow_inf_nan=False)
+    old_take_profit: float = Field(ge=0, allow_inf_nan=False)
+    new_take_profit: float = Field(ge=0, allow_inf_nan=False)
+    risk_r: float = Field(ge=0, allow_inf_nan=False)
+    volatility: float = Field(ge=0, allow_inf_nan=False)
+    evidence_ref: str = Field(min_length=1, max_length=256)
+
+
 class ClosedPositionRequest(BaseModel):
     portfolio_key: str = Field(min_length=1, max_length=128)
     request_id: str | None = Field(default=None, max_length=128)
@@ -261,6 +277,45 @@ async def position_risk_update(
         await session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"updated": True, "broker_position_id": body.broker_position_id}
+
+
+@router.post("/position-modification")
+async def position_modification(
+    body: PositionModificationRequest,
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+):
+    try:
+        reconciled = await record_position_modification(
+            session,
+            portfolio_key=body.portfolio_key,
+            broker_position_id=body.broker_position_id,
+            symbol=body.symbol,
+            direction=body.direction,
+            modification_id=body.modification_id,
+            old_stop_loss=body.old_stop_loss,
+            new_stop_loss=body.new_stop_loss,
+            old_take_profit=body.old_take_profit,
+            new_take_profit=body.new_take_profit,
+            risk_r=body.risk_r,
+            volatility=body.volatility,
+            evidence_ref=body.evidence_ref,
+        )
+        if not reconciled:
+            await session.rollback()
+            raise HTTPException(
+                status_code=404,
+                detail="open broker position is not registered for modification reconciliation",
+            )
+        await session.commit()
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "reconciled": True,
+        "broker_position_id": body.broker_position_id,
+        "modification_id": body.modification_id,
+    }
 
 
 @router.post("/position-closed")
