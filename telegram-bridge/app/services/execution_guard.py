@@ -31,7 +31,7 @@ def require_broker_execution_authority(
     authoritative: bool,
     ledger_ready: bool,
     risk_protection_ready: bool,
-    completed_gates: set[str],
+    completed_gates: list[str],
     demo_validated: bool = False,
     human_approved: bool = False,
 ) -> None:
@@ -58,8 +58,11 @@ def require_broker_execution_authority(
         raise ArchitectureViolation(
             "Production execution requires validated demo evidence and explicit human approval"
         )
+    expected_order = [gate for gate in EXECUTION_GATE_ORDER if gate in completed_gates]
+    if completed_gates != expected_order:
+        raise ArchitectureViolation("Execution gates must be complete, unique, and in canonical order")
     require_authoritative_portfolio_admission(
         admitted=admitted,
         authoritative=authoritative,
     )
-    require_all_gates(completed_gates)
+    require_all_gates(set(completed_gates))
