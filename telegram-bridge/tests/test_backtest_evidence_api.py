@@ -89,8 +89,8 @@ def _valid_payload():
                 "period_end": (start + timedelta(days=100)).isoformat(),
                 "trades": [{
                     "trade_id": f"neighbor-holdout-{i}",
-                    "timestamp": (start + timedelta(days=60 + i)).isoformat(),
-                    "resolved_at": (start + timedelta(days=60 + i, minutes=1)).isoformat(),
+                    "timestamp": (start + timedelta(days=21 + i)).isoformat(),
+                    "resolved_at": (start + timedelta(days=21 + i, minutes=1)).isoformat(),
                     "outcome": "win" if i % 5 != 0 else "loss",
                     "realized_r": 0.5 if i % 5 != 0 else -0.5,
                 } for i in range(30)],
