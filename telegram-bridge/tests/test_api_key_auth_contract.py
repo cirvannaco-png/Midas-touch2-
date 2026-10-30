@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from app.config import settings
 from app.routes import verify_api_key
-from scripts.render_sync_secrets import collect_secrets
+from scripts.render_sync_secrets import RenderSyncError, collect_secrets
 
 
 def _base_env() -> dict[str, str]:
@@ -72,5 +72,5 @@ def test_render_secret_sync_requires_one_authentication_credential():
         "CHAT_ID": "-1000000000",
         "ADMIN_CHAT_ID": "777000777",
     }
-    with pytest.raises(Exception, match="BRIDGE_API_KEY"):
+    with pytest.raises(RenderSyncError, match="BRIDGE_API_KEY"):
         collect_secrets(env)
