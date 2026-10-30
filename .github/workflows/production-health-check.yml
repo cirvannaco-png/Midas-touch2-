@@ -58,6 +58,8 @@ jobs:
               "database",
               "status",
               "401|403|422",
+              "X-API-Key",
+              "/execution-ledger/health",
               "/health/db",
           ):
               assert required in path.read_text(encoding="utf-8"), f"required release-gate contract missing: {required}"
@@ -128,7 +130,11 @@ jobs:
               sleep 5
               continue
             fi
-            echo "::error::Authenticated execution-ledger health failed with HTTP ${http_code}; no production mutation was attempted."
+            if [[ "${http_code}" == "401" || "${http_code}" == "403" ]]; then
+              echo "::error::Bridge credential mismatch: GitHub production BRIDGE_API_KEY must exactly match Render BRIDGE_API_KEY (or the legacy SECRET_KEY fallback). No production mutation was attempted."
+            else
+              echo "::error::Authenticated execution-ledger health failed with HTTP ${http_code}; no production mutation was attempted."
+            fi
             exit 1
           done
           if [[ "$http_code" != "200" ]]; then

@@ -232,7 +232,7 @@ scheduler must wake the service and trigger the request.
 - Manual dispatch is available for either task, but it calls production endpoints and is not a
   dry run. Use it only when an immediate production operation is intended.
 
-In GitHub, create an environment named production under Settings → Environments and restrict deployments to the main branch. The production workflows use the canonical non-secret service URL `https://midas-touch2.onrender.com` directly, so do not create a `BRIDGE_BASE_URL` secret. Set only `BRIDGE_API_KEY` as an environment secret, matching this service's `SECRET_KEY`; never commit or print it. The workflow uses this environment, limits manual runs to main, enforces HTTPS, bounded timeouts, no automatic POST retries, and response validation.
+In GitHub, create an environment named production under Settings → Environments and restrict deployments to the main branch. The production workflows use the canonical non-secret service URL `https://midas-touch2.onrender.com` directly, so do not create a `BRIDGE_BASE_URL` secret. Set only `BRIDGE_API_KEY` as an environment secret. Configure the Render service's `BRIDGE_API_KEY` environment variable to the exact same value. The bridge prefers `BRIDGE_API_KEY`; `SECRET_KEY` is retained only as a backwards-compatible fallback during rotation. Never commit or print either value. The workflow uses this environment, limits manual runs to main, enforces HTTPS, bounded timeouts, no automatic POST retries, and response validation.
 
 The recalibration job requires HTTP success plus JSON status "ok" and a non-empty cycle_id.
 A status "no_data" response means no live CalibrationCycle was persisted for the two-week
@@ -299,6 +299,27 @@ python tools/submit_tester_evidence.py --file /path/to/tester-evidence.json
 The submitter prints only run/configuration identifiers, evidence version, decision, lifecycle, and digest—never the API key. Do not commit evidence bundles containing confidential broker/data information.
 
 The normalizer does **not** manufacture missing research results. To become promotion-review eligible, the manifest must contain real feature-importance and clustered-MDA artifacts, at least 30 paired counterfactual scenarios, and at least one neighboring parameter configuration replayed over the same data/build/time period and locked OOS window. Exit-affecting changes also require paired scale-out replay evidence. If any of those items are absent, the endpoint records the candidate but leaves it short of VALIDATED.
+
+## External AI execution boundary
+
+External-AI authorization is disabled by default. Do not enable it for production
+accounts. A demo-only deployment may set:
+
+- `AI_DEMO_EXECUTION_ENABLED=true`
+- `AI_DEMO_PORTFOLIO_ALLOWLIST=DEMO:<broker-server>:<login>:<magic-number>`
+
+The allowlist is an exact, server-side comma-separated list and every allowed
+portfolio key must begin with `DEMO:`. The authenticated
+`POST /execution-ledger/authorize-ai` endpoint requires an existing execution
+ledger intent, an operator-approval reference, and a demo-validation reference.
+OPEN authorization is limited to a positive-risk RESERVED/CHECKED ledger
+intent; MODIFY/CLOSE requires the matching broker-confirmed FILLED position.
+
+This endpoint records an authorization decision only. It does not issue a
+broker token, place/modify/close an order, or expose a broker execution API.
+The native EA remains the only broker execution path and must independently
+pass its execution-ledger reservation, risk checks, protective-stop controls,
+and broker validation. The demo allowlist is not a production release gate.
 
 ## Payments & copy trading
 

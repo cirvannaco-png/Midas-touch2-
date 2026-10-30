@@ -89,8 +89,8 @@ def _valid_payload():
                 "period_end": (start + timedelta(days=100)).isoformat(),
                 "trades": [{
                     "trade_id": f"neighbor-holdout-{i}",
-                    "timestamp": (start + timedelta(days=60 + i)).isoformat(),
-                    "resolved_at": (start + timedelta(days=60 + i, minutes=1)).isoformat(),
+                    "timestamp": (start + timedelta(days=21 + i)).isoformat(),
+                    "resolved_at": (start + timedelta(days=21 + i, minutes=1)).isoformat(),
                     "outcome": "win" if i % 5 != 0 else "loss",
                     "realized_r": 0.5 if i % 5 != 0 else -0.5,
                 } for i in range(30)],
@@ -169,6 +169,57 @@ def test_backtest_evidence_holds_when_any_neighbor_breaks_the_plateau(client, au
     assert body["decision"] == "HOLD"
     assert body["lifecycle_status"] == "BACKTESTED"
     assert "not activated" in body["promotion_boundary"]
+
+
+def test_parameter_neighbors_cannot_use_locked_oos_rows(client, auth_headers):
+    payload = _valid_payload()
+    payload["provenance"]["run_id"] = "tester-run-neighbor-oos-leakage"
+    neighbor_trade = payload["parameter_neighbors"][0]["trades"][0]
+    locked_start = datetime.fromisoformat(payload["provenance"]["locked_oos_start"])
+    neighbor_trade["timestamp"] = locked_start.isoformat()
+    neighbor_trade["resolved_at"] = (locked_start + timedelta(minutes=1)).isoformat()
+
+    response = client.post(
+        "/research/backtest-evidence",
+        headers=auth_headers,
+        json=payload,
+    )
+
+    assert response.status_code == 422
+    assert "development validation window" in response.json()["detail"]
+    assert "locked OOS is reserved for final acceptance" in response.json()["detail"]
+
+
+def test_locked_oos_changes_cannot_change_development_selection_score(client, auth_headers):
+    development_payload = _valid_payload()
+    development_payload["provenance"]["run_id"] = "tester-run-selection-dev-a"
+    development_response = client.post(
+        "/research/backtest-evidence",
+        headers=auth_headers,
+        json=development_payload,
+    )
+    assert development_response.status_code == 200, development_response.text
+
+    changed_holdout_payload = _valid_payload()
+    changed_holdout_payload["provenance"]["run_id"] = "tester-run-selection-dev-b"
+    for trade in changed_holdout_payload["trades"]:
+        if trade["partition"] == "locked_oos":
+            trade["outcome"] = "loss"
+            trade["realized_r"] = -0.5
+
+    holdout_response = client.post(
+        "/research/backtest-evidence",
+        headers=auth_headers,
+        json=changed_holdout_payload,
+    )
+    assert holdout_response.status_code == 200, holdout_response.text
+
+    baseline = development_response.json()
+    changed = holdout_response.json()
+    assert baseline["selection_data_source"] == "development_validation_only"
+    assert changed["selection_data_source"] == "development_validation_only"
+    assert baseline["selection_score"] == changed["selection_score"]
+    assert baseline["locked_oos"]["expectancy_r"] != changed["locked_oos"]["expectancy_r"]
 
 
 def test_backtest_evidence_rejects_resolution_at_or_after_locked_oos_end(client, auth_headers):

@@ -12,6 +12,10 @@
 #include "../Monitoring/SLModificationAudit.mqh"
 #include "../Structure/SwingDetector.mqh"
 
+bool ReconcilePositionModification(const ulong positionIdentifier,const string symbol,const string direction,
+                                   const double oldSL,const double newSL,const double oldTP,const double newTP,
+                                   const double volatility,const string evidenceRef);
+
 class CPositionManager
   {
 private:
@@ -187,6 +191,8 @@ void CPositionManager::OnTick(double currentAtr)
       if(price<=0.0 || entry<=0.0) continue;
       double r=RMultiple(dec,entry,price);
       double curSL=PositionGetDouble(POSITION_SL);
+      double curTP=PositionGetDouble(POSITION_TP);
+      ulong positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
 
       MqlTick tick;
       if(!SymbolInfoTick(dec.symbol,tick)) continue;
@@ -212,6 +218,21 @@ void CPositionManager::OnTick(double currentAtr)
                double observedSL=PositionGetDouble(POSITION_SL);
                if(observedSL>0.0) appliedSL=observedSL;
               }
+            double appliedTP=curTP;
+            if(PositionSelectByTicket(ticket))
+              {
+               double observedSL=PositionGetDouble(POSITION_SL);
+               double observedTP=PositionGetDouble(POSITION_TP);
+               if(observedSL>0.0) appliedSL=observedSL;
+               appliedTP=observedTP;
+              }
+            string modificationEvidence=StringFormat("mt5-position-modification:%I64u:%I64u",
+                                                       positionIdentifier,(ulong)GetTickCount());
+            if(!ReconcilePositionModification(positionIdentifier,dec.symbol,isBuy?"BUY":"SELL",
+                                              curSL,appliedSL,curTP,appliedTP,currentAtr,
+                                              modificationEvidence))
+               PrintFormat("Midas: broker accepted protective-stop update for position #%I64u; ledger reconciliation remains pending and new entries are blocked.",
+                           positionIdentifier);
             m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,appliedSL,price,r,ds.reason);
             RecordModification(ticket);
             if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);

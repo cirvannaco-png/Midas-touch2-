@@ -525,6 +525,10 @@ async def ingest_backtest_evidence(
     train_summary = _summarize(train_all)
     validation_summary = _summarize(validation_all)
     oos_summary = _summarize(holdout)
+    # The candidate-selection window is the development validation partition.
+    # The locked OOS partition is reserved for final, one-way acceptance only.
+    validation_window_start = min(row.timestamp for row in validation_all)
+    validation_window_end = max(row.resolved_at for row in validation_all)
     oos_values = [float(row.realized_r) for row in oos_rows]
     # Keep raw R values local to scoring; summary JSON remains compact.
     oos_summary["_values"] = oos_values
@@ -588,13 +592,16 @@ async def ingest_backtest_evidence(
                 detail="parameter-neighbor evidence must use the same data digest, EA/terminal build, and historical period",
             )
         if any(
-            not payload.provenance.locked_oos_start <= row.timestamp < payload.provenance.locked_oos_end
-            or row.resolved_at >= payload.provenance.locked_oos_end
+            row.timestamp < validation_window_start
+            or row.timestamp > validation_window_end
+            or row.resolved_at > validation_window_end
+            or row.timestamp >= payload.provenance.locked_oos_start
+            or row.resolved_at >= payload.provenance.locked_oos_start
             for row in neighbor.trades
         ):
             raise HTTPException(
                 status_code=422,
-                detail="parameter-neighbor trade entry/resolution is outside the common locked OOS window",
+                detail="parameter-neighbor evidence must use the common development validation window; locked OOS is reserved for final acceptance",
             )
         neighbor_ids = [row.trade_id for row in neighbor.trades]
         if len(neighbor_ids) != len(set(neighbor_ids)):
@@ -612,10 +619,10 @@ async def ingest_backtest_evidence(
             neighbor_summary["resolved_trades"] >= MIN_OOS_TRADES
             and neighbor_summary["profit_factor"] >= 1.0
             and neighbor_expectancy is not None
-            and oos_expectancy is not None
-            and oos_expectancy > 0
+            and validation_expectancy is not None
+            and validation_expectancy > 0
             and neighbor_expectancy > 0
-            and abs(float(neighbor_expectancy) - float(oos_expectancy)) / abs(float(oos_expectancy)) <= MAX_PARAMETER_NEIGHBOR_DEGRADATION
+            and abs(float(neighbor_expectancy) - float(validation_expectancy)) / abs(float(validation_expectancy)) <= MAX_PARAMETER_NEIGHBOR_DEGRADATION
         ):
             stable_neighbors.append(neighbor_record)
 
@@ -629,11 +636,11 @@ async def ingest_backtest_evidence(
             and metrics["profit_factor"] >= 1.0
             and neighbor_expectancy is not None
             and float(neighbor_expectancy) > 0.0
-            and oos_expectancy is not None
-            and float(oos_expectancy) > 0.0
+            and validation_expectancy is not None
+            and float(validation_expectancy) > 0.0
         ):
             neighbor_degradations.append(
-                abs(float(neighbor_expectancy) - float(oos_expectancy)) / abs(float(oos_expectancy))
+                abs(float(neighbor_expectancy) - float(validation_expectancy)) / abs(float(validation_expectancy))
             )
         else:
             # An under-sampled, non-profitable, or non-positive neighbor is
@@ -699,7 +706,7 @@ async def ingest_backtest_evidence(
         and len(stable_neighbors) == len(neighbors)
         and parameter_degradation <= MAX_PARAMETER_NEIGHBOR_DEGRADATION
     )
-    components = _objective_components(oos_summary, fold_verdicts, parameter_stability)
+    components = _objective_components(validation_summary, fold_verdicts, parameter_stability)
     score = _objective_score(components)
     all_records = [*train_all, *validation_all, *holdout]
     first_fold = grouped[min(grouped)]
@@ -731,6 +738,8 @@ async def ingest_backtest_evidence(
         },
         "walk_forward_folds": folds,
         "parameter_neighbors": neighbors,
+        "selection_data_source": "development_validation_only",
+        "locked_oos_role": "final_acceptance_only",
         "feature_importance": [row.model_dump(mode="json") for row in payload.feature_importance],
         "clustered_mda": [row.model_dump(mode="json") for row in payload.clustered_mda],
         "counterfactual": [row.model_dump(mode="json") for row in payload.counterfactual],
@@ -846,7 +855,7 @@ async def ingest_backtest_evidence(
     evaluation = ConfigurationEvaluation.from_evidence(
         config_hash,
         evidence_version,
-        objective_score={"score": score, "components": components},
+        objective_score={"score": score, "components": components, "selection_data_source": "development_validation_only"},
         performance_metrics=performance_metrics,
         risk_metrics=risk_metrics,
         validation_evidence=validation_evidence,
@@ -868,6 +877,8 @@ async def ingest_backtest_evidence(
         "evidence_version": evidence_version,
         "decision": decision,
         "lifecycle_status": registry.lifecycle_status,
+        "selection_score": score,
+        "selection_data_source": "development_validation_only",
         "locked_oos": {key: value for key, value in oos_summary.items() if key != "_values"},
         "walk_forward_verdicts": fold_verdicts,
         "research_reasons": research_reasons,

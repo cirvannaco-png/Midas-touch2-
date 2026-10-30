@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     ADMIN_CHAT_ID: str
     ADMIN_USER_ID: str = ""
     GROUP_CHAT_ID: str = ""
+    # Canonical bridge credential shared with the GitHub production environment.
+    # SECRET_KEY remains a backwards-compatible fallback during controlled rotation.
+    BRIDGE_API_KEY: str = ""
     SECRET_KEY: str
     DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost:5432/medis_touch"
 
@@ -45,6 +48,17 @@ class Settings(BaseSettings):
     # services cannot accidentally expose the benchmark route.
     BENCHMARK_ENABLED: bool = False
     BENCHMARK_API_KEY: str = ""
+    # External AI is denied by default and can only be enabled for explicit DEMO: portfolios.
+    AI_DEMO_EXECUTION_ENABLED: bool = False
+    AI_DEMO_PORTFOLIO_ALLOWLIST: str = ""
+
+    @property
+    def ai_demo_portfolio_allowlist(self) -> set[str]:
+        return {
+            item.strip()
+            for item in self.AI_DEMO_PORTFOLIO_ALLOWLIST.split(",")
+            if item.strip()
+        }
 
     # Recalibration promotion policy is deliberately opt-in. If any required
     # threshold is absent, the lifecycle stays HOLD rather than inventing a
