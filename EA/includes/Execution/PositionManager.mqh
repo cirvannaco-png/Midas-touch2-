@@ -40,6 +40,8 @@ private:
    CExecutionLedgerClient* m_ledger;
    double                m_riskPercentPerTrade;
    bool                  m_ledgerReconciliationHealthy;
+   bool                  m_pendingPersistenceHealthy;
+   string                m_pendingModificationFile;
    int                   m_modificationSequence;
    PendingPositionModificationRecord m_pendingModifications[];
    CSLModificationAudit  m_audit;
@@ -59,6 +61,9 @@ private:
    void   QueueModification(const PendingPositionModificationRecord &event);
    void   SendPendingModifications();
    bool   HasPendingModification(ulong positionIdentifier);
+   string PendingModificationFileName();
+   void   LoadPendingModifications();
+   bool   SavePendingModifications();
    double ConfirmedStructuralAnchor(bool isBuy);
 
 public:
@@ -85,8 +90,13 @@ void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
    m_riskPercentPerTrade=riskPercentPerTrade;
    m_modificationSequence=0;
    ArrayResize(m_pendingModifications,0);
-   m_ledgerReconciliationHealthy=(!InpRequireExecutionLedger ||
-                                  (m_ledger!=NULL && m_ledger.Ready()));
+   m_pendingPersistenceHealthy=true;
+   m_pendingModificationFile=PendingModificationFileName();
+   LoadPendingModifications();
+   m_ledgerReconciliationHealthy=(m_pendingPersistenceHealthy &&
+                                  ArraySize(m_pendingModifications)==0 &&
+                                  (!InpRequireExecutionLedger ||
+                                   (m_ledger!=NULL && m_ledger.Ready())));
    m_partialAtR=partialAtR;
    m_partialFraction=partialFraction;
    m_minModifyIntervalSec=MathMax(0,minModifyIntervalSec);
@@ -194,6 +204,83 @@ bool CPositionManager::CalculateModificationRisk(PendingPositionModificationReco
    return (MathIsValidNumber(event.riskR) && event.riskR>=0.0);
   }
 
+string CPositionManager::PendingModificationFileName()
+  {
+   string server=AccountInfoString(ACCOUNT_SERVER);
+   StringReplace(server," ","_");
+   StringReplace(server,".","_");
+   StringReplace(server,"/","_");
+   StringReplace(server,"\\","_");
+   return StringFormat("MidasPositionMods_%s_%I64u_%I64u.csv",
+                       server,(ulong)AccountInfoInteger(ACCOUNT_LOGIN),(ulong)InpMagicNumber);
+  }
+
+void CPositionManager::LoadPendingModifications()
+  {
+   int handle=FileOpen(m_pendingModificationFile,FILE_READ|FILE_CSV|FILE_COMMON|FILE_ANSI,'\t');
+   if(handle==INVALID_HANDLE) return;
+   while(!FileIsEnding(handle))
+     {
+      PendingPositionModificationRecord event;
+      event.positionIdentifier=(ulong)FileReadNumber(handle);
+      if(FileIsEnding(handle)) break;
+      event.positionTicket=(ulong)FileReadNumber(handle);
+      event.brokerStateConfirmed=(FileReadNumber(handle)>0.5);
+      event.symbol=FileReadString(handle);
+      event.direction=FileReadString(handle);
+      event.volume=FileReadNumber(handle);
+      event.entryPrice=FileReadNumber(handle);
+      event.previousSL=FileReadNumber(handle);
+      event.appliedSL=FileReadNumber(handle);
+      event.previousTP=FileReadNumber(handle);
+      event.appliedTP=FileReadNumber(handle);
+      event.riskR=FileReadNumber(handle);
+      event.volatility=FileReadNumber(handle);
+      event.evidenceRef=FileReadString(handle);
+      if(event.positionIdentifier==0 || event.positionTicket==0 || event.symbol=="" ||
+         (event.direction!="BUY" && event.direction!="SELL") || event.evidenceRef=="")
+        {
+         m_pendingPersistenceHealthy=false;
+         continue;
+        }
+      int n=ArraySize(m_pendingModifications);
+      ArrayResize(m_pendingModifications,n+1);
+      m_pendingModifications[n]=event;
+     }
+   FileClose(handle);
+  }
+
+bool CPositionManager::SavePendingModifications()
+  {
+   string temporary=m_pendingModificationFile+".tmp";
+   if(FileIsExist(temporary,FILE_COMMON))
+      FileDelete(temporary,FILE_COMMON);
+   int handle=FileOpen(temporary,FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI,'\t');
+   if(handle==INVALID_HANDLE) return false;
+   for(int i=0;i<ArraySize(m_pendingModifications);i++)
+     {
+      PendingPositionModificationRecord event=m_pendingModifications[i];
+      FileWrite(handle,(long)event.positionIdentifier,(long)event.positionTicket,
+                event.brokerStateConfirmed?1:0,event.symbol,event.direction,
+                event.volume,event.entryPrice,event.previousSL,event.appliedSL,
+                event.previousTP,event.appliedTP,event.riskR,event.volatility,event.evidenceRef);
+     }
+   FileFlush(handle);
+   FileClose(handle);
+   if(ArraySize(m_pendingModifications)==0)
+     {
+      if(FileIsExist(m_pendingModificationFile,FILE_COMMON))
+         return FileDelete(m_pendingModificationFile,FILE_COMMON);
+      return true;
+     }
+   if(!FileMove(temporary,FILE_COMMON,m_pendingModificationFile,FILE_COMMON|FILE_REWRITE))
+     {
+      FileDelete(temporary,FILE_COMMON);
+      return false;
+     }
+   return true;
+  }
+
 void CPositionManager::QueueModification(const PendingPositionModificationRecord &event)
   {
    if(m_ledger==NULL && !InpRequireExecutionLedger) return;
@@ -201,11 +288,13 @@ void CPositionManager::QueueModification(const PendingPositionModificationRecord
    int n=ArraySize(m_pendingModifications);
    ArrayResize(m_pendingModifications,n+1);
    m_pendingModifications[n]=event;
+   m_pendingPersistenceHealthy=SavePendingModifications();
    m_ledgerReconciliationHealthy=false;
   }
 
 void CPositionManager::SendPendingModifications()
   {
+   if(!m_pendingPersistenceHealthy) return;
    for(int i=0;i<ArraySize(m_pendingModifications);)
      {
       if(m_ledger==NULL || !m_ledger.Ready())
@@ -255,8 +344,11 @@ void CPositionManager::SendPendingModifications()
       int last=ArraySize(m_pendingModifications)-1;
       if(i!=last) m_pendingModifications[i]=m_pendingModifications[last];
       ArrayResize(m_pendingModifications,last);
+      m_pendingPersistenceHealthy=SavePendingModifications();
+      if(!m_pendingPersistenceHealthy) break;
      }
-   m_ledgerReconciliationHealthy=(ArraySize(m_pendingModifications)==0 &&
+   m_ledgerReconciliationHealthy=(m_pendingPersistenceHealthy &&
+                                  ArraySize(m_pendingModifications)==0 &&
                                   (!InpRequireExecutionLedger ||
                                    (m_ledger!=NULL && m_ledger.Ready())));
   }
