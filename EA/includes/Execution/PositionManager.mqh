@@ -348,6 +348,12 @@ void CPositionManager::SendPendingModifications()
       // commits but the response is lost, an idempotent retry must send the
       // identical payload and evidence fingerprint.
       m_pendingModifications[i]=event;
+      m_pendingPersistenceHealthy=SavePendingModifications();
+      if(!m_pendingPersistenceHealthy)
+        {
+         i++;
+         continue;
+        }
       if(!m_ledger.PositionModification(event.positionIdentifier,event.symbol,event.direction,
                                         event.volume,event.entryPrice,event.previousSL,event.appliedSL,
                                         event.previousTP,event.appliedTP,event.riskR,event.volatility,
