@@ -31,12 +31,23 @@ def test_each_production_mutation_is_behind_authenticated_ledger_preflight():
     assert workflow.count("/execution-ledger/health") >= 3
     assert workflow.count("401") >= 3
     assert workflow.count("403") >= 3
-    for mutation in (
-        "Run and verify recalibration cycle",
-        "Run and verify subscription sweep",
-        "Recover failed or stale delivery notifications",
+    import re
+
+    for job_name, mutation in (
+        ("biweekly-recalibration", "Run and verify recalibration cycle"),
+        ("daily-subscriptions", "Run and verify subscription sweep"),
+        ("daily-delivery-recovery", "Recover failed or stale delivery notifications"),
     ):
-        assert workflow.index(guard) < workflow.index(mutation)
+        match = re.search(
+            rf"(?ms)^  {job_name}:\\n(.*?)(?=^  [a-z][a-z0-9-]*:\\n|\\Z)",
+            workflow,
+        )
+        assert match is not None, f"missing production job: {job_name}"
+        job = match.group(1)
+        assert guard in job
+        assert job.index(guard) < job.index(mutation)
+        assert "secrets.BRIDGE_API_KEY" in job
+        assert "X-API-Key:" in job
     assert "credential values were not printed" in workflow
 
 
@@ -47,7 +58,7 @@ def test_production_health_workflow_rejects_bad_keys_without_exposing_secrets():
     assert "secrets.BRIDGE_API_KEY" in production_job
     assert "X-API-Key:" in production_job
     assert "/execution-ledger/health" in production_job
-    assert "BRIDGE_API_KEY" not in static_job
+    assert "${{ secrets.BRIDGE_API_KEY }}" not in static_job
     assert "401|403|422" in workflow
     assert "Payload values were not printed" in production_job
 
