@@ -8,8 +8,8 @@ from app.database import Base
 from app.execution_control import (
     reconcile_closed_position,
     reconcile_open_position,
-    record_position_modification,
     reconcile_terminal_order,
+    record_position_modification,
     recover_expired_leases,
     reserve_execution,
     sync_pending_order,
