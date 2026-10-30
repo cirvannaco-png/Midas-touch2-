@@ -269,6 +269,7 @@ bool CPositionManager::SavePendingModifications()
    FileClose(handle);
    if(ArraySize(m_pendingModifications)==0)
      {
+      FileDelete(temporary,FILE_COMMON);
       if(FileIsExist(m_pendingModificationFile,FILE_COMMON))
          return FileDelete(m_pendingModificationFile,FILE_COMMON);
       return true;
@@ -294,6 +295,8 @@ void CPositionManager::QueueModification(const PendingPositionModificationRecord
 
 void CPositionManager::SendPendingModifications()
   {
+   if(!m_pendingPersistenceHealthy)
+      m_pendingPersistenceHealthy=SavePendingModifications();
    if(!m_pendingPersistenceHealthy) return;
    for(int i=0;i<ArraySize(m_pendingModifications);)
      {
