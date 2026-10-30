@@ -14,7 +14,11 @@ class Settings(BaseSettings):
     ADMIN_CHAT_ID: str
     ADMIN_USER_ID: str = ""
     GROUP_CHAT_ID: str = ""
-    # Canonical bridge credential shared with the GitHub production environment.\n    # SECRET_KEY remains a backwards-compatible fallback during controlled rotation.\n    BRIDGE_API_KEY: str = \"\"\n    SECRET_KEY: str\n    DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost:5432/medis_touch"
+    # Canonical bridge credential shared with the GitHub production environment.
+    # SECRET_KEY remains a backwards-compatible fallback during controlled rotation.
+    BRIDGE_API_KEY: str = ""
+    SECRET_KEY: str
+    DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost:5432/medis_touch"
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
