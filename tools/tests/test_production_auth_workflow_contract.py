@@ -46,26 +46,6 @@ def test_bridge_and_render_share_a_single_explicit_authentication_contract():
     assert "- key: BRIDGE_API_KEY\n        sync: false" in blueprint
     assert "- key: SECRET_KEY\n        sync: false" in blueprint
 
-def test_all_scheduled_maintenance_jobs_authenticate_before_mutating_production():
-    workflow = _read(MAINTENANCE)
-    jobs = (
-        ("biweekly-recalibration", "Run and verify recalibration cycle"),
-        ("daily-subscriptions", "Run and verify subscription sweep"),
-        ("daily-delivery-recovery", "Recover failed or stale delivery notifications"),
-    )
-    for job_name, mutation_step in jobs:
-        marker = f"  {job_name}:"
-        start = workflow.rfind(marker)
-        assert start >= 0, f"missing workflow job {job_name}"
-        next_job = workflow.find("\n  ", start + len(marker))
-        block = workflow[start: next_job if next_job >= 0 else len(workflow)]
-        auth_step = block.find("Verify authenticated ledger health before production mutation")
-        mutation = block.find(mutation_step)
-        assert auth_step >= 0, f"{job_name} is missing authenticated ledger preflight"
-        assert mutation >= 0 and auth_step < mutation, f"{job_name} must preflight before {mutation_step}"
-        assert "/execution-ledger/health" in block
-        assert "secrets.BRIDGE_API_KEY" in block
-
 
 def test_all_scheduled_maintenance_jobs_authenticate_before_mutating_production():
     workflow = _read(MAINTENANCE)
@@ -75,11 +55,14 @@ def test_all_scheduled_maintenance_jobs_authenticate_before_mutating_production(
         ("daily-delivery-recovery", "Recover failed or stale delivery notifications"),
     )
     for job_name, mutation_step in jobs:
-        marker = f"  {job_name}:"
-        start = workflow.rfind(marker)
-        assert start >= 0, f"missing workflow job {job_name}"
-        next_job = workflow.find("\\n  ", start + len(marker))
-        block = workflow[start: next_job if next_job >= 0 else len(workflow)]
+        start = workflow.index(f"\\n  {job_name}:")
+        other_starts = [
+            workflow.find(f"\\n  {other}:", start + 1)
+            for other, _ in jobs if other != job_name
+        ]
+        end_candidates = [value for value in other_starts if value > start]
+        end = min(end_candidates) if end_candidates else len(workflow)
+        block = workflow[start:end]
         auth_step = block.find("Verify authenticated ledger health before production mutation")
         mutation = block.find(mutation_step)
         assert auth_step >= 0, f"{job_name} is missing authenticated ledger preflight"
