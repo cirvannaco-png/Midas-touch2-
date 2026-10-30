@@ -26,7 +26,7 @@ from app.execution_control import (
     transition_execution,
     update_position_risk,
 )
-from app.models import ExecutionDealEvent
+from app.models import ExecutionDealEvent, ExecutionPositionModification
 from app.routes import verify_api_key
 
 router = APIRouter(prefix="/execution-ledger", tags=["execution-ledger"])
@@ -172,6 +172,22 @@ class PositionRiskUpdateRequest(BaseModel):
     evidence_ref: str = Field(min_length=1, max_length=256)
 
 
+
+class PositionModificationRequest(BaseModel):
+    portfolio_key: str = Field(min_length=1, max_length=128)
+    broker_position_id: str = Field(min_length=1, max_length=100)
+    symbol: str = Field(min_length=1, max_length=32)
+    direction: Literal["BUY", "SELL"]
+    volume: float = Field(gt=0)
+    entry_price: float = Field(gt=0)
+    previous_sl: float = Field(ge=0)
+    applied_sl: float = Field(gt=0)
+    previous_tp: float = Field(ge=0)
+    applied_tp: float = Field(ge=0)
+    risk_r: float = Field(ge=0)
+    volatility: float = Field(ge=0)
+    evidence_ref: str = Field(min_length=1, max_length=256)
+
 class ClosedPositionRequest(BaseModel):
     portfolio_key: str = Field(min_length=1, max_length=128)
     request_id: str | None = Field(default=None, max_length=128)
@@ -261,6 +277,99 @@ async def position_risk_update(
         await session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"updated": True, "broker_position_id": body.broker_position_id}
+
+
+
+@router.post("/position-modification")
+async def position_modification(
+    body: PositionModificationRequest,
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Persist one broker-confirmed SL/TP change and reconcile its risk snapshot."""
+    payload = body.model_dump(mode="json")
+    fingerprint = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    query = select(ExecutionPositionModification).where(
+        ExecutionPositionModification.portfolio_key == body.portfolio_key,
+        ExecutionPositionModification.evidence_ref == body.evidence_ref,
+    )
+    existing = await session.scalar(query)
+    if existing is not None:
+        if existing.event_fingerprint != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="position-modification evidence_ref was reused with different broker state",
+            )
+        return {
+            "updated": True,
+            "duplicate": True,
+            "broker_position_id": body.broker_position_id,
+            "evidence_ref": body.evidence_ref,
+        }
+
+    try:
+        updated = await update_position_risk(
+            session,
+            portfolio_key=body.portfolio_key,
+            broker_position_id=body.broker_position_id,
+            direction=body.direction,
+            risk_r=body.risk_r,
+            volatility=body.volatility,
+            factors={},
+            evidence_ref=body.evidence_ref,
+        )
+        if not updated:
+            await session.rollback()
+            raise HTTPException(
+                status_code=404,
+                detail="broker position is not registered; modification was not reconciled",
+            )
+        session.add(
+            ExecutionPositionModification(
+                portfolio_key=body.portfolio_key,
+                broker_position_id=body.broker_position_id,
+                symbol=body.symbol,
+                direction=body.direction,
+                volume=body.volume,
+                entry_price=body.entry_price,
+                previous_sl=body.previous_sl,
+                applied_sl=body.applied_sl,
+                previous_tp=body.previous_tp,
+                applied_tp=body.applied_tp,
+                risk_r=body.risk_r,
+                volatility=body.volatility,
+                evidence_ref=body.evidence_ref,
+                event_fingerprint=fingerprint,
+                payload_json=payload,
+                received_at=datetime.now(timezone.utc),
+            )
+        )
+        await session.commit()
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        await session.rollback()
+        existing = await session.scalar(query)
+        if existing is not None and existing.event_fingerprint == fingerprint:
+            return {
+                "updated": True,
+                "duplicate": True,
+                "broker_position_id": body.broker_position_id,
+                "evidence_ref": body.evidence_ref,
+            }
+        raise HTTPException(
+            status_code=409,
+            detail="position-modification event conflicted with existing evidence",
+        ) from exc
+    return {
+        "updated": True,
+        "duplicate": False,
+        "broker_position_id": body.broker_position_id,
+        "evidence_ref": body.evidence_ref,
+    }
 
 
 @router.post("/position-closed")
