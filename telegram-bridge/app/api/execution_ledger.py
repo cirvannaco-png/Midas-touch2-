@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_execution_policy import authorize_demo_operation
 from app.config import settings
 from app.database import get_session
 from app.execution_control import (
@@ -28,7 +29,6 @@ from app.execution_control import (
     transition_execution,
     update_position_risk,
 )
-from app.ai_execution_policy import authorize_demo_operation
 from app.models import ExecutionDealEvent, ExecutionLedger
 from app.routes import verify_api_key
 
