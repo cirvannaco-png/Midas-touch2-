@@ -609,6 +609,21 @@ async def record_position_modification(
         }
     )
     row.result_json = merged
+    # Preserve the position's current factor exposure; a stop-only change must
+    # not erase the portfolio's currency/asset correlation reservation.
+    reservation = await session.scalar(
+        select(PortfolioReservation)
+        .where(
+            PortfolioReservation.portfolio_key == portfolio_key,
+            PortfolioReservation.request_id == row.request_id,
+        )
+        .with_for_update()
+    )
+    factors = dict(
+        (reservation.factor_exposure if reservation is not None else None)
+        or (row.request_json or {}).get("factor_exposure")
+        or {}
+    )
     await _upsert_active_reservation(
         session,
         request_id=row.request_id,
@@ -617,7 +632,7 @@ async def record_position_modification(
         direction=direction,
         risk_r=risk_r,
         volatility=volatility,
-        factors={},
+        factors=factors,
     )
     await session.flush()
     return True
