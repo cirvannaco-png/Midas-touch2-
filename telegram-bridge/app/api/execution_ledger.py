@@ -258,6 +258,13 @@ async def position_risk_update(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
 ):
+    if body.previous_sl <= 0:
+        raise HTTPException(status_code=422, detail="existing protective stop is required before modification reconciliation")
+    if body.direction == "BUY" and body.applied_sl <= body.previous_sl:
+        raise HTTPException(status_code=422, detail="BUY protective stop modification must not loosen the stop")
+    if body.direction == "SELL" and body.applied_sl >= body.previous_sl:
+        raise HTTPException(status_code=422, detail="SELL protective stop modification must not loosen the stop")
+
     try:
         updated = await update_position_risk(
             session,
