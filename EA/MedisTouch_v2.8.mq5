@@ -509,15 +509,35 @@ bool ReconcilePositionModification(const ulong positionIdentifier,const string s
       return !InpRequireExecutionLedger;
      }
    ulong ticket=g_broker.PositionTicketForIdentifier(symbol,positionIdentifier);
-   if(ticket==0 || !PositionSelectByTicket(ticket)) return false;
+   if(ticket==0 || !PositionSelectByTicket(ticket))
+     {
+      if(InpRequireExecutionLedger) g_executionLedgerHealthy=false;
+      return false;
+     }
    double appliedSL=PositionGetDouble(POSITION_SL);
+   double appliedTP=PositionGetDouble(POSITION_TP);
    double entry=PositionGetDouble(POSITION_PRICE_OPEN);
    double volume=PositionGetDouble(POSITION_VOLUME);
-   if(appliedSL<=0.0 || entry<=0.0 || volume<=0.0) return false;
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   // The stop/target observed after the broker call must match what the
+   // position manager observed. Never reconcile an assumed modification.
+   if(appliedSL<=0.0 || entry<=0.0 || volume<=0.0 || point<=0.0 ||
+      MathAbs(appliedSL-newSL)>point*2.0 || MathAbs(appliedTP-newTP)>point*2.0)
+     {
+      if(InpRequireExecutionLedger) g_executionLedgerHealthy=false;
+      g_execAudit.Log("POSITION_MODIFICATION_OBSERVATION_MISMATCH",
+                      "could not verify broker-applied SL/TP before ledger reconciliation",
+                      0,ticket,appliedSL,entry,0.0,0.0);
+      return false;
+     }
    double riskMoney=g_risk.RiskAmountForLots(symbol,volume,entry,appliedSL);
    double riskR=0.0;
    bool stopLocked=(direction=="BUY" && appliedSL>=entry) || (direction=="SELL" && appliedSL<=entry);
-   if(!RiskRFromMoney(riskMoney,riskR,stopLocked)) return false;
+   if(!RiskRFromMoney(riskMoney,riskR,stopLocked))
+     {
+      if(InpRequireExecutionLedger) g_executionLedgerHealthy=false;
+      return false;
+     }
    int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
    string modificationId=StringFormat("mt5-posmod:%I64u:%I64u:%s:%s",
                                       positionIdentifier,(ulong)GetTickCount(),
