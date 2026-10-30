@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_session
 from app.execution_control import (
     MAX_PORTFOLIO_HEAT_R,
@@ -27,7 +28,8 @@ from app.execution_control import (
     transition_execution,
     update_position_risk,
 )
-from app.models import ExecutionDealEvent
+from app.ai_execution_policy import authorize_demo_operation
+from app.models import ExecutionDealEvent, ExecutionLedger
 from app.routes import verify_api_key
 
 router = APIRouter(prefix="/execution-ledger", tags=["execution-ledger"])
@@ -72,10 +74,88 @@ class ReserveRequest(BaseModel):
     max_heat_r: float = Field(default=MAX_PORTFOLIO_HEAT_R, gt=0, le=MAX_PORTFOLIO_HEAT_R)
 
 
+class AIExecutionAuthorizationRequest(BaseModel):
+    portfolio_key: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+    actor: Literal["EXTERNAL_AI"]
+    operation: Literal["OPEN", "MODIFY", "CLOSE"]
+    authorization_id: str = Field(min_length=1, max_length=160)
+    broker_position_id: str | None = Field(default=None, max_length=100)
+    operator_approval_ref: str = Field(min_length=1, max_length=256)
+    demo_validation_ref: str = Field(min_length=1, max_length=256)
+
+
 class TransitionRequest(BaseModel):
     request_id: str = Field(min_length=1, max_length=128)
     state: Literal["CHECKED", "SENT", "ACKED", "FILLED", "RECOVERING", "REJECTED", "CANCELLED", "RECONCILED"]
     result: dict | None = None
+
+
+@router.post("/authorize-ai")
+async def authorize_ai_execution(
+    body: AIExecutionAuthorizationRequest,
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Authorize a ledger-bound DEMO request only; this endpoint never calls a broker."""
+    decision = authorize_demo_operation(
+        enabled=settings.AI_DEMO_EXECUTION_ENABLED,
+        allowlisted_portfolios=settings.ai_demo_portfolio_allowlist,
+        portfolio_key=body.portfolio_key,
+        actor=body.actor,
+        operation=body.operation,
+        operator_approval_ref=body.operator_approval_ref,
+        demo_validation_ref=body.demo_validation_ref,
+    )
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    row = await session.scalar(
+        select(ExecutionLedger)
+        .where(
+            ExecutionLedger.portfolio_key == body.portfolio_key,
+            ExecutionLedger.request_id == body.request_id,
+        )
+        .with_for_update()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="execution intent is not registered in the ledger")
+    if body.operation == "OPEN":
+        request = row.request_json or {}
+        if row.state not in {"RESERVED", "CHECKED"} or float(request.get("risk_r", 0.0)) <= 0.0:
+            raise HTTPException(status_code=409, detail="OPEN requires a positive-risk ledger reservation before EA execution")
+    else:
+        if row.state != "FILLED" or not body.broker_position_id or row.broker_position_id != body.broker_position_id:
+            raise HTTPException(status_code=409, detail="MODIFY/CLOSE requires the matching broker-confirmed FILLED position")
+
+    merged = dict(row.result_json or {})
+    authorizations = list(merged.get("ai_authorizations") or [])
+    record = {
+        "authorization_id": body.authorization_id,
+        "actor": body.actor,
+        "operation": body.operation,
+        "operator_approval_ref": body.operator_approval_ref,
+        "demo_validation_ref": body.demo_validation_ref,
+    }
+    existing = next(
+        (item for item in authorizations if item.get("authorization_id") == body.authorization_id),
+        None,
+    )
+    if existing is not None and any(existing.get(key) != value for key, value in record.items()):
+        raise HTTPException(status_code=409, detail="authorization_id was reused with conflicting evidence")
+    if existing is None:
+        authorizations.append({**record, "authorized_at": datetime.now(timezone.utc).isoformat()})
+    merged["ai_authorizations"] = authorizations
+    row.result_json = merged
+    await session.commit()
+    return {
+        "authorized": True,
+        "authorization_id": body.authorization_id,
+        "portfolio_key": body.portfolio_key,
+        "operation": body.operation,
+        "broker_execution_allowed": False,
+        "execution_boundary": "native EA ledger reservation, risk validation, and broker execution remain mandatory",
+    }
 
 
 @router.post("/reserve")
