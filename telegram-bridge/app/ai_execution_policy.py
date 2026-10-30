@@ -4,8 +4,8 @@ This module does not execute broker orders. It gates an auditable request for
 an EA-owned action; the native EA still performs its own ledger reservation,
 risk checks, order checks, and broker call.
 """
-from dataclasses import dataclass
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
