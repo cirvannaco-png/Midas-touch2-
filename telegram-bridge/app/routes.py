@@ -235,7 +235,7 @@ async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
 async def verify_benchmark_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
     if not settings.BENCHMARK_ENABLED:
         raise HTTPException(status_code=404, detail="Benchmark route disabled")
-    expected_key = settings.BENCHMARK_API_KEY or settings.SECRET_KEY
+    expected_key = settings.BENCHMARK_API_KEY or settings.BRIDGE_API_KEY.strip() or settings.SECRET_KEY
     if not secrets.compare_digest(x_api_key, expected_key):
         raise HTTPException(status_code=401, detail="Invalid benchmark API key")
     return True
