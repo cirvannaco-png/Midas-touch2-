@@ -240,6 +240,10 @@ void CPositionManager::SendPendingModifications()
          i++;
          continue;
         }
+      // Persist the exact risk snapshot before the HTTP call. If the server
+      // commits but the response is lost, an idempotent retry must send the
+      // identical payload and evidence fingerprint.
+      m_pendingModifications[i]=event;
       if(!m_ledger.PositionModification(event.positionIdentifier,event.symbol,event.direction,
                                         event.volume,event.entryPrice,event.previousSL,event.appliedSL,
                                         event.previousTP,event.appliedTP,event.riskR,event.volatility,
@@ -354,9 +358,9 @@ void CPositionManager::OnTick(double currentAtr)
             event.appliedTP=dec.setup.final_tp;
             event.riskR=-1.0;
             event.volatility=MathMax(0.0,currentAtr);
-            event.evidenceRef=StringFormat("mt5-position-modification:%I64u:%I64d:%d:%.8f",
+            event.evidenceRef=StringFormat("mt5-position-modification:%I64u:%I64d:%u:%d:%.8f",
                                            currentPositionIdentifier,(long)TimeCurrent(),
-                                           m_modificationSequence,ds.proposedSL);
+                                           GetTickCount(),m_modificationSequence,ds.proposedSL);
             if(PositionSelectByTicket(ticket))
               {
                ulong observedIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
