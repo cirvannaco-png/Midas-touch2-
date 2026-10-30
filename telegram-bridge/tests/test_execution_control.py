@@ -667,6 +667,7 @@ async def test_position_modification_reconciliation_is_idempotent_and_updates_re
             )
             assert reservation is not None
             assert reservation.risk_r == 0.4
+            assert reservation.factor_exposure == {"gold": 1.0}
     finally:
         await engine.dispose()
 
