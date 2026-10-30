@@ -55,9 +55,9 @@ def test_all_scheduled_maintenance_jobs_authenticate_before_mutating_production(
         ("daily-delivery-recovery", "Recover failed or stale delivery notifications"),
     )
     for job_name, mutation_step in jobs:
-        start = workflow.index(f"\\n  {job_name}:")
+        start = workflow.rindex(f"  {job_name}:")
         other_starts = [
-            workflow.find(f"\\n  {other}:", start + 1)
+            workflow.rindex(f"  {other}:")
             for other, _ in jobs if other != job_name
         ]
         end_candidates = [value for value in other_starts if value > start]
