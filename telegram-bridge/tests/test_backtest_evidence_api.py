@@ -325,13 +325,19 @@ def test_backtest_evidence_rejects_locked_oos_rows_outside_the_locked_window(cli
 
 def test_backtest_evidence_rejects_non_chronological_validation_folds(client, auth_headers):
     payload = _valid_payload()
-    validation_fold_1 = next(row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 1)
-    validation_fold_2 = next(row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 2)
-    validation_fold_2["timestamp"] = (
-        datetime.fromisoformat(validation_fold_1["timestamp"]) - timedelta(days=1)
-    ).isoformat()
+    start = datetime.fromisoformat(payload["provenance"]["period_start"])
+    fold_2_train = [row for row in payload["trades"] if row["partition"] == "train" and row["fold_id"] == 2]
+    fold_2_validation = [row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 2]
+    for index, row in enumerate(fold_2_train):
+        timestamp = start + timedelta(hours=index)
+        row["timestamp"] = timestamp.isoformat()
+        row["resolved_at"] = (timestamp + timedelta(minutes=1)).isoformat()
+    for index, row in enumerate(fold_2_validation):
+        timestamp = start + timedelta(days=10, hours=index)
+        row["timestamp"] = timestamp.isoformat()
+        row["resolved_at"] = (timestamp + timedelta(minutes=1)).isoformat()
 
     response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
 
     assert response.status_code == 422
-    assert "violates train-before-validation chronology" in response.json()["detail"] or "locked_oos must start" in response.json()["detail"]
+    assert "validation folds must be chronological" in response.json()["detail"]
