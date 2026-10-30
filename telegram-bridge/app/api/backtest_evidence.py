@@ -506,12 +506,18 @@ async def ingest_backtest_evidence(
 
     folds: list[dict[str, Any]] = []
     fold_verdicts: list[str] = []
+    previous_validation_end = None
     for fold_id in sorted(grouped):
         fold_train = grouped[fold_id]["train"]
         fold_validation = grouped[fold_id]["validation"]
         if not fold_train or not fold_validation:
             raise HTTPException(status_code=422, detail=f"fold {fold_id} must have train and validation rows")
         validation_start = min(row.timestamp for row in fold_validation)
+        if previous_validation_end is not None and validation_start <= previous_validation_end:
+            raise HTTPException(
+                status_code=422,
+                detail="walk-forward validation folds must be chronological and non-overlapping",
+            )
         if max(row.timestamp for row in fold_train) >= validation_start:
             raise HTTPException(status_code=422, detail=f"fold {fold_id} violates train-before-validation chronology")
         if max(row.resolved_at for row in fold_train) >= validation_start:
@@ -526,6 +532,7 @@ async def ingest_backtest_evidence(
                 status_code=422,
                 detail="locked_oos cannot begin before all validation outcomes are resolved",
             )
+        previous_validation_end = max(row.timestamp for row in fold_validation)
         verdict = _fold_verdict(fold_train, fold_validation)
         fold_verdicts.append(verdict)
         folds.append({
