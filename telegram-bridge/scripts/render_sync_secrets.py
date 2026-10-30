@@ -39,7 +39,7 @@ RENDER_API = "https://api.render.com/v1"
 TELEGRAM_SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 
 # Secrets render.yaml marks `sync: false`. Optional ones are skipped when unset.
-REQUIRED_SECRETS = ("BOT_TOKEN", "CHAT_ID", "ADMIN_CHAT_ID", "SECRET_KEY")
+REQUIRED_SECRETS = ("BOT_TOKEN", "CHAT_ID", "ADMIN_CHAT_ID")
 GENERATED_SECRETS = ("WEBHOOK_SECRET_TOKEN",)
 
 
@@ -77,11 +77,11 @@ def collect_secrets(env: dict[str, str]) -> dict[str, str]:
         )
 
     # Workflows and the EA use BRIDGE_API_KEY; the bridge retains SECRET_KEY
-    # as a compatibility fallback. Keep both Render variables identical so a
-    # partial secret rotation cannot strand authenticated production workflows.
-    bridge_key = env.get("BRIDGE_API_KEY") or env["SECRET_KEY"]
-    if not bridge_key.strip():
-        raise RenderSyncError("BRIDGE_API_KEY/SECRET_KEY must be non-empty.")
+    # as a compatibility fallback. A single source value is required and both
+    # Render variables are written identically to avoid a partial rotation.
+    bridge_key = (env.get("BRIDGE_API_KEY") or env.get("SECRET_KEY") or "").strip()
+    if not bridge_key:
+        raise RenderSyncError("Missing BRIDGE_API_KEY (or legacy SECRET_KEY).")
     payload = {k: env[k] for k in REQUIRED_SECRETS}
     payload["BRIDGE_API_KEY"] = bridge_key
     payload["SECRET_KEY"] = bridge_key
