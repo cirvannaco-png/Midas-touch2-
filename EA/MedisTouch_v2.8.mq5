@@ -543,7 +543,7 @@ bool ReconcilePositionModification(const ulong positionIdentifier,const string s
                                       positionIdentifier,(ulong)GetTickCount(),
                                       DoubleToString(oldSL,digits),DoubleToString(appliedSL,digits));
    string evidence=StringLen(evidenceRef)>0 ? evidenceRef : modificationId;
-   double appliedTP=PositionGetDouble(POSITION_TP);
+   appliedTP=PositionGetDouble(POSITION_TP);
    if(!g_executionLedger.PositionModification(positionIdentifier,symbol,direction,modificationId,
                                                oldSL,appliedSL,oldTP,appliedTP,
                                                riskR,MathMax(0.0,volatility),evidence))
