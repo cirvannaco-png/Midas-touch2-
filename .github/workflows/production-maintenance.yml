@@ -207,6 +207,7 @@ jobs:
           PY
 
       - name: Verify authenticated ledger health before production mutation
+        if: ${{ steps.parity.outputs.due == 'true' }}
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
