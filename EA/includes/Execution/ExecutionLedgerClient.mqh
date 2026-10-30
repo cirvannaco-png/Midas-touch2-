@@ -157,6 +157,29 @@ public:
       return PostJson("/execution-ledger/sync-pending-order",payload);
      }
 
+   bool PositionModification(const ulong positionIdentifier,const string symbol,const string direction,
+                              const double volume,const double entryPrice,
+                              const double previousSL,const double appliedSL,
+                              const double previousTP,const double appliedTP,
+                              const double riskR,const double volatility,const string evidenceRef)
+     {
+      if(!m_ready || positionIdentifier==0 || StringLen(symbol)==0 ||
+         (direction!="BUY" && direction!="SELL") || volume<=0.0 || entryPrice<=0.0 ||
+         appliedSL<=0.0 || riskR<0.0 || volatility<0.0 || StringLen(evidenceRef)==0 ||
+         StringLen(evidenceRef)>256 || !MathIsValidNumber(volume) ||
+         !MathIsValidNumber(entryPrice) || !MathIsValidNumber(previousSL) ||
+         !MathIsValidNumber(appliedSL) || !MathIsValidNumber(previousTP) ||
+         !MathIsValidNumber(appliedTP) || !MathIsValidNumber(riskR) ||
+         !MathIsValidNumber(volatility))
+         return false;
+      string payload=StringFormat(
+         "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"volume\":%.8f,\"entry_price\":%.8f,\"previous_sl\":%.8f,\"applied_sl\":%.8f,\"previous_tp\":%.8f,\"applied_tp\":%.8f,\"risk_r\":%.8f,\"volatility\":%.8f,\"evidence_ref\":\"%s\"}",
+         JsonSafe(m_portfolioKey),positionIdentifier,JsonSafe(symbol),JsonSafe(direction),
+         volume,entryPrice,previousSL,appliedSL,previousTP,appliedTP,riskR,
+         MathMax(0.0,volatility),JsonSafe(evidenceRef));
+      return PostJson("/execution-ledger/position-modification",payload);
+     }
+
    bool UpdatePositionRisk(const ulong positionIdentifier,const string direction,
                            const double riskR,const double volatility,const string evidenceRef)
      {
