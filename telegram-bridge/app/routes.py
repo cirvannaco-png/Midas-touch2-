@@ -267,10 +267,14 @@ async def health_check():
 @router.get("/health/db", response_model=HealthResponse)
 async def health_db():
     db_ok = await check_db_connection()
+    if not db_ok:
+        # Render treats HTTP 2xx as healthy. A degraded JSON body with HTTP 200
+        # creates a false-green deployment when PostgreSQL is unreachable.
+        raise HTTPException(status_code=503, detail="Database health check failed")
     return {
-        "status": "online" if db_ok else "degraded",
+        "status": "online",
         "version": APP_VERSION,
-        "database": "connected" if db_ok else "disconnected"
+        "database": "connected"
     }
 
 
