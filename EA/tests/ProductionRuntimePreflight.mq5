@@ -126,6 +126,6 @@ void OnStart()
    Print("It does NOT prove that the running EA inputs match these script inputs or that broker positions/pending orders were reconciled.");
    Print("After restarting the EA, verify Experts log contains EXECUTION_LEDGER_READY and no EXECUTION_LEDGER_NOT_READY / EXECUTION_LEDGER_CONFIGURATION_MISSING.");
    Print("Verify the running EA Inputs locally: InpExecutionLedgerBaseUrl=https://midas-touch2.onrender.com; InpBridgeApiKey matches bridge SECRET_KEY; InpRequireExecutionLedger=true.");
-   Print("Do not enable live trading on this result alone; complete the Exness Strategy Tester and demo-forward gates.");
+   Print("Do not enable live trading on this result alone; complete Strategy Tester and operator-selected MT5 broker demo-forward gates.");
   }
 //+------------------------------------------------------------------+
