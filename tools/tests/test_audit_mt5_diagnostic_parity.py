@@ -32,7 +32,7 @@ def _manifest(folder: Path) -> Path:
         "ea_source_sha": "a" * 40,
         "ea_build": "candidate-build-1",
         "terminal_build": "mt5-build-1",
-        "data_vendor": "Exness",
+        "data_vendor": "Generic MT5 test feed",
         "tester_model": "Every tick based on real ticks",
         "spread_model": "real_ticks_plus_stress",
         "spread_widening_multiplier": 1.2,
