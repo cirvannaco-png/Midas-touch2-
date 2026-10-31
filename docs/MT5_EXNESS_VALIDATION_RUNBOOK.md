@@ -12,6 +12,8 @@ Status: execution procedure only. No performance test or broker test is claimed 
 
 ## Gate A — prepare one immutable test bundle
 
+For native tester deal exports, set `InpTesterServerUtcOffsetMinutes` to the selected broker's verified historical server UTC offset in minutes. The exporter records broker-server wall-clock timestamps with an explicit ISO-8601 offset and does not label them UTC by default. Keep the offset constant within each run; split test windows at server daylight-saving/timezone transitions. Leave evidence export disabled when the offset is unknown or unverified.
+
 Create a dated folder outside the repository, for example `validation/2026-10-18/`, and retain:
 
 1. Exact EA source commit SHA and compiled `.ex5` hash.
