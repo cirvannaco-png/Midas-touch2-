@@ -143,7 +143,10 @@ def put_env_vars(service_id: str, api_key: str, values: dict[str, str]) -> None:
             if key and "value" in ev:
                 existing[key] = ev["value"]
 
-    # Retire the obsolete second credential but preserve unrelated service settings.\n    merged = {key: value for key, value in existing.items() if key != LEGACY_EXECUTION_ENV_KEY}\n    merged.update(values)\n    _request(
+    # Retire the obsolete second credential but preserve unrelated service settings.
+    merged = {key: value for key, value in existing.items() if key != LEGACY_EXECUTION_ENV_KEY}
+    merged.update(values)
+    _request(
         "PUT",
         f"/services/{service_id}/env-vars",
         api_key,
