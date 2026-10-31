@@ -52,10 +52,10 @@ def test_every_execution_ledger_mutation_route_uses_single_bridge_authentication
     source = (ROOT / "telegram-bridge/app/api/execution_ledger.py").read_text(encoding="utf-8")
     import re
 
-    routes = list(re.finditer(r'@router\\.post\\("([^"]+)"\\)', source))
+    routes = list(re.finditer(r'@router\.post\("([^"]+)"\)', source))
     assert routes
     for route in routes:
-        next_route = re.search(r"\\n@router\\.", source[route.end():])
+        next_route = re.search(r"\n@router\.", source[route.end():])
         end = route.end() + next_route.start() if next_route else len(source)
         block = source[route.start():end]
         assert "Depends(verify_api_key)" in block, route.group(1)
