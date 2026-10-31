@@ -846,7 +846,7 @@ def test_ai_cannot_reserve_broker_execution_even_with_a_client_supplied_actor(cl
         json=payload,
         headers={"X-API-Key": "test-secret-key"},
     )
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 
@@ -948,4 +948,4 @@ def test_invalid_bridge_key_is_rejected_before_reservation(client):
             "X-API-Key": "deliberately-invalid-bridge-key",
         },
     )
-    assert response.status_code == 403
+    assert response.status_code == 401
