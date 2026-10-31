@@ -13,9 +13,19 @@ def test_broker_execution_is_provider_agnostic_and_uses_live_mt5_capabilities() 
         "SYMBOL_TRADE_MODE",
         "SYMBOL_TRADE_STOPS_LEVEL",
         "SYMBOL_TRADE_FREEZE_LEVEL",
-        "SetTypeFillingBySymbol(_Symbol)",
     ):
         assert capability in adapter
+
+    # Filling policy must be resolved from each instrument immediately before
+    # a deal request; a chart-symbol default is unsafe for multi-symbol EAs.
+    assert "bool CBrokerAdapter::ConfigureSymbolFilling(string symbol)" in adapter
+    assert "SymbolSelect(symbol,true)" in adapter
+    assert "!m_trade.SetTypeFillingBySymbol(symbol)" in adapter
+    assert "SetTypeFillingBySymbol(_Symbol)" not in adapter
+    for method in ("MarketBuy", "MarketSell", "PlaceLimit", "ClosePartial", "CloseFull"):
+        start = adapter.index(f"bool CBrokerAdapter::{method}(")
+        end = adapter.find("//+------------------------------------------------------------------+", start)
+        assert "ConfigureSymbolFilling(symbol)" in adapter[start:end], method
 
     # Match complete vendor names only; e.g. "IG" must not match "ambiguous".
     vendor_allowlist = re.compile(
