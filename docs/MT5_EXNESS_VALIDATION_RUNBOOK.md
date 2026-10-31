@@ -4,7 +4,7 @@ Status: execution procedure only. No performance test or broker test is claimed 
 
 ## Safety boundary
 
-- Keep PR #82 draft/unmerged. Do not merge, deploy, or enable live trading based on compilation, structural checks, or policy unit tests.
+- Keep live trading disabled. Do not promote or deploy based only on compilation, structural checks, or policy unit tests; require matched Strategy Tester, locked-OOS and selected-broker demo evidence.
 - Use a dedicated **MT5 demo** account with the broker selected by the operator. Never place credentials, account numbers, API keys, investor passwords, or unredacted account statements in GitHub artifacts or issue comments.
 - Record the exact EA source commit, compiled EA build, terminal build, symbol specification, and tester configuration before the first run.
 - Preserve the current production trailing-stop default and all existing emergency-stop and account-risk safeguards.
