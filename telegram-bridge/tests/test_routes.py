@@ -340,3 +340,46 @@ def test_signal_warm_latency_regression_ceiling(client, auth_headers):
     assert p50 < 150.0, f"warm /signal p50 regression: {p50:.1f} ms"
     assert p95 < 250.0, f"warm /signal p95 regression: {p95:.1f} ms"
     assert p99 < 300.0, f"warm /signal p99 regression: {p99:.1f} ms"
+
+
+def test_github_oidc_repairs_maintenance_and_ledger_health_authorization_without_ea_key(client, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.group_enforcement import run_subscription_enforcement
+
+    calls = []
+
+    def trusted_token(token, *, method, path):
+        calls.append((token, method, path))
+        return token == "verified-production-token" and (
+            (method == "POST" and path == "/admin/check-subscriptions")
+            or (method == "GET" and path == "/execution-ledger/health")
+        )
+
+    monkeypatch.setattr("app.routes.verify_production_workflow_token", trusted_token)
+    monkeypatch.setattr(
+        "app.group_enforcement.run_subscription_enforcement",
+        AsyncMock(return_value={"warned": 0, "expired": 0, "removed": 0}),
+    )
+
+    headers = {"Authorization": "Bearer verified-production-token"}
+    maintenance = client.post("/admin/check-subscriptions", headers=headers)
+    ledger = client.get("/execution-ledger/health", headers=headers)
+
+    assert maintenance.status_code == 200, maintenance.text
+    assert ledger.status_code == 200, ledger.text
+    assert ledger.json()["execution_ledger"] == "ready"
+    assert [(method, path) for _, method, path in calls] == [
+        ("POST", "/admin/check-subscriptions"),
+        ("GET", "/execution-ledger/health"),
+    ]
+
+
+def test_oidc_token_cannot_authorize_trade_signal_or_position_modification(client, monkeypatch):
+    monkeypatch.setattr("app.routes.verify_production_workflow_token", lambda *args, **kwargs: False)
+    response = client.post(
+        "/signal",
+        json={**VALID_BUY_SIGNAL, "signal_id": "oidc-must-not-authorize-signal"},
+        headers={"Authorization": "Bearer valid-looking-token"},
+    )
+    assert response.status_code == 401

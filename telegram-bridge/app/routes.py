@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import Request, APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -225,11 +225,35 @@ class SignalResponse(BaseModel):
 
 
 # ---------- Auth Dependency ----------
-async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
-    if not secrets.compare_digest(x_api_key, settings.SECRET_KEY):
-        logger.warning("Invalid API key attempt")
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return True
+async def verify_api_key(
+    request: Request,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    """Accept the EA API key or a tightly scoped GitHub production OIDC token.
+
+    The EA credential remains the normal trading/API credential. OIDC only
+    covers explicit production maintenance routes; it cannot submit or manage
+    broker orders, alter positions, or ingest research evidence.
+    """
+    if x_api_key is not None and secrets.compare_digest(x_api_key, settings.SECRET_KEY):
+        return True
+    if authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.casefold() == "bearer" and token.strip():
+            from app.production_auth import ProductionOIDCError, verify_production_workflow_token
+
+            try:
+                if verify_production_workflow_token(
+                    token.strip(), method=request.method, path=request.url.path
+                ):
+                    return True
+            except ProductionOIDCError:
+                pass
+    if x_api_key is None and authorization is None:
+        raise HTTPException(status_code=422, detail="X-API-Key or scoped production Authorization is required")
+    logger.warning("Rejected API authorization")
+    raise HTTPException(status_code=401, detail="Invalid API authorization")
 
 
 async def verify_benchmark_api_key(x_api_key: str = Header(..., alias="X-API-Key")):

@@ -35,45 +35,52 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.task == 'execution-ledger-preflight' }}
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 3
     concurrency:
       group: midas-execution-ledger-preflight
       cancel-in-progress: false
     steps:
-      - name: Validate production bridge secrets without printing them
-        env:
-          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+      - name: Mint scoped production OIDC identity
+        id: production-identity
         shell: bash
         run: |
           set -euo pipefail
-          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
-          : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
           python3 - <<'PY'
+          import json
           import os
-          from urllib.parse import urlsplit
-          raw = os.environ["BRIDGE_BASE_URL"].strip()
-          parsed = urlsplit(raw)
-          if (parsed.scheme != "https" or not parsed.hostname or parsed.username
-                  or parsed.password or parsed.query or parsed.fragment
-                  or any(char.isspace() for char in raw)):
-              raise SystemExit("BRIDGE_BASE_URL must be an HTTPS URL without credentials, query, fragment, or whitespace.")
-          if not os.environ["BRIDGE_API_KEY"].strip():
-              raise SystemExit("BRIDGE_API_KEY must be non-empty.")
-          print("Bridge secret presence and URL shape verified; secret values not printed.")
-          PY
+          import urllib.parse
+          import urllib.request
 
-      - name: Verify runtime key and real database connection
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          token_request = urllib.request.Request(
+              url + ("&" if "?" in url else "?") + urllib.parse.urlencode({"audience": "midas-touch2-production"}),
+              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          try:
+              with urllib.request.urlopen(token_request, timeout=15) as response:
+                  token = json.load(response).get("value")
+          except Exception as exc:
+              raise SystemExit("GitHub production workflow identity request failed.") from exc
+          if not isinstance(token, str) or not token or "\n" in token:
+              raise SystemExit("GitHub production workflow identity was empty or malformed.")
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as target:
+              target.write("MIDAS_PRODUCTION_OIDC_TOKEN=" + token + "\n")
+          print("Scoped production workflow identity acquired; token value redacted.")
+          PY
+      - name: Verify scoped production identity and real database connection
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
           if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-            --request GET --header "X-API-Key: ${BRIDGE_API_KEY}" \
+            --request GET --header "Authorization: Bearer ${MIDAS_PRODUCTION_OIDC_TOKEN}" \
             --header "Accept: application/json" --connect-timeout 8 --max-time 15 --retry 0 \
             "${BRIDGE_BASE_URL%/}/execution-ledger/health")"; then
             echo "::error::Execution-ledger preflight request failed; no mutation was attempted."
@@ -90,7 +97,7 @@ jobs:
           expected = {"status": "online", "database": "connected", "execution_ledger": "ready"}
           if any(result.get(k) != v for k, v in expected.items()):
               raise SystemExit("Execution-ledger health response is degraded; no mutation was attempted.")
-          print("Authenticated bridge API key accepted; database SELECT succeeded; response is healthy.")
+          print("Scoped production workflow identity accepted; database SELECT succeeded; response is healthy.")
           import os
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write("\n### Execution-ledger preflight\n\n- Authenticated key verification: passed\n- Database connectivity probe: passed\n- No production mutation was performed.\n")
@@ -101,11 +108,42 @@ jobs:
     if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 6') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.task == 'biweekly-recalibration') }}
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 5
     concurrency:
       group: midas-production-recalibration
       cancel-in-progress: false
     steps:
+      - name: Mint scoped production OIDC identity
+        id: production-identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          token_request = urllib.request.Request(
+              url + ("&" if "?" in url else "?") + urllib.parse.urlencode({"audience": "midas-touch2-production"}),
+              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          try:
+              with urllib.request.urlopen(token_request, timeout=15) as response:
+                  token = json.load(response).get("value")
+          except Exception as exc:
+              raise SystemExit("GitHub production workflow identity request failed.") from exc
+          if not isinstance(token, str) or not token or "\n" in token:
+              raise SystemExit("GitHub production workflow identity was empty or malformed.")
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as target:
+              target.write("MIDAS_PRODUCTION_OIDC_TOKEN=" + token + "\n")
+          print("Scoped production workflow identity acquired; token value redacted.")
+          PY
       - name: Check alternate-Saturday schedule
         id: parity
         shell: bash
@@ -131,30 +169,6 @@ jobs:
               print(f"Recalibration window is eligible ({reason}).")
           else:
               print(f"::notice::Recalibration skipped: {reason}; no production endpoint was called.")
-          PY
-
-      - name: Validate production bridge secrets
-        if: ${{ steps.parity.outputs.due == 'true' }}
-        env:
-          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
-          : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
-          python3 - <<'PY'
-          import os
-          from urllib.parse import urlsplit
-
-          raw = os.environ["BRIDGE_BASE_URL"].strip()
-          parsed = urlsplit(raw)
-          if (parsed.scheme != "https" or not parsed.hostname or parsed.username
-                  or parsed.password or parsed.query or parsed.fragment
-                  or any(char.isspace() for char in raw)):
-              raise SystemExit("BRIDGE_BASE_URL must be an HTTPS URL without credentials, whitespace, query, or fragment.")
-          if not os.environ["BRIDGE_API_KEY"].strip():
-              raise SystemExit("BRIDGE_API_KEY must be non-empty.")
           PY
 
       - name: Preflight bridge and database health
@@ -210,7 +224,6 @@ jobs:
         if: ${{ steps.parity.outputs.due == 'true' }}
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -221,7 +234,7 @@ jobs:
           # calibration cycle for the same live outcome window.
           if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
             --request POST \
-            --header "X-API-Key: ${BRIDGE_API_KEY}" \
+            --header "Authorization: Bearer ${MIDAS_PRODUCTION_OIDC_TOKEN}" \
             --header "Accept: application/json" \
             --connect-timeout 10 --max-time 120 --retry 0 \
             "${BRIDGE_BASE_URL%/}/admin/run-cycle")"; then
@@ -280,34 +293,42 @@ jobs:
     if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.task == 'daily-subscriptions') }}
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 5
     concurrency:
       group: midas-daily-subscription-enforcement
       cancel-in-progress: false
     steps:
-      - name: Validate production bridge secrets
-        env:
-          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+      - name: Mint scoped production OIDC identity
+        id: production-identity
         shell: bash
         run: |
           set -euo pipefail
-          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
-          : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
           python3 - <<'PY'
+          import json
           import os
-          from urllib.parse import urlsplit
+          import urllib.parse
+          import urllib.request
 
-          raw = os.environ["BRIDGE_BASE_URL"].strip()
-          parsed = urlsplit(raw)
-          if (parsed.scheme != "https" or not parsed.hostname or parsed.username
-                  or parsed.password or parsed.query or parsed.fragment
-                  or any(char.isspace() for char in raw)):
-              raise SystemExit("BRIDGE_BASE_URL must be an HTTPS URL without credentials, whitespace, query, or fragment.")
-          if not os.environ["BRIDGE_API_KEY"].strip():
-              raise SystemExit("BRIDGE_API_KEY must be non-empty.")
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          token_request = urllib.request.Request(
+              url + ("&" if "?" in url else "?") + urllib.parse.urlencode({"audience": "midas-touch2-production"}),
+              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          try:
+              with urllib.request.urlopen(token_request, timeout=15) as response:
+                  token = json.load(response).get("value")
+          except Exception as exc:
+              raise SystemExit("GitHub production workflow identity request failed.") from exc
+          if not isinstance(token, str) or not token or "\n" in token:
+              raise SystemExit("GitHub production workflow identity was empty or malformed.")
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as target:
+              target.write("MIDAS_PRODUCTION_OIDC_TOKEN=" + token + "\n")
+          print("Scoped production workflow identity acquired; token value redacted.")
           PY
-
       - name: Preflight bridge and database health
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
@@ -359,7 +380,6 @@ jobs:
       - name: Run and verify subscription sweep
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -368,7 +388,7 @@ jobs:
 
           if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
             --request POST \
-            --header "X-API-Key: ${BRIDGE_API_KEY}" \
+            --header "Authorization: Bearer ${MIDAS_PRODUCTION_OIDC_TOKEN}" \
             --header "Accept: application/json" \
             --connect-timeout 10 --max-time 120 --retry 0 \
             "${BRIDGE_BASE_URL%/}/admin/check-subscriptions")"; then
@@ -415,34 +435,42 @@ jobs:
     if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 8 * * *') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.task == 'daily-delivery-recovery') }}
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 5
     concurrency:
       group: midas-delivery-recovery
       cancel-in-progress: false
     steps:
-      - name: Validate production bridge secrets
-        env:
-          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+      - name: Mint scoped production OIDC identity
+        id: production-identity
         shell: bash
         run: |
           set -euo pipefail
-          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
-          : "${BRIDGE_API_KEY:?Missing GitHub Actions secret BRIDGE_API_KEY}"
           python3 - <<'PY'
+          import json
           import os
-          from urllib.parse import urlsplit
+          import urllib.parse
+          import urllib.request
 
-          raw = os.environ["BRIDGE_BASE_URL"].strip()
-          parsed = urlsplit(raw)
-          if (parsed.scheme != "https" or not parsed.hostname or parsed.username
-                  or parsed.password or parsed.query or parsed.fragment
-                  or any(char.isspace() for char in raw)):
-              raise SystemExit("BRIDGE_BASE_URL must be an HTTPS URL without credentials, whitespace, query, or fragment.")
-          if not os.environ["BRIDGE_API_KEY"].strip():
-              raise SystemExit("BRIDGE_API_KEY must be non-empty.")
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          token_request = urllib.request.Request(
+              url + ("&" if "?" in url else "?") + urllib.parse.urlencode({"audience": "midas-touch2-production"}),
+              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          try:
+              with urllib.request.urlopen(token_request, timeout=15) as response:
+                  token = json.load(response).get("value")
+          except Exception as exc:
+              raise SystemExit("GitHub production workflow identity request failed.") from exc
+          if not isinstance(token, str) or not token or "\n" in token:
+              raise SystemExit("GitHub production workflow identity was empty or malformed.")
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as target:
+              target.write("MIDAS_PRODUCTION_OIDC_TOKEN=" + token + "\n")
+          print("Scoped production workflow identity acquired; token value redacted.")
           PY
-
       - name: Preflight bridge and database health
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
@@ -494,14 +522,13 @@ jobs:
       - name: Recover failed or stale delivery notifications
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           for route in "/retry-failed" "/trade/retry-failed"; do
             response_file="$(mktemp)"
             if ! http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-              --request POST --header "X-API-Key: ${BRIDGE_API_KEY}" \
+              --request POST --header "Authorization: Bearer ${MIDAS_PRODUCTION_OIDC_TOKEN}" \
               --header "Accept: application/json" --connect-timeout 8 --max-time 60 --retry 0 \
               "${BRIDGE_BASE_URL%/}${route}")"; then
               rm -f "$response_file"
