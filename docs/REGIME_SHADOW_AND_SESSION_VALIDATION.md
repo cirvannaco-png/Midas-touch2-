@@ -59,12 +59,12 @@ Use the same source commit/build, symbol specification, tick dataset hash, perio
 
 Match actual candidate IDs and outcomes, reconcile each closed position to deal history, and report net expectancy, PF, drawdown, win rate with scratches/ambiguous trades separate, cost-inclusive average win/loss, regime transitions, rejected opportunity counts, and any validated counterfactual outcomes. For missed opportunities, use a fully specified test candidate plus subsequent real ticks/bars and conservative same-bar collision handling; no setup geometry means no counterfactual label.
 
-Lock chronologically later out-of-sample dates before examining outcomes. Require matched real-tick MT5 exports and at least three pre-OOS walk-forward folds, an untouched locked-OOS sample with fully matured trades, and a designated Exness demo run with broker deal reconciliation, emergency-stop persistence/restart checks, and zero unexplained tickets/cost gaps. Any missing or ambiguous artifacts remain blockers.
+Lock chronologically later out-of-sample dates before examining outcomes. Require matched real-tick MT5 exports and at least three pre-OOS walk-forward folds, an untouched locked-OOS sample with fully matured trades, and a designated demo run at the operator-selected MT5 broker with deal reconciliation, emergency-stop persistence/restart checks, and zero unexplained tickets/cost gaps. Any missing or ambiguous artifacts remain blockers.
 
 ## Current promotion state
 
 - Static source and Python checks can validate the instrumentation contract, not trading performance.
 - MetaEditor compile is needed for the new MQL5 files and all EA call sites.
 - No matched real-tick ON/OFF report or verified-cost OOS evidence has been produced by these changes.
-- No Exness demo forward reconciliation has been completed by this instrumentation.
+- No selected-broker MT5 demo forward reconciliation has been completed by this instrumentation.
 - Do not merge or deploy this candidate, and do not claim production/live-trading readiness, until all release gates pass.
