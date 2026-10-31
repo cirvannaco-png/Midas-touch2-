@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 from app.production_auth import (
     OIDC_AUDIENCE,
     OIDC_ISSUER,
