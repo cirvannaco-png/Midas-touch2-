@@ -659,11 +659,11 @@ async def ingest_backtest_evidence(
             and metrics["profit_factor"] >= 1.0
             and neighbor_expectancy is not None
             and float(neighbor_expectancy) > 0.0
-            and oos_expectancy is not None
-            and float(oos_expectancy) > 0.0
+            and validation_expectancy is not None
+            and float(validation_expectancy) > 0.0
         ):
             neighbor_degradations.append(
-                abs(float(neighbor_expectancy) - float(oos_expectancy)) / abs(float(oos_expectancy))
+                abs(float(neighbor_expectancy) - float(validation_expectancy)) / abs(float(validation_expectancy))
             )
         else:
             # An under-sampled, non-profitable, or non-positive neighbor is

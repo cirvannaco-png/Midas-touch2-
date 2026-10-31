@@ -492,6 +492,8 @@ async def update_position_risk(
     _validate_risk(risk_r, volatility, factors, allow_zero=True)
     if not evidence_ref:
         raise ValueError("evidence_ref is required")
+    if direction not in {"BUY", "SELL"}:
+        raise ValueError("direction must be BUY or SELL")
     if (previous_stop is None) != (current_stop is None):
         raise ValueError("previous_stop and current_stop must be supplied together")
     if previous_stop is not None:

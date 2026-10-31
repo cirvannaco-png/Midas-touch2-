@@ -237,7 +237,8 @@ def test_parameter_neighbors_use_validation_rows_and_exclude_locked_oos(tmp_path
 def test_normalizer_rejects_overlapping_validation_windows_across_folds(tmp_path):
     manifest_path = _manifest(tmp_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["folds"][1]["validation_start"] = _timestamp(29)
+    manifest["folds"][0]["validation_end"] = _timestamp(31)
+    manifest["folds"][1]["validation_start"] = _timestamp(30)
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(BuildEvidenceError, match="validation windows across chronological folds"):
         build_evidence(manifest_path)
