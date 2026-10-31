@@ -57,7 +57,7 @@ Example shape (replace every sample value with actual exported values and real S
         "ea_source_sha": "<40- or 64-character commit SHA>",
         "ea_build": "<actual EA build>",
         "terminal_build": "<actual MT5 terminal build>",
-        "data_vendor": "Exness",
+        "data_vendor": "<selected broker / actual history source>",
         "spread_model": "real_ticks",
         "spread_points": null,
         "commission_per_lot": 7.0,

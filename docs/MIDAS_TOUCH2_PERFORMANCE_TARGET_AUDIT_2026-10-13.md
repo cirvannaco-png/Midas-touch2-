@@ -32,7 +32,7 @@ Open draft PR #82 describes a `MICRO_RESEARCH` profile with an 8% nominal risk-p
 
 ### 5. Execution/recovery work remains a separate release gate
 
-Open draft PR #81 documents durable execution-ledger and reconciliation work but also identifies incomplete end-to-end research promotion gates, multi-magic account aggregation/orphan detection questions, and missing MT5 Strategy Tester and Exness demo evidence. Green Python/structural CI does not prove broker correctness.
+Open draft PR #81 documents durable execution-ledger and reconciliation work but also identifies incomplete end-to-end research promotion gates, multi-magic account aggregation/orphan detection questions, and missing MT5 Strategy Tester and selected-broker demo evidence. Green Python/structural CI does not prove broker correctness.
 
 ## Required promotion gates
 
@@ -47,7 +47,7 @@ A candidate may be promoted only when evidence is attached to the exact candidat
 7. **Exit parity:** trailing ON/OFF comparison; test breakeven, partial close, and structural exits separately; verify actual EA trigger semantics rather than proxy parameter names.
 8. **Risk/profile isolation:** automated and manual orders pass the same effective profile/risk guard; volumes round down to broker steps; invalid/uncomputable stop risk rejects the trade; aggregate and correlated exposure account for managed positions and pending orders.
 9. **Recovery/accounting:** inject duplicate fills, partial closes, restarts, incomplete history, missing SL, ambiguous submissions, and broker/database disagreements. Only complete, reconciled outcomes enter training or promotion data.
-10. **Demo forward validation:** use an Exness demo account with representative broker specifications; attach evidence for startup/restart, partial fills/closes, stop modifications, and reconciliation.
+10. **Demo forward validation:** use a demo account at the operator-selected MT5 broker with its actual specifications; attach evidence for startup/restart, partial fills/closes, stop modifications, and reconciliation.
 11. **Promotion control:** no automatic live parameter changes. Candidate configuration remains versioned, reproducible, reviewable, and rollback-capable.
 
 ## Metric definitions and targets
@@ -97,6 +97,6 @@ These results establish source/CI and compiler readiness for those changes. They
 
 ### Outstanding live-trading gates
 
-As of this update, no verified evidence is attached for an actual MT5 Strategy Tester run of the EA using broker-representative ticks plus commission, variable spread, swaps, and slippage; a locked out-of-sample period; walk-forward and Monte Carlo validation; or an Exness demo-forward run covering startup/restart, partial fills/closes, stop modifications, and broker/database reconciliation. The repository integration does not independently prove production bridge secrets or live broker/service health.
+As of this update, no verified evidence is attached for an actual MT5 Strategy Tester run of the EA using broker-representative ticks plus commission, variable spread, swaps, and slippage; a locked out-of-sample period; walk-forward and Monte Carlo validation; or a selected-broker MT5 demo-forward run covering startup/restart, partial fills/closes, stop modifications, and broker/database reconciliation. The repository integration does not independently prove production bridge secrets or live broker/service health.
 
 **Release decision: compile-ready, not yet certified live-trading-ready.** Keep research/runtime candidates gated and do not infer a 90% win rate or 600% return from the green compiler/CI. Those goals require empirical evidence from the validation gates above. Keep the execution-ledger and account-profile work in draft until its outstanding reconciliation and external-validation blockers are resolved.

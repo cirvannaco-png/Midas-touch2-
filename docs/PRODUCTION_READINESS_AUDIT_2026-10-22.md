@@ -9,7 +9,7 @@
 - Default EA account profile changed to the small-account profile.
 - Default small-account limits are 0.5% risk per trade, one open position, 1.5% daily-loss limit, 5% hard drawdown limit, and 0.5% portfolio open-risk cap.
 - A shared hard ceiling rejects per-trade risk above 2% in both profile validation and the lot-sizing engine. A 30% setting must fail closed, not silently become a tradable configuration.
-- Minimum-lot override remains disabled; the sizing engine already rejects a broker minimum lot when it exceeds the configured risk budget. At KSh 1,500, 0.5% is KSh 7.50 of planned stop risk. Gold may therefore legitimately produce a sizing rejection depending on Exness symbol contract size, minimum volume, stop distance, and account currency.
+- Minimum-lot override remains disabled; the sizing engine already rejects a broker minimum lot when it exceeds the configured risk budget. At KSh 1,500, 0.5% is KSh 7.50 of planned stop risk. Gold may therefore legitimately produce a sizing rejection depending on the selected broker's symbol contract size, minimum volume, stop distance, and account currency.
 - Production health-check workflow now reads its bridge hostname from the same `BRIDGE_BASE_URL` secret used by production maintenance rather than pinning a hard-coded Render hostname.
 - These code changes are on a review branch and must pass MetaEditor compile and CI before merging. They have not been deployed to MT5 or Render.
 
@@ -52,7 +52,7 @@ The separate DAO wider-stop research branch had a research-test failure because 
 2. Ensure the canonical bridge URL in workflow YAML matches the deployed Render service, and set `BRIDGE_API_KEY` in GitHub's production environment to the same value as Render `SECRET_KEY`.
 3. Align the intended Render service and production DB in one region, apply migrations, and prove `/health/db` returns `status=online` and `database=connected`.
 4. Prove authenticated `/execution-ledger/health` returns `status=online`, `database=connected`, and `execution_ledger=ready`.
-5. Compile the exact EA source in MetaEditor; attach it to Exness demo first; verify accepted orders, fills, partial exits, trailing-stop modifications, commission/swaps, realized P&L, ledger parity, emergency-stop persistence, and restart recovery.
+5. Compile the exact EA source in MetaEditor; attach it to a demo account at the selected MT5 broker first; verify accepted orders, fills, partial exits, trailing-stop modifications, commission/swaps, realized P&L, ledger parity, emergency-stop persistence, and restart recovery.
 6. Run chronological, cost-inclusive backtests and untouched out-of-sample validation. Promote an entry/exit profile only when net expectancy is positive after realistic costs and drawdown criteria pass.
 
 A failed gate should block live entries rather than be bypassed. “No blockers” can only be declared after the external configuration and runtime checks above actually pass.

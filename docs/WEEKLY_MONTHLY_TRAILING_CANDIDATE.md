@@ -34,4 +34,4 @@ Report completed-position net expectancy after all costs, profit factor, average
 
 ## Acceptance and safety gate
 
-Do not declare the feature successful based on compile success, source assertions, a few profitable trades, gross P&L, or a development-period result. Promotion requires the cost-inclusive locked-OOS gate to pass, no regressions in execution recovery or stop monotonicity, adequate trade count and stable results across more than one market regime. The current research proxy is not genuine MT5/Exness validation; therefore this candidate is not approved for live use.
+Do not declare the feature successful based on compile success, source assertions, a few profitable trades, gross P&L, or a development-period result. Promotion requires the cost-inclusive locked-OOS gate to pass, no regressions in execution recovery or stop monotonicity, adequate trade count and stable results across more than one market regime. The current research proxy is not genuine MT5 or selected-broker validation; therefore this candidate is not approved for live use.

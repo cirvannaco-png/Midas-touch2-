@@ -67,8 +67,9 @@ private:
 
    string TimeIsoUtc(datetime value) const
      {
-      // Exness MT5 server timestamps are GMT+0; testing is explicitly
-      // restricted to an Exness demo/trial server by the orchestration job.
+      // MT5 Strategy Tester time is simulated independently of any connected
+      // broker server; Tester time is represented as GMT for reproducibility.
+      // This exporter is test-only and remains inert outside MQL_TESTER.
       string stamp=TimeToString(value,TIME_DATE|TIME_SECONDS);
       StringReplace(stamp,".","-");
       StringReplace(stamp," ","T");

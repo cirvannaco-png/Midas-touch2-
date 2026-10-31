@@ -47,7 +47,7 @@ Because the current `tools/risk_trailing_experiment.py` comparator validates a d
 5. Reconcile all positions and partial/final closes against the execution ledger before trusting metrics. Incomplete positions must not be fabricated as closed outcomes.
 6. Report net expectancy, profit factor, mean win/loss, realized R, stop-out attribution, profit given back by trailing, maximum equity drawdown, consecutive losses, rejected trades due to minimum volume, and locked-OOS results. Include the account-currency amounts as well as percentages.
 7. Use paired trade/market-period analysis where possible; inspect whether wider stops simply increase loss size or improve net expectancy. Do not select a candidate from in-sample profit alone.
-8. Run the selected frozen candidate on Exness demo with restart/recovery, emergency stop, broker stop/freeze-level, partial-close and ledger reconciliation checks.
+8. Run the selected frozen candidate on the operator-selected MT5 broker's demo account with restart/recovery, emergency stop, broker stop/freeze-level, partial-close and ledger reconciliation checks.
 
 ## Promotion gates
 
