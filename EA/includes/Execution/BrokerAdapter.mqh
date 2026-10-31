@@ -402,8 +402,6 @@ bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
      }
    string symbol=PositionGetString(POSITION_SYMBOL);
    m_trade.SetTypeFillingBySymbol(symbol);
-
-   string symbol=PositionGetString(POSITION_SYMBOL);
    bool isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
    double refPrice=isBuy ? SymbolInfoDouble(symbol,SYMBOL_BID) : SymbolInfoDouble(symbol,SYMBOL_ASK);
    double currentSL=PositionGetDouble(POSITION_SL);
