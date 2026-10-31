@@ -4,13 +4,13 @@ Status: research-only; no promotion or live-trading approval
 
 ## 1. Decision boundary
 
-Every performance claim must use actual MT5 Strategy Tester exports generated from the EA build being assessed. StrategyTune proxy results are not substitutes for the EA, Exness execution, tick-level drawdown, or broker accounting. The prior proxy runs revealed an 18-loss maximum streak and negative expectancy in development and the second inspected holdout. Treat streak reduction as a hypothesis to test, not as an outcome already achieved.
+Every performance claim must use actual MT5 Strategy Tester exports generated from the EA build being assessed. StrategyTune proxy results are not substitutes for the EA, selected-broker execution, tick-level drawdown, or broker accounting. The prior proxy runs revealed an 18-loss maximum streak and negative expectancy in development and the second inspected holdout. Treat streak reduction as a hypothesis to test, not as an outcome already achieved.
 
 Do not merge or deploy the candidate, or enable higher-timeframe trailing by default, on the strength of Python tests or a MetaEditor compile alone.
 
 ## 2. Cost accounting before scoring any run
 
-Use the same Exness-representative real-tick bid/ask dataset, instrument specification, tester model, EA build, initial balance, leverage, sizing, fill policy, and date boundaries for each paired variant.
+Use the same the selected broker's real-tick bid/ask dataset, instrument specification, tester model, EA build, initial balance, leverage, sizing, fill policy, and date boundaries for each paired variant.
 
 Retain the actual .set input file, HTML tester report, complete deals CSV, open-position ID CSV, and tick-data/dataset archive. Hash every artifact. Deal CSVs must explicitly include commission, swap, and fee fields—even when a value is genuinely zero. Missing cost fields mean the test is not scoreable; a parser must not silently turn missing data into zero. Net position results are the sum of deal profit + commission + swap + fee across every opening and closing deal.
 
