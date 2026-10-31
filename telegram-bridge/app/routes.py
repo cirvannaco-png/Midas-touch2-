@@ -232,22 +232,6 @@ async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
     return True
 
 
-async def verify_mt5_execution_key(
-    x_mt5_execution_key: str = Header(..., alias="X-MT5-Execution-Key"),
-):
-    """Authenticate the dedicated MT5 broker-mutation principal.
-
-    This credential is distinct from the general bridge API key and must
-    never be made available to AI agents or read-only integrations.
-    """
-    expected_key = settings.MT5_EXECUTION_API_KEY
-    if not expected_key:
-        raise HTTPException(status_code=503, detail="MT5 execution authorization is not configured")
-    if not secrets.compare_digest(x_mt5_execution_key, expected_key):
-        raise HTTPException(status_code=403, detail="MT5 execution authorization rejected")
-    return True
-
-
 async def verify_benchmark_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
     if not settings.BENCHMARK_ENABLED:
         raise HTTPException(status_code=404, detail="Benchmark route disabled")

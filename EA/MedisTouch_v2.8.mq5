@@ -246,7 +246,6 @@ input double InpMultiTradeTripleLeg2RiskFraction=0.20;
 input group "Signal Transport"
 input int InpWebRequestTimeoutMs=5000;
 input string InpBridgeApiKey="";
-input string InpMT5ExecutionApiKey=""; // Distinct credential for broker-mutating ledger routes; never share with AI agents.
 input string InpExecutionLedgerBaseUrl=""; // HTTPS root for the durable broker execution ledger
 input bool InpRequireExecutionLedger=true; // Fail closed until broker/database reconciliation succeeds
 input int InpExecutionLedgerRetrySeconds=30;
@@ -827,10 +826,10 @@ int OnInit()
    if(!ResolveSelectedAccountRiskProfile()) return INIT_PARAMETERS_INCORRECT;
    g_testerDealExport.Init(InpTesterExportRunId,_Symbol,InpMagicNumber,
                            (bool)MQLInfoInteger(MQL_TESTER));
-   if(StringLen(InpExecutionLedgerBaseUrl)>0 && StringLen(InpBridgeApiKey)>0 && StringLen(InpMT5ExecutionApiKey)>=32)
-      g_executionLedger.Init(InpExecutionLedgerBaseUrl,InpBridgeApiKey,InpMT5ExecutionApiKey,InpMagicNumber,InpWebRequestTimeoutMs);
+   if(StringLen(InpExecutionLedgerBaseUrl)>0 && StringLen(InpBridgeApiKey)>0)
+      g_executionLedger.Init(InpExecutionLedgerBaseUrl,InpBridgeApiKey,InpMagicNumber,InpWebRequestTimeoutMs);
    else
-      Print("Midas execution ledger: configure InpExecutionLedgerBaseUrl, InpBridgeApiKey, and distinct InpMT5ExecutionApiKey (32+ chars) before enabling ledger-enforced entries.");
+      Print("Midas execution ledger: configure InpExecutionLedgerBaseUrl and InpBridgeApiKey before enabling ledger-enforced entries.");
    g_executionLedgerHealthy=(!InpEnableExecution || !InpRequireExecutionLedger);
    // M1 is the execution timeframe for this research candidate. Refuse ambiguous chart-timeframe execution.
    if(InpEnableTopDownMTF && _Period!=PERIOD_M1)

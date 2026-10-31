@@ -32,10 +32,7 @@ def test_mismatched_authentication_alias_fails_settings_validation():
 
 
 
-def test_mt5_execution_credential_must_not_reuse_general_bridge_key():
-    with pytest.raises(ValidationError, match="must be distinct"):
-        _settings(
-            SECRET_KEY="canonical-bridge-key-012345678901",
-            BRIDGE_API_KEY="canonical-bridge-key-012345678901",
-            MT5_EXECUTION_API_KEY="canonical-bridge-key-012345678901",
-        )
+def test_single_bridge_credential_requires_no_mt5_specific_setting():
+    settings = _settings()
+    assert settings.bridge_api_key == "canonical-bridge-key"
+    assert not hasattr(settings, "MT5_EXECUTION_API_KEY")

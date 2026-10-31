@@ -48,7 +48,7 @@ def test_health_workflow_does_not_retry_authentication_failures():
 
 
 
-def test_every_execution_ledger_mutation_route_requires_dedicated_mt5_credential():
+def test_every_execution_ledger_mutation_route_uses_single_bridge_authentication():
     source = (ROOT / "telegram-bridge/app/api/execution_ledger.py").read_text(encoding="utf-8")
     import re
 
@@ -58,6 +58,5 @@ def test_every_execution_ledger_mutation_route_requires_dedicated_mt5_credential
         next_route = re.search(r"\n@router\.", source[route.end():])
         end = route.end() + next_route.start() if next_route else len(source)
         block = source[route.start():end]
-        assert "Depends(verify_mt5_execution_key)" in block, route.group(1)
-    health = source[source.index('@router.get("/health")'):source.index('@router.post("/reserve")')]
-    assert "verify_mt5_execution_key" not in health
+        assert "Depends(verify_api_key)" in block, route.group(1)
+    assert "verify_mt5_execution_key" not in source

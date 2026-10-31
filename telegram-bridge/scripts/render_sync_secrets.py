@@ -41,6 +41,7 @@ TELEGRAM_SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 # Secrets render.yaml marks `sync: false`. Optional ones are skipped when unset.
 REQUIRED_SECRETS = ("BOT_TOKEN", "CHAT_ID", "ADMIN_CHAT_ID", "SECRET_KEY")
 GENERATED_SECRETS = ("WEBHOOK_SECRET_TOKEN",)
+LEGACY_EXECUTION_ENV_KEY = "MT5_EXECUTION_API_KEY"
 
 
 class RenderSyncError(RuntimeError):
@@ -74,17 +75,9 @@ def collect_bridge_auth(env: dict[str, str]) -> dict[str, str]:
         raise RenderSyncError("Missing BRIDGE_API_KEY protected GitHub environment secret.")
     if legacy_key and not secrets.compare_digest(bridge_key, legacy_key):
         raise RenderSyncError("BRIDGE_API_KEY and SECRET_KEY differ; refusing to rotate production with conflicting values.")
-    execution_key = (env.get("MT5_EXECUTION_API_KEY") or "").strip()
-    if not execution_key:
-        raise RenderSyncError("Missing MT5_EXECUTION_API_KEY protected GitHub environment secret.")
-    if len(execution_key) < 32:
-        raise RenderSyncError("MT5_EXECUTION_API_KEY must contain at least 32 characters.")
-    if secrets.compare_digest(bridge_key, execution_key):
-        raise RenderSyncError("MT5_EXECUTION_API_KEY must be distinct from BRIDGE_API_KEY.")
     return {
         "SECRET_KEY": bridge_key,
         "BRIDGE_API_KEY": bridge_key,
-        "MT5_EXECUTION_API_KEY": execution_key,
     }
 
 
@@ -150,7 +143,9 @@ def put_env_vars(service_id: str, api_key: str, values: dict[str, str]) -> None:
             if key and "value" in ev:
                 existing[key] = ev["value"]
 
-    merged = {**existing, **values}
+    # Retire the obsolete second credential but preserve unrelated service settings.
+    merged = {key: value for key, value in existing.items() if key != LEGACY_EXECUTION_ENV_KEY}
+    merged.update(values)
     _request(
         "PUT",
         f"/services/{service_id}/env-vars",

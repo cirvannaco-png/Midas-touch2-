@@ -67,19 +67,21 @@ def test_dry_run_makes_no_api_calls(monkeypatch, capsys):
 
 
 
-def test_bridge_auth_sync_writes_both_server_aliases_from_one_canonical_value():
-    values = rss.collect_bridge_auth({"BRIDGE_API_KEY": "canonical-key", "MT5_EXECUTION_API_KEY": "distinct-mt5-execution-key-0123456789"})
+def test_bridge_auth_sync_writes_only_the_canonical_bridge_aliases():
+    values = rss.collect_bridge_auth({
+        "BRIDGE_API_KEY": "canonical-key",
+        "MT5_EXECUTION_API_KEY": "obsolete-unused-value",
+    })
     assert values == {
         "SECRET_KEY": "canonical-key",
         "BRIDGE_API_KEY": "canonical-key",
-        "MT5_EXECUTION_API_KEY": "distinct-mt5-execution-key-0123456789",
     }
 
 
-def test_bridge_auth_sync_rejects_conflicting_values_before_any_api_call():
+def test_bridge_auth_sync_rejects_conflicting_bridge_aliases_before_any_api_call():
     with pytest.raises(rss.RenderSyncError, match="differ"):
         rss.collect_bridge_auth(
-            {"BRIDGE_API_KEY": "workflow-key", "SECRET_KEY": "different-render-key", "MT5_EXECUTION_API_KEY": "distinct-mt5-execution-key-0123456789"}
+            {"BRIDGE_API_KEY": "workflow-key", "SECRET_KEY": "different-render-key"}
         )
 
 
@@ -88,12 +90,25 @@ def test_bridge_auth_sync_requires_protected_key():
         rss.collect_bridge_auth({})
 
 
+def test_render_env_sync_removes_legacy_mt5_key_and_preserves_other_values(monkeypatch):
+    requests = []
 
-def test_bridge_auth_sync_rejects_execution_key_reuse():
-    with pytest.raises(rss.RenderSyncError, match="must be distinct"):
-        rss.collect_bridge_auth(
-            {
-                "BRIDGE_API_KEY": "canonical-bridge-key-012345678901",
-                "MT5_EXECUTION_API_KEY": "canonical-bridge-key-012345678901",
-            }
-        )
+    def fake_request(method, path, api_key, body=None):
+        requests.append((method, path, body))
+        if method == "GET":
+            return [
+                {"key": "MT5_EXECUTION_API_KEY", "value": "old-unused-value"},
+                {"key": "UNRELATED_SETTING", "value": "preserve-me"},
+            ]
+        return None
+
+    monkeypatch.setattr(rss, "_request", fake_request)
+    rss.put_env_vars(
+        "srv-test",
+        "render-api-key",
+        {"SECRET_KEY": "canonical", "BRIDGE_API_KEY": "canonical"},
+    )
+    payload = requests[-1][2]
+    assert {entry["key"] for entry in payload} == {
+        "UNRELATED_SETTING", "SECRET_KEY", "BRIDGE_API_KEY"
+    }

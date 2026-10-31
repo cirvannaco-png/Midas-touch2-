@@ -19,31 +19,33 @@ triggers a deployment. It requires the protected production environment to
 contain both `BRIDGE_API_KEY` and `RENDER_API_KEY`. Never put either value
 in source code, issues, logs, or chat.
 
-After the change is merged to `main`, an authorized operator must dispatch
-**Synchronize production bridge authentication** from the `main` branch.
-Provision a separate, random `MT5_EXECUTION_API_KEY` of at least 32 characters
-in the same protected GitHub production environment and in the MT5 EA input
-`InpMT5ExecutionApiKey`. It must not equal `BRIDGE_API_KEY`. The workflow
-synchronizes it to the Render service but cannot configure the local MT5
-terminal's input value. Keep it available only to the EA operator and the
-production bridge. The EA refuses ledger initialization until this value is
-present. Then verify that the deployment is healthy and rerun the production
-health-check and maintenance workflows. The rotation is not complete until
-the authenticated ledger-health endpoint returns HTTP 200 and the subscription
-sweep completes with a valid response.
+After this change is merged to `main`, an authorized operator should
+dispatch **Synchronize production bridge authentication** from the `main`
+branch. The workflow requires only the protected `BRIDGE_API_KEY` and
+`RENDER_API_KEY`; it writes the canonical bridge key to Render as both
+`BRIDGE_API_KEY` and the `SECRET_KEY` compatibility alias. It also removes
+the retired MT5-specific environment variable from Render. Configure the EA's
+`InpBridgeApiKey` with the same canonical bridge key. The workflow cannot
+configure the local MT5 terminal input. After synchronization, verify the
+deployment is healthy and rerun the production health-check and maintenance
+workflows. The authenticated ledger-health endpoint must return HTTP 200.
 
 ## AI authority boundary
 
-AI agents may analyze, explain, and propose. They cannot reserve execution
-risk, submit orders, change stops, close positions, cancel orders, or alter
-risk limits. Every broker-mutating bridge route requires both the general `X-API-Key` and
-the distinct `X-MT5-Execution-Key` capability. The general key alone cannot
-reserve risk or alter broker state. The request's `requested_by=MT5_EA` value is
-an additional assertion, not an authentication factor; only the MT5 EA is
-provisioned with the dedicated execution key. An AI-provided approval flag is
-not execution authorization. A human-approved proposal must return to the normal MT5 EA
-order-check, risk, persistent-admission, execution-ledger, broker-acknowledgment,
-and reconciliation path.
+The MT5 EA finds and evaluates setups and decides when to trade. The bridge
+does not perform a second MT5-specific identity check: all execution-ledger
+routes require the single `X-API-Key` bridge credential, and the EA sends that
+header. There is no separate MT5 key or second MT5 header.
+
+AI agents may analyze, explain, and propose, but they must not be given the
+bridge credential. The execution-origin policy rejects requests explicitly
+declared as `AI_AGENT` for the protected reserve and position-modification
+operations. The `requested_by=MT5_EA` field is an assertion, not a separate
+authentication factor. With a single-key design, any caller that obtains the
+bridge key can reach the protected API; therefore keep it restricted to the
+MT5 runtime and authorized operator infrastructure. A human-approved proposal
+must still pass the EA's normal order-check, risk, persistent-admission,
+execution-ledger, broker-acknowledgment, and reconciliation flow.
 
 ## Position-modification reconciliation
 

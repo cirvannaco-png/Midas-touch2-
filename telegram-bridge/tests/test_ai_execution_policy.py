@@ -28,18 +28,3 @@ def test_mt5_ea_remains_the_only_broker_mutation_principal():
         authorize_execution_origin("UNKNOWN", "RESERVE_EXECUTION")
 
 
-
-def test_mt5_execution_key_is_a_distinct_capability_from_general_bridge_key():
-    from app.config import Settings
-
-    settings = Settings(
-        _env_file=None,
-        BOT_TOKEN="123456:test-token",
-        CHAT_ID="-1000000000",
-        ADMIN_CHAT_ID="777000777",
-        SECRET_KEY="bridge-key",
-        BRIDGE_API_KEY="bridge-key",
-        MT5_EXECUTION_API_KEY="different-mt5-execution-key-with-32-characters",
-        WEBHOOK_SECRET_TOKEN="test-webhook-secret",
-    )
-    assert settings.MT5_EXECUTION_API_KEY != settings.bridge_api_key
