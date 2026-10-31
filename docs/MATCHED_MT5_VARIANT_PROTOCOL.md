@@ -34,7 +34,7 @@ For each variant, export and retain:
 4. An open-position ID CSV from that tester result; if none remain open, a header-only CSV containing position_id is sufficient.
 5. One shared historical dataset/tick-data artifact or immutable data archive whose SHA-256 is recorded.
 
-Use identical test context across all three runs and record the actual account currency, leverage, EA source commit SHA, EA build, terminal build, data vendor, spread model, commission per lot, slippage assumption, fill policy, starting balance and risk percent. When a real-tick spread model is used, spread_points may be null; do not substitute an invented fixed-spread number.
+Use identical test context across all three runs and record the actual account currency, leverage, EA source commit SHA, EA build, terminal build, selected broker/data vendor, spread model, commission per lot, slippage assumption, fill policy, starting balance and risk percent. Never copy the example cost values as if they described the selected broker. When a real-tick spread model is used, spread_points may be null; do not substitute an invented fixed-spread number.
 
 ## Manifest and command
 
@@ -57,7 +57,7 @@ Example shape (replace every sample value with actual exported values and real S
         "ea_source_sha": "<40- or 64-character commit SHA>",
         "ea_build": "<actual EA build>",
         "terminal_build": "<actual MT5 terminal build>",
-        "data_vendor": "Exness",
+        "data_vendor": "selected-broker-feed",
         "spread_model": "real_ticks",
         "spread_points": null,
         "commission_per_lot": 7.0,
