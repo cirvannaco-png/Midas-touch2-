@@ -36,3 +36,15 @@ def test_unacknowledged_position_modification_blocks_future_entries():
     assert 'InpRequireExecutionLedger && !g_executionLedgerHealthy' in body
     assert 'POSITION_STOP_RECONCILIATION_FAILED' in ea
     assert "new entries are blocked" in body
+
+
+def test_stop_reconciliation_baseline_persists_across_terminal_restart():
+    ea = EA.read_text(encoding="utf-8")
+    assert 'StringFormat("M2SL.' in ea
+    assert "GlobalVariableCheck(globalName)" in ea
+    assert "GlobalVariableGet(globalName)" in ea
+    assert "GlobalVariableSet(globalName,currentStop)" in ea
+    assert "GlobalVariablesFlush()" in ea
+    assert "GlobalVariableDel(ManagedPositionStopGlobalName" in ea
+    assert "bool stopSnapshotsReady=SeedManagedPositionStopSnapshots(true);" in ea
+    assert "POSITION_STOP_SNAPSHOT_PERSIST_FAILED" in ea

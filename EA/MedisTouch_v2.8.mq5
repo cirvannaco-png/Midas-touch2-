@@ -307,7 +307,8 @@ bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legInd
 void MarkLedgerSubmissionAccepted(const string requestId);
 void MarkLedgerSubmissionAmbiguous(const string requestId);
 bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,const double volatility,const string evidenceRef,const double previousStop,const double currentStop);
-void SeedManagedPositionStopSnapshots(const bool resetSnapshots);
+string ManagedPositionStopGlobalName(const ulong positionIdentifier);
+bool SeedManagedPositionStopSnapshots(const bool resetSnapshots);
 bool ReconcileManagedPositionStopModifications(const double volatility);
 bool IsOrderBuyDirection(const ENUM_ORDER_TYPE orderType);
 int EffectiveMaxOpenTrades();
@@ -511,8 +512,16 @@ bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string dir
                                                 previousStop,currentStop);
   }
 
-void SeedManagedPositionStopSnapshots(const bool resetSnapshots)
+string ManagedPositionStopGlobalName(const ulong positionIdentifier)
   {
+   // MT5 terminal globals persist the last ledger-acknowledged stop across restarts.
+   return StringFormat("M2SL.%I64d.%I64u.%I64u",
+                       AccountInfoInteger(ACCOUNT_LOGIN),InpMagicNumber,positionIdentifier);
+  }
+
+bool SeedManagedPositionStopSnapshots(const bool resetSnapshots)
+  {
+   bool allOk=true;
    if(resetSnapshots)
      {
       ArrayResize(g_managedStopPositionIds,0);
@@ -530,12 +539,54 @@ void SeedManagedPositionStopSnapshots(const bool resetSnapshots)
       for(int j=0;j<ArraySize(g_managedStopPositionIds);j++)
          if(g_managedStopPositionIds[j]==identifier) { known=true; break; }
       if(known) continue;
+
+      double brokerStop=PositionGetDouble(POSITION_SL);
+      string globalName=ManagedPositionStopGlobalName(identifier);
+      double acknowledgedStop=brokerStop;
+      if(GlobalVariableCheck(globalName))
+        {
+         acknowledgedStop=GlobalVariableGet(globalName);
+         if(!MathIsValidNumber(acknowledgedStop) || acknowledgedStop<0.0)
+           {
+            g_executionLedgerHealthy=false;
+            g_execAudit.Log("POSITION_STOP_SNAPSHOT_INVALID",
+                            "persisted stop baseline is invalid; new entries remain blocked",
+                            0,identifier,0.0,0.0,acknowledgedStop,brokerStop);
+            allOk=false;
+            continue;
+           }
+        }
+      else
+        {
+         ResetLastError();
+         datetime stored=GlobalVariableSet(globalName,brokerStop);
+         if(stored==0 || !GlobalVariableCheck(globalName))
+           {
+            int err=GetLastError();
+            g_executionLedgerHealthy=false;
+            g_execAudit.Log("POSITION_STOP_SNAPSHOT_PERSIST_FAILED",
+                            StringFormat("could not persist initial stop baseline; err=%d; new entries remain blocked",err),
+                            0,identifier,0.0,0.0,brokerStop,brokerStop);
+            allOk=false;
+            continue;
+           }
+         GlobalVariablesFlush();
+         acknowledgedStop=GlobalVariableGet(globalName);
+        }
+
       int n=ArraySize(g_managedStopPositionIds);
       if(ArrayResize(g_managedStopPositionIds,n+1)!=n+1 ||
-         ArrayResize(g_managedStopPrices,n+1)!=n+1) continue;
+         ArrayResize(g_managedStopPrices,n+1)!=n+1)
+        {
+         g_executionLedgerHealthy=false;
+         allOk=false;
+         continue;
+        }
       g_managedStopPositionIds[n]=identifier;
-      g_managedStopPrices[n]=PositionGetDouble(POSITION_SL);
+      g_managedStopPrices[n]=acknowledgedStop;
      }
+   if(!allOk) g_executionLedgerHealthy=false;
+   return allOk;
   }
 
 bool ReconcileManagedPositionStopModifications(const double volatility)
@@ -576,11 +627,27 @@ bool ReconcileManagedPositionStopModifications(const double volatility)
          allOk=false;
          continue;
         }
+      string globalName=ManagedPositionStopGlobalName(identifier);
+      ResetLastError();
+      datetime stored=GlobalVariableSet(globalName,currentStop);
+      if(stored==0 || !GlobalVariableCheck(globalName) ||
+         MathAbs(GlobalVariableGet(globalName)-currentStop)>MathMax(_Point*0.5,1e-10))
+        {
+         int err=GetLastError();
+         g_executionLedgerHealthy=false;
+         g_execAudit.Log("POSITION_STOP_SNAPSHOT_PERSIST_FAILED",
+                         StringFormat("ledger accepted stop event but terminal baseline persistence failed; err=%d; idempotent retry required",err),
+                         0,identifier,0.0,0.0,previousStop,currentStop);
+         allOk=false;
+         continue;
+        }
+      GlobalVariablesFlush();
       g_managedStopPrices[snapshot]=currentStop;
      }
    for(int j=ArraySize(g_managedStopPositionIds)-1;j>=0;j--)
      {
       if(IsPositionIdentifierOpen(g_managedStopPositionIds[j])) continue;
+      GlobalVariableDel(ManagedPositionStopGlobalName(g_managedStopPositionIds[j]));
       ArrayRemove(g_managedStopPositionIds,j,1);
       ArrayRemove(g_managedStopPrices,j,1);
      }
@@ -964,8 +1031,9 @@ int OnInit()
       else
          g_execAudit.Log("EXECUTION_LEDGER_READY","startup positions, pending orders and complete closed-history evidence reconciled");
      }
-   SeedManagedPositionStopSnapshots(true);
-   if(InpEnableExecution && InpRequireExecutionLedger && !g_executionLedgerHealthy)
+   bool stopSnapshotsReady=SeedManagedPositionStopSnapshots(true);
+   if(InpEnableExecution && InpRequireExecutionLedger &&
+      (!g_executionLedgerHealthy || !stopSnapshotsReady))
      {
       g_executionLedgerHealthy=false;
       g_execAudit.Log("EXECUTION_LEDGER_CONFIGURATION_MISSING","new automated and manual entries remain blocked until bridge URL and API key are configured");
@@ -1005,7 +1073,10 @@ void OnTimer()
      {
       g_executionLedgerHealthy=ReconcileBrokerStateSnapshot();
       if(g_executionLedgerHealthy)
-         g_execAudit.Log("EXECUTION_LEDGER_RECOVERED","broker snapshot and restart history reconciliation succeeded; new entries re-enabled");
+         g_executionLedgerHealthy=SeedManagedPositionStopSnapshots(false) &&
+                                  ReconcileManagedPositionStopModifications(g_chartCtx.candles.GetATR(0));
+      if(g_executionLedgerHealthy)
+         g_execAudit.Log("EXECUTION_LEDGER_RECOVERED","broker snapshot, restart history and pending protective-stop reconciliation succeeded; new entries re-enabled");
      }
    if(StringLen(InpConfigSyncEndpoint)>0 &&
       now-g_lastConfigSyncPoll>=MathMax(60,InpConfigSyncPollMinutes*60))
