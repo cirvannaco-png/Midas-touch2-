@@ -14,8 +14,11 @@ def test_deal_export_is_hard_disabled_outside_strategy_tester():
     exporter = read("EA/includes/Execution/TesterDealExport.mqh")
 
     assert "input string InpTesterExportRunId=" in ea
+    assert "input int InpTesterServerUtcOffsetMinutes=99999" in ea
     assert "g_testerDealExport.Init(InpTesterExportRunId,_Symbol,InpMagicNumber," in ea
-    assert "m_enabled=(enabled && (bool)MQLInfoInteger(MQL_TESTER));" in exporter
+    assert "InpTesterServerUtcOffsetMinutes" in ea
+    assert "m_enabled=(enabled && (bool)MQLInfoInteger(MQL_TESTER) && validOffset);" in exporter
+    assert "serverUtcOffsetMinutes>=-840 && serverUtcOffsetMinutes<=840" in exporter
     assert "g_testerDealExport.Finalize();" in ea
 
 
@@ -44,4 +47,8 @@ def test_export_observes_spread_and_preserves_unique_run_identity():
     assert "g_testerDealExport.ObserveSpread(_Symbol);" in ea
     assert 'm_runId=SafeName(runId+"_"+IntegerToString((long)GetTickCount()));' in exporter
     assert "spread_points_mean" in exporter
+    assert "TimeIsoWithOffset" in exporter
+    assert "broker_wall_clock_with_explicit_offset" in exporter
+    assert "return stamp+zone;" in exporter
+    assert 'return stamp+"Z";' not in exporter
     assert "spread_points_max" in exporter
