@@ -31,6 +31,25 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Verify MT5 execution capability wiring
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ea = Get-Content 'EA/MedisTouch_v2.8.mq5' -Raw
+          $client = Get-Content 'EA/includes/Execution/ExecutionLedgerClient.mqh' -Raw
+          if ($ea -notmatch 'input string InpMT5ExecutionApiKey') {
+            throw 'EA is missing the distinct MT5 execution credential input.'
+          }
+          if ($ea -notmatch 'InpMT5ExecutionApiKey,InpMagicNumber') {
+            throw 'EA does not pass the distinct MT5 execution credential into the ledger client.'
+          }
+          if ($client -notmatch 'X-MT5-Execution-Key') {
+            throw 'Ledger client is missing the dedicated MT5 execution header.'
+          }
+          if ($client -notmatch 'AdmissionReady\(\)') {
+            throw 'Ledger client is missing fail-closed admission readiness.'
+          }
+
       - name: Download official MetaTrader 5 installer
         shell: pwsh
         run: |

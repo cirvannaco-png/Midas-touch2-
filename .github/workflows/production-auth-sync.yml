@@ -1,0 +1,40 @@
+name: Synchronize production bridge authentication
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synchronize-production-auth:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate protected source and Render API credentials
+        env:
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+          MT5_EXECUTION_API_KEY: ${{ secrets.MT5_EXECUTION_API_KEY }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: srv-daobbbrtqb8s73elh44g
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${BRIDGE_API_KEY:?Missing protected production secret BRIDGE_API_KEY}"
+          : "${MT5_EXECUTION_API_KEY:?Missing protected production secret MT5_EXECUTION_API_KEY}"
+          : "${RENDER_API_KEY:?Missing protected production secret RENDER_API_KEY}"
+          : "${RENDER_SERVICE_ID:?Production Render service ID is not configured}"
+          python telegram-bridge/scripts/render_sync_secrets.py --bridge-auth-only --dry-run
+
+      - name: Synchronize Render authentication aliases and redeploy
+        env:
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+          MT5_EXECUTION_API_KEY: ${{ secrets.MT5_EXECUTION_API_KEY }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: srv-daobbbrtqb8s73elh44g
+        run: python telegram-bridge/scripts/render_sync_secrets.py --bridge-auth-only

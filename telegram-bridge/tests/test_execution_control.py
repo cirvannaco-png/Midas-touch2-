@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database import Base
 from app.execution_control import (
+    confirm_position_modification,
+    prepare_position_modification,
     reconcile_closed_position,
     reconcile_open_position,
     reconcile_terminal_order,
@@ -15,11 +17,12 @@ from app.execution_control import (
     transition_execution,
     update_position_risk,
 )
-from app.models import ExecutionLedger, PortfolioReservation
+from app.models import ExecutionLedger, ExecutionPositionModification, PortfolioReservation
 
 TABLES = [
     Base.metadata.tables["execution_ledger"],
     Base.metadata.tables["portfolio_reservations"],
+    Base.metadata.tables["execution_position_modifications"],
 ]
 
 
@@ -227,6 +230,7 @@ async def test_expired_lease_requires_reconciliation_and_keeps_risk_reserved():
 def test_execution_ledger_route_requires_api_key(client):
     payload = {
         "portfolio_key": "account:test:magic:test",
+        "requested_by": "MT5_EA",
         "request_id": "route-auth-test",
         "signal_id": "route-auth-signal",
         "symbol": "EURUSD",
@@ -248,6 +252,7 @@ def test_execution_ledger_route_requires_api_key(client):
 def test_execution_ledger_api_is_mounted_and_rejects_duplicate_requests(client, auth_headers):
     payload = {
         "portfolio_key": "account:test:magic:test",
+        "requested_by": "MT5_EA",
         "request_id": "route-idempotency-test",
         "signal_id": "route-idempotency-signal",
         "symbol": "EURUSD",
@@ -576,3 +581,372 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
             await session.rollback()
     finally:
         await engine.dispose()
+
+
+
+@pytest.mark.asyncio
+async def test_position_modification_is_durable_idempotent_and_updates_reserved_risk():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="Exness-Demo:123:magic-88",
+                request_id="position:88",
+                broker_position_id="8800",
+                broker_order_id="8801",
+                broker_deal_id="8802",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=1.0,
+                volatility=0.4,
+                factors={},
+                evidence_ref="mt5-position-snapshot:8800",
+                stop_loss=1.0900,
+                take_profit=1.1200,
+            )
+            await session.commit()
+
+        async with factory() as session:
+            prepared, status = await prepare_position_modification(
+                session,
+                portfolio_key="Exness-Demo:123:magic-88",
+                event_id="modify:8800:1",
+                broker_position_id="8800",
+                symbol="EURUSD",
+                direction="BUY",
+                old_stop_loss=1.0900,
+                old_take_profit=1.1200,
+                proposed_stop_loss=1.0980,
+                proposed_take_profit=1.1200,
+                evidence_ref="mt5-stop-intent:8800:1",
+            )
+            assert prepared and status == "PENDING"
+            await session.commit()
+
+        async with factory() as session:
+            # A modification whose broker outcome is not yet reconciled blocks
+            # new admissions for the entire account portfolio.
+            assert not await reserve_execution(
+                session,
+                portfolio_key="Exness-Demo:123:magic-88",
+                request_id="new-order-1",
+                signal_id="new-signal-1",
+                symbol="GBPUSD",
+                direction="BUY",
+                risk_r=0.2,
+                volatility=0.2,
+                factors={},
+            )
+            await session.rollback()
+
+        async with factory() as session:
+            confirmed = await confirm_position_modification(
+                session,
+                portfolio_key="Exness-Demo:123:magic-88",
+                event_id="modify:8800:1",
+                actual_stop_loss=1.0980,
+                actual_take_profit=1.1200,
+                risk_r=0.3,
+                volatility=0.2,
+                evidence_ref="mt5-stop-observed:8800:1",
+            )
+            assert confirmed
+            await session.commit()
+
+        async with factory() as session:
+            event = await session.scalar(
+                select(ExecutionPositionModification).where(
+                    ExecutionPositionModification.event_id == "modify:8800:1"
+                )
+            )
+            reservation = await session.scalar(
+                select(PortfolioReservation).where(PortfolioReservation.request_id == "position:88")
+            )
+            assert event.status == "APPLIED"
+            assert event.actual_stop_loss == 1.0980
+            assert reservation.risk_r == 0.3
+            assert await confirm_position_modification(
+                session,
+                portfolio_key="Exness-Demo:123:magic-88",
+                event_id="modify:8800:1",
+                actual_stop_loss=1.0980,
+                actual_take_profit=1.1200,
+                risk_r=0.3,
+                volatility=0.2,
+                evidence_ref="mt5-stop-observed:8800:1-replay",
+            )
+            assert await reserve_execution(
+                session,
+                portfolio_key="Exness-Demo:123:magic-88",
+                request_id="new-order-1",
+                signal_id="new-signal-1",
+                symbol="GBPUSD",
+                direction="BUY",
+                risk_r=0.2,
+                volatility=0.2,
+                factors={},
+            )
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_position_modification_rejects_looser_stops_and_conflicting_idempotency_key():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="Exness-Demo:123:magic-89",
+                request_id="position:89",
+                broker_position_id="8900",
+                broker_order_id="8901",
+                broker_deal_id="8902",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=0.8,
+                volatility=0.3,
+                factors={},
+                evidence_ref="mt5-position-snapshot:8900",
+            )
+            with pytest.raises(ValueError, match="loosen protection"):
+                await prepare_position_modification(
+                    session,
+                    portfolio_key="Exness-Demo:123:magic-89",
+                    event_id="modify:8900:bad",
+                    broker_position_id="8900",
+                    symbol="EURUSD",
+                    direction="BUY",
+                    old_stop_loss=1.0900,
+                    old_take_profit=1.1200,
+                    proposed_stop_loss=1.0800,
+                    proposed_take_profit=1.1200,
+                    evidence_ref="mt5-stop-intent:8900:bad",
+                )
+            prepared, status = await prepare_position_modification(
+                session,
+                portfolio_key="Exness-Demo:123:magic-89",
+                event_id="modify:8900:1",
+                broker_position_id="8900",
+                symbol="EURUSD",
+                direction="BUY",
+                old_stop_loss=1.0900,
+                old_take_profit=1.1200,
+                proposed_stop_loss=1.0950,
+                proposed_take_profit=1.1200,
+                evidence_ref="mt5-stop-intent:8900:1",
+            )
+            assert prepared and status == "PENDING"
+            await session.commit()
+
+        async with factory() as session:
+            with pytest.raises(ValueError, match="reused with different"):
+                await prepare_position_modification(
+                    session,
+                    portfolio_key="Exness-Demo:123:magic-89",
+                    event_id="modify:8900:1",
+                    broker_position_id="8900",
+                    symbol="EURUSD",
+                    direction="BUY",
+                    old_stop_loss=1.0900,
+                    old_take_profit=1.1200,
+                    proposed_stop_loss=1.0960,
+                    proposed_take_profit=1.1200,
+                    evidence_ref="conflict",
+                )
+            await session.rollback()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_startup_broker_snapshot_resolves_pending_modification_from_actual_stop():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="Exness-Demo:123:magic-90",
+                request_id="position:90",
+                broker_position_id="9000",
+                broker_order_id="9001",
+                broker_deal_id="9002",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=1.0,
+                volatility=0.2,
+                factors={},
+                evidence_ref="snapshot-before",
+                stop_loss=1.0900,
+                take_profit=1.1200,
+            )
+            await prepare_position_modification(
+                session,
+                portfolio_key="Exness-Demo:123:magic-90",
+                event_id="modify:9000:1",
+                broker_position_id="9000",
+                symbol="EURUSD",
+                direction="BUY",
+                old_stop_loss=1.0900,
+                old_take_profit=1.1200,
+                proposed_stop_loss=1.0950,
+                proposed_take_profit=1.1200,
+                evidence_ref="intent",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="Exness-Demo:123:magic-90",
+                request_id="position:90",
+                broker_position_id="9000",
+                broker_order_id="9001",
+                broker_deal_id="9002",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=0.4,
+                volatility=0.2,
+                factors={},
+                evidence_ref="broker-snapshot-after-restart",
+                stop_loss=1.0960,
+                take_profit=1.1200,
+            )
+            await session.commit()
+
+        async with factory() as session:
+            event = await session.scalar(
+                select(ExecutionPositionModification).where(
+                    ExecutionPositionModification.event_id == "modify:9000:1"
+                )
+            )
+            assert event.status == "APPLIED"
+            assert event.actual_stop_loss == 1.0960
+            assert event.resolution_evidence_ref == "broker-snapshot-after-restart"
+    finally:
+        await engine.dispose()
+
+
+def test_ai_cannot_reserve_broker_execution_even_with_a_client_supplied_actor(client):
+    payload = {
+        "portfolio_key": "account:test:magic:ai",
+        "request_id": "ai-must-not-reserve",
+        "signal_id": "ai-proposal",
+        "symbol": "EURUSD",
+        "direction": "BUY",
+        "risk_r": 0.1,
+        "volatility": 0.1,
+        "factors": {},
+        "requested_by": "AI_AGENT",
+    }
+    response = client.post(
+        "/execution-ledger/reserve",
+        json=payload,
+        headers={"X-API-Key": "test-secret-key", "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789"},
+    )
+    assert response.status_code == 403
+
+
+
+def test_ai_cannot_prepare_position_modification(client):
+    payload = {
+        "portfolio_key": "account:test:magic:ai",
+        "event_id": "ai-modification-attempt",
+        "broker_position_id": "123",
+        "symbol": "EURUSD",
+        "direction": "BUY",
+        "old_stop_loss": 1.0900,
+        "old_take_profit": 1.1200,
+        "proposed_stop_loss": 1.0950,
+        "proposed_take_profit": 1.1200,
+        "evidence_ref": "ai-proposal",
+        "requested_by": "AI_AGENT",
+    }
+    response = client.post(
+        "/execution-ledger/position-modification/prepare",
+        json=payload,
+        headers={"X-API-Key": "test-secret-key", "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789"},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_confirmed_position_close_resolves_pending_modification():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="Exness-Demo:123:magic-91",
+                request_id="position:91",
+                broker_position_id="9100",
+                broker_order_id="9101",
+                broker_deal_id="9102",
+                symbol="EURUSD",
+                direction="BUY",
+                risk_r=0.7,
+                volatility=0.2,
+                factors={},
+                evidence_ref="snapshot-before-close",
+            )
+            await prepare_position_modification(
+                session,
+                portfolio_key="Exness-Demo:123:magic-91",
+                event_id="modify:9100:1",
+                broker_position_id="9100",
+                symbol="EURUSD",
+                direction="BUY",
+                old_stop_loss=1.0900,
+                old_take_profit=1.1200,
+                proposed_stop_loss=1.0950,
+                proposed_take_profit=1.1200,
+                evidence_ref="intent",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            assert await reconcile_closed_position(
+                session,
+                portfolio_key="Exness-Demo:123:magic-91",
+                broker_position_id="9100",
+                broker_deal_id="9103",
+                evidence_ref="mt5-close:9103",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            event = await session.scalar(
+                select(ExecutionPositionModification).where(
+                    ExecutionPositionModification.event_id == "modify:9100:1"
+                )
+            )
+            assert event.status == "POSITION_CLOSED"
+            assert event.resolution_evidence_ref == "mt5-close:9103"
+    finally:
+        await engine.dispose()
+
+
+
+def test_general_bridge_key_cannot_mutate_reservations_without_mt5_capability(client):
+    payload = {
+        "portfolio_key": "account:test:magic:unauthorized",
+        "request_id": "bridge-only-must-not-reserve",
+        "signal_id": "bridge-only",
+        "symbol": "EURUSD",
+        "direction": "BUY",
+        "risk_r": 0.1,
+        "volatility": 0.1,
+        "factors": {},
+        "requested_by": "MT5_EA",
+    }
+    response = client.post(
+        "/execution-ledger/reserve",
+        json=payload,
+        headers={
+            "X-API-Key": "test-secret-key",
+            "X-MT5-Execution-Key": "not-the-mt5-execution-secret",
+        },
+    )
+    assert response.status_code == 403

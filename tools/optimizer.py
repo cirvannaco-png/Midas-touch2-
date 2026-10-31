@@ -111,3 +111,38 @@ def bounded_delta(
             raise ValueError(f"proposal for {key!r} exceeds declared bounds")
         result[key] = _quantize(value, bound.step)
     return result
+
+
+
+def candidate_selection_development_partitions(split):
+    """Return only chronologically validated development partitions to an optimizer.
+
+    Train and validation records must be explicitly role-tagged. The locked
+    OOS window is checked for chronological separation but is never returned
+    to candidate generation, parameter scoring, or selection code.
+    """
+    try:
+        from tools.oos_firewall import OOSPurityError, optimizer_development_view, validate_temporal_split
+    except ImportError:
+        from oos_firewall import OOSPurityError, optimizer_development_view, validate_temporal_split
+
+    validate_temporal_split(split)
+    for role, records in (
+        ("train", split.train),
+        ("validation", split.validation),
+        ("locked_oos", split.locked_oos),
+    ):
+        if not records:
+            raise OOSPurityError(f"{role} partition is empty")
+        wrong = [
+            index for index, row in enumerate(records)
+            if str(row.get("partition", "")).strip().lower() != role
+        ]
+        if wrong:
+            raise OOSPurityError(
+                f"{role} partition contains rows with a different or missing partition label"
+            )
+
+    train = optimizer_development_view(split.train)
+    validation = optimizer_development_view(split.validation)
+    return train, validation

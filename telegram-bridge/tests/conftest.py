@@ -6,6 +6,7 @@ os.environ.setdefault("BOT_TOKEN", "123456:test-token")
 os.environ.setdefault("CHAT_ID", "-1000000000")
 os.environ.setdefault("ADMIN_CHAT_ID", "777000777")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("MT5_EXECUTION_API_KEY", "test-mt5-execution-key-0123456789")
 os.environ.setdefault("WEBHOOK_SECRET_TOKEN", "test-webhook-secret")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_signals.db")
 os.environ.setdefault("RATE_LIMIT_MAX_REQUESTS", "5")
@@ -145,4 +146,7 @@ def client(monkeypatch):
 
 @pytest.fixture()
 def auth_headers():
-    return {"X-API-Key": os.environ["SECRET_KEY"]}
+    return {
+        "X-API-Key": os.environ["SECRET_KEY"],
+        "X-MT5-Execution-Key": os.environ["MT5_EXECUTION_API_KEY"],
+    }

@@ -64,3 +64,36 @@ def test_dry_run_makes_no_api_calls(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "dry run" in out
     assert BASE_ENV["SECRET_KEY"] not in out
+
+
+
+def test_bridge_auth_sync_writes_both_server_aliases_from_one_canonical_value():
+    values = rss.collect_bridge_auth({"BRIDGE_API_KEY": "canonical-key", "MT5_EXECUTION_API_KEY": "distinct-mt5-execution-key-0123456789"})
+    assert values == {
+        "SECRET_KEY": "canonical-key",
+        "BRIDGE_API_KEY": "canonical-key",
+        "MT5_EXECUTION_API_KEY": "distinct-mt5-execution-key-0123456789",
+    }
+
+
+def test_bridge_auth_sync_rejects_conflicting_values_before_any_api_call():
+    with pytest.raises(rss.RenderSyncError, match="differ"):
+        rss.collect_bridge_auth(
+            {"BRIDGE_API_KEY": "workflow-key", "SECRET_KEY": "different-render-key", "MT5_EXECUTION_API_KEY": "distinct-mt5-execution-key-0123456789"}
+        )
+
+
+def test_bridge_auth_sync_requires_protected_key():
+    with pytest.raises(rss.RenderSyncError, match="Missing BRIDGE_API_KEY"):
+        rss.collect_bridge_auth({})
+
+
+
+def test_bridge_auth_sync_rejects_execution_key_reuse():
+    with pytest.raises(rss.RenderSyncError, match="must be distinct"):
+        rss.collect_bridge_auth(
+            {
+                "BRIDGE_API_KEY": "canonical-bridge-key-012345678901",
+                "MT5_EXECUTION_API_KEY": "canonical-bridge-key-012345678901",
+            }
+        )

@@ -128,3 +128,27 @@ def validate_temporal_split(split: TemporalSplit) -> None:
         raise OOSPurityError("training_max_signal_time must be < validation_min_signal_time")
     if not validation_max < oos_min:
         raise OOSPurityError("validation_max_signal_time must be < holdout_min_signal_time")
+
+
+
+def optimizer_development_view(records: Sequence[Mapping[str, object]]) -> tuple[dict, ...]:
+    """Return only development partitions; reject locked OOS rather than filtering it.
+
+    Rejecting an optimizer payload containing holdout rows is intentional:
+    silently dropping them can hide a contaminated upstream selection process.
+    """
+    if not records:
+        raise OOSPurityError("optimizer dataset is empty")
+    development = []
+    for index, row in enumerate(records):
+        partition = str(row.get("partition", "")).strip().lower()
+        if partition == "locked_oos":
+            raise OOSPurityError(
+                f"row {index}: locked OOS records are prohibited from optimizer input"
+            )
+        if partition not in {"train", "validation"}:
+            raise OOSPurityError(
+                f"row {index}: optimizer input must be explicitly tagged train or validation"
+            )
+        development.append(dict(row))
+    return tuple(development)

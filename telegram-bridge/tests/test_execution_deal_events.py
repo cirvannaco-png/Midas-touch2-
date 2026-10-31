@@ -31,7 +31,10 @@ def _deal_payload() -> dict:
 
 
 def test_deal_event_ingestion_is_idempotent_and_refreshes_position_snapshot(client):
-    headers = {"X-API-Key": "test-secret-key"}
+    headers = {
+        "X-API-Key": "test-secret-key",
+        "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789",
+    }
     url = "/execution-ledger/deal-event"
     payload = _deal_payload()
 
@@ -59,7 +62,10 @@ def test_deal_event_ingestion_is_idempotent_and_refreshes_position_snapshot(clie
 
 
 def test_partial_and_full_close_deal_replays_do_not_duplicate_deals(client):
-    headers = {"X-API-Key": "test-secret-key"}
+    headers = {
+        "X-API-Key": "test-secret-key",
+        "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789",
+    }
     url = "/execution-ledger/deal-event"
     opened = client.post(url, json=_deal_payload(), headers=headers)
     assert opened.status_code == 200, opened.text
@@ -115,7 +121,10 @@ def test_partial_and_full_close_deal_replays_do_not_duplicate_deals(client):
 
 
 def test_deal_id_cannot_be_reused_with_conflicting_cashflow(client):
-    headers = {"X-API-Key": "test-secret-key"}
+    headers = {
+        "X-API-Key": "test-secret-key",
+        "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789",
+    }
     url = "/execution-ledger/deal-event"
     payload = _deal_payload()
     first = client.post(url, json=payload, headers=headers)
@@ -133,7 +142,11 @@ def test_deal_event_rejects_non_finite_values(client):
     response = client.post(
         "/execution-ledger/deal-event",
         content=json.dumps(payload, allow_nan=True),
-        headers={"X-API-Key": "test-secret-key", "Content-Type": "application/json"},
+        headers={
+            "X-API-Key": "test-secret-key",
+            "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789",
+            "Content-Type": "application/json",
+        },
     )
     assert response.status_code == 422
 
@@ -172,7 +185,10 @@ def test_breakeven_protected_open_position_accepts_zero_remaining_stop_risk(clie
     response = client.post(
         "/execution-ledger/deal-event",
         json=payload,
-        headers={"X-API-Key": "test-secret-key"},
+        headers={
+            "X-API-Key": "test-secret-key",
+            "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789",
+        },
     )
     assert response.status_code == 200, response.text
     assert response.json()["stored"] is True

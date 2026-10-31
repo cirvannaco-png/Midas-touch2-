@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ExecutionLedger, PortfolioReservation
+from app.models import ExecutionLedger, ExecutionPositionModification, PortfolioReservation
 
 LEASE_SECONDS = 30
 MAX_PORTFOLIO_HEAT_R = 3.0
@@ -82,6 +82,17 @@ async def reserve_execution(
         .with_for_update()
     )
     if existing is not None:
+        return False
+
+    pending_modification = await session.scalar(
+        select(ExecutionPositionModification.id)
+        .where(
+            ExecutionPositionModification.portfolio_key == portfolio_key,
+            ExecutionPositionModification.status == "PENDING",
+        )
+        .limit(1)
+    )
+    if pending_modification is not None:
         return False
 
     active = (
@@ -366,6 +377,8 @@ async def reconcile_open_position(
     volatility: float,
     factors: dict[str, float],
     evidence_ref: str,
+    stop_loss: float = 0.0,
+    take_profit: float = 0.0,
 ) -> tuple[str, float, bool]:
     """Import or refresh an observed broker position without dropping other risk."""
     if not portfolio_key or len(portfolio_key) > 128:
@@ -463,6 +476,35 @@ async def reconcile_open_position(
         factors=factors,
     )
     await session.flush()
+
+    # A startup/current broker snapshot resolves any intent whose HTTP response
+    # was lost after MT5 may already have applied the modification. The broker
+    # observation is authoritative; no client assertion can resolve this row.
+    if stop_loss > 0.0:
+        pending_events = (
+            await session.execute(
+                select(ExecutionPositionModification)
+                .where(
+                    ExecutionPositionModification.portfolio_key == portfolio_key,
+                    ExecutionPositionModification.broker_position_id == broker_position_id,
+                    ExecutionPositionModification.status == "PENDING",
+                )
+                .with_for_update()
+            )
+        ).scalars().all()
+        for event in pending_events:
+            tolerance = max(1e-8, abs(event.proposed_stop_loss) * 1e-8)
+            stop_is_protective = (
+                event.direction == "BUY" and stop_loss >= event.proposed_stop_loss - tolerance
+            ) or (
+                event.direction == "SELL" and stop_loss <= event.proposed_stop_loss + tolerance
+            )
+            event.status = "APPLIED" if stop_is_protective else "SNAPSHOT_RECONCILED"
+            event.actual_stop_loss = stop_loss
+            event.actual_take_profit = take_profit
+            event.risk_r = risk_r
+            event.resolution_evidence_ref = evidence_ref
+            event.resolved_at = now
 
     active = (
         await session.execute(
@@ -571,6 +613,22 @@ async def reconcile_closed_position(
         }
     )
     row.result_json = merged
+    pending_events = (
+        await session.execute(
+            select(ExecutionPositionModification)
+            .where(
+                ExecutionPositionModification.portfolio_key == portfolio_key,
+                ExecutionPositionModification.broker_position_id == broker_position_id,
+                ExecutionPositionModification.status == "PENDING",
+            )
+            .with_for_update()
+        )
+    ).scalars().all()
+    for event in pending_events:
+        event.status = "POSITION_CLOSED"
+        event.resolution_evidence_ref = evidence_ref
+        event.resolved_at = now
+
     reservation = await session.scalar(
         select(PortfolioReservation)
         .where(PortfolioReservation.request_id == row.request_id)
@@ -720,5 +778,204 @@ async def reconcile_terminal_order(
     if reservation is not None:
         reservation.status = "RELEASED"
         reservation.lease_until = now
+    await session.flush()
+    return True
+
+
+
+async def prepare_position_modification(
+    session: AsyncSession,
+    *,
+    portfolio_key: str,
+    event_id: str,
+    broker_position_id: str,
+    symbol: str,
+    direction: str,
+    old_stop_loss: float,
+    old_take_profit: float,
+    proposed_stop_loss: float,
+    proposed_take_profit: float,
+    evidence_ref: str,
+) -> tuple[bool, str]:
+    """Write an idempotent intent before MT5 calls PositionModify."""
+    if not portfolio_key or len(portfolio_key) > 128:
+        raise ValueError("portfolio_key must be 1-128 characters")
+    if not event_id or len(event_id) > 160 or not broker_position_id:
+        raise ValueError("event_id and broker_position_id are required")
+    if direction not in {"BUY", "SELL"}:
+        raise ValueError("direction must be BUY or SELL")
+    values = (old_stop_loss, old_take_profit, proposed_stop_loss, proposed_take_profit)
+    if any(not math.isfinite(value) or value < 0 for value in values):
+        raise ValueError("position modification prices must be finite and non-negative")
+    if proposed_stop_loss <= 0.0:
+        raise ValueError("proposed_stop_loss must be positive")
+    if not evidence_ref or len(evidence_ref) > 256:
+        raise ValueError("evidence_ref is required")
+    # The policy only accepts protective stop changes. A stop must never move
+    # away from the market-risk-reducing direction.
+    if direction == "BUY" and old_stop_loss > 0.0 and proposed_stop_loss < old_stop_loss:
+        raise ValueError("BUY stop modification would loosen protection")
+    if direction == "SELL" and old_stop_loss > 0.0 and proposed_stop_loss > old_stop_loss:
+        raise ValueError("SELL stop modification would loosen protection")
+
+    await _portfolio_lock(session, portfolio_key)
+    ledger = await session.scalar(
+        select(ExecutionLedger)
+        .where(
+            ExecutionLedger.portfolio_key == portfolio_key,
+            ExecutionLedger.broker_position_id == broker_position_id,
+        )
+        .with_for_update()
+    )
+    if ledger is None or ledger.state != "FILLED":
+        return False, "POSITION_NOT_REGISTERED_OR_NOT_OPEN"
+
+    existing = await session.scalar(
+        select(ExecutionPositionModification)
+        .where(
+            ExecutionPositionModification.portfolio_key == portfolio_key,
+            ExecutionPositionModification.event_id == event_id,
+        )
+        .with_for_update()
+    )
+    if existing is not None:
+        same = (
+            existing.broker_position_id == broker_position_id
+            and existing.direction == direction
+            and existing.old_stop_loss == old_stop_loss
+            and existing.old_take_profit == old_take_profit
+            and existing.proposed_stop_loss == proposed_stop_loss
+            and existing.proposed_take_profit == proposed_take_profit
+        )
+        if not same:
+            raise ValueError("event_id was reused with different position modification data")
+        if existing.status in {"SNAPSHOT_RECONCILED", "BROKER_NO_CHANGE"}:
+            # The previous broker attempt was reconciled without applying the
+            # proposed stop. Re-arm the same deterministic intent for a safe
+            # retry rather than creating an unbounded chain of event IDs.
+            existing.status = "PENDING"
+            existing.actual_stop_loss = None
+            existing.actual_take_profit = None
+            existing.risk_r = None
+            existing.resolution_evidence_ref = None
+            existing.resolved_at = None
+            existing.intent_evidence_ref = evidence_ref
+            existing.created_at = datetime.now(timezone.utc)
+            await session.flush()
+            return True, "PENDING"
+        return True, existing.status
+
+    now = datetime.now(timezone.utc)
+    session.add(
+        ExecutionPositionModification(
+            portfolio_key=portfolio_key,
+            event_id=event_id,
+            request_id=ledger.request_id,
+            broker_position_id=broker_position_id,
+            symbol=symbol,
+            direction=direction,
+            old_stop_loss=old_stop_loss,
+            old_take_profit=old_take_profit,
+            proposed_stop_loss=proposed_stop_loss,
+            proposed_take_profit=proposed_take_profit,
+            status="PENDING",
+            intent_evidence_ref=evidence_ref,
+            created_at=now,
+        )
+    )
+    await session.flush()
+    return True, "PENDING"
+
+
+async def confirm_position_modification(
+    session: AsyncSession,
+    *,
+    portfolio_key: str,
+    event_id: str,
+    actual_stop_loss: float,
+    actual_take_profit: float,
+    risk_r: float,
+    volatility: float,
+    evidence_ref: str,
+) -> bool:
+    """Resolve an intent only after MT5 observed the broker-applied SL/TP."""
+    if not all(math.isfinite(value) for value in (actual_stop_loss, actual_take_profit, risk_r, volatility)):
+        raise ValueError("broker modification values must be finite")
+    if actual_stop_loss <= 0.0 or actual_take_profit < 0.0 or risk_r < 0.0 or volatility < 0.0:
+        raise ValueError("broker modification values are outside permitted bounds")
+    if not evidence_ref or len(evidence_ref) > 256:
+        raise ValueError("evidence_ref is required")
+
+    await _portfolio_lock(session, portfolio_key)
+    event = await session.scalar(
+        select(ExecutionPositionModification)
+        .where(
+            ExecutionPositionModification.portfolio_key == portfolio_key,
+            ExecutionPositionModification.event_id == event_id,
+        )
+        .with_for_update()
+    )
+    if event is None:
+        return False
+    if event.status == "APPLIED":
+        return (
+            event.actual_stop_loss is not None
+            and abs(event.actual_stop_loss - actual_stop_loss) <= max(1e-8, abs(actual_stop_loss) * 1e-8)
+            and event.actual_take_profit is not None
+            and abs(event.actual_take_profit - actual_take_profit) <= max(1e-8, abs(actual_take_profit) * 1e-8)
+        )
+    if event.status != "PENDING":
+        return False
+
+    tolerance = max(1e-8, abs(event.proposed_stop_loss) * 1e-8)
+    if event.direction == "BUY" and actual_stop_loss < event.proposed_stop_loss - tolerance:
+        raise ValueError("observed BUY stop is less protective than the proposed stop")
+    if event.direction == "SELL" and actual_stop_loss > event.proposed_stop_loss + tolerance:
+        raise ValueError("observed SELL stop is less protective than the proposed stop")
+
+    ledger = await session.scalar(
+        select(ExecutionLedger)
+        .where(
+            ExecutionLedger.portfolio_key == portfolio_key,
+            ExecutionLedger.request_id == event.request_id,
+            ExecutionLedger.broker_position_id == event.broker_position_id,
+        )
+        .with_for_update()
+    )
+    reservation = await session.scalar(
+        select(PortfolioReservation)
+        .where(
+            PortfolioReservation.portfolio_key == portfolio_key,
+            PortfolioReservation.request_id == event.request_id,
+            PortfolioReservation.status == "ACTIVE",
+        )
+        .with_for_update()
+    )
+    if ledger is None or reservation is None:
+        return False
+    if risk_r > reservation.risk_r + 1e-8:
+        raise ValueError("position modification cannot increase reserved stop risk")
+
+    now = datetime.now(timezone.utc)
+    event.actual_stop_loss = actual_stop_loss
+    event.actual_take_profit = actual_take_profit
+    event.risk_r = risk_r
+    event.status = "APPLIED"
+    event.resolution_evidence_ref = evidence_ref
+    event.resolved_at = now
+    reservation.risk_r = risk_r
+    reservation.volatility = volatility
+    merged = dict(ledger.result_json or {})
+    merged["last_position_modification"] = {
+        "event_id": event_id,
+        "broker_position_id": event.broker_position_id,
+        "actual_stop_loss": actual_stop_loss,
+        "actual_take_profit": actual_take_profit,
+        "risk_r": risk_r,
+        "evidence_ref": evidence_ref,
+        "status": "APPLIED",
+        "reconciled_at": now.isoformat(),
+    }
+    ledger.result_json = merged
     await session.flush()
     return True

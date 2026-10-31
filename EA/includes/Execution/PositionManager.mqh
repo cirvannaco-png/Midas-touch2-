@@ -6,6 +6,8 @@
 
 #include "OrderManager.mqh"
 #include "BrokerAdapter.mqh"
+#include "ExecutionLedgerClient.mqh"
+#include "../Trading/RiskEngine.mqh"
 #include "DynamicStopEngine.mqh"
 #include "DynamicStopInputs.mqh"
 #include "PositionManagementPolicy.mqh"
@@ -17,6 +19,9 @@ class CPositionManager
 private:
    COrderManager*        m_orders;
    CBrokerAdapter*       m_broker;
+   CExecutionLedgerClient* m_ledger;
+   CRiskEngine*           m_risk;
+   double                 m_riskPercent;
    CSwingDetector*       m_structureSwings;
    CSLModificationAudit  m_audit;
    CDynamicStopEngine    m_dynamicStop;
@@ -37,17 +42,22 @@ public:
    void Init(COrderManager* orders,CBrokerAdapter* broker,
              double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
              int maxSpreadPoints=0,double minATR=0.0,double maxATR=0.0,
-             int minModifyIntervalSec=5,CSwingDetector* structureSwings=NULL);
+             int minModifyIntervalSec=5,CSwingDetector* structureSwings=NULL,
+             CExecutionLedgerClient* ledger=NULL,CRiskEngine* risk=NULL,double riskPercent=0.0);
    void OnTick(double currentAtr);
   };
 
 void CPositionManager::Init(COrderManager* orders,CBrokerAdapter* broker,
                             double breakEvenAtR,double partialAtR,double partialFraction,double trailAtrMult,
                             int maxSpreadPoints,double minATR,double maxATR,int minModifyIntervalSec,
-                            CSwingDetector* structureSwings)
+                            CSwingDetector* structureSwings,CExecutionLedgerClient* ledger,
+                            CRiskEngine* risk,double riskPercent)
   {
    m_orders=orders;
    m_broker=broker;
+   m_ledger=ledger;
+   m_risk=risk;
+   m_riskPercent=riskPercent;
    m_structureSwings=structureSwings;
    m_partialAtR=partialAtR;
    m_partialFraction=partialFraction;
@@ -202,19 +212,80 @@ void CPositionManager::OnTick(double currentAtr)
          double structuralAnchor=ConfirmedStructuralAnchor(isBuy);
          DynamicStopDecision ds=m_dynamicStop.Evaluate(dec.symbol,isBuy,entry,dec.setup.stop_loss,
                                                         curSL,price,currentAtr,spreadPoints,structuralAnchor);
-         if(ds.modify && m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp))
+         if(ds.modify)
            {
-            // Audit the broker-applied stop, which may be directionally rounded
-            // to the symbol's tick grid by BrokerAdapter.
-            double appliedSL=ds.proposedSL;
-            if(PositionSelectByTicket(ticket))
+            ulong positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+            double oldTP=PositionGetDouble(POSITION_TP);
+            string direction=isBuy?"BUY":"SELL";
+            string eventId=StringFormat("modify:%I64u:%.10f:%.10f:%.10f:%.10f",
+                                        positionIdentifier,curSL,ds.proposedSL,oldTP,dec.setup.final_tp);
+            string intentEvidence="mt5-stop-intent:"+eventId;
+            bool ledgerIntentReady=(m_ledger!=NULL && m_ledger.Ready() && positionIdentifier>0 &&
+               m_ledger.PreparePositionModification(eventId,positionIdentifier,dec.symbol,direction,
+                                                      curSL,oldTP,ds.proposedSL,dec.setup.final_tp,
+                                                      intentEvidence));
+            if(!ledgerIntentReady && m_ledger!=NULL)
+               m_ledger.RequireReconciliation();
+
+            // Protective broker changes are still attempted when the ledger
+            // is unavailable. The admission latch remains closed until a
+            // broker snapshot resolves any durable PENDING intent.
+            bool brokerModified=m_broker.ModifySLTP(ticket,ds.proposedSL,dec.setup.final_tp);
+            if(brokerModified)
               {
-               double observedSL=PositionGetDouble(POSITION_SL);
-               if(observedSL>0.0) appliedSL=observedSL;
+               double appliedSL=0.0;
+               double appliedTP=0.0;
+               if(PositionSelectByTicket(ticket))
+                 {
+                  double observedSL=PositionGetDouble(POSITION_SL);
+                  double observedTP=PositionGetDouble(POSITION_TP);
+                  appliedSL=observedSL;
+                  appliedTP=observedTP;
+                 }
+               if(appliedSL<=0.0)
+                 {
+                  if(m_ledger!=NULL) m_ledger.RequireReconciliation();
+                  PrintFormat("Midas position modification accepted but broker snapshot unavailable; ticket=%I64u",ticket);
+                  continue;
+                 }
+
+               bool ledgerConfirmed=false;
+               if(ledgerIntentReady && m_risk!=NULL && m_riskPercent>0.0)
+                 {
+                  double remainingRisk=0.0;
+                  bool stopLocked=(isBuy && appliedSL>=entry) || (!isBuy && appliedSL<=entry);
+                  if(stopLocked)
+                     remainingRisk=0.0;
+                  else
+                     remainingRisk=m_risk.RiskAmountForLots(dec.symbol,PositionGetDouble(POSITION_VOLUME),
+                                                            entry,appliedSL);
+                  double baseRiskUnit=AccountInfoDouble(ACCOUNT_EQUITY)*m_riskPercent/100.0;
+                  double riskR=(stopLocked ? 0.0 :
+                                (baseRiskUnit>0.0 && remainingRisk>0.0 ? remainingRisk/baseRiskUnit : -1.0));
+                  string confirmEvidence="mt5-stop-observed:"+eventId;
+                  if(riskR>=0.0 && MathIsValidNumber(riskR))
+                     ledgerConfirmed=m_ledger.ConfirmPositionModification(eventId,appliedSL,appliedTP,
+                                                                            riskR,MathMax(0.0,currentAtr),
+                                                                            confirmEvidence);
+                 }
+               if(!ledgerConfirmed && m_ledger!=NULL)
+                 {
+                  m_ledger.RequireReconciliation();
+                  PrintFormat("Midas position modification awaits ledger reconciliation; ticket=%I64u",ticket);
+                 }
+
+               m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,appliedSL,price,r,ds.reason);
+               RecordModification(ticket);
+               if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);
               }
-            m_audit.Record(ticket,dec.symbol,isBuy,EnumToString(ds.stage),curSL,appliedSL,price,r,ds.reason);
-            RecordModification(ticket);
-            if(state==TS_FILLED) m_orders.TransitionAt(i,TS_PROTECTED);
+            else
+              {
+               // The broker result may be ambiguous after a transport failure.
+               // Keep the intent unresolved and block further new entries.
+               if(ledgerIntentReady && m_ledger!=NULL)
+                  m_ledger.RequireReconciliation();
+               RecordModification(ticket);
+              }
            }
         }
 

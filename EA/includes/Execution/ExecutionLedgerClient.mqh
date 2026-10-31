@@ -10,9 +10,11 @@ class CExecutionLedgerClient
 private:
    string m_baseUrl;
    string m_apiKey;
+   string m_executionKey;
    string m_portfolioKey;
    int    m_timeoutMs;
    bool   m_ready;
+   bool   m_admissionHealthy;
 
    string JsonSafe(string value)
      {
@@ -38,16 +40,18 @@ private:
 
       char result[];
       string resultHeaders;
-      string headers="Content-Type: application/json\r\nX-API-Key: "+m_apiKey+"\r\n";
+      string headers="Content-Type: application/json\r\nX-API-Key: "+m_apiKey+"\r\nX-MT5-Execution-Key: "+m_executionKey+"\r\n";
       ResetLastError();
       int status=WebRequest("POST",m_baseUrl+path,headers,m_timeoutMs,data,result,resultHeaders);
       if(status==-1)
         {
+         m_admissionHealthy=false;
          PrintFormat("Midas execution ledger: POST %s failed at transport layer (error=%d); do not assume broker outcome.",path,GetLastError());
          return false;
         }
       if(status<200 || status>=300)
         {
+         m_admissionHealthy=false;
          PrintFormat("Midas execution ledger: POST %s returned HTTP %d; response=%s",path,status,CharArrayToString(result));
          return false;
         }
@@ -55,19 +59,21 @@ private:
      }
 
 public:
-   void Init(const string baseUrl,const string apiKey,const ulong magicNumber,int timeoutMs=5000)
+   void Init(const string baseUrl,const string apiKey,const string executionKey,const ulong magicNumber,int timeoutMs=5000)
      {
       m_baseUrl=baseUrl;
       while(StringLen(m_baseUrl)>0 && StringSubstr(m_baseUrl,StringLen(m_baseUrl)-1,1)=="/")
          m_baseUrl=StringSubstr(m_baseUrl,0,StringLen(m_baseUrl)-1);
       m_apiKey=apiKey;
+      m_executionKey=executionKey;
       m_timeoutMs=MathMax(1000,timeoutMs);
       m_portfolioKey="";
       m_ready=false;
+      m_admissionHealthy=false;
 
-      if(StringLen(m_baseUrl)<8 || StringLen(m_apiKey)==0)
+      if(StringLen(m_baseUrl)<8 || StringLen(m_apiKey)==0 || StringLen(m_executionKey)<32)
         {
-         Print("Midas execution ledger: base URL/API key missing; remote execution ledger is not ready.");
+         Print("Midas execution ledger: base URL, bridge API key, or distinct MT5 execution key missing; remote execution ledger is not ready.");
          return;
         }
 
@@ -83,9 +89,13 @@ public:
          return;
         }
       m_ready=true;
+      m_admissionHealthy=true;
      }
 
    bool Ready() const { return m_ready; }
+   bool AdmissionReady() const { return (m_ready && m_admissionHealthy); }
+   void RequireReconciliation() { m_admissionHealthy=false; }
+   void MarkReconciled() { if(m_ready) m_admissionHealthy=true; }
    string PortfolioKey() const { return m_portfolioKey; }
 
    string RequestIdForDecision(const long decisionId,const int legIndex)
@@ -108,11 +118,11 @@ public:
                 const double volatility,string &requestId)
      {
       requestId=RequestIdForDecision(decisionId,legIndex);
-      if(!m_ready || StringLen(requestId)>128 || riskR<=0.0 ||
+      if(!AdmissionReady() || StringLen(requestId)>128 || riskR<=0.0 ||
          !MathIsValidNumber(riskR) || volatility<0.0 || !MathIsValidNumber(volatility))
          return false;
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"signal_id\":\"%s\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"max_heat_r\":3.0}",
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"signal_id\":\"%s\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"max_heat_r\":3.0,\"requested_by\":\"MT5_EA\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),JsonSafe(signalId),
          JsonSafe(symbol),JsonSafe(direction),riskR,volatility);
       return PostJson("/execution-ledger/reserve",payload);
@@ -129,7 +139,7 @@ public:
    bool SyncPosition(const ulong positionIdentifier,const ulong orderId,const ulong dealId,
                      const string symbol,const string direction,const double riskR,
                      const double volatility,const string evidenceRef,
-                     const string requestIdOverride="")
+                     const string requestIdOverride="",const double stopLoss=0.0,const double takeProfit=0.0)
      {
       if(!m_ready || positionIdentifier==0 || riskR<0.0 || !MathIsValidNumber(riskR)) return false;
       string requestId=requestIdOverride;
@@ -137,9 +147,9 @@ public:
       string orderIdJson=(orderId>0)?StringFormat("\"%I64u\"",orderId):"null";
       string dealIdJson=(dealId>0)?StringFormat("\"%I64u\"",dealId):"null";
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_order_id\":%s,\"broker_deal_id\":%s,\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_position_id\":\"%I64u\",\"broker_order_id\":%s,\"broker_deal_id\":%s,\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\",\"stop_loss\":%.10f,\"take_profit\":%.10f}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),positionIdentifier,orderIdJson,dealIdJson,
-         JsonSafe(symbol),JsonSafe(direction),riskR,MathMax(0.0,volatility),JsonSafe(evidenceRef));
+         JsonSafe(symbol),JsonSafe(direction),riskR,MathMax(0.0,volatility),JsonSafe(evidenceRef),stopLoss,takeProfit);
       return PostJson("/execution-ledger/sync-position",payload);
      }
 
@@ -155,6 +165,38 @@ public:
          JsonSafe(m_portfolioKey),JsonSafe(requestId),orderTicket,
          JsonSafe(symbol),JsonSafe(direction),riskR,MathMax(0.0,volatility),JsonSafe(evidenceRef));
       return PostJson("/execution-ledger/sync-pending-order",payload);
+     }
+
+
+   bool PreparePositionModification(const string eventId,const ulong positionIdentifier,
+                                     const string symbol,const string direction,
+                                     const double oldSL,const double oldTP,
+                                     const double proposedSL,const double proposedTP,
+                                     const string evidenceRef)
+     {
+      if(!AdmissionReady() || StringLen(eventId)==0 || positionIdentifier==0 ||
+         oldSL<0.0 || oldTP<0.0 || proposedSL<=0.0 || proposedTP<0.0 ||
+         !MathIsValidNumber(oldSL) || !MathIsValidNumber(oldTP) ||
+         !MathIsValidNumber(proposedSL) || !MathIsValidNumber(proposedTP))
+         return false;
+      string payload=StringFormat(
+         "{\"portfolio_key\":\"%s\",\"event_id\":\"%s\",\"broker_position_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"old_stop_loss\":%.10f,\"old_take_profit\":%.10f,\"proposed_stop_loss\":%.10f,\"proposed_take_profit\":%.10f,\"evidence_ref\":\"%s\",\"requested_by\":\"MT5_EA\"}",
+         JsonSafe(m_portfolioKey),JsonSafe(eventId),positionIdentifier,JsonSafe(symbol),JsonSafe(direction),
+         oldSL,oldTP,proposedSL,proposedTP,JsonSafe(evidenceRef));
+      return PostJson("/execution-ledger/position-modification/prepare",payload);
+     }
+
+   bool ConfirmPositionModification(const string eventId,const double actualSL,const double actualTP,
+                                    const double riskR,const double volatility,const string evidenceRef)
+     {
+      if(!m_ready || StringLen(eventId)==0 || actualSL<=0.0 || actualTP<0.0 ||
+         riskR<0.0 || volatility<0.0 || !MathIsValidNumber(actualSL) ||
+         !MathIsValidNumber(actualTP) || !MathIsValidNumber(riskR) || !MathIsValidNumber(volatility))
+         return false;
+      string payload=StringFormat(
+         "{\"portfolio_key\":\"%s\",\"event_id\":\"%s\",\"actual_stop_loss\":%.10f,\"actual_take_profit\":%.10f,\"risk_r\":%.8f,\"volatility\":%.8f,\"evidence_ref\":\"%s\",\"requested_by\":\"MT5_EA\"}",
+         JsonSafe(m_portfolioKey),JsonSafe(eventId),actualSL,actualTP,riskR,volatility,JsonSafe(evidenceRef));
+      return PostJson("/execution-ledger/position-modification/confirm",payload);
      }
 
    bool UpdatePositionRisk(const ulong positionIdentifier,const string direction,
