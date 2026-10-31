@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timezone
 
+from .ai_execution_authorization import AIExecutionApproval, authorize_ai_execution
 from .child_execution import ChildOrderExecutor
 from .execution_governance import ExecutionConfig, attach_identity, promotion_allowed
 from .execution_models import ExecutionFill, ExecutionOrder, ExecutionOutcome, OrderStatus
@@ -22,7 +24,7 @@ from .venue import ExecutionVenue
 class GovernedExecutionCoordinator:
     """Single path from authorized Midas decision to measured execution outcome."""
 
-    def __init__(self, venue: ExecutionVenue, config: ExecutionConfig, *, approved_hash: str | None, evidence_passed: bool, portfolio_admission: PersistentPortfolioAdmission | None = None, admission_scope: str = "default", recovery_journal: ExecutionRecoveryJournal | None = None) -> None:
+    def __init__(self, venue: ExecutionVenue, config: ExecutionConfig, *, approved_hash: str | None, evidence_passed: bool, portfolio_admission: PersistentPortfolioAdmission | None = None, admission_scope: str = "default", recovery_journal: ExecutionRecoveryJournal | None = None, execution_environment: str = "LIVE") -> None:
         if not promotion_allowed(challenger=config, approved_hash=approved_hash, evidence_passed=evidence_passed):
             raise PermissionError("execution configuration is not approved")
         if not admission_scope:
@@ -35,6 +37,10 @@ class GovernedExecutionCoordinator:
         self.portfolio_admission = portfolio_admission
         self.admission_scope = admission_scope
         self.recovery_journal = recovery_journal
+        normalized_environment = execution_environment.strip().upper()
+        if normalized_environment not in {"DEMO", "LIVE"}:
+            raise ValueError("execution_environment must be DEMO or LIVE")
+        self.execution_environment = normalized_environment
         self._local_reservations = RiskReservationBook()
 
     def _lineage_fingerprint(self, order: ExecutionOrder, regime: str) -> str:
@@ -121,6 +127,49 @@ class GovernedExecutionCoordinator:
             self._local_reservations.release(order_id)
         else:
             self.portfolio_admission.release(order_id)
+
+    def execute_ai(
+        self,
+        order: ExecutionOrder,
+        *,
+        approval: AIExecutionApproval,
+        reference_price: float,
+        portfolio_notional: float,
+        symbol_notional: float,
+        daily_loss: float,
+        spread_bps: float,
+        limits: PreTradeLimits,
+        regime: str,
+        observed_volumes: list[float] | None = None,
+        control_inputs: ControlInputs | None = None,
+        now: datetime | None = None,
+    ) -> tuple[ExecutionOutcome, OutcomeObservation]:
+        """Run an explicitly user-approved AI order through the normal governed path.
+
+        AI-originated orders are demo-only and must carry a fresh, explicit,
+        user-approved intent. This wrapper performs no risk or ledger bypass;
+        all coordinator, persistent admission, broker and reconciliation gates
+        remain mandatory in execute().
+        """
+        authorize_ai_execution(
+            order,
+            approval,
+            execution_environment=self.execution_environment,
+            reference_price=reference_price,
+            now=now or datetime.now(timezone.utc),
+        )
+        return self.execute(
+            order,
+            reference_price=reference_price,
+            portfolio_notional=portfolio_notional,
+            symbol_notional=symbol_notional,
+            daily_loss=daily_loss,
+            spread_bps=spread_bps,
+            limits=limits,
+            regime=regime,
+            observed_volumes=observed_volumes,
+            control_inputs=control_inputs,
+        )
 
     def execute(self, order: ExecutionOrder, *, reference_price: float, portfolio_notional: float, symbol_notional: float, daily_loss: float, spread_bps: float, limits: PreTradeLimits, regime: str, observed_volumes: list[float] | None = None, control_inputs: ControlInputs | None = None) -> tuple[ExecutionOutcome, OutcomeObservation]:
         existing_hash = order.metadata.get("execution_config_hash")
