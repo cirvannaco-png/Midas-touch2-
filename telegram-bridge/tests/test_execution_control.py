@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database import Base
 from app.execution_control import (
+    confirm_position_modification,
+    prepare_position_modification,
     reconcile_closed_position,
     reconcile_open_position,
     reconcile_terminal_order,
     recover_expired_leases,
-    confirm_position_modification,
-    prepare_position_modification,
     reserve_execution,
     sync_pending_order,
     transition_execution,

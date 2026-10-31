@@ -11,7 +11,8 @@ def test_position_modification_is_intent_recorded_then_broker_confirmed():
     assert "PreparePositionModification" in manager
     assert "m_broker.ModifySLTP" in manager
     assert "ConfirmPositionModification" in manager
-    assert "observedSL" not in manager
+    assert "double observedSL=PositionGetDouble(POSITION_SL)" in manager
+    assert "appliedSL=observedSL" in manager
     assert "/execution-ledger/position-modification/prepare" in client
     assert "/execution-ledger/position-modification/confirm" in client
     assert "actual_stop_loss" in api
