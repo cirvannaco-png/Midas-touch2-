@@ -309,6 +309,7 @@ def test_parameter_neighbor_robustness_is_measured_on_validation_not_locked_oos(
     evidence = response.json()["validation_evidence"]
     assert evidence["parameter_stability_source_partition"] == "validation"
     assert evidence["parameter_stability"] == 1.0
+    assert evidence["parameter_degradation"] == 0.0
 
 
 def test_parameter_neighbor_evidence_rejects_locked_oos_rows(client, auth_headers):

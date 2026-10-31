@@ -36,7 +36,6 @@ def _approval(**changes):
         expires_at=NOW + timedelta(minutes=2),
         explicit_user_consent=True,
     )
-    signed = sign_ai_execution_approval(base, authority_secret=AUTHORITY_SECRET)
     unsigned = replace(base, **changes) if changes else base
     return sign_ai_execution_approval(unsigned, authority_secret=AUTHORITY_SECRET)
 
@@ -127,6 +126,7 @@ def test_coordinator_ai_entry_point_refuses_live_environment():
         config,
         approved_hash=config.config_hash,
         evidence_passed=True,
+        ai_approval_secret=AUTHORITY_SECRET,
     )
     with pytest.raises(PermissionError, match="demo environment"):
         coordinator.execute_ai(
