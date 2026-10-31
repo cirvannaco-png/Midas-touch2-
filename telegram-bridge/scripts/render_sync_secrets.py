@@ -11,7 +11,7 @@ ended up booting with a WEBHOOK_SECRET_TOKEN that Telegram rejected.
 
 This script makes that step reproducible:
 
-  * values come from the environment (GitLab CI/CD variables in automation),
+  * values come from protected GitHub Actions environment secrets in automation, or from an explicitly supplied trusted local process environment,
   * WEBHOOK_SECRET_TOKEN is generated when absent and always validated
     against Telegram's ``^[A-Za-z0-9_-]{1,256}$`` before it is uploaded,
   * env vars are PUT to the Render API, then a deploy is triggered so the
@@ -95,7 +95,7 @@ def collect_secrets(env: dict[str, str]) -> dict[str, str]:
         raise RenderSyncError(
             "Missing required secret(s): "
             + ", ".join(missing)
-            + ". Add them as protected/masked GitLab CI/CD variables."
+            + ". Add them as protected/masked GitHub Actions environment secrets or provide them through a trusted local process environment. Never print or commit secret values."
         )
 
     bridge_key = env.get("BRIDGE_API_KEY") or env["SECRET_KEY"]
