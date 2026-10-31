@@ -312,8 +312,8 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
         async with factory() as session:
             request_id, heat, over_limit = await reconcile_open_position(
                 session,
-                portfolio_key="Exness:123:magic-77",
-                request_id="brokerpos:Exness:123:magic-77:9001",
+                portfolio_key="SelectedBroker:123:magic-77",
+                request_id="brokerpos:SelectedBroker:123:magic-77:9001",
                 broker_position_id="9001",
                 broker_order_id="8001",
                 broker_deal_id="7001",
@@ -324,7 +324,7 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
                 factors={"usd": 1.0},
                 evidence_ref="mt5-position-snapshot:9001",
             )
-            assert request_id == "brokerpos:Exness:123:magic-77:9001"
+            assert request_id == "brokerpos:SelectedBroker:123:magic-77:9001"
             assert heat == 1.0
             assert not over_limit
             await session.commit()
@@ -332,7 +332,7 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
         async with factory() as session:
             request_id, heat, over_limit = await reconcile_open_position(
                 session,
-                portfolio_key="Exness:123:magic-77",
+                portfolio_key="SelectedBroker:123:magic-77",
                 request_id="unused-request-id",
                 broker_position_id="9001",
                 broker_order_id="8001",
@@ -344,7 +344,7 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
                 factors={"usd": 0.4},
                 evidence_ref="mt5-restart-snapshot:9001",
             )
-            assert request_id == "brokerpos:Exness:123:magic-77:9001"
+            assert request_id == "brokerpos:SelectedBroker:123:magic-77:9001"
             assert heat == 0.4
             assert not over_limit
             await session.commit()
@@ -353,7 +353,7 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
             rows = (
                 await session.execute(
                     select(PortfolioReservation).where(
-                        PortfolioReservation.portfolio_key == "Exness:123:magic-77"
+                        PortfolioReservation.portfolio_key == "SelectedBroker:123:magic-77"
                     )
                 )
             ).scalars().all()
@@ -371,8 +371,8 @@ async def test_partial_close_updates_risk_and_full_close_releases_reservation():
         async with factory() as session:
             await reconcile_open_position(
                 session,
-                portfolio_key="Exness:123:magic-78",
-                request_id="brokerpos:Exness:123:magic-78:9002",
+                portfolio_key="SelectedBroker:123:magic-78",
+                request_id="brokerpos:SelectedBroker:123:magic-78:9002",
                 broker_position_id="9002",
                 broker_order_id="8002",
                 broker_deal_id="7003",
@@ -388,7 +388,7 @@ async def test_partial_close_updates_risk_and_full_close_releases_reservation():
         async with factory() as session:
             assert await update_position_risk(
                 session,
-                portfolio_key="Exness:123:magic-78",
+                portfolio_key="SelectedBroker:123:magic-78",
                 broker_position_id="9002",
                 direction="SELL",
                 risk_r=0.6,
@@ -401,14 +401,14 @@ async def test_partial_close_updates_risk_and_full_close_releases_reservation():
         async with factory() as session:
             reservation = await session.scalar(
                 select(PortfolioReservation).where(
-                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-78:9002"
+                    PortfolioReservation.request_id == "brokerpos:SelectedBroker:123:magic-78:9002"
                 )
             )
             assert reservation.risk_r == 0.6
             assert reservation.status == "ACTIVE"
             assert await reconcile_closed_position(
                 session,
-                portfolio_key="Exness:123:magic-78",
+                portfolio_key="SelectedBroker:123:magic-78",
                 broker_position_id="9002",
                 broker_deal_id="7005",
                 evidence_ref="mt5-position-closed:7005",
@@ -418,7 +418,7 @@ async def test_partial_close_updates_risk_and_full_close_releases_reservation():
         async with factory() as session:
             reservation = await session.scalar(
                 select(PortfolioReservation).where(
-                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-78:9002"
+                    PortfolioReservation.request_id == "brokerpos:SelectedBroker:123:magic-78:9002"
                 )
             )
             assert reservation.status == "RELEASED"
@@ -524,8 +524,8 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
         async with factory() as session:
             request_id, heat, over_limit = await reconcile_open_position(
                 session,
-                portfolio_key="Exness:123:magic-79",
-                request_id="brokerpos:Exness:123:magic-79:9003",
+                portfolio_key="SelectedBroker:123:magic-79",
+                request_id="brokerpos:SelectedBroker:123:magic-79:9003",
                 broker_position_id="9003",
                 broker_order_id="8003",
                 broker_deal_id="7006",
@@ -536,7 +536,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
                 factors={"usd": 0.0},
                 evidence_ref="mt5-breakeven-position:9003",
             )
-            assert request_id == "brokerpos:Exness:123:magic-79:9003"
+            assert request_id == "brokerpos:SelectedBroker:123:magic-79:9003"
             assert heat == 0.0
             assert not over_limit
             await session.commit()
@@ -544,7 +544,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
         async with factory() as session:
             updated = await update_position_risk(
                 session,
-                portfolio_key="Exness:123:magic-79",
+                portfolio_key="SelectedBroker:123:magic-79",
                 broker_position_id="9003",
                 direction="BUY",
                 risk_r=0.0,
@@ -558,7 +558,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
         async with factory() as session:
             reservation = await session.scalar(
                 select(PortfolioReservation).where(
-                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-79:9003"
+                    PortfolioReservation.request_id == "brokerpos:SelectedBroker:123:magic-79:9003"
                 )
             )
             assert reservation is not None
@@ -569,7 +569,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
             with pytest.raises(ValueError, match="greater than zero"):
                 await reserve_execution(
                     session,
-                    portfolio_key="Exness:123:magic-79",
+                    portfolio_key="SelectedBroker:123:magic-79",
                     request_id="must-not-reserve-zero-risk",
                     signal_id="signal-zero-risk",
                     symbol="EURUSD",
@@ -591,7 +591,7 @@ async def test_position_modification_is_durable_idempotent_and_updates_reserved_
         async with factory() as session:
             await reconcile_open_position(
                 session,
-                portfolio_key="Exness-Demo:123:magic-88",
+                portfolio_key="SelectedBroker-Demo:123:magic-88",
                 request_id="position:88",
                 broker_position_id="8800",
                 broker_order_id="8801",
@@ -610,7 +610,7 @@ async def test_position_modification_is_durable_idempotent_and_updates_reserved_
         async with factory() as session:
             prepared, status = await prepare_position_modification(
                 session,
-                portfolio_key="Exness-Demo:123:magic-88",
+                portfolio_key="SelectedBroker-Demo:123:magic-88",
                 event_id="modify:8800:1",
                 broker_position_id="8800",
                 symbol="EURUSD",
@@ -629,7 +629,7 @@ async def test_position_modification_is_durable_idempotent_and_updates_reserved_
             # new admissions for the entire account portfolio.
             assert not await reserve_execution(
                 session,
-                portfolio_key="Exness-Demo:123:magic-88",
+                portfolio_key="SelectedBroker-Demo:123:magic-88",
                 request_id="new-order-1",
                 signal_id="new-signal-1",
                 symbol="GBPUSD",
@@ -643,7 +643,7 @@ async def test_position_modification_is_durable_idempotent_and_updates_reserved_
         async with factory() as session:
             confirmed = await confirm_position_modification(
                 session,
-                portfolio_key="Exness-Demo:123:magic-88",
+                portfolio_key="SelectedBroker-Demo:123:magic-88",
                 event_id="modify:8800:1",
                 actual_stop_loss=1.0980,
                 actual_take_profit=1.1200,
@@ -668,7 +668,7 @@ async def test_position_modification_is_durable_idempotent_and_updates_reserved_
             assert reservation.risk_r == 0.3
             assert await confirm_position_modification(
                 session,
-                portfolio_key="Exness-Demo:123:magic-88",
+                portfolio_key="SelectedBroker-Demo:123:magic-88",
                 event_id="modify:8800:1",
                 actual_stop_loss=1.0980,
                 actual_take_profit=1.1200,
@@ -678,7 +678,7 @@ async def test_position_modification_is_durable_idempotent_and_updates_reserved_
             )
             assert await reserve_execution(
                 session,
-                portfolio_key="Exness-Demo:123:magic-88",
+                portfolio_key="SelectedBroker-Demo:123:magic-88",
                 request_id="new-order-1",
                 signal_id="new-signal-1",
                 symbol="GBPUSD",
@@ -699,7 +699,7 @@ async def test_position_modification_rejects_looser_stops_and_conflicting_idempo
         async with factory() as session:
             await reconcile_open_position(
                 session,
-                portfolio_key="Exness-Demo:123:magic-89",
+                portfolio_key="SelectedBroker-Demo:123:magic-89",
                 request_id="position:89",
                 broker_position_id="8900",
                 broker_order_id="8901",
@@ -714,7 +714,7 @@ async def test_position_modification_rejects_looser_stops_and_conflicting_idempo
             with pytest.raises(ValueError, match="loosen protection"):
                 await prepare_position_modification(
                     session,
-                    portfolio_key="Exness-Demo:123:magic-89",
+                    portfolio_key="SelectedBroker-Demo:123:magic-89",
                     event_id="modify:8900:bad",
                     broker_position_id="8900",
                     symbol="EURUSD",
@@ -727,7 +727,7 @@ async def test_position_modification_rejects_looser_stops_and_conflicting_idempo
                 )
             prepared, status = await prepare_position_modification(
                 session,
-                portfolio_key="Exness-Demo:123:magic-89",
+                portfolio_key="SelectedBroker-Demo:123:magic-89",
                 event_id="modify:8900:1",
                 broker_position_id="8900",
                 symbol="EURUSD",
@@ -745,7 +745,7 @@ async def test_position_modification_rejects_looser_stops_and_conflicting_idempo
             with pytest.raises(ValueError, match="reused with different"):
                 await prepare_position_modification(
                     session,
-                    portfolio_key="Exness-Demo:123:magic-89",
+                    portfolio_key="SelectedBroker-Demo:123:magic-89",
                     event_id="modify:8900:1",
                     broker_position_id="8900",
                     symbol="EURUSD",
@@ -768,7 +768,7 @@ async def test_startup_broker_snapshot_resolves_pending_modification_from_actual
         async with factory() as session:
             await reconcile_open_position(
                 session,
-                portfolio_key="Exness-Demo:123:magic-90",
+                portfolio_key="SelectedBroker-Demo:123:magic-90",
                 request_id="position:90",
                 broker_position_id="9000",
                 broker_order_id="9001",
@@ -784,7 +784,7 @@ async def test_startup_broker_snapshot_resolves_pending_modification_from_actual
             )
             await prepare_position_modification(
                 session,
-                portfolio_key="Exness-Demo:123:magic-90",
+                portfolio_key="SelectedBroker-Demo:123:magic-90",
                 event_id="modify:9000:1",
                 broker_position_id="9000",
                 symbol="EURUSD",
@@ -800,7 +800,7 @@ async def test_startup_broker_snapshot_resolves_pending_modification_from_actual
         async with factory() as session:
             await reconcile_open_position(
                 session,
-                portfolio_key="Exness-Demo:123:magic-90",
+                portfolio_key="SelectedBroker-Demo:123:magic-90",
                 request_id="position:90",
                 broker_position_id="9000",
                 broker_order_id="9001",
@@ -879,7 +879,7 @@ async def test_confirmed_position_close_resolves_pending_modification():
         async with factory() as session:
             await reconcile_open_position(
                 session,
-                portfolio_key="Exness-Demo:123:magic-91",
+                portfolio_key="SelectedBroker-Demo:123:magic-91",
                 request_id="position:91",
                 broker_position_id="9100",
                 broker_order_id="9101",
@@ -893,7 +893,7 @@ async def test_confirmed_position_close_resolves_pending_modification():
             )
             await prepare_position_modification(
                 session,
-                portfolio_key="Exness-Demo:123:magic-91",
+                portfolio_key="SelectedBroker-Demo:123:magic-91",
                 event_id="modify:9100:1",
                 broker_position_id="9100",
                 symbol="EURUSD",
@@ -909,7 +909,7 @@ async def test_confirmed_position_close_resolves_pending_modification():
         async with factory() as session:
             assert await reconcile_closed_position(
                 session,
-                portfolio_key="Exness-Demo:123:magic-91",
+                portfolio_key="SelectedBroker-Demo:123:magic-91",
                 broker_position_id="9100",
                 broker_deal_id="9103",
                 evidence_ref="mt5-close:9103",
