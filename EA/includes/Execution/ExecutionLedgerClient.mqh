@@ -39,7 +39,7 @@ private:
 
       char result[];
       string resultHeaders;
-      string headers="Content-Type: application/json\\r\\nX-API-Key: "+m_apiKey+"\\r\\n";
+      string headers="Content-Type: application/json\r\nX-API-Key: "+m_apiKey+"\r\n";
       ResetLastError();
       int status=WebRequest("POST",m_baseUrl+path,headers,m_timeoutMs,data,result,resultHeaders);
       if(status==-1)
