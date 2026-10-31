@@ -57,7 +57,7 @@ def _context(dataset_hash: str) -> dict:
         "period_start": "2025-01-01T00:00:00Z", "period_end": "2025-04-01T00:00:00Z",
         "locked_oos_start": "2025-02-01T00:00:00Z", "locked_oos_end": "2025-03-01T00:00:00Z",
         "dataset_sha256": dataset_hash, "ea_source_sha": "a" * 40,
-        "ea_build": "build-1", "terminal_build": "terminal-1", "data_vendor": "Exness",
+        "ea_build": "build-1", "terminal_build": "terminal-1", "data_vendor": "Generic MT5 test feed",
         "spread_model": "real_ticks_plus_stress", "spread_widening_multiplier": 1.5,
         "spread_points": None, "baseline_spread_points": 20.0, "cash_per_point_per_lot": 1.0,
         "commission_per_lot": 7.0, "slippage_points": 2.0,
