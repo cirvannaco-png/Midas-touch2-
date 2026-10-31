@@ -317,6 +317,9 @@ def test_parameter_neighbor_evidence_rejects_locked_oos_rows(client, auth_header
     payload["parameter_neighbors"][0]["trades"][0]["timestamp"] = (
         datetime.fromisoformat(payload["provenance"]["locked_oos_start"]) + timedelta(minutes=1)
     ).isoformat()
+    payload["parameter_neighbors"][0]["trades"][0]["resolved_at"] = (
+        datetime.fromisoformat(payload["provenance"]["locked_oos_start"]) + timedelta(minutes=2)
+    ).isoformat()
     response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
     assert response.status_code == 422
     assert "locked OOS is not an optimization input" in response.text

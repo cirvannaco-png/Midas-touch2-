@@ -82,7 +82,7 @@ def test_ai_execution_requires_exact_fresh_user_approved_demo_intent():
         (_approval(), "DEMO", _order(metadata={"origin": "AI", "approval_id": "wrong", "principal_id": "account-owner-1"}), 100.0, "identity does not match"),
         (_approval(), "DEMO", _order(metadata={"origin": "AI", "approval_id": "approval-001", "principal_id": "different"}), 100.0, "principal does not match"),
         (_approval(), "DEMO", _order(metadata={"origin": "external", "approval_id": "approval-001", "principal_id": "account-owner-1"}), 100.0, "identity does not match"),
-        (_approval(), "DEMO", _order(metadata={"origin": "AI", "bypass_ledger": True}), 100.0, "bypass governance"),
+        (_approval(), "DEMO", _order(metadata={"origin": "AI", "approval_id": "approval-001", "principal_id": "account-owner-1", "bypass_ledger": True}), 100.0, "bypass governance"),
     ],
 )
 def test_ai_execution_denies_invalid_or_overreaching_approval(approval, environment, order, price, match):

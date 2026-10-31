@@ -902,6 +902,13 @@ async def ingest_backtest_evidence(
         "lifecycle_status": registry.lifecycle_status,
         "locked_oos": {key: value for key, value in oos_summary.items() if key != "_values"},
         "walk_forward_verdicts": fold_verdicts,
+        "validation_evidence": {
+            "resolved_trades": validation_resolved_count,
+            "expectancy_r": validation_expectancy,
+            "parameter_stability": round(float(parameter_stability), 8),
+            "parameter_degradation": round(float(parameter_degradation), 8),
+            "parameter_stability_source_partition": "validation",
+        },
         "research_reasons": research_reasons,
         "promotion_boundary": "not activated; quarantine/shadow/challenger review, human approval, and exact EA config-hash ACK remain required",
     }
