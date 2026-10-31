@@ -200,7 +200,7 @@ The table records the branch-head SHAs from the original inventory snapshot (mai
 
 - Production/staging PostgreSQL blueprints (#117/#118): not merged; the user is testing on the free plan, and database/service provisioning is not being changed by a code merge.
 - Authenticated production health (#113): not merged until a real authenticated database/ledger check succeeds; its production-evidence check was skipped.
-- Diagnostic parity and order-flow research (#115/#112): do not promote as production behavior until real native MT5 OFF/ON runs, cost-complete walk-forward and locked-OOS evidence, and Exness demo reconciliation are attached.
+- Diagnostic parity and order-flow research (#115/#112): do not promote as production behavior until real native MT5 OFF/ON runs, cost-complete walk-forward and locked-OOS evidence, and selected-broker MT5 demo reconciliation are attached.
 - Account profiles (#82): proposes an 8% `MICRO_RESEARCH` envelope and conflicts with the stated fixed 30% small-account risk setting; not merged.
 - Execution-ledger integration (#81): needs authenticated database/bridge connectivity and broker-side recovery/partial-close/restart proof.
 - Fill accounting / authoritative position identity (#73/#70): no checks were reported for the exact heads in the audit; current-main CI and native partial-fill/position-identity evidence are needed.
