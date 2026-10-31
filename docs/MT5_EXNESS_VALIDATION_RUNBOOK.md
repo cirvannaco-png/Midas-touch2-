@@ -1,14 +1,20 @@
-# MT5 Strategy Tester + Exness Demo Validation Runbook
+# MT5 Strategy Tester + broker-neutral demo validation runbook
 
 Status: execution procedure only. No performance test or broker test is claimed by this document.
 
 ## Safety boundary
 
 - Keep PR #82 draft/unmerged. Do not merge, deploy, or enable live trading based on compilation, structural checks, or policy unit tests.
-- Use a dedicated Exness **demo** account. Never place credentials, account numbers, API keys, investor passwords, or unredacted account statements in GitHub artifacts or issue comments.
+- Use a dedicated selected broker **demo** account. Never place credentials, account numbers, API keys, investor passwords, or unredacted account statements in GitHub artifacts or issue comments.
 - Record the exact EA source commit, compiled EA build, terminal build, symbol specification, and tester configuration before the first run.
 - Preserve the current production trailing-stop default and all existing emergency-stop and account-risk safeguards.
 - If the terminal build, broker symbol properties, history quality, or cost assumptions cannot be verified, mark the run BLOCKED; do not fill missing facts with estimates.
+
+## Broker-neutral operation and timestamp provenance
+
+Use the MT5 broker selected by the account owner. The EA must read account currency, margin mode, server identity, symbol contract/tick values, volume minimum/maximum/step, stop/freeze levels, filling modes, trading sessions, and actual spread from the connected terminal. A broker is not supported merely because its name appears in a list; the exact account/symbol combination must pass the gates below. Netting and hedging accounts require separate execution checks.
+
+The native tester deal exporter records time in broker-server time and its metadata declares timestamp_basis=broker_server_local. Do not append a UTC suffix or treat that raw field as UTC. Normalize it only with a verified historical server-time/UTC mapping, including DST transitions, for the selected broker and test interval. If that mapping is unavailable, UTC-based comparison must remain BLOCKED; do not guess an offset.
 
 ## Gate A — prepare one immutable test bundle
 

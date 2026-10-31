@@ -9,7 +9,7 @@ metadata:
 
 Audit the canonical execution chain and its fail-closed semantics.
 
-Broker capability set is exactly ten: Exness, Pepperstone, HFM, IC Markets, XM, IG, OANDA, AvaTrade, FXTM and FP Markets. `Pepperdine` is only an explicit alias for Pepperstone.
+Do not maintain a fixed broker-provider allowlist or assume capabilities from a broker name. The account owner selects the provider in MetaTrader 5. Inspect the actual connected account, margin mode, symbol properties, server sessions, execution responses and deal history. Reject unsupported account modes and fail closed when required properties are missing, stale, contradictory or non-finite.
 
 Verify the latency points T0-T11 and persisted latency dimensions, plus multidimensional accuracy telemetry: signal, execution, price, risk, reconciliation and outcome accuracy.
 

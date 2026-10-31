@@ -5,8 +5,8 @@ import json
 
 def _deal_payload() -> dict:
     return {
-        "portfolio_key": "Exness-Demo:123456:987654321",
-        "request_id": "brokerpos:Exness-Demo:123456:987654321:position-7001",
+        "portfolio_key": "SelectedBroker-Demo:123456:987654321",
+        "request_id": "brokerpos:SelectedBroker-Demo:123456:987654321:position-7001",
         "broker_deal_id": "7001",
         "broker_order_id": "6001",
         "broker_position_id": "5001",

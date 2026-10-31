@@ -36,6 +36,12 @@ For each variant, export and retain:
 
 Use identical test context across all three runs and record the actual account currency, leverage, EA source commit SHA, EA build, terminal build, data vendor, spread model, commission per lot, slippage assumption, fill policy, starting balance and risk percent. When a real-tick spread model is used, spread_points may be null; do not substitute an invented fixed-spread number.
 
+## Broker and timestamp provenance
+
+The data_vendor field records the actual source of the historical prices/ticks; it may be the selected execution broker or an independent vendor. Record the actual MT5 server name, account currency, leverage, margin mode, symbol contract/tick/volume properties, filling mode, stop/freeze levels, and cost schedule alongside the test bundle. Never assume broker equivalence from a shared symbol name.
+
+Native exporter deal timestamps are broker-server local, not UTC. Convert them only through a verified historical server-time/UTC mapping for the full interval, including DST changes. The comparator intentionally requires timezone-aware timestamps and must reject naive server-clock values rather than silently treating them as UTC.
+
 ## Manifest and command
 
 Create a manifest file beside the artifacts. All artifact paths below are resolved relative to that manifest unless they are absolute paths.
@@ -57,7 +63,7 @@ Example shape (replace every sample value with actual exported values and real S
         "ea_source_sha": "<40- or 64-character commit SHA>",
         "ea_build": "<actual EA build>",
         "terminal_build": "<actual MT5 terminal build>",
-        "data_vendor": "Exness",
+        "data_vendor": "selected broker",
         "spread_model": "real_ticks",
         "spread_points": null,
         "commission_per_lot": 7.0,
