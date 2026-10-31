@@ -87,6 +87,9 @@ def create_app() -> FastAPI:
         await init_bot()
         outbox_task = asyncio.create_task(run_outbox_worker(outbox_stop))
         yield
+        # Teardown is deliberately best-effort and isolated by resource.
+        # A failed worker must never prevent the Telegram bot or HTTP client
+        # from being closed during a Render restart or SIGTERM.
         outbox_stop.set()
         if outbox_task is not None:
             outbox_task.cancel()
@@ -94,8 +97,19 @@ def create_app() -> FastAPI:
                 await outbox_task
             except asyncio.CancelledError:
                 pass
-        await shutdown_bot()
-        await close_http_client()
+            except Exception:
+                logger.exception("Signal outbox worker failed during shutdown")
+
+        try:
+            await shutdown_bot()
+        except Exception:
+            logger.exception("Telegram bot shutdown failed")
+
+        try:
+            await close_http_client()
+        except Exception:
+            logger.exception("HTTP client shutdown failed")
+
         logger.info("Shutdown complete.")
 
     app = FastAPI(title="Medis Touch Telegram Bridge", version=APP_VERSION, lifespan=lifespan)
