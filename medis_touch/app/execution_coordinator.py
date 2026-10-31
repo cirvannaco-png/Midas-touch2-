@@ -24,7 +24,7 @@ from .venue import ExecutionVenue
 class GovernedExecutionCoordinator:
     """Single path from authorized Midas decision to measured execution outcome."""
 
-    def __init__(self, venue: ExecutionVenue, config: ExecutionConfig, *, approved_hash: str | None, evidence_passed: bool, portfolio_admission: PersistentPortfolioAdmission | None = None, admission_scope: str = "default", recovery_journal: ExecutionRecoveryJournal | None = None, execution_environment: str = "LIVE") -> None:
+    def __init__(self, venue: ExecutionVenue, config: ExecutionConfig, *, approved_hash: str | None, evidence_passed: bool, portfolio_admission: PersistentPortfolioAdmission | None = None, admission_scope: str = "default", recovery_journal: ExecutionRecoveryJournal | None = None, execution_environment: str = "LIVE", ai_approval_secret: str | bytes | None = None) -> None:
         if not promotion_allowed(challenger=config, approved_hash=approved_hash, evidence_passed=evidence_passed):
             raise PermissionError("execution configuration is not approved")
         if not admission_scope:
@@ -41,6 +41,7 @@ class GovernedExecutionCoordinator:
         if normalized_environment not in {"DEMO", "LIVE"}:
             raise ValueError("execution_environment must be DEMO or LIVE")
         self.execution_environment = normalized_environment
+        self.ai_approval_secret = ai_approval_secret
         self._local_reservations = RiskReservationBook()
 
     def _lineage_fingerprint(self, order: ExecutionOrder, regime: str) -> str:
@@ -157,6 +158,7 @@ class GovernedExecutionCoordinator:
             execution_environment=self.execution_environment,
             reference_price=reference_price,
             now=now or datetime.now(timezone.utc),
+            authority_secret=self.ai_approval_secret,
         )
         return self.execute(
             order,

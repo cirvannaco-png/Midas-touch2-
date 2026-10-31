@@ -3,7 +3,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from medis_touch.app.ai_execution_authorization import AIExecutionApproval, authorize_ai_execution
+from medis_touch.app.ai_execution_authorization import (
+    AIExecutionApproval,
+    authorize_ai_execution,
+    sign_ai_execution_approval,
+)
 from medis_touch.app.execution_coordinator import GovernedExecutionCoordinator
 from medis_touch.app.execution_governance import ExecutionConfig
 from medis_touch.app.execution_models import ExecutionOrder, ExecutionPolicy, OrderStatus
@@ -12,6 +16,7 @@ from medis_touch.app.venue import SimulatedVenue
 
 
 NOW = datetime(2026, 10, 31, 8, 0, tzinfo=timezone.utc)
+AUTHORITY_SECRET = "ci-test-secret-that-is-at-least-thirty-two-bytes-long"
 
 
 def _approval(**changes):
@@ -31,7 +36,9 @@ def _approval(**changes):
         expires_at=NOW + timedelta(minutes=2),
         explicit_user_consent=True,
     )
-    return replace(base, **changes)
+    signed = sign_ai_execution_approval(base, authority_secret=AUTHORITY_SECRET)
+    unsigned = replace(base, **changes) if changes else base
+    return sign_ai_execution_approval(unsigned, authority_secret=AUTHORITY_SECRET)
 
 
 def _order(**changes):
@@ -52,7 +59,7 @@ def _order(**changes):
 def test_ai_execution_requires_exact_fresh_user_approved_demo_intent():
     authorize_ai_execution(
         _order(), _approval(), execution_environment="DEMO",
-        reference_price=100.0, now=NOW,
+        reference_price=100.0, now=NOW, authority_secret=AUTHORITY_SECRET,
     )
 
 
@@ -83,7 +90,7 @@ def test_ai_execution_denies_invalid_or_overreaching_approval(approval, environm
     with pytest.raises(PermissionError, match=match):
         authorize_ai_execution(
             order, approval, execution_environment=environment,
-            reference_price=price, now=NOW,
+            reference_price=price, now=NOW, authority_secret=AUTHORITY_SECRET,
         )
 
 
@@ -95,6 +102,7 @@ def test_coordinator_ai_entry_point_still_runs_risk_oms_and_reconciliation():
         approved_hash=config.config_hash,
         evidence_passed=True,
         execution_environment="DEMO",
+        ai_approval_secret=AUTHORITY_SECRET,
     )
     outcome, _ = coordinator.execute_ai(
         _order(),
@@ -133,3 +141,23 @@ def test_coordinator_ai_entry_point_refuses_live_environment():
             regime="normal",
             now=NOW,
         )
+
+
+def test_ai_execution_rejects_unsigned_or_tampered_approval():
+    approval = _approval()
+    with pytest.raises(PermissionError, match="signature is invalid"):
+        authorize_ai_execution(
+            _order(), replace(approval, signature="0" * 64),
+            execution_environment="DEMO", reference_price=100.0,
+            now=NOW, authority_secret=AUTHORITY_SECRET,
+        )
+    with pytest.raises(PermissionError, match="not configured"):
+        authorize_ai_execution(
+            _order(), approval, execution_environment="DEMO",
+            reference_price=100.0, now=NOW, authority_secret=None,
+        )
+
+
+def test_ai_execution_approval_signer_rejects_short_authority_secret():
+    with pytest.raises(ValueError, match="at least 32 bytes"):
+        sign_ai_execution_approval(_approval(), authority_secret="too-short")
