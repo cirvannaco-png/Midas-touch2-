@@ -23,7 +23,7 @@ def _context(dataset_hash):
         "ea_source_sha": "a" * 40,
         "ea_build": "build-1",
         "terminal_build": "terminal-1",
-        "data_vendor": "Exness",
+        "data_vendor": "Generic MT5 test feed",
         "spread_model": "real_ticks",
         "spread_points": None,
         "commission_per_lot": 7.0,
