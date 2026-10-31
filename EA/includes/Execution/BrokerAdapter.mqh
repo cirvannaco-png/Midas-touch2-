@@ -294,7 +294,6 @@ bool CBrokerAdapter::ConfigureSymbolFilling(string symbol)
    return true;
   }
 //+------------------------------------------------------------------+
-//+------------------------------------------------------------------+
 bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,ulong &ticketOut,double &fillPriceOut,string comment)
   {
    ticketOut=0; fillPriceOut=0.0;
