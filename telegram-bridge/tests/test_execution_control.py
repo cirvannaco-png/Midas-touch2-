@@ -312,8 +312,8 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
         async with factory() as session:
             request_id, heat, over_limit = await reconcile_open_position(
                 session,
-                portfolio_key="Exness:123:magic-77",
-                request_id="brokerpos:Exness:123:magic-77:9001",
+                portfolio_key="GenericMT5:123:magic-77",
+                request_id="brokerpos:GenericMT5:123:magic-77:9001",
                 broker_position_id="9001",
                 broker_order_id="8001",
                 broker_deal_id="7001",
@@ -324,7 +324,7 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
                 factors={"usd": 1.0},
                 evidence_ref="mt5-position-snapshot:9001",
             )
-            assert request_id == "brokerpos:Exness:123:magic-77:9001"
+            assert request_id == "brokerpos:GenericMT5:123:magic-77:9001"
             assert heat == 1.0
             assert not over_limit
             await session.commit()
@@ -332,7 +332,7 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
         async with factory() as session:
             request_id, heat, over_limit = await reconcile_open_position(
                 session,
-                portfolio_key="Exness:123:magic-77",
+                portfolio_key="GenericMT5:123:magic-77",
                 request_id="unused-request-id",
                 broker_position_id="9001",
                 broker_order_id="8001",
@@ -344,7 +344,7 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
                 factors={"usd": 0.4},
                 evidence_ref="mt5-restart-snapshot:9001",
             )
-            assert request_id == "brokerpos:Exness:123:magic-77:9001"
+            assert request_id == "brokerpos:GenericMT5:123:magic-77:9001"
             assert heat == 0.4
             assert not over_limit
             await session.commit()
@@ -353,7 +353,7 @@ async def test_startup_position_sync_adopts_and_then_updates_existing_risk():
             rows = (
                 await session.execute(
                     select(PortfolioReservation).where(
-                        PortfolioReservation.portfolio_key == "Exness:123:magic-77"
+                        PortfolioReservation.portfolio_key == "GenericMT5:123:magic-77"
                     )
                 )
             ).scalars().all()
@@ -371,8 +371,8 @@ async def test_partial_close_updates_risk_and_full_close_releases_reservation():
         async with factory() as session:
             await reconcile_open_position(
                 session,
-                portfolio_key="Exness:123:magic-78",
-                request_id="brokerpos:Exness:123:magic-78:9002",
+                portfolio_key="GenericMT5:123:magic-78",
+                request_id="brokerpos:GenericMT5:123:magic-78:9002",
                 broker_position_id="9002",
                 broker_order_id="8002",
                 broker_deal_id="7003",
@@ -388,7 +388,7 @@ async def test_partial_close_updates_risk_and_full_close_releases_reservation():
         async with factory() as session:
             assert await update_position_risk(
                 session,
-                portfolio_key="Exness:123:magic-78",
+                portfolio_key="GenericMT5:123:magic-78",
                 broker_position_id="9002",
                 direction="SELL",
                 risk_r=0.6,
@@ -401,14 +401,14 @@ async def test_partial_close_updates_risk_and_full_close_releases_reservation():
         async with factory() as session:
             reservation = await session.scalar(
                 select(PortfolioReservation).where(
-                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-78:9002"
+                    PortfolioReservation.request_id == "brokerpos:GenericMT5:123:magic-78:9002"
                 )
             )
             assert reservation.risk_r == 0.6
             assert reservation.status == "ACTIVE"
             assert await reconcile_closed_position(
                 session,
-                portfolio_key="Exness:123:magic-78",
+                portfolio_key="GenericMT5:123:magic-78",
                 broker_position_id="9002",
                 broker_deal_id="7005",
                 evidence_ref="mt5-position-closed:7005",
@@ -418,7 +418,7 @@ async def test_partial_close_updates_risk_and_full_close_releases_reservation():
         async with factory() as session:
             reservation = await session.scalar(
                 select(PortfolioReservation).where(
-                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-78:9002"
+                    PortfolioReservation.request_id == "brokerpos:GenericMT5:123:magic-78:9002"
                 )
             )
             assert reservation.status == "RELEASED"
@@ -524,8 +524,8 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
         async with factory() as session:
             request_id, heat, over_limit = await reconcile_open_position(
                 session,
-                portfolio_key="Exness:123:magic-79",
-                request_id="brokerpos:Exness:123:magic-79:9003",
+                portfolio_key="GenericMT5:123:magic-79",
+                request_id="brokerpos:GenericMT5:123:magic-79:9003",
                 broker_position_id="9003",
                 broker_order_id="8003",
                 broker_deal_id="7006",
@@ -536,7 +536,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
                 factors={"usd": 0.0},
                 evidence_ref="mt5-breakeven-position:9003",
             )
-            assert request_id == "brokerpos:Exness:123:magic-79:9003"
+            assert request_id == "brokerpos:GenericMT5:123:magic-79:9003"
             assert heat == 0.0
             assert not over_limit
             await session.commit()
@@ -544,7 +544,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
         async with factory() as session:
             updated = await update_position_risk(
                 session,
-                portfolio_key="Exness:123:magic-79",
+                portfolio_key="GenericMT5:123:magic-79",
                 broker_position_id="9003",
                 direction="BUY",
                 risk_r=0.0,
@@ -558,7 +558,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
         async with factory() as session:
             reservation = await session.scalar(
                 select(PortfolioReservation).where(
-                    PortfolioReservation.request_id == "brokerpos:Exness:123:magic-79:9003"
+                    PortfolioReservation.request_id == "brokerpos:GenericMT5:123:magic-79:9003"
                 )
             )
             assert reservation is not None
@@ -569,7 +569,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
             with pytest.raises(ValueError, match="greater than zero"):
                 await reserve_execution(
                     session,
-                    portfolio_key="Exness:123:magic-79",
+                    portfolio_key="GenericMT5:123:magic-79",
                     request_id="must-not-reserve-zero-risk",
                     signal_id="signal-zero-risk",
                     symbol="EURUSD",
