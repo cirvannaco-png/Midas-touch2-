@@ -17,6 +17,8 @@ NOW = datetime(2026, 10, 31, 8, 0, tzinfo=timezone.utc)
 def _approval(**changes):
     base = AIExecutionApproval(
         approval_id="approval-001",
+        approved_order_id="ai-order-001",
+        idempotency_key="ai-idem-001",
         principal_id="account-owner-1",
         approved_by="account-owner-1",
         environment="DEMO",
@@ -41,7 +43,7 @@ def _order(**changes):
         "quantity": 0.02,
         "policy": ExecutionPolicy.MARKET,
         "idempotency_key": "ai-idem-001",
-        "metadata": {"origin": "AI", "approval_id": "approval-001"},
+        "metadata": {"origin": "AI", "approval_id": "approval-001", "principal_id": "account-owner-1"},
     }
     values.update(changes)
     return ExecutionOrder(**values)
@@ -59,6 +61,7 @@ def test_ai_execution_requires_exact_fresh_user_approved_demo_intent():
     [
         (_approval(explicit_user_consent=False), "DEMO", _order(), 100.0, "explicit user consent"),
         (_approval(expires_at=NOW), "DEMO", _order(), 100.0, "not currently valid"),
+        (_approval(expires_at=NOW + timedelta(minutes=10)), "DEMO", _order(), 100.0, "cannot exceed five minutes"),
         (_approval(issued_at=NOW + timedelta(seconds=1)), "DEMO", _order(), 100.0, "not currently valid"),
         (_approval(action="CLOSE_ALL"), "DEMO", _order(), 100.0, "not allowlisted"),
         (_approval(environment="LIVE"), "DEMO", _order(), 100.0, "demo environment"),
@@ -68,6 +71,11 @@ def test_ai_execution_requires_exact_fresh_user_approved_demo_intent():
         (_approval(max_notional=1.0), "DEMO", _order(), 100.0, "notional exceeds"),
         (_approval(), "LIVE", _order(), 100.0, "demo environment"),
         (_approval(), "DEMO", _order(idempotency_key=None), 100.0, "idempotency key"),
+        (_approval(approved_order_id="other-order"), "DEMO", _order(), 100.0, "exact order and idempotency key"),
+        (_approval(idempotency_key="other-idem"), "DEMO", _order(), 100.0, "exact order and idempotency key"),
+        (_approval(), "DEMO", _order(metadata={"origin": "AI", "approval_id": "wrong", "principal_id": "account-owner-1"}), 100.0, "identity does not match"),
+        (_approval(), "DEMO", _order(metadata={"origin": "AI", "approval_id": "approval-001", "principal_id": "different"}), 100.0, "principal does not match"),
+        (_approval(), "DEMO", _order(metadata={"origin": "external", "approval_id": "approval-001", "principal_id": "account-owner-1"}), 100.0, "identity does not match"),
         (_approval(), "DEMO", _order(metadata={"origin": "AI", "bypass_ledger": True}), 100.0, "bypass governance"),
     ],
 )

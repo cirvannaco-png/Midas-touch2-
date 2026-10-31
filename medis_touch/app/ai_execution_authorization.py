@@ -15,6 +15,8 @@ from .execution_models import ExecutionOrder
 @dataclass(frozen=True)
 class AIExecutionApproval:
     approval_id: str
+    approved_order_id: str
+    idempotency_key: str
     principal_id: str
     approved_by: str
     environment: str
@@ -42,6 +44,12 @@ def authorize_ai_execution(
         raise PermissionError("AI execution requires a principal, approval, and idempotency key")
     if approval.approved_by != approval.principal_id:
         raise PermissionError("AI execution approval is not bound to the requesting principal")
+    if approval.approved_order_id != order.order_id or approval.idempotency_key != order.idempotency_key:
+        raise PermissionError("AI execution approval is not bound to this exact order and idempotency key")
+    if order.metadata.get("origin") != "AI" or order.metadata.get("approval_id") != approval.approval_id:
+        raise PermissionError("AI execution approval identity does not match the order metadata")
+    if order.metadata.get("principal_id") != approval.principal_id:
+        raise PermissionError("AI execution approval principal does not match the order metadata")
     if approval.explicit_user_consent is not True:
         raise PermissionError("explicit user consent is required for AI execution")
     if approval.action != "OPEN_ORDER":
@@ -59,6 +67,8 @@ def authorize_ai_execution(
     current = now.timestamp()
     if issued > current or expires <= current or expires <= issued:
         raise PermissionError("AI execution approval is not currently valid")
+    if expires - issued > 300:
+        raise PermissionError("AI execution approval validity window cannot exceed five minutes")
     if not all(math.isfinite(value) for value in (order.quantity, reference_price, approval.max_quantity, approval.max_notional)):
         raise PermissionError("AI order and approval limits must be finite")
     if order.quantity <= 0 or reference_price <= 0 or approval.max_quantity <= 0 or approval.max_notional <= 0:

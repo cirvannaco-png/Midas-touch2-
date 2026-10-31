@@ -706,3 +706,26 @@ async def test_position_stop_modification_rejects_widening_or_out_of_order_event
                 )
     finally:
         await engine.dispose()
+
+
+def test_position_risk_request_accepts_complete_stop_snapshot_and_rejects_partial_pair():
+    from pydantic import ValidationError
+
+    from app.api.execution_ledger import PositionRiskUpdateRequest
+
+    base = {
+        "portfolio_key": "demo:login:magic",
+        "broker_position_id": "position-model-test",
+        "direction": "BUY",
+        "risk_r": 0.2,
+        "volatility": 0.8,
+        "factors": {},
+        "evidence_ref": "mt5-stop-event",
+    }
+    request = PositionRiskUpdateRequest(
+        **base, previous_stop=1950.0, current_stop=1960.0
+    )
+    assert request.previous_stop == 1950.0
+    assert request.current_stop == 1960.0
+    with pytest.raises(ValidationError):
+        PositionRiskUpdateRequest(**base, previous_stop=1950.0)
