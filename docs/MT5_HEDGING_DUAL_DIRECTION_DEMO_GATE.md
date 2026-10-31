@@ -1,6 +1,6 @@
 # MidasTouch2 — broker-neutral MT5 opposing-position demo validation gate
 
-Status: **not yet run against an selected MT5-compatible broker demo terminal**. CI tests below exercise deterministic policy only; they do not create broker positions.
+Status: **not yet run against a selected-broker MT5 demo terminal**. CI tests below exercise deterministic policy only; they do not create broker positions.
 
 ## 1. Preconditions
 
