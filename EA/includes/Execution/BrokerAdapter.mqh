@@ -131,7 +131,7 @@ bool CBrokerAdapter::IsConnected()
    Print("MedisTouch BrokerAdapter: terminal not connected to the trade server — refusing to submit.");
    return false;
   }
-//+
+//+------------------------------------------------------------------+
 bool CBrokerAdapter::ConfigureFillingForSymbol(string symbol)
   {
    if(StringLen(symbol)==0)
@@ -392,7 +392,6 @@ bool CBrokerAdapter::PlaceLimit(string symbol,ENUM_ORDER_TYPE type,double volume
 bool CBrokerAdapter::CancelOrder(ulong ticket)
   {
    if(!IsConnected() || ticket==0 || !OrderSelect(ticket)) return false;
-   string symbol=OrderGetString(ORDER_SYMBOL);
    if((ulong)OrderGetInteger(ORDER_MAGIC)!=m_magic)
      {
       PrintFormat("MedisTouch BrokerAdapter: CancelOrder refused for foreign magic order #%I64u.",ticket);
