@@ -73,7 +73,7 @@ This is a meaningful integration, but not yet proof of full runtime correctness.
 - Latest full CI run `38412496473` on code commit `794dd77ee03f7858e40af9cc21b3437b414f0e34` passed: Python bridge tests, research-tool tests, PostgreSQL migration upgrade/downgrade/re-upgrade, bridge quality/security, handbook tests, and MQL5 structural validation.
 - Latest MetaEditor compile run `38412497445` on the same code commit passed with **0 errors and 0 warnings**.
 - CI's MQL5 structural validator is separate from the successful MetaEditor compiler.
-- No MT5 Strategy Tester report, Exness demo-broker order/close test, or live terminal restart/fault-injection evidence has been produced yet. These require a controlled tester dataset and an authorized demo account; the GitHub compiler runner alone cannot establish them.
+- No MT5 Strategy Tester report, selected-broker demo order/close test, or live terminal restart/fault-injection evidence has been produced yet. These require a controlled tester dataset and an authorized demo account; the GitHub compiler runner alone cannot establish them.
 
 ## Release decision
 
