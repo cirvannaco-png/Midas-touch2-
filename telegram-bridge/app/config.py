@@ -17,18 +17,12 @@ class Settings(BaseSettings):
     GROUP_CHAT_ID: str = ""
     SECRET_KEY: str
     BRIDGE_API_KEY: str | None = None
-    MT5_EXECUTION_API_KEY: str = ""
 
     @model_validator(mode="after")
     def _validate_bridge_api_key_alias(self):
         """One credential must authenticate GitHub maintenance and bridge routes."""
         if self.BRIDGE_API_KEY and not secrets.compare_digest(self.SECRET_KEY, self.BRIDGE_API_KEY):
             raise ValueError("BRIDGE_API_KEY and SECRET_KEY must be identical when both are configured")
-        bridge_key = self.BRIDGE_API_KEY or self.SECRET_KEY
-        if self.MT5_EXECUTION_API_KEY and len(self.MT5_EXECUTION_API_KEY) < 32:
-            raise ValueError("MT5_EXECUTION_API_KEY must contain at least 32 characters")
-        if self.MT5_EXECUTION_API_KEY and secrets.compare_digest(bridge_key, self.MT5_EXECUTION_API_KEY):
-            raise ValueError("MT5_EXECUTION_API_KEY must be distinct from the general bridge API key")
         return self
 
     @property
