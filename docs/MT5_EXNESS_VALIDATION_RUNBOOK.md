@@ -1,11 +1,15 @@
-# MT5 Strategy Tester + Exness Demo Validation Runbook
+# MT5 Strategy Tester + Selected-Broker Demo Validation Runbook
 
 Status: execution procedure only. No performance test or broker test is claimed by this document.
+
+## Broker-neutral scope
+
+This procedure applies to any broker connected through the standard MetaTrader 5 terminal. The operator selects the broker/account. Record that account's actual server, symbol contract, account currency, leverage, margin mode, spread, commission, swap, fill policy, slippage and timezone; do not reuse another broker's assumptions.
 
 ## Safety boundary
 
 - Keep PR #82 draft/unmerged. Do not merge, deploy, or enable live trading based on compilation, structural checks, or policy unit tests.
-- Use a dedicated Exness **demo** account. Never place credentials, account numbers, API keys, investor passwords, or unredacted account statements in GitHub artifacts or issue comments.
+- Use a dedicated demo account with the selected MT5-compatible broker. Never place credentials, account numbers, API keys, investor passwords, or unredacted account statements in GitHub artifacts or issue comments.
 - Record the exact EA source commit, compiled EA build, terminal build, symbol specification, and tester configuration before the first run.
 - Preserve the current production trailing-stop default and all existing emergency-stop and account-risk safeguards.
 - If the terminal build, broker symbol properties, history quality, or cost assumptions cannot be verified, mark the run BLOCKED; do not fill missing facts with estimates.
