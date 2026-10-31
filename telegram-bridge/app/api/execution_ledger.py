@@ -127,7 +127,6 @@ async def transition(
     body: TransitionRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         transitioned = await transition_execution(
@@ -150,7 +149,6 @@ async def transition(
 async def recover_expired(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     count = await recover_expired_leases(session)
     await session.commit()
@@ -241,7 +239,6 @@ async def sync_position(
     body: BrokerPositionSyncRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         request_id, heat_r, over_limit = await reconcile_open_position(
@@ -281,7 +278,6 @@ async def position_modification_prepare(
     body: PositionModificationPrepareRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         authorize_execution_origin(body.requested_by, "MODIFY_POSITION")
@@ -316,7 +312,6 @@ async def position_modification_confirm(
     body: PositionModificationConfirmRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         authorize_execution_origin(body.requested_by, "MODIFY_POSITION")
@@ -348,7 +343,6 @@ async def position_risk_update(
     body: PositionRiskUpdateRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         updated = await update_position_risk(
@@ -376,7 +370,6 @@ async def position_closed(
     body: ClosedPositionRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         reconciled = await reconcile_closed_position(
@@ -402,7 +395,6 @@ async def sync_live_pending_order(
     body: PendingOrderSyncRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         request_id, heat_r, over_limit = await sync_pending_order(
@@ -437,7 +429,6 @@ async def order_terminal(
     body: TerminalOrderRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         terminal = await reconcile_terminal_order(
@@ -462,7 +453,6 @@ async def sync_closed_position(
     body: ClosedPositionRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     """Replay historical closure evidence after an EA/terminal restart.
 
@@ -519,7 +509,6 @@ async def ingest_deal_event(
     body: DealEventRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     """Persist each broker deal once and reconcile the latest observed position.
 
