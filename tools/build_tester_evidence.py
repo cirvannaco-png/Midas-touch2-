@@ -311,7 +311,13 @@ def _validate_folds(manifest: dict[str, Any], period_start: datetime, oos_start:
             "validation_start": validation_start,
             "validation_end": validation_end,
         })
-    return sorted(normalized, key=lambda item: item["fold_id"])
+    ordered = sorted(normalized, key=lambda item: item["fold_id"])
+    for previous, current in zip(ordered, ordered[1:]):
+        if previous["validation_end"] > current["validation_start"]:
+            raise BuildEvidenceError(
+                "validation windows across chronological folds must not overlap or run backwards"
+            )
+    return ordered
 
 
 def _contains(timestamp: datetime, start: datetime, end: datetime) -> bool:
@@ -416,9 +422,13 @@ def _normalize_neighbors(
     neighbors: object,
     manifest: dict[str, Any],
     provenance: dict[str, Any],
-    oos_start: datetime,
-    oos_end: datetime,
+    folds: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build parameter-neighbor robustness only from chronological validation rows.
+
+    Locked OOS rows are deliberately excluded from this computation. Their
+    observations are reserved for the one-time final candidate evaluation.
+    """
     if not isinstance(neighbors, list):
         raise BuildEvidenceError("parameter_neighbors must be a JSON array")
     normalized = []
@@ -437,22 +447,30 @@ def _normalize_neighbors(
             raise BuildEvidenceError(f"parameter neighbor {index} report_sha256 does not match its report file")
         rows = _load_csv(csv_path, manifest)
         neighbor_trades = []
+        excluded_non_validation = 0
         for row in rows:
             timestamp = row["timestamp"]
             resolved_at = row["resolved_at"]
-            if not _contains(timestamp, oos_start, oos_end):
-                continue
-            if resolved_at >= oos_end:
-                continue
             if row["outcome"] not in {"win", "loss", "scratch"}:
                 continue
-            neighbor_trades.append({
-                "trade_id": row["trade_id"],
-                "timestamp": _iso(timestamp),
-                "resolved_at": _iso(resolved_at),
-                "outcome": row["outcome"],
-                "realized_r": row["realized_r"],
-            })
+            matched_validation = False
+            for fold in folds:
+                if _contains(timestamp, fold["validation_start"], fold["validation_end"]):
+                    matched_validation = True
+                    if resolved_at >= fold["validation_end"]:
+                        excluded_non_validation += 1
+                        break
+                    neighbor_trades.append({
+                        "trade_id": row["trade_id"],
+                        "fold_id": fold["fold_id"],
+                        "timestamp": _iso(timestamp),
+                        "resolved_at": _iso(resolved_at),
+                        "outcome": row["outcome"],
+                        "realized_r": row["realized_r"],
+                    })
+                    break
+            if not matched_validation:
+                excluded_non_validation += 1
         normalized.append({
             "parameters": parameters,
             "report_sha256": report_hash,
@@ -468,7 +486,8 @@ def _normalize_neighbors(
         summaries.append({
             "index": index,
             "csv_rows": len(rows),
-            "locked_oos_resolved_rows": len(neighbor_trades),
+            "validation_resolved_rows": len(neighbor_trades),
+            "non_validation_rows_excluded": excluded_non_validation,
             "report_sha256": report_hash,
             "outcome_csv_sha256": _digest_file(csv_path),
         })
@@ -531,7 +550,7 @@ def build_evidence(manifest_path: str | Path) -> tuple[dict[str, Any], dict[str,
     for key in ("period_start", "period_end", "locked_oos_start", "locked_oos_end", "generated_at"):
         api_provenance[key] = _iso(_parse_datetime(api_provenance[key], f"provenance.{key}"))
     neighbor_payload, neighbor_summary = _normalize_neighbors(
-        path, manifest.get("parameter_neighbors", []), manifest, api_provenance, oos_start, oos_end,
+        path, manifest.get("parameter_neighbors", []), manifest, api_provenance, folds,
     )
     payload = {
         "strategy": manifest["strategy"],

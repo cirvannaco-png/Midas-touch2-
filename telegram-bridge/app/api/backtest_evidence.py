@@ -157,6 +157,7 @@ class TesterTrade(StrictModel):
 
 class NeighborTrade(StrictModel):
     trade_id: str = Field(min_length=1, max_length=160)
+    fold_id: int = Field(ge=1, le=1000)
     timestamp: datetime
     resolved_at: datetime
     outcome: Literal["win", "loss", "scratch"]
@@ -496,15 +497,37 @@ async def ingest_backtest_evidence(
 
     folds: list[dict[str, Any]] = []
     fold_verdicts: list[str] = []
-    for fold_id in sorted(grouped):
+    ordered_fold_ids = sorted(grouped)
+    validation_windows: dict[int, tuple[datetime, datetime]] = {}
+    holdout_start = min(row.timestamp for row in holdout) if holdout else payload.provenance.locked_oos_start
+    for index, fold_id in enumerate(ordered_fold_ids):
         fold_train = grouped[fold_id]["train"]
         fold_validation = grouped[fold_id]["validation"]
         if not fold_train or not fold_validation:
             raise HTTPException(status_code=422, detail=f"fold {fold_id} must have train and validation rows")
-        if max(row.timestamp for row in fold_train) >= min(row.timestamp for row in fold_validation):
+        validation_start = min(row.timestamp for row in fold_validation)
+        if max(row.timestamp for row in fold_train) >= validation_start:
             raise HTTPException(status_code=422, detail=f"fold {fold_id} violates train-before-validation chronology")
-        if max(row.timestamp for row in fold_validation) >= min(row.timestamp for row in holdout):
-            raise HTTPException(status_code=422, detail="locked_oos must start after every walk-forward validation window")
+        if max(row.resolved_at for row in fold_train) >= validation_start:
+            raise HTTPException(
+                status_code=422,
+                detail=f"fold {fold_id} training outcome matures after validation begins; purge it before scoring",
+            )
+        next_validation_start = (
+            min(row.timestamp for row in grouped[ordered_fold_ids[index + 1]]["validation"])
+            if index + 1 < len(ordered_fold_ids) else holdout_start
+        )
+        if max(row.timestamp for row in fold_validation) >= next_validation_start:
+            raise HTTPException(
+                status_code=422,
+                detail=f"fold {fold_id} validation window overlaps the next chronological fold or locked OOS",
+            )
+        if max(row.resolved_at for row in fold_validation) >= next_validation_start:
+            raise HTTPException(
+                status_code=422,
+                detail=f"fold {fold_id} validation outcome matures after the next validation/OOS window begins",
+            )
+        validation_windows[fold_id] = (validation_start, next_validation_start)
         verdict = _fold_verdict(fold_train, fold_validation)
         fold_verdicts.append(verdict)
         folds.append({
@@ -513,8 +536,9 @@ async def ingest_backtest_evidence(
             "validation": _summarize(fold_validation),
             "verdict": verdict,
             "train_end": max(row.timestamp for row in fold_train).isoformat(),
-            "validation_start": min(row.timestamp for row in fold_validation).isoformat(),
+            "validation_start": validation_start.isoformat(),
             "validation_end": max(row.timestamp for row in fold_validation).isoformat(),
+            "validation_window_end_exclusive": next_validation_start.isoformat(),
         })
     if len(folds) < MIN_WALK_FORWARD_FOLDS:
         raise HTTPException(status_code=422, detail=f"at least {MIN_WALK_FORWARD_FOLDS} walk-forward folds are required")
@@ -587,15 +611,21 @@ async def ingest_backtest_evidence(
                 status_code=422,
                 detail="parameter-neighbor evidence must use the same data digest, EA/terminal build, and historical period",
             )
-        if any(
-            not payload.provenance.locked_oos_start <= row.timestamp < payload.provenance.locked_oos_end
-            or row.resolved_at >= payload.provenance.locked_oos_end
-            for row in neighbor.trades
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail="parameter-neighbor trade entry/resolution is outside the common locked OOS window",
-            )
+        for row in neighbor.trades:
+            window = validation_windows.get(row.fold_id)
+            if (
+                window is None
+                or not window[0] <= row.timestamp < window[1]
+                or row.resolved_at >= window[1]
+                or row.resolved_at >= payload.provenance.locked_oos_start
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "parameter-neighbor trades must be resolved inside the matching "
+                        "chronological validation fold; locked OOS is not an optimization input"
+                    ),
+                )
         neighbor_ids = [row.trade_id for row in neighbor.trades]
         if len(neighbor_ids) != len(set(neighbor_ids)):
             raise HTTPException(status_code=422, detail=f"duplicate trade_id in neighbor configuration {neighbor_hash}")
@@ -612,10 +642,10 @@ async def ingest_backtest_evidence(
             neighbor_summary["resolved_trades"] >= MIN_OOS_TRADES
             and neighbor_summary["profit_factor"] >= 1.0
             and neighbor_expectancy is not None
-            and oos_expectancy is not None
-            and oos_expectancy > 0
+            and validation_expectancy is not None
+            and validation_expectancy > 0
             and neighbor_expectancy > 0
-            and abs(float(neighbor_expectancy) - float(oos_expectancy)) / abs(float(oos_expectancy)) <= MAX_PARAMETER_NEIGHBOR_DEGRADATION
+            and abs(float(neighbor_expectancy) - float(validation_expectancy)) / abs(float(validation_expectancy)) <= MAX_PARAMETER_NEIGHBOR_DEGRADATION
         ):
             stable_neighbors.append(neighbor_record)
 
@@ -749,6 +779,7 @@ async def ingest_backtest_evidence(
         "oos_degradation": round(float(oos_degradation), 8),
         "parameter_degradation": round(float(parameter_degradation), 8),
         "parameter_stability": round(float(parameter_stability), 8),
+        "parameter_stability_source_partition": "validation",
         "walk_forward_verdicts": fold_verdicts,
         "feature_importance_complete": features_complete,
         "clustered_mda_complete": clustered_complete,
@@ -770,6 +801,7 @@ async def ingest_backtest_evidence(
     }
     risk_metrics = {
         "locked_oos_max_drawdown_r": oos_summary["max_drawdown_r"],
+        "parameter_stability_source_partition": "validation",
         "locked_oos_profit_factor": oos_summary["profit_factor"],
         "oos_degradation": round(float(oos_degradation), 8),
         "parameter_degradation": round(float(parameter_degradation), 8),

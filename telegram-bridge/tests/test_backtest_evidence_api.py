@@ -88,9 +88,10 @@ def _valid_payload():
                 "period_start": start.isoformat(),
                 "period_end": (start + timedelta(days=100)).isoformat(),
                 "trades": [{
-                    "trade_id": f"neighbor-holdout-{i}",
-                    "timestamp": (start + timedelta(days=60 + i)).isoformat(),
-                    "resolved_at": (start + timedelta(days=60 + i, minutes=1)).isoformat(),
+                    "trade_id": f"neighbor-validation-{i}",
+                    "fold_id": 1 if i < 10 else (2 if i < 20 else 3),
+                    "timestamp": (start + timedelta(days=21 + i)).isoformat(),
+                    "resolved_at": (start + timedelta(days=21 + i, minutes=1)).isoformat(),
                     "outcome": "win" if i % 5 != 0 else "loss",
                     "realized_r": 0.5 if i % 5 != 0 else -0.5,
                 } for i in range(30)],
@@ -295,3 +296,54 @@ def test_backtest_evidence_rejects_null_spread_points_for_fixed_spread(client, a
 
     assert response.status_code == 422
     assert "spread_points may be null" in response.text
+
+
+def test_parameter_neighbor_robustness_is_measured_on_validation_not_locked_oos(client, auth_headers):
+    payload = _valid_payload()
+    for row in payload["trades"]:
+        if row["partition"] == "locked_oos":
+            row["outcome"] = "loss"
+            row["realized_r"] = -0.5
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+    assert response.status_code == 200, response.text
+    evidence = response.json()["validation_evidence"]
+    assert evidence["parameter_stability_source_partition"] == "validation"
+    assert evidence["parameter_stability"] == 1.0
+
+
+def test_parameter_neighbor_evidence_rejects_locked_oos_rows(client, auth_headers):
+    payload = _valid_payload()
+    payload["parameter_neighbors"][0]["trades"][0]["timestamp"] = (
+        datetime.fromisoformat(payload["provenance"]["locked_oos_start"]) + timedelta(minutes=1)
+    ).isoformat()
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+    assert response.status_code == 422
+    assert "locked OOS is not an optimization input" in response.text
+
+
+def test_training_outcome_maturing_after_validation_begins_is_purged(client, auth_headers):
+    payload = _valid_payload()
+    train = next(
+        row for row in payload["trades"]
+        if row["partition"] == "train" and row["fold_id"] == 1
+    )
+    train["resolved_at"] = (
+        datetime.fromisoformat(payload["provenance"]["period_start"]) + timedelta(days=21, minutes=1)
+    ).isoformat()
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+    assert response.status_code == 422
+    assert "training outcome matures after validation begins" in response.text
+
+
+def test_validation_outcome_maturing_after_next_fold_begins_is_rejected(client, auth_headers):
+    payload = _valid_payload()
+    validation = max(
+        (row for row in payload["trades"] if row["partition"] == "validation" and row["fold_id"] == 1),
+        key=lambda row: row["timestamp"],
+    )
+    validation["resolved_at"] = (
+        datetime.fromisoformat(payload["provenance"]["period_start"]) + timedelta(days=31, minutes=1)
+    ).isoformat()
+    response = client.post("/research/backtest-evidence", headers=auth_headers, json=payload)
+    assert response.status_code == 422
+    assert "validation outcome matures after the next validation/OOS window begins" in response.text
