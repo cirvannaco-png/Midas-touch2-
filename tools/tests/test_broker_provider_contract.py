@@ -19,7 +19,7 @@ def test_broker_execution_is_provider_agnostic_and_uses_live_mt5_capabilities() 
 
     # Match complete vendor names only; e.g. "IG" must not match "ambiguous".
     vendor_allowlist = re.compile(
-        r"\\b(?:Exness|Pepperstone|HFM|IC Markets|XM|IG|OANDA|AvaTrade|FXTM|FP Markets)\\b",
+        r"\b(?:Exness|Pepperstone|HFM|IC Markets|XM|IG|OANDA|AvaTrade|FXTM|FP Markets)\b",
         re.IGNORECASE,
     )
     assert vendor_allowlist.search(adapter) is None
