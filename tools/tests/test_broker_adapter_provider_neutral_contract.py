@@ -51,7 +51,7 @@ def test_execution_capabilities_are_discovered_from_the_selected_symbol():
         assert token in capabilities
 
 
-def test_symbol_specific_filling_policy_is_set_for_every_trade_path():
+def test_symbol_specific_filling_policy_is_resolved_fail_closed_for_every_trade_path():
     adapter = read(ADAPTER)
 
     for method in (
@@ -63,6 +63,10 @@ def test_symbol_specific_filling_policy_is_set_for_every_trade_path():
         "ClosePartial",
         "CloseFull",
     ):
-        assert "m_trade.SetTypeFillingBySymbol(symbol);" in method_body(adapter, method), method
+        assert "ConfigureSymbolFilling(symbol)" in method_body(adapter, method), method
 
-    assert "m_trade.SetTypeFillingBySymbol(_Symbol);" in adapter  # harmless chart default; request paths override it
+    configure = method_body(adapter, "ConfigureSymbolFilling")
+    assert "SymbolSelect(symbol,true)" in configure
+    assert "!m_trade.SetTypeFillingBySymbol(symbol)" in configure
+    assert "request rejected" in configure
+    assert "SetTypeFillingBySymbol(_Symbol)" not in adapter
