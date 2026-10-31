@@ -30,7 +30,7 @@ from app.execution_control import (
     update_position_risk,
 )
 from app.models import ExecutionDealEvent
-from app.routes import verify_api_key, verify_mt5_execution_key
+from app.routes import verify_api_key
 
 router = APIRouter(prefix="/execution-ledger", tags=["execution-ledger"])
 
@@ -40,7 +40,7 @@ async def execution_ledger_health(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
 ):
-    """Authenticated, non-mutating credential-pair and database readiness probe.
+    """Authenticated, non-mutating bridge-credential and database readiness probe.
 
     The response intentionally excludes credentials, connection strings, and
     database exception details. A 200 means the supplied bridge API key was
@@ -86,7 +86,6 @@ async def reserve(
     body: ReserveRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
-    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         authorize_execution_origin(body.requested_by, "RESERVE_EXECUTION")
