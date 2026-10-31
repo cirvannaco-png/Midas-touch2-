@@ -1,11 +1,10 @@
-import pytest
-
 from app.production_auth import (
     OIDC_AUDIENCE,
     OIDC_ISSUER,
     PRODUCTION_SUBJECT,
     authorize_production_workflow_claims,
 )
+import pytest
 
 
 REPOSITORY = "cirvannaco-png/Midas-touch2-"

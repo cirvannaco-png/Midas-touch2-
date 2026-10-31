@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -172,6 +172,12 @@ class PositionRiskUpdateRequest(BaseModel):
     evidence_ref: str = Field(min_length=1, max_length=256)
     previous_stop: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     current_stop: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_stop_pair(self):
+        if (self.previous_stop is None) != (self.current_stop is None):
+            raise ValueError("previous_stop and current_stop must be supplied together")
+        return self
 
 
 class ClosedPositionRequest(BaseModel):
