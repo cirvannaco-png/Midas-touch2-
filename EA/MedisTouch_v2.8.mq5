@@ -306,7 +306,9 @@ bool ParseManagedOrderComment(const string comment,long &decisionId,int &legInde
 bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legIndex,const double riskMoney,const double volatility,string &requestId);
 void MarkLedgerSubmissionAccepted(const string requestId);
 void MarkLedgerSubmissionAmbiguous(const string requestId);
-bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,const double volatility,const string evidenceRef,const double previousStop,const double currentStop);\nvoid SeedManagedPositionStopSnapshots(const bool resetSnapshots);\nbool ReconcileManagedPositionStopModifications(const double volatility);
+bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,const double volatility,const string evidenceRef,const double previousStop,const double currentStop);
+void SeedManagedPositionStopSnapshots(const bool resetSnapshots);
+bool ReconcileManagedPositionStopModifications(const double volatility);
 bool IsOrderBuyDirection(const ENUM_ORDER_TYPE orderType);
 int EffectiveMaxOpenTrades();
 bool SmallAccountRiskAdmission(bool reduceRisk,string &reasonOut);

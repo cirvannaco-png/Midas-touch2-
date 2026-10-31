@@ -94,7 +94,7 @@ def _valid_payload():
                     "resolved_at": (start + timedelta(days=21 + i, minutes=1)).isoformat(),
                     "outcome": "win" if i % 5 != 0 else "loss",
                     # Match candidate net R after the fixture's 0.12R transaction costs.
-                    "realized_r": 0.38 if i % 5 != 0 else -0.62,
+                    "realized_r": 0.5 if i % 5 != 0 else -0.5,
                 } for i in range(30)],
             }
             for neighbor_confidence in (56, 58, 62, 64, 65)
