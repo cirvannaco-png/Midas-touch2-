@@ -44,7 +44,7 @@ input group "Risk"
 input double InpMinRiskReward = 1.5;
 input double InpMaxSLDistanceATR = 1.5;
 input double InpSLBufferATR = 0.25;        // invalidation margin beyond FVG far edge, in ATR (audit #23 fix)
-input double InpMinStopSpreadMult = 3.0;   // floor: SL distance from entry never below (current spread * this) -- check against real Pepperstone/Exness spread in Tester
+input double InpMinStopSpreadMult = 3.0;   // floor: SL distance from entry never below (current spread * this) -- check against the selected MT5 broker's actual spread in Strategy Tester
 
 input group "Inducement Engine (v2.1)"
 input int    InpImpulseLookbackBars = 40;   // How far back to search for a qualifying impulse
