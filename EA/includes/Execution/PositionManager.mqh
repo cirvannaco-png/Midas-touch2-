@@ -237,8 +237,10 @@ void CPositionManager::OnTick(double currentAtr)
                double appliedTP=0.0;
                if(PositionSelectByTicket(ticket))
                  {
-                  appliedSL=PositionGetDouble(POSITION_SL);
-                  appliedTP=PositionGetDouble(POSITION_TP);
+                  double observedSL=PositionGetDouble(POSITION_SL);
+                  double observedTP=PositionGetDouble(POSITION_TP);
+                  appliedSL=observedSL;
+                  appliedTP=observedTP;
                  }
                if(appliedSL<=0.0)
                  {

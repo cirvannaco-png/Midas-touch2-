@@ -17,6 +17,7 @@ def test_restored_research_and_execution_tables_are_registered():
         "execution_ledger",
         "portfolio_reservations",
         "execution_deal_events",
+        "execution_position_modifications",
     }
     assert expected.issubset(Base.metadata.tables)
 
@@ -80,13 +81,13 @@ def test_migration_is_additive_and_follows_current_head():
         assert f'"{table}"' in source
 
 
-def test_alembic_graph_has_one_head_at_0020():
+def test_alembic_graph_has_one_head_at_0021():
     bridge_root = Path(__file__).parents[1]
     config = Config(str(bridge_root / "alembic.ini"))
     config.set_main_option("script_location", str(bridge_root / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_current_head() == "0020"
-    assert scripts.get_heads() == ["0020"]
+    assert scripts.get_current_head() == "0021"
+    assert scripts.get_heads() == ["0021"]
 
 
 def test_signal_outcomes_keep_signed_cashflows_separate_from_cost_magnitudes():

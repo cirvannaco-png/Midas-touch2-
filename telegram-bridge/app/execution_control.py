@@ -494,12 +494,12 @@ async def reconcile_open_position(
         ).scalars().all()
         for event in pending_events:
             tolerance = max(1e-8, abs(event.proposed_stop_loss) * 1e-8)
-            if event.direction == "BUY" and stop_loss >= event.proposed_stop_loss - tolerance:
-                event.status = "APPLIED"
-            elif event.direction == "SELL" and stop_loss <= event.proposed_stop_loss + tolerance:
-                event.status = "APPLIED"
-            else:
-                event.status = "SNAPSHOT_RECONCILED"
+            stop_is_protective = (
+                event.direction == "BUY" and stop_loss >= event.proposed_stop_loss - tolerance
+            ) or (
+                event.direction == "SELL" and stop_loss <= event.proposed_stop_loss + tolerance
+            )
+            event.status = "APPLIED" if stop_is_protective else "SNAPSHOT_RECONCILED"
             event.actual_stop_loss = stop_loss
             event.actual_take_profit = take_profit
             event.risk_r = risk_r

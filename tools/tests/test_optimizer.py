@@ -49,7 +49,7 @@ def test_bounded_delta_fails_closed_outside_declared_range():
 def test_candidate_selection_receives_only_strictly_chronological_development_partitions():
     from datetime import datetime, timedelta, timezone
 
-    from oos_firewall import TemporalSplit
+    from tools.oos_firewall import TemporalSplit
     from optimizer import candidate_selection_development_partitions
 
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -77,7 +77,7 @@ def test_candidate_selection_rejects_locked_oos_rows_smuggled_into_train_or_vali
 
     import pytest
 
-    from oos_firewall import OOSPurityError, TemporalSplit
+    from tools.oos_firewall import OOSPurityError, TemporalSplit
     from optimizer import candidate_selection_development_partitions
 
     start = datetime(2026, 2, 1, tzinfo=timezone.utc)
@@ -99,7 +99,7 @@ def test_candidate_selection_rejects_time_overlap_even_when_roles_are_correct():
 
     import pytest
 
-    from oos_firewall import OOSPurityError, TemporalSplit
+    from tools.oos_firewall import OOSPurityError, TemporalSplit
     from optimizer import candidate_selection_development_partitions
 
     start = datetime(2026, 3, 1, tzinfo=timezone.utc)
