@@ -844,7 +844,7 @@ def test_ai_cannot_reserve_broker_execution_even_with_a_client_supplied_actor(cl
     response = client.post(
         "/execution-ledger/reserve",
         json=payload,
-        headers={"X-API-Key": "test-secret-key", "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789"},
+        headers={"X-API-Key": "test-secret-key"},
     )
     assert response.status_code == 403
 
@@ -867,7 +867,6 @@ def test_ai_cannot_prepare_position_modification(client):
     response = client.post(
         "/execution-ledger/position-modification/prepare",
         json=payload,
-        headers={"X-API-Key": "test-secret-key", "X-MT5-Execution-Key": "test-mt5-execution-key-0123456789"},
     )
     assert response.status_code == 403
 
@@ -945,8 +944,7 @@ def test_general_bridge_key_cannot_mutate_reservations_without_mt5_capability(cl
         "/execution-ledger/reserve",
         json=payload,
         headers={
-            "X-API-Key": "test-secret-key",
-            "X-MT5-Execution-Key": "not-the-mt5-execution-secret",
+            "X-API-Key": "deliberately-invalid-bridge-key",
         },
     )
     assert response.status_code == 403
