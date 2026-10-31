@@ -10,7 +10,6 @@ class CExecutionLedgerClient
 private:
    string m_baseUrl;
    string m_apiKey;
-   string m_executionKey;
    string m_portfolioKey;
    int    m_timeoutMs;
    bool   m_ready;
@@ -40,7 +39,7 @@ private:
 
       char result[];
       string resultHeaders;
-      string headers="Content-Type: application/json\r\nX-API-Key: "+m_apiKey+"\r\nX-MT5-Execution-Key: "+m_executionKey+"\r\n";
+      string headers="Content-Type: application/json\\r\\nX-API-Key: "+m_apiKey+"\\r\\n";
       ResetLastError();
       int status=WebRequest("POST",m_baseUrl+path,headers,m_timeoutMs,data,result,resultHeaders);
       if(status==-1)
@@ -59,21 +58,18 @@ private:
      }
 
 public:
-   void Init(const string baseUrl,const string apiKey,const string executionKey,const ulong magicNumber,int timeoutMs=5000)
      {
       m_baseUrl=baseUrl;
       while(StringLen(m_baseUrl)>0 && StringSubstr(m_baseUrl,StringLen(m_baseUrl)-1,1)=="/")
          m_baseUrl=StringSubstr(m_baseUrl,0,StringLen(m_baseUrl)-1);
       m_apiKey=apiKey;
-      m_executionKey=executionKey;
       m_timeoutMs=MathMax(1000,timeoutMs);
       m_portfolioKey="";
       m_ready=false;
       m_admissionHealthy=false;
 
-      if(StringLen(m_baseUrl)<8 || StringLen(m_apiKey)==0 || StringLen(m_executionKey)<32)
         {
-         Print("Midas execution ledger: base URL, bridge API key, or distinct MT5 execution key missing; remote execution ledger is not ready.");
+          Print("Midas execution ledger: base URL or bridge API key missing; remote execution ledger is not ready.");
          return;
         }
 
