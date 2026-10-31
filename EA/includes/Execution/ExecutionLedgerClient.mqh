@@ -58,7 +58,8 @@ private:
      }
 
 public:
-     {
+    void Init(const string baseUrl,const string apiKey,const ulong magicNumber,int timeoutMs=5000)
+      {
       m_baseUrl=baseUrl;
       while(StringLen(m_baseUrl)>0 && StringSubstr(m_baseUrl,StringLen(m_baseUrl)-1,1)=="/")
          m_baseUrl=StringSubstr(m_baseUrl,0,StringLen(m_baseUrl)-1);
@@ -66,12 +67,13 @@ public:
       m_timeoutMs=MathMax(1000,timeoutMs);
       m_portfolioKey="";
       m_ready=false;
-      m_admissionHealthy=false;
+       m_admissionHealthy=false;
 
-        {
+       if(StringLen(m_baseUrl)<8 || StringLen(m_apiKey)==0)
+         {
           Print("Midas execution ledger: base URL or bridge API key missing; remote execution ledger is not ready.");
-         return;
-        }
+          return;
+         }
 
       string server=JsonSafe(AccountInfoString(ACCOUNT_SERVER));
       string login=IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN));
