@@ -12,6 +12,8 @@ Status: execution procedure only. No performance test or broker test is claimed 
 
 ## Gate A — prepare one immutable test bundle
 
+For native tester deal exports, set `InpTesterServerUtcOffsetMinutes` to the selected MT5 server's verified UTC offset in minutes. The exporter records broker-server wall-clock timestamps with an explicit ISO-8601 offset and does not label them UTC by default. Keep the offset constant within each run; split the experiment at server daylight-saving/timezone transitions. Leave the export disabled when the server offset is unknown or unverified.
+
 For native tester deal exports, set `InpTesterServerUtcOffsetMinutes` to the selected broker server's verified UTC offset in minutes. The exporter records broker-wall-clock timestamps with an explicit ISO-8601 offset and never labels them UTC with `Z` by default. The configured offset must remain constant for each run. Split test windows at daylight-saving/timezone transitions and use the verified offset for each segment. Leave evidence export disabled when the offset is unknown or cannot be verified.
 
 Create a dated folder outside the repository, for example `validation/2026-10-18/`, and retain:
