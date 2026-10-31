@@ -45,3 +45,14 @@ def test_export_observes_spread_and_preserves_unique_run_identity():
     assert 'm_runId=SafeName(runId+"_"+IntegerToString((long)GetTickCount()));' in exporter
     assert "spread_points_mean" in exporter
     assert "spread_points_max" in exporter
+
+    
+def test_export_marks_raw_deal_timestamps_as_broker_server_local_not_utc():
+    exporter = read("EA/includes/Execution/TesterDealExport.mqh")
+
+    assert "string TimeServerLocal(datetime value) const" in exporter
+    assert "timestamp_basis" in exporter
+    assert "broker_server_local" in exporter
+    assert "TimeServerLocal(row.deal_time)" in exporter
+    assert 'return stamp+"Z";' not in exporter
+    assert "Exness" not in exporter
