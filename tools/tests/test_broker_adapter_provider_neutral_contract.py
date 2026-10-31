@@ -31,6 +31,10 @@ def test_mt5_adapter_has_no_fixed_broker_brand_whitelist():
 
 def test_execution_capabilities_are_discovered_from_the_selected_symbol():
     adapter = read(ADAPTER)
+    risk = read(ROOT / "EA" / "includes" / "Trading" / "RiskEngine.mqh")
+    availability = read(ROOT / "EA" / "includes" / "Core" / "BrokerMarketAvailability.mqh")
+    portfolio = read(ROOT / "EA" / "includes" / "Portfolio" / "OpposingPositionPolicy.mqh")
+    capabilities = adapter + risk + availability + portfolio
 
     for token in (
         "SYMBOL_TRADE_MODE",
@@ -44,7 +48,7 @@ def test_execution_capabilities_are_discovered_from_the_selected_symbol():
         "SymbolInfoSessionTrade",
         "ACCOUNT_MARGIN_MODE",
     ):
-        assert token in adapter or token in read(ROOT / "EA" / "includes" / "Execution" / "PriceGridNormalizer.mqh")
+        assert token in capabilities
 
 
 def test_symbol_specific_filling_policy_is_set_for_every_trade_path():
