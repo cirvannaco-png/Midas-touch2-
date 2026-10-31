@@ -13,9 +13,12 @@ def test_broker_execution_is_provider_agnostic_and_uses_live_mt5_capabilities() 
         "SYMBOL_TRADE_MODE",
         "SYMBOL_TRADE_STOPS_LEVEL",
         "SYMBOL_TRADE_FREEZE_LEVEL",
-        "SetTypeFillingBySymbol(_Symbol)",
+        "bool CBrokerAdapter::ConfigureFillingForSymbol(string symbol)",
+        "SetTypeFillingBySymbol(symbol)",
     ):
         assert capability in adapter
+    assert "SetTypeFillingBySymbol(_Symbol)" not in adapter
+    assert adapter.count("if(!ConfigureFillingForSymbol(symbol))") >= 5
 
     # Match complete vendor names only; e.g. "IG" must not match "ambiguous".
     vendor_allowlist = re.compile(
