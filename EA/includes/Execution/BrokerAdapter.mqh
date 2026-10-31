@@ -286,6 +286,8 @@ bool CBrokerAdapter::MarketBuy(string symbol,double volume,double sl,double tp,u
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,true)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_ASK);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,true,"MarketBuy")) { m_lastLatencyUs=0; return false; }
+   // Filling policy is symbol-specific on many MT5 servers.
+   m_trade.SetTypeFillingBySymbol(symbol);
    ulong t0=GetMicrosecondCount();
    for(int i=0;i<m_maxRetries;i++)
      {
@@ -315,6 +317,8 @@ bool CBrokerAdapter::MarketSell(string symbol,double volume,double sl,double tp,
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,false)) { m_lastLatencyUs=0; return false; }
    double refPrice=SymbolInfoDouble(symbol,SYMBOL_BID);
    if(!ValidateStopDistance(symbol,refPrice,sl,tp,false,"MarketSell")) { m_lastLatencyUs=0; return false; }
+   // Do not reuse the chart symbol's fill mode for another instrument.
+   m_trade.SetTypeFillingBySymbol(symbol);
    ulong t0=GetMicrosecondCount();
    for(int i=0;i<m_maxRetries;i++)
      {
@@ -345,6 +349,7 @@ bool CBrokerAdapter::PlaceLimit(string symbol,ENUM_ORDER_TYPE type,double volume
    bool isBuy=(type==ORDER_TYPE_BUY_LIMIT);
    if(!IsConnected() || !IsMarketOpenForTrading(symbol,true,isBuy)) { m_lastLatencyUs=0; return false; }
    if(!ValidateStopDistance(symbol,price,sl,tp,isBuy,"PlaceLimit")) { m_lastLatencyUs=0; return false; }
+   m_trade.SetTypeFillingBySymbol(symbol);
    ulong t0=GetMicrosecondCount();
    for(int i=0;i<m_maxRetries;i++)
      {
@@ -376,6 +381,8 @@ bool CBrokerAdapter::CancelOrder(ulong ticket)
       PrintFormat("MedisTouch BrokerAdapter: CancelOrder refused for foreign magic order #%I64u.",ticket);
       return false;
      }
+   string symbol=OrderGetString(ORDER_SYMBOL);
+   m_trade.SetTypeFillingBySymbol(symbol);
    bool submitted=m_trade.OrderDelete(ticket);
    if(!submitted)
      {
@@ -393,6 +400,8 @@ bool CBrokerAdapter::ModifySLTP(ulong ticket,double sl,double tp)
       PrintFormat("MedisTouch BrokerAdapter: ModifySLTP refused for foreign magic position #%I64u.",ticket);
       return false;
      }
+   string symbol=PositionGetString(POSITION_SYMBOL);
+   m_trade.SetTypeFillingBySymbol(symbol);
 
    string symbol=PositionGetString(POSITION_SYMBOL);
    bool isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
@@ -455,6 +464,7 @@ bool CBrokerAdapter::ClosePartial(ulong ticket,double volume)
       PrintFormat("MedisTouch BrokerAdapter: ClosePartial refused for foreign magic position #%I64u.",ticket);
       return false;
      }
+   m_trade.SetTypeFillingBySymbol(symbol);
    if(!IsMarketOpenForTrading(symbol,false,true)) return false;
 
    double initialVolume=PositionGetDouble(POSITION_VOLUME);
@@ -523,6 +533,7 @@ bool CBrokerAdapter::CloseFull(ulong ticket)
       PrintFormat("MedisTouch BrokerAdapter: CloseFull refused for foreign magic position #%I64u.",ticket);
       return false;
      }
+   m_trade.SetTypeFillingBySymbol(symbol);
    if(!IsMarketOpenForTrading(symbol,false,true)) return false;
    bool submitted=m_trade.PositionClose(ticket);
    if(!submitted)
