@@ -20,7 +20,7 @@ def _context(digest):
         "locked_oos_end": "2025-12-01T00:00:00Z",
         "dataset_sha256": digest, "ea_source_sha": "b" * 40,
         "ea_build": "same-build", "terminal_build": "same-terminal",
-        "data_vendor": "Exness", "spread_model": "real_ticks", "spread_points": None,
+        "data_vendor": "Generic MT5 test feed", "spread_model": "real_ticks", "spread_points": None,
         "commission_per_lot": 7.0, "slippage_points": 2.0, "fill_policy": "real_ticks",
         "initial_balance": 10000.0, "risk_percent": 0.5,
         "account_currency": "USD", "leverage": "1:500",
