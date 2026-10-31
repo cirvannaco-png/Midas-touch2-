@@ -2,7 +2,7 @@
 
 Midas Touch is an MT5 Expert Advisor (EA) suite with a FastAPI Telegram signal bridge. The EA generates trade signals on your MT5 terminal; the bridge receives them via HTTP and forwards them to a private Telegram group.
 
-**Operational status is evidence-gated.** Source code, successful CI, and a live Render deployment do not by themselves prove production readiness. Do not enable live trading until the exact EA build compiles, the configured bridge reports a healthy live database and authenticated execution ledger, broker-side orders reconcile with the ledger, and Exness demo forward-testing plus emergency-stop/restart recovery pass. See [the production readiness audit](docs/PRODUCTION_READINESS_AUDIT_2026-10-22.md).
+**Operational status is evidence-gated.** Source code, successful CI, and a live Render deployment do not by themselves prove production readiness. Do not enable live trading until the exact EA build compiles, the configured bridge reports a healthy live database and authenticated execution ledger, broker-side orders reconcile with the ledger, and forward-testing plus emergency-stop/restart recovery pass on the user's selected MetaTrader 5 broker. Midas Touch does not enforce a broker-brand allowlist; see the [broker-neutral MT5 compatibility contract](docs/BROKER_COMPATIBILITY.md) and [production readiness audit](docs/PRODUCTION_READINESS_AUDIT_2026-10-22.md).
 
 ## Subprojects
 

@@ -1,10 +1,10 @@
 # MidasTouch2 — MT5 opposing-position demo validation gate
 
-Status: **not yet run against an Exness demo terminal**. CI tests below exercise deterministic policy only; they do not create broker positions.
+Status: **not yet run against an operator-selected MT5 demo terminal**. CI tests below exercise deterministic policy only; they do not create broker positions.
 
 ## 1. Preconditions
 
-- Use a dedicated **Exness demo** account, not the live account.
+- Use a dedicated **demo** account with the operator-selected MT5 broker, not a live account.
 - Confirm the actual terminal reports `ACCOUNT_MARGIN_MODE_RETAIL_HEDGING`. Do not infer the mode from the account label.
 - Deploy the exact compiled EA build from this repository's `main` and record the EA source SHA, EX5 hash, MT5 terminal build, broker server, symbol, account currency, balance, leverage, and symbol contract settings.
 - Confirm the broker execution ledger is healthy if `InpRequireExecutionLedger=true`; otherwise the EA must remain blocked.

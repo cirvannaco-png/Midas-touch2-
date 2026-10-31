@@ -52,7 +52,7 @@ def test_native_policy_test_is_compiled_and_executed_in_strategy_tester():
 
 def test_demo_protocol_keeps_broker_validation_separate_from_policy_ci():
     gate = read(DEMO_GATE)
-    assert "not yet run against an Exness demo terminal" in gate
+    assert "not yet run against an operator-selected MT5 demo terminal" in gate
     assert "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in gate
     assert "InpSmallMaxOpenTrades=3" in gate
     assert "two distinct position identifiers/tickets" in gate
