@@ -1,10 +1,10 @@
-# MT5 diagnostic parity, cost-inclusive validation, and Exness demo release gate
+# MT5 diagnostic parity, cost-inclusive validation, and broker-neutral demo release gate
 
 ## Scope and current status
 
 This protocol closes the evidence gap between source-level tests and evidence from a real MetaTrader 5 Strategy Tester and broker account. The audit deliberately does **not** infer market performance from mathematical-mode fixtures.
 
-**Release status remains BLOCKED** until genuine terminal exports pass this protocol and the frozen candidate is reconciled on an Exness demo account. No parameter set is promoted by these tools. Green repository CI means software checks passed; it does not mean a trading edge exists.
+**Release status remains BLOCKED** until genuine terminal exports pass this protocol and the frozen candidate is reconciled on the user's selected MT5 broker demo account. No parameter set is promoted by these tools. Green repository CI means software checks passed; it does not mean a trading edge exists.
 
 ## 1. Diagnostic OFF versus ON: use the actual controls
 
@@ -86,9 +86,9 @@ Report net expectancy, profit factor, position win rate, average wins/losses, dr
 
 A 600% return target can incentivize catastrophic risk-taking if it is treated as a quota. Do not increase risk or weaken stop protections to force the target or a daily trade count. Keep risk caps and the production trailing-stop path enabled in the release candidate.
 
-## 6. Exness demo-forward and broker reconciliation
+## 6. Selected-broker demo-forward and reconciliation
 
-Run only on the designated Exness demo account until every gate passes. Save the account/server label without secrets, terminal build, symbol suffix/specification, account margin mode, deposit currency/leverage, exact EA commit/build, exact .set, initial/final balance-equity and the time interval.
+Run only on a dedicated demo account at the user's selected MT5 broker until every gate passes. Save the account/server label without secrets, terminal build, symbol suffix/specification, account margin mode, deposit currency/leverage, exact EA commit/build, exact .set, initial/final balance-equity and the time interval.
 
 Exercise these paths deliberately and document the native evidence:
 - BUY and SELL entry intent, broker acceptance/rejection, actual fill price/volume and confirmed initial SL/TP.
@@ -111,12 +111,12 @@ Run focused tests in an environment with repository-declared Python dependencies
 
 Retain the CI run URL, exact head commit, native MetaEditor compilation result for the revised EA/include, test output, both audit JSON reports, original reports/logs, dataset digest, walk-forward/OOS results and demo reconciliation evidence with the release decision.
 
-**Do not merge or enable live order flow while any of the following remains true:** mathematical/no-history tester mode; missing/invalid native exports; different non-diagnostic inputs between matched arms; missing explicit financial fields; incomplete attribution; behavioral diagnostic parity failure; insufficient locked-OOS samples; unstable walk-forward results; unreviewed native equity drawdown; unresolved Exness order/position/cashflow discrepancies; or failed emergency-stop/restart tests.
+**Do not merge or enable live order flow while any of the following remains true:** mathematical/no-history tester mode; missing/invalid native exports; different non-diagnostic inputs between matched arms; missing explicit financial fields; incomplete attribution; behavioral diagnostic parity failure; insufficient locked-OOS samples; unstable walk-forward results; unreviewed native equity drawdown; unresolved selected-broker order/position/cashflow discrepancies; or failed emergency-stop/restart tests.
 
 
 ## 6. Auxiliary LONA / StrategyTune research findings (2026-10-18)
 
-These are research-platform diagnostics only. They are **not** native MT5 Strategy Tester evidence, an Exness broker reconciliation, or release authorization.
+These are research-platform diagnostics only. They are **not** native MT5 Strategy Tester evidence, a selected-broker reconciliation, or release authorization.
 
 ### LONA daily session-gate defect and regression
 
@@ -135,4 +135,4 @@ These are research-platform diagnostics only. They are **not** native MT5 Strate
 
 ### Release implication
 
-Keep PR #115 draft and keep live execution disabled. The LONA correction is a research-code fix only. Continue with complete run manifests, native MT5 real-tick paired exports, five-arm deal histories with verified broker costs, three chronological folds, frozen locked OOS, and Exness demo reconciliation/emergency-stop/restart evidence.
+Keep PR #115 draft and keep live execution disabled. The LONA correction is a research-code fix only. Continue with complete run manifests, native MT5 real-tick paired exports, five-arm deal histories with verified broker costs, three chronological folds, frozen locked OOS, and selected-broker demo reconciliation/emergency-stop/restart evidence.
