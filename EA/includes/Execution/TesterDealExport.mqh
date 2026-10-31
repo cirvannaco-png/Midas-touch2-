@@ -40,6 +40,7 @@ private:
    double m_initialBalance;
    string m_currency;
    string m_server;
+   int    m_serverUtcOffsetMinutes;
    long   m_leverage;
    long   m_terminalBuild;
    long   m_fillMode;
@@ -65,15 +66,22 @@ private:
       return value;
      }
 
-   string TimeIsoUtc(datetime value) const
+   string TimeIsoWithOffset(datetime value) const
      {
-      // MT5 Strategy Tester time is simulated independently of any connected
-      // broker server; Tester time is represented as GMT for reproducibility.
-      // This exporter is test-only and remains inert outside MQL_TESTER.
+      // Tester deal timestamps use the historical broker server's wall clock.
+      // They are not intrinsically UTC; preserve the verified server offset.
       string stamp=TimeToString(value,TIME_DATE|TIME_SECONDS);
       StringReplace(stamp,".","-");
       StringReplace(stamp," ","T");
-      return stamp+"Z";
+      int absoluteOffset=m_serverUtcOffsetMinutes;
+      string sign="+";
+      if(absoluteOffset<0)
+        {
+         sign="-";
+         absoluteOffset=-absoluteOffset;
+        }
+      string zone=StringFormat("%s%02d:%02d",sign,absoluteOffset/60,absoluteOffset%60);
+      return stamp+zone;
      }
 
    void WriteMetadata()
@@ -97,10 +105,11 @@ private:
          "\"point\":%.10f,\"tick_size\":%.10f,\"tick_value\":%.8f,"
          "\"cash_per_point_per_lot\":%.8f,\"spread_points_mean\":%.8f,"
          "\"spread_points_max\":%.8f,\"spread_samples\":%I64u,"
-         "\"fill_mode\":%I64d}",
+         "\"fill_mode\":%I64d,\"server_utc_offset_minutes\":%d,"
+         "\"timestamp_basis\":\"broker_wall_clock_with_explicit_offset\"}",
          m_runId,m_symbol,m_server,m_currency,m_leverage,m_initialBalance,
          m_terminalBuild,m_point,m_tickSize,m_tickValue,cashPerPoint,
-         averageSpread,m_spreadMax,m_spreadSamples,m_fillMode);
+         averageSpread,m_spreadMax,m_spreadSamples,m_fillMode,m_serverUtcOffsetMinutes);
       FileWriteString(handle,json);
       FileFlush(handle);
       FileClose(handle);
@@ -151,9 +160,14 @@ private:
      }
 
 public:
-   void Init(const string runId,const string symbol,const ulong magic,const bool enabled)
+   void Init(const string runId,const string symbol,const ulong magic,const bool enabled,
+             const int serverUtcOffsetMinutes)
      {
-      m_enabled=(enabled && (bool)MQLInfoInteger(MQL_TESTER));
+      bool validOffset=(serverUtcOffsetMinutes>=-840 && serverUtcOffsetMinutes<=840);
+      m_serverUtcOffsetMinutes=serverUtcOffsetMinutes;
+      m_enabled=(enabled && (bool)MQLInfoInteger(MQL_TESTER) && validOffset);
+      if(enabled && (bool)MQLInfoInteger(MQL_TESTER) && !validOffset)
+         PrintFormat("MIDAS_TEST_EXPORT_DISABLED reason=INVALID_SERVER_UTC_OFFSET value=%d; set the verified selected-broker server offset for this test window.",serverUtcOffsetMinutes);
       m_symbol=symbol;
       m_magic=magic;
       m_runId=SafeName(runId+"_"+IntegerToString((long)GetTickCount()));
@@ -249,7 +263,7 @@ public:
          TesterDealExportRow row=m_rows[i];
          FileWrite(handle,
                    IntegerToString((long)row.position_id),
-                   TimeIsoUtc(row.deal_time),
+                   TimeIsoWithOffset(row.deal_time),
                    row.entry,
                    DoubleToString(row.volume,8),
                    DoubleToString(row.profit,8),
