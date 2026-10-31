@@ -8,7 +8,7 @@
 
 ## Decision rule
 
-This is a reconciliation, not a blanket approval to ship every branch tip. A branch with no commits ahead of `main` needs no merge. A merged PR is accounted for by its merge commit. Stale-base feature branches are not force-pushed onto `main`: their full histories can reintroduce superseded code and conflicts. Changes to live entry/exit logic, risk limits, accounting or production infrastructure are not promoted solely because static CI passes. The repository's own evidence gates require native MT5/MetaEditor, real-history cost-inclusive validation and Exness demo reconciliation where specified.
+This is a reconciliation, not a blanket approval to ship every branch tip. A branch with no commits ahead of `main` needs no merge. A merged PR is accounted for by its merge commit. Stale-base feature branches are not force-pushed onto `main`: their full histories can reintroduce superseded code and conflicts. Changes to live entry/exit logic, risk limits, accounting or production infrastructure are not promoted solely because static CI passes. The repository's own evidence gates require native MT5/MetaEditor, real-history cost-inclusive validation and selected-broker MT5 demo reconciliation where specified.
 
 ## Completed integrations in this pass/context
 
@@ -26,7 +26,7 @@ This is a reconciliation, not a blanket approval to ship every branch tip. A bra
 - #36 — research-only win/loss asymmetry experiment record
 - #128 — restart duplicate-fill replay and broker-history reconciliation regression tests
 
-Important boundary: merging research tooling or experiment documentation does **not** mean its strategy candidate is profitable or approved for live execution. Actual real-tick strategy results and Exness demo-forward reconciliation remain outstanding.
+Important boundary: merging research tooling or experiment documentation does **not** mean its strategy candidate is profitable or approved for live execution. Actual real-tick strategy results and selected-broker MT5 demo-forward reconciliation remain outstanding.
 
 ## Verification after the initial report commit
 
@@ -79,7 +79,7 @@ The table records the branch-head SHAs from the original inventory snapshot (mai
 | `feature/midas-decision-architecture` | `f8c8b99b67` | DRAFT PR #34 — Held: large decision-architecture refactor on a stale base; needs a conflict-resolved current-main port and behavioral parity evidence. |
 | `feature/mss-fvg-auction-confluence` | `ec3b8f8034` | Compare audit found no commits ahead of main; historical/redundant branch, no merge needed. Retained, not deleted. |
 | `feature/mtf-structure-alignment` | `33d4cb8b89` | PR #95 closed without merge; changes not promoted in this audit. (Add opt-in multi-timeframe structure alignment gate) |
-| `feature/order-flow-confirmation-engine` | `306f5c2eed` | DRAFT PR #112 — Held: research-only diagnostics; exact real-tick ON/OFF parity, cost-inclusive OOS and Exness demo reconciliation are outstanding. |
+| `feature/order-flow-confirmation-engine` | `306f5c2eed` | DRAFT PR #112 — Held: research-only diagnostics; exact real-tick ON/OFF parity, cost-inclusive OOS and selected-broker MT5 demo reconciliation are outstanding. |
 | `feature/peer-strategy-routing` | `177a272537` | No current open PR matched this branch. Branch tip is preserved; divergent/unreviewed changes were not fast-forwarded blindly. Requires targeted review/PR or explicit retirement. |
 | `feature/phase-a-d-hardening` | `c0ec10040d` | No current open PR matched this branch. Branch tip is preserved; divergent/unreviewed changes were not fast-forwarded blindly. Requires targeted review/PR or explicit retirement. |
 | `feature/production-hardening` | `fe58eb2bd0` | No current open PR matched this branch. Branch tip is preserved; divergent/unreviewed changes were not fast-forwarded blindly. Requires targeted review/PR or explicit retirement. |
@@ -180,7 +180,7 @@ The table records the branch-head SHAs from the original inventory snapshot (mai
 | `research/inducement-structural-provenance` | `f783537a07` | DRAFT PR #32 — Held: signal provenance changes touch the decision path; full native compile and behavioral parity are not evidenced. |
 | `research/matched-mt5-variant-audit-20261012` | `2396425883` | Merged via PR #71 (Research: add matched MT5 variant comparison harness); merge commit 28165d6727. |
 | `research/mt2-win-loss-asymmetry-guard-20261009` | `d4594fc3d2` | Merged via PR #36 (docs(research): record MT2 win-loss asymmetry guard experiment); merge commit 604d2a2681. |
-| `research/mt5-diagnostic-parity-audit-20261018` | `79d5d6f5b0` | DRAFT PR #115 — Held: real MT5 matched-run exports, native tester compilation for the current mainline integration, cost-complete walk-forward/OOS and Exness demo evidence are outstanding. |
+| `research/mt5-diagnostic-parity-audit-20261018` | `79d5d6f5b0` | DRAFT PR #115 — Held: real MT5 matched-run exports, native tester compilation for the current mainline integration, cost-complete walk-forward/OOS and selected-broker MT5 demo evidence are outstanding. |
 | `research/risk-trailing-optimization-20261013` | `59f556e9df` | PR #86 closed without merge; changes not promoted in this audit. (Decouple partial exits and add matched stop/risk experiment harness) |
 | `research/risk-trailing-optimization-rebased-20261013` | `ea5c9cd32e` | No current open PR matched this branch. Branch tip is preserved; divergent/unreviewed changes were not fast-forwarded blindly. Requires targeted review/PR or explicit retirement. |
 | `risk-trailing-hardening-2026-10-08` | `8285872396` | DRAFT PR #35 — Held: capacity and weekday trade qualification can alter trade frequency/behavior; no matched cost-inclusive EA evidence is attached. |
