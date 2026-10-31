@@ -54,7 +54,7 @@ def _verified_claims(token: str) -> dict[str, Any]:
             leeway=30,
             options={"require": ["exp", "iat", "nbf", "iss", "aud", "sub"]},
         )
-    except (jwt.PyJWTError, Exception) as exc:
+    except Exception as exc:
         # Do not expose token, signature, or verifier details to callers/logs.
         raise ProductionOIDCError("production workflow token verification failed") from exc
     if not isinstance(claims, dict):

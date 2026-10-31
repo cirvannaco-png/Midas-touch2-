@@ -345,8 +345,6 @@ def test_signal_warm_latency_regression_ceiling(client, auth_headers):
 def test_github_oidc_repairs_maintenance_and_ledger_health_authorization_without_ea_key(client, monkeypatch):
     from unittest.mock import AsyncMock
 
-    from app.group_enforcement import run_subscription_enforcement
-
     calls = []
 
     def trusted_token(token, *, method, path):
@@ -356,7 +354,7 @@ def test_github_oidc_repairs_maintenance_and_ledger_health_authorization_without
             or (method == "GET" and path == "/execution-ledger/health")
         )
 
-    monkeypatch.setattr("app.routes.verify_production_workflow_token", trusted_token)
+    monkeypatch.setattr("app.production_auth.verify_production_workflow_token", trusted_token)
     monkeypatch.setattr(
         "app.group_enforcement.run_subscription_enforcement",
         AsyncMock(return_value={"warned": 0, "expired": 0, "removed": 0}),
@@ -376,7 +374,7 @@ def test_github_oidc_repairs_maintenance_and_ledger_health_authorization_without
 
 
 def test_oidc_token_cannot_authorize_trade_signal_or_position_modification(client, monkeypatch):
-    monkeypatch.setattr("app.routes.verify_production_workflow_token", lambda *args, **kwargs: False)
+    monkeypatch.setattr("app.production_auth.verify_production_workflow_token", lambda *args, **kwargs: False)
     response = client.post(
         "/signal",
         json={**VALID_BUY_SIGNAL, "signal_id": "oidc-must-not-authorize-signal"},

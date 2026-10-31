@@ -27,34 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Mint scoped production OIDC identity
-        id: production-identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-          import urllib.parse
-          import urllib.request
-
-          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-          token_request = urllib.request.Request(
-              url + ("&" if "?" in url else "?") + urllib.parse.urlencode({"audience": "midas-touch2-production"}),
-              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
-          )
-          try:
-              with urllib.request.urlopen(token_request, timeout=15) as response:
-                  token = json.load(response).get("value")
-          except Exception as exc:
-              raise SystemExit("GitHub production workflow identity request failed.") from exc
-          if not isinstance(token, str) or not token or "\n" in token:
-              raise SystemExit("GitHub production workflow identity was empty or malformed.")
-          print("::add-mask::" + token)
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as target:
-              target.write("MIDAS_PRODUCTION_OIDC_TOKEN=" + token + "\n")
-          print("Scoped production workflow identity acquired; token value redacted.")
-          PY
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -81,7 +53,7 @@ jobs:
           runs = "\n".join(step.get("run", "") for step in health["steps"])
           for required in (
               "BRIDGE_BASE_URL: https://midas-touch2.onrender.com",
-              "secrets.BRIDGE_API_KEY",
+              "Authorization: Bearer",
               "execution_ledger",
               "database",
               "status",
@@ -91,8 +63,8 @@ jobs:
               assert required in path.read_text(encoding="utf-8"), f"required release-gate contract missing: {required}"
           static = jobs["workflow-static-validation"]
           assert isinstance(static["if"], str) and "pull_request" in static["if"] and "==" in static["if"], "static validation job must be PR-only"
-          assert all("BRIDGE_API_KEY" not in step.get("env", {}) for step in static["steps"]), "production key must never enter PR validation"
-          print("PASS: valid YAML; authenticated ledger, unauthenticated denial, DB-backed probe, and PR secret isolation gates present.")
+          assert all("MIDAS_PRODUCTION_OIDC_TOKEN" not in step.get("env", {}) for step in static["steps"]), "production identity must never enter PR validation"
+          print("PASS: valid YAML; authenticated ledger, unauthenticated denial, DB-backed probe, and PR identity isolation gates present.")
           PY
 
   service-database-health:
@@ -105,34 +77,6 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Mint scoped production OIDC identity
-        id: production-identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-          import urllib.parse
-          import urllib.request
-
-          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-          token_request = urllib.request.Request(
-              url + ("&" if "?" in url else "?") + urllib.parse.urlencode({"audience": "midas-touch2-production"}),
-              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
-          )
-          try:
-              with urllib.request.urlopen(token_request, timeout=15) as response:
-                  token = json.load(response).get("value")
-          except Exception as exc:
-              raise SystemExit("GitHub production workflow identity request failed.") from exc
-          if not isinstance(token, str) or not token or "\n" in token:
-              raise SystemExit("GitHub production workflow identity was empty or malformed.")
-          print("::add-mask::" + token)
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as target:
-              target.write("MIDAS_PRODUCTION_OIDC_TOKEN=" + token + "\n")
-          print("Scoped production workflow identity acquired; token value redacted.")
-          PY
       - name: Require authenticated execution-ledger health
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
