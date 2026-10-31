@@ -19,9 +19,8 @@ def test_health_db_reports_connected(client):
 def test_health_db_reports_unhealthy_when_database_is_down(client):
     with patch("app.routes.check_db_connection", new=AsyncMock(return_value=False)):
         resp = client.get("/health/db")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "degraded"
-    assert resp.json()["database"] == "disconnected"
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Database health check failed"
 
 
 def test_signal_without_api_key_rejected(client):
