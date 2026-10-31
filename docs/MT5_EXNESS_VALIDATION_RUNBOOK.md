@@ -16,6 +16,8 @@ This procedure applies to any broker connected through the standard MetaTrader 5
 
 ## Gate A — prepare one immutable test bundle
 
+For native tester deal exports, set `InpTesterServerUtcOffsetMinutes` to the selected server's verified UTC offset in minutes. The exporter writes broker-wall-clock timestamps with an explicit ISO-8601 UTC offset; it does not falsely append `Z`. The configured offset must remain constant for the run. Split the test period at daylight-saving/timezone transitions and use the verified offset for each run. Leave the exporter disabled when the offset is unknown.
+
 Create a dated folder outside the repository, for example `validation/2026-10-18/`, and retain:
 
 1. Exact EA source commit SHA and compiled `.ex5` hash.
