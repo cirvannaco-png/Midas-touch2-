@@ -25,9 +25,12 @@ from app.execution_control import (
     sync_pending_order,
     transition_execution,
     update_position_risk,
+    prepare_position_modification,
+    confirm_position_modification,
 )
 from app.models import ExecutionDealEvent
-from app.routes import verify_api_key
+from app.ai_execution_policy import ExecutionAuthorizationError, authorize_execution_origin
+from app.routes import verify_api_key, verify_mt5_execution_key
 
 router = APIRouter(prefix="/execution-ledger", tags=["execution-ledger"])
 
@@ -69,6 +72,7 @@ class ReserveRequest(BaseModel):
     factors: dict[str, float] = Field(default_factory=dict)
     # Callers cannot raise the global portfolio heat ceiling.
     max_heat_r: float = Field(default=MAX_PORTFOLIO_HEAT_R, gt=0, le=MAX_PORTFOLIO_HEAT_R)
+    requested_by: Literal["MT5_EA", "AI_AGENT"]
 
 
 class TransitionRequest(BaseModel):
@@ -82,7 +86,12 @@ async def reserve(
     body: ReserveRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
+    try:
+        authorize_execution_origin(body.requested_by, "RESERVE_EXECUTION")
+    except ExecutionAuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
         reserved = await reserve_execution(
             session,
@@ -119,6 +128,7 @@ async def transition(
     body: TransitionRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         transitioned = await transition_execution(
@@ -141,6 +151,7 @@ async def transition(
 async def recover_expired(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     count = await recover_expired_leases(session)
     await session.commit()
@@ -160,6 +171,33 @@ class BrokerPositionSyncRequest(BaseModel):
     volatility: float = Field(ge=0)
     factors: dict[str, float] = Field(default_factory=dict)
     evidence_ref: str = Field(min_length=1, max_length=256)
+    stop_loss: float = Field(default=0.0, ge=0)
+    take_profit: float = Field(default=0.0, ge=0)
+
+
+class PositionModificationPrepareRequest(BaseModel):
+    portfolio_key: str = Field(min_length=1, max_length=128)
+    event_id: str = Field(min_length=1, max_length=160)
+    broker_position_id: str = Field(min_length=1, max_length=100)
+    symbol: str = Field(min_length=1, max_length=32)
+    direction: Literal["BUY", "SELL"]
+    old_stop_loss: float = Field(ge=0)
+    old_take_profit: float = Field(ge=0)
+    proposed_stop_loss: float = Field(gt=0)
+    proposed_take_profit: float = Field(ge=0)
+    evidence_ref: str = Field(min_length=1, max_length=256)
+    requested_by: Literal["MT5_EA", "AI_AGENT"]
+
+
+class PositionModificationConfirmRequest(BaseModel):
+    portfolio_key: str = Field(min_length=1, max_length=128)
+    event_id: str = Field(min_length=1, max_length=160)
+    actual_stop_loss: float = Field(gt=0)
+    actual_take_profit: float = Field(ge=0)
+    risk_r: float = Field(ge=0)
+    volatility: float = Field(ge=0)
+    evidence_ref: str = Field(min_length=1, max_length=256)
+    requested_by: Literal["MT5_EA", "AI_AGENT"]
 
 
 class PositionRiskUpdateRequest(BaseModel):
@@ -204,6 +242,7 @@ async def sync_position(
     body: BrokerPositionSyncRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         request_id, heat_r, over_limit = await reconcile_open_position(
@@ -219,6 +258,8 @@ async def sync_position(
             volatility=body.volatility,
             factors=body.factors,
             evidence_ref=body.evidence_ref,
+            stop_loss=body.stop_loss,
+            take_profit=body.take_profit,
         )
         await session.commit()
     except ValueError as exc:
@@ -236,11 +277,79 @@ async def sync_position(
     }
 
 
+@router.post("/position-modification/prepare")
+async def position_modification_prepare(
+    body: PositionModificationPrepareRequest,
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
+):
+    try:
+        authorize_execution_origin(body.requested_by, "MODIFY_POSITION")
+        prepared, status = await prepare_position_modification(
+            session,
+            portfolio_key=body.portfolio_key,
+            event_id=body.event_id,
+            broker_position_id=body.broker_position_id,
+            symbol=body.symbol,
+            direction=body.direction,
+            old_stop_loss=body.old_stop_loss,
+            old_take_profit=body.old_take_profit,
+            proposed_stop_loss=body.proposed_stop_loss,
+            proposed_take_profit=body.proposed_take_profit,
+            evidence_ref=body.evidence_ref,
+        )
+        if not prepared:
+            await session.rollback()
+            raise HTTPException(status_code=409, detail=status)
+        await session.commit()
+    except ExecutionAuthorizationError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"prepared": True, "event_id": body.event_id, "status": status}
+
+
+@router.post("/position-modification/confirm")
+async def position_modification_confirm(
+    body: PositionModificationConfirmRequest,
+    session: AsyncSession = Depends(get_session),
+    _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
+):
+    try:
+        authorize_execution_origin(body.requested_by, "MODIFY_POSITION")
+        confirmed = await confirm_position_modification(
+            session,
+            portfolio_key=body.portfolio_key,
+            event_id=body.event_id,
+            actual_stop_loss=body.actual_stop_loss,
+            actual_take_profit=body.actual_take_profit,
+            risk_r=body.risk_r,
+            volatility=body.volatility,
+            evidence_ref=body.evidence_ref,
+        )
+        if not confirmed:
+            await session.rollback()
+            raise HTTPException(status_code=409, detail="position modification is unknown, unresolved, or conflicts with broker evidence")
+        await session.commit()
+    except ExecutionAuthorizationError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"confirmed": True, "event_id": body.event_id, "status": "APPLIED"}
+
+
 @router.post("/position-risk")
 async def position_risk_update(
     body: PositionRiskUpdateRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         updated = await update_position_risk(
@@ -268,6 +377,7 @@ async def position_closed(
     body: ClosedPositionRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         reconciled = await reconcile_closed_position(
@@ -293,6 +403,7 @@ async def sync_live_pending_order(
     body: PendingOrderSyncRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         request_id, heat_r, over_limit = await sync_pending_order(
@@ -327,6 +438,7 @@ async def order_terminal(
     body: TerminalOrderRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     try:
         terminal = await reconcile_terminal_order(
@@ -351,6 +463,7 @@ async def sync_closed_position(
     body: ClosedPositionRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     """Replay historical closure evidence after an EA/terminal restart.
 
@@ -407,6 +520,7 @@ async def ingest_deal_event(
     body: DealEventRequest,
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
+    _execution_auth: bool = Depends(verify_mt5_execution_key),
 ):
     """Persist each broker deal once and reconcile the latest observed position.
 

@@ -474,3 +474,43 @@ class ExecutionDealEvent(Base):
     event_fingerprint = Column(String(64), nullable=False)
     payload_json = Column(JSON, nullable=False)
     received_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+
+class ExecutionPositionModification(Base):
+    """Durable, idempotent broker stop/target modification intent and outcome."""
+
+    __tablename__ = "execution_position_modifications"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "portfolio_key",
+            "event_id",
+            name="uq_execution_position_modification_event",
+        ),
+        sa.Index(
+            "ix_execution_position_modifications_pending",
+            "portfolio_key",
+            "broker_position_id",
+            "status",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_key = Column(String, nullable=False)
+    event_id = Column(String(160), nullable=False)
+    request_id = Column(String(128), nullable=False)
+    broker_position_id = Column(String(100), nullable=False)
+    symbol = Column(String(32), nullable=False)
+    direction = Column(String(8), nullable=False)
+    old_stop_loss = Column(Float, nullable=False)
+    old_take_profit = Column(Float, nullable=False)
+    proposed_stop_loss = Column(Float, nullable=False)
+    proposed_take_profit = Column(Float, nullable=False)
+    actual_stop_loss = Column(Float, nullable=True)
+    actual_take_profit = Column(Float, nullable=True)
+    risk_r = Column(Float, nullable=True)
+    status = Column(String(32), nullable=False)
+    intent_evidence_ref = Column(String(256), nullable=False)
+    resolution_evidence_ref = Column(String(256), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    resolved_at = Column(DateTime(timezone=True), nullable=True)

@@ -43,3 +43,69 @@ def test_bounded_delta_fails_closed_outside_declared_range():
         assert "exceeds declared bounds" in str(exc)
     else:
         raise AssertionError("out-of-bounds proposal must fail closed")
+
+
+
+def test_candidate_selection_receives_only_strictly_chronological_development_partitions():
+    from datetime import datetime, timedelta, timezone
+
+    from oos_firewall import TemporalSplit
+    from optimizer import candidate_selection_development_partitions
+
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    train = [
+        {"partition": "train", "signal_time": start.isoformat(), "id": "train-1"},
+        {"partition": "train", "signal_time": (start + timedelta(days=1)).isoformat(), "id": "train-2"},
+    ]
+    validation = [
+        {"partition": "validation", "signal_time": (start + timedelta(days=3)).isoformat(), "id": "validation-1"},
+    ]
+    locked_oos = [
+        {"partition": "locked_oos", "signal_time": (start + timedelta(days=5)).isoformat(), "id": "oos-1"},
+    ]
+
+    optimizer_train, optimizer_validation = candidate_selection_development_partitions(
+        TemporalSplit(train, validation, locked_oos)
+    )
+    assert [row["id"] for row in optimizer_train] == ["train-1", "train-2"]
+    assert [row["id"] for row in optimizer_validation] == ["validation-1"]
+    assert all(row["partition"] != "locked_oos" for row in optimizer_train + optimizer_validation)
+
+
+def test_candidate_selection_rejects_locked_oos_rows_smuggled_into_train_or_validation():
+    from datetime import datetime, timedelta, timezone
+
+    import pytest
+
+    from oos_firewall import OOSPurityError, TemporalSplit
+    from optimizer import candidate_selection_development_partitions
+
+    start = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    train = [{"partition": "train", "signal_time": start.isoformat(), "id": "train"}]
+    validation = [
+        {"partition": "validation", "signal_time": (start + timedelta(days=2)).isoformat(), "id": "validation"},
+        {"partition": "locked_oos", "signal_time": (start + timedelta(days=4)).isoformat(), "id": "smuggled-oos"},
+    ]
+    locked_oos = [
+        {"partition": "locked_oos", "signal_time": (start + timedelta(days=6)).isoformat(), "id": "locked-oos"},
+    ]
+
+    with pytest.raises(OOSPurityError, match="different or missing partition label"):
+        candidate_selection_development_partitions(TemporalSplit(train, validation, locked_oos))
+
+
+def test_candidate_selection_rejects_time_overlap_even_when_roles_are_correct():
+    from datetime import datetime, timedelta, timezone
+
+    import pytest
+
+    from oos_firewall import OOSPurityError, TemporalSplit
+    from optimizer import candidate_selection_development_partitions
+
+    start = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    train = [{"partition": "train", "signal_time": start.isoformat(), "id": "train"}]
+    validation = [{"partition": "validation", "signal_time": (start + timedelta(days=2)).isoformat(), "id": "validation"}]
+    locked_oos = [{"partition": "locked_oos", "signal_time": (start + timedelta(days=2)).isoformat(), "id": "oos"}]
+
+    with pytest.raises(OOSPurityError, match="validation_max_signal_time"):
+        candidate_selection_development_partitions(TemporalSplit(train, validation, locked_oos))

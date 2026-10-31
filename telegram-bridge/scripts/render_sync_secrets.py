@@ -66,6 +66,28 @@ def validate_webhook_secret_token(value: str) -> str:
     return value
 
 
+def collect_bridge_auth(env: dict[str, str]) -> dict[str, str]:
+    """Use the protected GitHub bridge key as the canonical Render auth value."""
+    bridge_key = (env.get("BRIDGE_API_KEY") or "").strip()
+    legacy_key = (env.get("SECRET_KEY") or "").strip()
+    if not bridge_key:
+        raise RenderSyncError("Missing BRIDGE_API_KEY protected GitHub environment secret.")
+    if legacy_key and not secrets.compare_digest(bridge_key, legacy_key):
+        raise RenderSyncError("BRIDGE_API_KEY and SECRET_KEY differ; refusing to rotate production with conflicting values.")
+    execution_key = (env.get("MT5_EXECUTION_API_KEY") or "").strip()
+    if not execution_key:
+        raise RenderSyncError("Missing MT5_EXECUTION_API_KEY protected GitHub environment secret.")
+    if len(execution_key) < 32:
+        raise RenderSyncError("MT5_EXECUTION_API_KEY must contain at least 32 characters.")
+    if secrets.compare_digest(bridge_key, execution_key):
+        raise RenderSyncError("MT5_EXECUTION_API_KEY must be distinct from BRIDGE_API_KEY.")
+    return {
+        "SECRET_KEY": bridge_key,
+        "BRIDGE_API_KEY": bridge_key,
+        "MT5_EXECUTION_API_KEY": execution_key,
+    }
+
+
 def collect_secrets(env: dict[str, str]) -> dict[str, str]:
     """Build the env-var payload from the process environment."""
     missing = [k for k in REQUIRED_SECRETS if not env.get(k)]
@@ -76,7 +98,11 @@ def collect_secrets(env: dict[str, str]) -> dict[str, str]:
             + ". Add them as protected/masked GitLab CI/CD variables."
         )
 
+    bridge_key = env.get("BRIDGE_API_KEY") or env["SECRET_KEY"]
+    if not secrets.compare_digest(bridge_key, env["SECRET_KEY"]):
+        raise RenderSyncError("BRIDGE_API_KEY and SECRET_KEY must be identical; refusing to deploy a mismatched authentication pair.")
     payload = {k: env[k] for k in REQUIRED_SECRETS}
+    payload["BRIDGE_API_KEY"] = bridge_key
 
     for key in GENERATED_SECRETS:
         value = env.get(key) or generate_webhook_secret_token()
@@ -143,12 +169,13 @@ def trigger_deploy(service_id: str, api_key: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="validate only, call no APIs")
+    parser.add_argument("--bridge-auth-only", action="store_true", help="synchronize only SECRET_KEY and BRIDGE_API_KEY from the protected BRIDGE_API_KEY source")
     parser.add_argument("--no-deploy", action="store_true", help="update env vars but skip redeploy")
     args = parser.parse_args(argv)
 
     env = dict(os.environ)
     try:
-        values = collect_secrets(env)
+        values = collect_bridge_auth(env) if args.bridge_auth_only else collect_secrets(env)
     except RenderSyncError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
