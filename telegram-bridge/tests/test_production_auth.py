@@ -4,7 +4,6 @@ from app.production_auth import (
     PRODUCTION_SUBJECT,
     authorize_production_workflow_claims,
 )
-
 import pytest
 
 
