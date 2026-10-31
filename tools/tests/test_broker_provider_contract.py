@@ -24,4 +24,4 @@ def test_broker_execution_is_provider_agnostic_and_uses_live_mt5_capabilities() 
     assert "provider-agnostic" in policy
     assert "fixed vendor allowlist" in policy
     assert "operator may connect any broker" in contract
-    assert "non-MT5 venue requires a separate execution adapter" in contract
+    assert "Supporting a non-MT5 venue requires a separate execution adapter" in contract
