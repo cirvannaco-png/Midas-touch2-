@@ -65,14 +65,15 @@ private:
       return value;
      }
 
-   string TimeIsoUtc(datetime value) const
+   string TimeServerLocal(datetime value) const
      {
-      // Exness MT5 server timestamps are GMT+0; testing is explicitly
-      // restricted to an Exness demo/trial server by the orchestration job.
+      // DEAL_TIME is expressed in the selected broker/tester server clock, not
+      // guaranteed UTC. Export it without a zone suffix; normalize externally
+      // only with a verified historical server-time/UTC mapping.
       string stamp=TimeToString(value,TIME_DATE|TIME_SECONDS);
       StringReplace(stamp,".","-");
       StringReplace(stamp," ","T");
-      return stamp+"Z";
+      return stamp;
      }
 
    void WriteMetadata()
@@ -100,6 +101,7 @@ private:
          m_runId,m_symbol,m_server,m_currency,m_leverage,m_initialBalance,
          m_terminalBuild,m_point,m_tickSize,m_tickValue,cashPerPoint,
          averageSpread,m_spreadMax,m_spreadSamples,m_fillMode);
+      StringReplace(json,"\"account_currency\":","\"timestamp_basis\":\"broker_server_local\",\"account_currency\":");
       FileWriteString(handle,json);
       FileFlush(handle);
       FileClose(handle);
@@ -248,7 +250,7 @@ public:
          TesterDealExportRow row=m_rows[i];
          FileWrite(handle,
                    IntegerToString((long)row.position_id),
-                   TimeIsoUtc(row.deal_time),
+                   TimeServerLocal(row.deal_time),
                    row.entry,
                    DoubleToString(row.volume,8),
                    DoubleToString(row.profit,8),
