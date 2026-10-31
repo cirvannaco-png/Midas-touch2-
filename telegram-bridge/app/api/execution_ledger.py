@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -166,10 +166,18 @@ class PositionRiskUpdateRequest(BaseModel):
     portfolio_key: str = Field(min_length=1, max_length=128)
     broker_position_id: str = Field(min_length=1, max_length=100)
     direction: Literal["BUY", "SELL"]
-    risk_r: float = Field(ge=0)
-    volatility: float = Field(ge=0)
+    risk_r: float = Field(ge=0, allow_inf_nan=False)
+    volatility: float = Field(ge=0, allow_inf_nan=False)
     factors: dict[str, float] = Field(default_factory=dict)
     evidence_ref: str = Field(min_length=1, max_length=256)
+    previous_stop: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    current_stop: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_stop_pair(self):
+        if (self.previous_stop is None) != (self.current_stop is None):
+            raise ValueError("previous_stop and current_stop must be supplied together")
+        return self
 
 
 class ClosedPositionRequest(BaseModel):
@@ -252,6 +260,8 @@ async def position_risk_update(
             volatility=body.volatility,
             factors=body.factors,
             evidence_ref=body.evidence_ref,
+            previous_stop=body.previous_stop,
+            current_stop=body.current_stop,
         )
         if not updated:
             await session.rollback()

@@ -53,7 +53,7 @@ jobs:
           runs = "\n".join(step.get("run", "") for step in health["steps"])
           for required in (
               "BRIDGE_BASE_URL: https://midas-touch2.onrender.com",
-              "secrets.BRIDGE_API_KEY",
+              "Authorization: Bearer",
               "execution_ledger",
               "database",
               "status",
@@ -63,8 +63,8 @@ jobs:
               assert required in path.read_text(encoding="utf-8"), f"required release-gate contract missing: {required}"
           static = jobs["workflow-static-validation"]
           assert isinstance(static["if"], str) and "pull_request" in static["if"] and "==" in static["if"], "static validation job must be PR-only"
-          assert all("BRIDGE_API_KEY" not in step.get("env", {}) for step in static["steps"]), "production key must never enter PR validation"
-          print("PASS: valid YAML; authenticated ledger, unauthenticated denial, DB-backed probe, and PR secret isolation gates present.")
+          assert all("MIDAS_PRODUCTION_OIDC_TOKEN" not in step.get("env", {}) for step in static["steps"]), "production identity must never enter PR validation"
+          print("PASS: valid YAML; authenticated ledger, unauthenticated denial, DB-backed probe, and PR identity isolation gates present.")
           PY
 
   service-database-health:
@@ -73,41 +73,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment: production
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - name: Validate production bridge secrets without printing them
-        env:
-          BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
+      - name: Mint scoped production OIDC identity
+        id: production-identity
         shell: bash
         run: |
           set -euo pipefail
-          : "${BRIDGE_BASE_URL:?BRIDGE_BASE_URL is not configured in workflow}"
-          : "${BRIDGE_API_KEY:?Missing GitHub Actions environment secret BRIDGE_API_KEY}"
           python3 - <<'PY'
+          import json
           import os
-          from urllib.parse import urlsplit
+          import urllib.parse
+          import urllib.request
 
-          raw = os.environ["BRIDGE_BASE_URL"].strip()
-          parsed = urlsplit(raw)
-          if (
-              parsed.scheme != "https"
-              or not parsed.hostname
-              or parsed.username
-              or parsed.password
-              or parsed.query
-              or parsed.fragment
-              or any(char.isspace() for char in raw)
-          ):
-              raise SystemExit("BRIDGE_BASE_URL must be an HTTPS URL without credentials, query, fragment, or whitespace.")
-          if not os.environ["BRIDGE_API_KEY"].strip():
-              raise SystemExit("BRIDGE_API_KEY must be non-empty.")
-          print("Production bridge secret presence and URL shape verified; values were not printed.")
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          token_request = urllib.request.Request(
+              url + ("&" if "?" in url else "?") + urllib.parse.urlencode({"audience": "midas-touch2-production"}),
+              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          try:
+              with urllib.request.urlopen(token_request, timeout=15) as response:
+                  token = json.load(response).get("value")
+          except Exception as exc:
+              raise SystemExit("GitHub production workflow identity request failed.") from exc
+          if not isinstance(token, str) or not token or "\n" in token:
+              raise SystemExit("GitHub production workflow identity was empty or malformed.")
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as target:
+              target.write("MIDAS_PRODUCTION_OIDC_TOKEN=" + token + "\n")
+          print("Scoped production workflow identity acquired; token value redacted.")
           PY
-
       - name: Require authenticated execution-ledger health
         env:
           BRIDGE_BASE_URL: https://midas-touch2.onrender.com
-          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -117,7 +117,7 @@ jobs:
           for attempt in 1 2 3 4 5; do
             http_code="$(curl --silent --show-error --connect-timeout 8 --max-time 20 \
               --output "$response_file" --write-out '%{http_code}' \
-              --request GET --header "X-API-Key: ${BRIDGE_API_KEY}" \
+              --request GET --header "Authorization: Bearer ${MIDAS_PRODUCTION_OIDC_TOKEN}" \
               --header "Accept: application/json" \
               "${BRIDGE_BASE_URL%/}/execution-ledger/health" 2>/dev/null || true)"
             if [[ "$http_code" == "200" ]]; then

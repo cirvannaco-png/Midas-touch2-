@@ -207,3 +207,38 @@ def test_normalizer_rejects_fold_leakage_in_manifest(tmp_path):
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(BuildEvidenceError, match="ordered, non-overlapping"):
         build_evidence(manifest_path)
+
+
+def test_parameter_neighbors_use_validation_rows_and_exclude_locked_oos(tmp_path):
+    manifest_path = _manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    neighbor_csv = tmp_path / "neighbor-outcomes.csv"
+    _write_outcomes(neighbor_csv, [*range(20, 51), *range(60, 90)])
+    manifest["parameter_neighbors"] = [{
+        "parameters": {"min_confidence": 61},
+        "report_path": "tester-report.html",
+        "csv_path": "neighbor-outcomes.csv",
+    }]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    payload, summary = build_evidence(manifest_path)
+    neighbor = payload["parameter_neighbors"][0]
+    assert len(neighbor["trades"]) == 31
+    assert {row["fold_id"] for row in neighbor["trades"]} == {1, 2, 3}
+    assert all(
+        row["timestamp"] < payload["provenance"]["locked_oos_start"]
+        and row["resolved_at"] < payload["provenance"]["locked_oos_start"]
+        for row in neighbor["trades"]
+    )
+    assert summary["parameter_neighbors"][0]["non_validation_rows_excluded"] == 30
+    assert "locked_oos_resolved_rows" not in summary["parameter_neighbors"][0]
+
+
+def test_normalizer_rejects_overlapping_validation_windows_across_folds(tmp_path):
+    manifest_path = _manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["folds"][0]["validation_end"] = _timestamp(31)
+    manifest["folds"][1]["validation_start"] = _timestamp(30)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(BuildEvidenceError, match="validation windows across chronological folds"):
+        build_evidence(manifest_path)

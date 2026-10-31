@@ -56,3 +56,18 @@ def test_empty_ea_backend_history_is_not_mistaken_for_parity():
     assert "return bool(ea and backend and ea == backend)" in recovery
     assert "state event sequence must increase monotonically" in recovery
     assert "decision identity/fingerprint cannot change within an order" in recovery
+
+
+def test_production_workflows_use_scoped_oidc_not_the_ea_api_key():
+    maintenance = WORKFLOW.read_text(encoding="utf-8")
+    health = (ROOT / ".github" / "workflows" / "production-health-check.yml").read_text(encoding="utf-8")
+    for workflow in (maintenance, health):
+        assert "id-token: write" in workflow
+        assert "midas-touch2-production" in workflow
+        assert "MIDAS_PRODUCTION_OIDC_TOKEN" in workflow
+        assert "Authorization: Bearer" in workflow
+        assert "BRIDGE_API_KEY" not in workflow
+        assert "X-API-Key:" not in workflow
+    assert maintenance.count("Mint scoped production OIDC identity") == 4
+    assert health.count("Mint scoped production OIDC identity") == 1
+    assert "workflow-static-validation" in health

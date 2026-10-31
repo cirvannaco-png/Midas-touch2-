@@ -340,3 +340,58 @@ def test_signal_warm_latency_regression_ceiling(client, auth_headers):
     assert p50 < 150.0, f"warm /signal p50 regression: {p50:.1f} ms"
     assert p95 < 250.0, f"warm /signal p95 regression: {p95:.1f} ms"
     assert p99 < 300.0, f"warm /signal p99 regression: {p99:.1f} ms"
+
+
+
+def test_subscription_maintenance_workflow_oidc_auth_recovers_401_without_ea_key(client, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        "app.production_auth.verify_production_workflow_token",
+        lambda token, *, method, path: (
+            token == "verified-production-token"
+            and method == "POST"
+            and path == "/admin/check-subscriptions"
+        ),
+    )
+    monkeypatch.setattr(
+        "app.group_enforcement.run_subscription_enforcement",
+        AsyncMock(return_value={"warned": 0, "expired": 0, "removed": 0}),
+    )
+    response = client.post(
+        "/admin/check-subscriptions",
+        headers={"Authorization": "Bearer verified-production-token"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"warned": 0, "expired": 0, "removed": 0}
+
+
+def test_execution_ledger_health_workflow_oidc_auth_recovers_401_without_ea_key(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.production_auth.verify_production_workflow_token",
+        lambda token, *, method, path: (
+            token == "verified-production-token"
+            and method == "GET"
+            and path == "/execution-ledger/health"
+        ),
+    )
+    response = client.get(
+        "/execution-ledger/health",
+        headers={"Authorization": "Bearer verified-production-token"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "status": "online",
+        "database": "connected",
+        "execution_ledger": "ready",
+    }
+
+
+def test_oidc_token_cannot_authorize_trade_signal_or_position_modification(client, monkeypatch):
+    monkeypatch.setattr("app.production_auth.verify_production_workflow_token", lambda *args, **kwargs: False)
+    response = client.post(
+        "/signal",
+        json={**VALID_BUY_SIGNAL, "signal_id": "oidc-must-not-authorize-signal"},
+        headers={"Authorization": "Bearer valid-looking-token"},
+    )
+    assert response.status_code == 401

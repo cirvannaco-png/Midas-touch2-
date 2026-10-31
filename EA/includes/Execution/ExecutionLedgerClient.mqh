@@ -158,13 +158,23 @@ public:
      }
 
    bool UpdatePositionRisk(const ulong positionIdentifier,const string direction,
-                           const double riskR,const double volatility,const string evidenceRef)
+                           const double riskR,const double volatility,const string evidenceRef,
+                           const double previousStop=0.0,const double currentStop=0.0)
      {
       if(!m_ready || positionIdentifier==0 || riskR<0.0 || !MathIsValidNumber(riskR)) return false;
+      string modificationFields="";
+      if(previousStop>0.0 || currentStop>0.0)
+        {
+         if(previousStop<0.0 || currentStop<=0.0 ||
+            !MathIsValidNumber(previousStop) || !MathIsValidNumber(currentStop) ||
+            MathAbs(previousStop-currentStop)<=1e-9) return false;
+         modificationFields=StringFormat(",\"previous_stop\":%.10f,\"current_stop\":%.10f",
+                                         previousStop,currentStop);
+        }
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
+         "{\"portfolio_key\":\"%s\",\"broker_position_id\":\"%I64u\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"%s}",
          JsonSafe(m_portfolioKey),positionIdentifier,JsonSafe(direction),riskR,
-         MathMax(0.0,volatility),JsonSafe(evidenceRef));
+         MathMax(0.0,volatility),JsonSafe(evidenceRef),modificationFields);
       return PostJson("/execution-ledger/position-risk",payload);
      }
 

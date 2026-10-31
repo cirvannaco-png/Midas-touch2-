@@ -9,3 +9,4 @@ asyncpg==0.31.0
 aiosqlite==0.19.0
 alembic==1.18.5
 python-telegram-bot==21.9
+PyJWT[crypto]==2.15.0
