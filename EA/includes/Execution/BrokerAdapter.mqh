@@ -134,9 +134,9 @@ bool CBrokerAdapter::IsConnected()
 //+
 bool CBrokerAdapter::ConfigureFillingForSymbol(string symbol)
   {
-   if(StringLen(symbol)==0 || SymbolInfoInteger(symbol,SYMBOL_FILLING_MODE)==0)
+   if(StringLen(symbol)==0)
      {
-      PrintFormat("MedisTouch BrokerAdapter: %s refused — symbol filling capabilities are unavailable.",symbol);
+      Print("MedisTouch BrokerAdapter: empty symbol — refusing order submission.");
       return false;
      }
    ResetLastError();
@@ -393,7 +393,6 @@ bool CBrokerAdapter::CancelOrder(ulong ticket)
   {
    if(!IsConnected() || ticket==0 || !OrderSelect(ticket)) return false;
    string symbol=OrderGetString(ORDER_SYMBOL);
-   if(!ConfigureFillingForSymbol(symbol)) return false;
    if((ulong)OrderGetInteger(ORDER_MAGIC)!=m_magic)
      {
       PrintFormat("MedisTouch BrokerAdapter: CancelOrder refused for foreign magic order #%I64u.",ticket);
@@ -542,6 +541,7 @@ bool CBrokerAdapter::CloseFull(ulong ticket)
   {
    if(!IsConnected() || !PositionSelectByTicket(ticket)) return false;
    string symbol=PositionGetString(POSITION_SYMBOL);
+   if(!ConfigureFillingForSymbol(symbol)) return false;
    if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
      {
       PrintFormat("MedisTouch BrokerAdapter: CloseFull refused for foreign magic position #%I64u.",ticket);
