@@ -252,6 +252,8 @@ async def position_risk_update(
             volatility=body.volatility,
             factors=body.factors,
             evidence_ref=body.evidence_ref,
+            previous_stop=body.previous_stop,
+            current_stop=body.current_stop,
         )
         if not updated:
             await session.rollback()

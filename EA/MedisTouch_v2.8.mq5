@@ -284,7 +284,7 @@ input string InpSession3End="22:00";
 
 CTFContextPool g_pool;CTopDownMTFEngine g_topDownMTF;CScoringEngine g_scoring;CSessionFilter g_operatorSessionFilter;CTradeDecision g_decision;CRiskEngine g_risk;CSignalLogger g_logger;COutcomeTrackerLive g_tracker;CEnvironmentStrategyMemory g_environmentMemory;CDecisionEngine g_router;CBrokerAdapter g_broker;COrderManager g_orders;CPositionManager g_positions;CRecoveryEngine g_recovery;CPortfolioManager g_portfolio;CMultiTradeEngine g_multiTrade;CRiskGuard g_riskGuard;CNewsFilter g_newsFilter;CSubscriberPlatform g_subscribers;CSignalPublisher g_publisher;CDailyTradeTarget g_dailyTradeTarget;CConfigSync g_configSync;CProductionMonitor g_monitor;CTradeControlPanel g_controlPanel;CExecutionAudit g_execAudit;bool g_emergencyStop=false;datetime g_lastSessionBlockLog=0;datetime g_lastEmergencyLatchRefresh=0;CTFContext* g_chartCtx=NULL;CTFContext* g_trendCtx=NULL;CTFContext* g_bosCtx=NULL;CTFContext* g_liqCtx=NULL;CTFContext* g_fvgCtx=NULL;CTFContext* g_htfObCtx=NULL;
 AccountRiskLimits g_activeRiskLimits;
-CExecutionLedgerClient g_executionLedger; CTesterDealExport g_testerDealExport; bool g_executionLedgerHealthy=false; datetime g_lastLedgerReconcileAttempt=0; datetime g_lastConfigSyncPoll=0;
+CExecutionLedgerClient g_executionLedger; CTesterDealExport g_testerDealExport; bool g_executionLedgerHealthy=false; datetime g_lastLedgerReconcileAttempt=0; datetime g_lastConfigSyncPoll=0; ulong g_managedStopPositionIds[]; double g_managedStopPrices[];
 datetime g_lastLoggedTime=0,g_lastBarTime=0;long g_lifecycleDecisionId=0;datetime g_lifecycleCreationTime=0;TradeSetup g_lifecycleSetup;string g_lifecycleStatus="valid";bool g_panelInitialized=false;
 
 string EmergencyStopGlobalKey();
@@ -306,7 +306,7 @@ bool ParseManagedOrderComment(const string comment,long &decisionId,int &legInde
 bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legIndex,const double riskMoney,const double volatility,string &requestId);
 void MarkLedgerSubmissionAccepted(const string requestId);
 void MarkLedgerSubmissionAmbiguous(const string requestId);
-bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,const double volatility,const string evidenceRef);
+bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,const double volatility,const string evidenceRef,const double previousStop,const double currentStop);\nvoid SeedManagedPositionStopSnapshots(const bool resetSnapshots);\nbool ReconcileManagedPositionStopModifications(const double volatility);
 bool IsOrderBuyDirection(const ENUM_ORDER_TYPE orderType);
 int EffectiveMaxOpenTrades();
 bool SmallAccountRiskAdmission(bool reduceRisk,string &reasonOut);
@@ -383,6 +383,13 @@ bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legInd
                             const double riskMoney,const double volatility,string &requestId)
   {
    requestId="";
+   if(InpRequireExecutionLedger && !g_executionLedgerHealthy)
+     {
+      g_execAudit.Log("EXECUTION_LEDGER_NOT_READY",
+                      "execution ledger or position-stop reconciliation is unresolved; new entries are blocked",
+                      decision.decision_id);
+      return false;
+     }
    if(!g_executionLedger.Ready())
       return !InpRequireExecutionLedger;
 
@@ -476,21 +483,107 @@ void MarkLedgerSubmissionAmbiguous(const string requestId)
   }
 
 bool UpdateLedgerRiskForPosition(const ulong positionIdentifier,const string direction,
-                                 const double volatility,const string evidenceRef)
+                                 const double volatility,const string evidenceRef,
+                                 const double previousStop,const double currentStop)
   {
    if(!g_executionLedger.Ready()) return !InpRequireExecutionLedger;
+   if(previousStop<0.0 || currentStop<=0.0 || MathAbs(previousStop-currentStop)<=1e-9) return false;
+   if(previousStop>0.0)
+     {
+      bool tightened=(direction=="BUY")?(currentStop>previousStop):(currentStop<previousStop);
+      if(!tightened) return false;
+     }
    ulong ticket=g_broker.PositionTicketForIdentifier(_Symbol,positionIdentifier);
    if(ticket==0 || !PositionSelectByTicket(ticket)) return false;
    double sl=PositionGetDouble(POSITION_SL);
    double entry=PositionGetDouble(POSITION_PRICE_OPEN);
    double volume=PositionGetDouble(POSITION_VOLUME);
-   if(sl<=0.0 || entry<=0.0 || volume<=0.0) return false;
+   if(sl<=0.0 || entry<=0.0 || volume<=0.0 ||
+      MathAbs(sl-currentStop)>MathMax(_Point*0.5,1e-10)) return false;
    double riskMoney=g_risk.RiskAmountForLots(_Symbol,volume,entry,sl);
    double riskR=0.0;
    bool stopLocked=(direction=="BUY" && sl>=entry) || (direction=="SELL" && sl<=entry);
    if(!RiskRFromMoney(riskMoney,riskR,stopLocked)) return false;
    return g_executionLedger.UpdatePositionRisk(positionIdentifier,direction,riskR,
-                                                MathMax(0.0,volatility),evidenceRef);
+                                                MathMax(0.0,volatility),evidenceRef,
+                                                previousStop,currentStop);
+  }
+
+void SeedManagedPositionStopSnapshots(const bool resetSnapshots)
+  {
+   if(resetSnapshots)
+     {
+      ArrayResize(g_managedStopPositionIds,0);
+      ArrayResize(g_managedStopPrices,0);
+     }
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber ||
+         PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      ulong identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      if(identifier==0) continue;
+      bool known=false;
+      for(int j=0;j<ArraySize(g_managedStopPositionIds);j++)
+         if(g_managedStopPositionIds[j]==identifier) { known=true; break; }
+      if(known) continue;
+      int n=ArraySize(g_managedStopPositionIds);
+      if(ArrayResize(g_managedStopPositionIds,n+1)!=n+1 ||
+         ArrayResize(g_managedStopPrices,n+1)!=n+1) continue;
+      g_managedStopPositionIds[n]=identifier;
+      g_managedStopPrices[n]=PositionGetDouble(POSITION_SL);
+     }
+  }
+
+bool ReconcileManagedPositionStopModifications(const double volatility)
+  {
+   if(!InpEnableExecution || !InpRequireExecutionLedger) return true;
+   if(!g_executionLedger.Ready())
+     {
+      g_executionLedgerHealthy=false;
+      return false;
+     }
+   SeedManagedPositionStopSnapshots(false);
+   bool allOk=true;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber ||
+         PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      ulong identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      if(identifier==0) continue;
+      double currentStop=PositionGetDouble(POSITION_SL);
+      int snapshot=-1;
+      for(int j=0;j<ArraySize(g_managedStopPositionIds);j++)
+         if(g_managedStopPositionIds[j]==identifier) { snapshot=j; break; }
+      if(snapshot<0) continue;
+      double previousStop=g_managedStopPrices[snapshot];
+      if(previousStop>=0.0 && currentStop>0.0 &&
+         MathAbs(currentStop-previousStop)<=MathMax(_Point*0.5,1e-10)) continue;
+      string direction=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY)?"BUY":"SELL";
+      string evidenceRef=StringFormat("mt5-position-stop:%I64u:%.10f:%.10f",
+                                      identifier,previousStop,currentStop);
+      if(!UpdateLedgerRiskForPosition(identifier,direction,volatility,evidenceRef,previousStop,currentStop))
+        {
+         g_executionLedgerHealthy=false;
+         g_execAudit.Log("POSITION_STOP_RECONCILIATION_FAILED",
+                         "broker protective stop changed but durable ledger event was not acknowledged; new entries remain blocked",
+                         0,identifier,0.0,0.0,previousStop,currentStop);
+         allOk=false;
+         continue;
+        }
+      g_managedStopPrices[snapshot]=currentStop;
+     }
+   for(int j=ArraySize(g_managedStopPositionIds)-1;j>=0;j--)
+     {
+      if(IsPositionIdentifierOpen(g_managedStopPositionIds[j])) continue;
+      ArrayRemove(g_managedStopPositionIds,j,1);
+      ArrayRemove(g_managedStopPrices,j,1);
+     }
+   if(!allOk) g_executionLedgerHealthy=false;
+   return allOk;
   }
 
 bool ReconcileBrokerStateSnapshot()
@@ -869,7 +962,8 @@ int OnInit()
       else
          g_execAudit.Log("EXECUTION_LEDGER_READY","startup positions, pending orders and complete closed-history evidence reconciled");
      }
-   else if(InpEnableExecution && InpRequireExecutionLedger)
+   SeedManagedPositionStopSnapshots(true);
+   if(InpEnableExecution && InpRequireExecutionLedger && !g_executionLedgerHealthy)
      {
       g_executionLedgerHealthy=false;
       g_execAudit.Log("EXECUTION_LEDGER_CONFIGURATION_MISSING","new automated and manual entries remain blocked until bridge URL and API key are configured");
@@ -919,7 +1013,7 @@ void OnTimer()
      }
   }
 void CheckSignalLifecycle(double atr){if(g_lifecycleDecisionId==0)return;bool filled;double fillPrice;datetime fillTime;int barsToFill;if(!g_tracker.GetFillState(g_lifecycleCreationTime,g_lifecycleDecisionId,filled,fillPrice,fillTime,barsToFill)){g_lifecycleDecisionId=0;return;}if(filled){g_lifecycleDecisionId=0;return;}bool buy=g_lifecycleSetup.type==ORDER_TYPE_BUY;int barsSince=iBarShift(_Symbol,_Period,g_lifecycleCreationTime,false);if(barsSince>=InpSignalExpiryBars){if(g_lifecycleStatus!="expired"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"expired",StringFormat("Unfilled for %d execution bars",barsSince));g_lifecycleStatus="expired";}g_lifecycleDecisionId=0;return;}double opposite=g_scoring.CalculateConfidence(!buy);if(opposite>=InpInvalidateOpposingConfidence){if(g_lifecycleStatus!="invalidated"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"invalidated",StringFormat("Opposing confidence %.0f",opposite));g_lifecycleStatus="invalidated";}g_lifecycleDecisionId=0;return;}if(atr>0){double entry=ResolveExecutionEntry(g_lifecycleSetup);double price=buy?SymbolInfoDouble(_Symbol,SYMBOL_ASK):SymbolInfoDouble(_Symbol,SYMBOL_BID);double drift=MathAbs(price-entry)/atr;bool wrong=buy?(price>entry):(price<entry);if(wrong&&drift>=InpSignalStaleChaseATR){if(g_lifecycleStatus!="stale"){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"stale",StringFormat("Price drifted %.2f ATR past entry",drift));g_lifecycleStatus="stale";}}else if(g_lifecycleStatus=="stale"&&drift<InpSignalStaleChaseATR*0.5){g_publisher.PublishStatusUpdate(g_lifecycleDecisionId,"valid","Price returned toward entry");g_lifecycleStatus="valid";}}}
-void OnTick(){g_testerDealExport.ObserveSpread(_Symbol);g_monitor.OnTickCheck();g_dailyTradeTarget.OnTick();g_pool.DetectAll();if(g_chartCtx==NULL||!g_chartCtx.candles.IsReady())return;double atr=g_chartCtx.candles.GetATR(0);g_positions.OnTick(atr);g_orders.Prune();g_riskGuard.OnTick();RefreshTradeControlPanel();if(g_emergencyStop)return;if(InpPublishLifecycleUpdates)CheckSignalLifecycle(atr);datetime barTime=iTime(_Symbol,_Period,0);bool isNewBar=(barTime!=g_lastBarTime);g_lastBarTime=barTime;if(!isNewBar)return;if(InpTrackOutcomes)g_tracker.Update(g_chartCtx);string haltReason;if(g_riskGuard.IsHardHalted(haltReason))return;if(g_riskGuard.IsDailyLossLimitHit(haltReason))return;string newsReason;if(InpUseNewsFilter&&g_newsFilter.IsLocked(newsReason))return;if(!IsConfiguredSessionAllowed()){if(TimeCurrent()-g_lastSessionBlockLog>=900){g_execAudit.Log("SESSION_BLOCK","new automated entries suppressed outside configured session windows");g_lastSessionBlockLog=TimeCurrent();}return;}g_dailyTradeTarget.LogSearchProgress();TradeSetup buySetup=g_decision.GenerateBuySetup();TradeSetup sellSetup=g_decision.GenerateSellSetup();if(InpLogSignals){if(buySetup.reasons.selected_strategy==STRATEGY_SMC)g_logger.LogSMCStructure(buySetup,_Symbol,InpFVGTF);if(sellSetup.reasons.selected_strategy==STRATEGY_SMC)g_logger.LogSMCStructure(sellSetup,_Symbol,InpFVGTF);}
+void OnTick(){g_testerDealExport.ObserveSpread(_Symbol);g_monitor.OnTickCheck();g_dailyTradeTarget.OnTick();g_pool.DetectAll();if(g_chartCtx==NULL||!g_chartCtx.candles.IsReady())return;double atr=g_chartCtx.candles.GetATR(0);g_positions.OnTick(atr);ReconcileManagedPositionStopModifications(atr);g_orders.Prune();g_riskGuard.OnTick();RefreshTradeControlPanel();if(g_emergencyStop)return;if(InpPublishLifecycleUpdates)CheckSignalLifecycle(atr);datetime barTime=iTime(_Symbol,_Period,0);bool isNewBar=(barTime!=g_lastBarTime);g_lastBarTime=barTime;if(!isNewBar)return;if(InpTrackOutcomes)g_tracker.Update(g_chartCtx);string haltReason;if(g_riskGuard.IsHardHalted(haltReason))return;if(g_riskGuard.IsDailyLossLimitHit(haltReason))return;string newsReason;if(InpUseNewsFilter&&g_newsFilter.IsLocked(newsReason))return;if(!IsConfiguredSessionAllowed()){if(TimeCurrent()-g_lastSessionBlockLog>=900){g_execAudit.Log("SESSION_BLOCK","new automated entries suppressed outside configured session windows");g_lastSessionBlockLog=TimeCurrent();}return;}g_dailyTradeTarget.LogSearchProgress();TradeSetup buySetup=g_decision.GenerateBuySetup();TradeSetup sellSetup=g_decision.GenerateSellSetup();if(InpLogSignals){if(buySetup.reasons.selected_strategy==STRATEGY_SMC)g_logger.LogSMCStructure(buySetup,_Symbol,InpFVGTF);if(sellSetup.reasons.selected_strategy==STRATEGY_SMC)g_logger.LogSMCStructure(sellSetup,_Symbol,InpFVGTF);}
    // Evaluate both sides independently. The MTF layer adjusts confidence only;
    // it does not hard-block every countertrend setup or manufacture a trade.
    if(InpEnableTopDownMTF)
@@ -1624,6 +1718,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       g_execAudit.Log("FILL_IN",
                       StringFormat("deal=%I64u position_id=%I64u",trans.deal,positionIdentifier),
                       decisionId,positionTicket,volume,price,loggedSL,loggedTP);
+      SeedManagedPositionStopSnapshots(false);
       return;
      }
 
@@ -1660,6 +1755,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
                       StringFormat("outcome=%s net=%.2f commission=%.2f swap=%.2f fee=%.2f still_open=%s deal=%I64u position_id=%I64u",
                                    outcome,net,commission,swap,fee,stillOpen?"true":"false",trans.deal,positionIdentifier),
                       decisionId,positionTicket,volume,price);
+      SeedManagedPositionStopSnapshots(false);
      }
   }
 //+------------------------------------------------------------------+

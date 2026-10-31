@@ -486,10 +486,23 @@ async def update_position_risk(
     volatility: float,
     factors: dict[str, float],
     evidence_ref: str,
+    previous_stop: float | None = None,
+    current_stop: float | None = None,
 ) -> bool:
     _validate_risk(risk_r, volatility, factors, allow_zero=True)
     if not evidence_ref:
         raise ValueError("evidence_ref is required")
+    if (previous_stop is None) != (current_stop is None):
+        raise ValueError("previous_stop and current_stop must be supplied together")
+    if previous_stop is not None:
+        if not math.isfinite(previous_stop) or not math.isfinite(current_stop):
+            raise ValueError("position stop values must be finite")
+        if previous_stop < 0.0 or current_stop <= 0.0 or math.isclose(previous_stop, current_stop, abs_tol=1e-9):
+            raise ValueError("position stop modification requires a distinct non-negative prior stop and positive current stop")
+        if previous_stop > 0.0:
+            tightened = current_stop > previous_stop if direction == "BUY" else current_stop < previous_stop
+            if not tightened:
+                raise ValueError("protective stop modification must tighten risk, not widen it")
     await _portfolio_lock(session, portfolio_key)
     row = await _lookup_broker_record(
         session, portfolio_key=portfolio_key, broker_position_id=broker_position_id
@@ -501,6 +514,37 @@ async def update_position_risk(
         row.state = "FILLED"
         row.reconciled_at = None
     merged = dict(row.result_json or {})
+    if previous_stop is not None and current_stop is not None:
+        events = list(merged.get("position_modifications") or [])
+        existing = next((item for item in events if item.get("event_id") == evidence_ref), None)
+        if existing is not None:
+            if (
+                existing.get("direction") != direction
+                or not math.isclose(float(existing.get("previous_stop", -1)), previous_stop, abs_tol=1e-7)
+                or not math.isclose(float(existing.get("current_stop", -1)), current_stop, abs_tol=1e-7)
+            ):
+                raise ValueError("position modification event_id was reused with different stop values")
+        else:
+            if events and previous_stop > 0.0:
+                last = events[-1]
+                if last.get("direction") != direction or not math.isclose(
+                    float(last.get("current_stop", -1)), previous_stop, abs_tol=1e-7
+                ):
+                    raise ValueError("position modification sequence is out of order; reconciliation remains unresolved")
+            event = {
+                "event_id": evidence_ref,
+                "broker_position_id": broker_position_id,
+                "direction": direction,
+                "previous_stop": previous_stop,
+                "current_stop": current_stop,
+                "change_type": "INITIAL_PROTECTIVE_STOP" if previous_stop == 0.0 else "TIGHTEN_PROTECTIVE_STOP",
+                "risk_r": risk_r,
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            events.append(event)
+            merged["position_modifications"] = events[-128:]
+        merged["position_modification_reconciled"] = True
+        merged["last_position_modification_event_id"] = evidence_ref
     merged.update(
         {
             "broker_reconciled": True,

@@ -576,3 +576,133 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
             await session.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_position_stop_modification_is_durable_idempotent_and_ordered():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="demo:login-1:magic-7",
+                request_id="stop-event-request",
+                broker_position_id="position-42",
+                broker_order_id="order-42",
+                broker_deal_id="deal-42",
+                symbol="XAUUSD",
+                direction="BUY",
+                risk_r=0.5,
+                volatility=1.0,
+                factors={"gold": 1.0},
+                evidence_ref="broker-snapshot:position-42",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            assert await update_position_risk(
+                session,
+                portfolio_key="demo:login-1:magic-7",
+                broker_position_id="position-42",
+                direction="BUY",
+                risk_r=0.25,
+                volatility=0.9,
+                factors={"gold": 1.0},
+                evidence_ref="mt5-stop:42:1950:1960",
+                previous_stop=1950.0,
+                current_stop=1960.0,
+            )
+            await session.commit()
+
+        async with factory() as session:
+            row = await session.scalar(
+                select(ExecutionLedger).where(ExecutionLedger.request_id == "stop-event-request")
+            )
+            events = row.result_json["position_modifications"]
+            assert len(events) == 1
+            assert events[0]["event_id"] == "mt5-stop:42:1950:1960"
+            assert events[0]["previous_stop"] == 1950.0
+            assert events[0]["current_stop"] == 1960.0
+            assert events[0]["change_type"] == "TIGHTEN_PROTECTIVE_STOP"
+
+            # A lost acknowledgement can be retried without duplicating the event.
+            assert await update_position_risk(
+                session,
+                portfolio_key="demo:login-1:magic-7",
+                broker_position_id="position-42",
+                direction="BUY",
+                risk_r=0.25,
+                volatility=0.9,
+                factors={"gold": 1.0},
+                evidence_ref="mt5-stop:42:1950:1960",
+                previous_stop=1950.0,
+                current_stop=1960.0,
+            )
+            await session.commit()
+
+        async with factory() as session:
+            row = await session.scalar(
+                select(ExecutionLedger).where(ExecutionLedger.request_id == "stop-event-request")
+            )
+            assert len(row.result_json["position_modifications"]) == 1
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_position_stop_modification_rejects_widening_or_out_of_order_events():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            await reconcile_open_position(
+                session,
+                portfolio_key="demo:login-1:magic-7",
+                request_id="stop-order-request",
+                broker_position_id="position-43",
+                broker_order_id="order-43",
+                broker_deal_id="deal-43",
+                symbol="XAUUSD",
+                direction="BUY",
+                risk_r=0.5,
+                volatility=1.0,
+                factors={},
+                evidence_ref="broker-snapshot:position-43",
+            )
+            await session.commit()
+
+        async with factory() as session:
+            with pytest.raises(ValueError, match="must tighten risk"):
+                await update_position_risk(
+                    session, portfolio_key="demo:login-1:magic-7",
+                    broker_position_id="position-43", direction="BUY",
+                    risk_r=0.3, volatility=0.9, factors={},
+                    evidence_ref="widening-stop", previous_stop=1950.0, current_stop=1940.0,
+                )
+            with pytest.raises(ValueError, match="must be supplied together"):
+                await update_position_risk(
+                    session, portfolio_key="demo:login-1:magic-7",
+                    broker_position_id="position-43", direction="BUY",
+                    risk_r=0.3, volatility=0.9, factors={},
+                    evidence_ref="partial-stop-event", previous_stop=1950.0,
+                )
+            await session.rollback()
+
+        async with factory() as session:
+            assert await update_position_risk(
+                session, portfolio_key="demo:login-1:magic-7",
+                broker_position_id="position-43", direction="BUY",
+                risk_r=0.3, volatility=0.9, factors={},
+                evidence_ref="first-stop", previous_stop=1950.0, current_stop=1960.0,
+            )
+            await session.commit()
+
+        async with factory() as session:
+            with pytest.raises(ValueError, match="sequence is out of order"):
+                await update_position_risk(
+                    session, portfolio_key="demo:login-1:magic-7",
+                    broker_position_id="position-43", direction="BUY",
+                    risk_r=0.2, volatility=0.8, factors={},
+                    evidence_ref="skipped-stop", previous_stop=1955.0, current_stop=1970.0,
+                )
+    finally:
+        await engine.dispose()
