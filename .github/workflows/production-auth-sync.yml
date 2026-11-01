@@ -74,6 +74,7 @@ jobs:
           fi
           python3 - "$response_file" <<'PY'
           import json
+          import os
           import sys
 
           with open(sys.argv[1], encoding="utf-8") as response:
@@ -89,14 +90,13 @@ jobs:
                   "but readiness fields did not match the required values."
               )
           print("PASS: HTTP 200; status=online; database=connected; execution_ledger=ready.")
-          import os
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write(
-                  "\\n### Production execution-ledger readiness\\n\\n"
-                  "- Authenticated request: HTTP 200\\n"
-                  "- Bridge status: online\\n"
-                  "- Database: connected\\n"
-                  "- Execution ledger: ready\\n"
-                  "- No trade or ledger mutation was performed.\\n"
+                  "\n### Production execution-ledger readiness\n\n"
+                  "- Authenticated request: HTTP 200\n"
+                  "- Bridge status: online\n"
+                  "- Database: connected\n"
+                  "- Execution ledger: ready\n"
+                  "- No trade or ledger mutation was performed.\n"
               )
           PY
