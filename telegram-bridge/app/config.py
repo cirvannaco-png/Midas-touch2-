@@ -1,5 +1,8 @@
+import ipaddress
+import os
 import re
 import secrets
+from urllib.parse import urlsplit
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,16 +31,14 @@ class Settings(BaseSettings):
     @property
     def bridge_api_key(self) -> str:
         return self.BRIDGE_API_KEY or self.SECRET_KEY
-    DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost:5432/medis_touch"
+    # No implicit database target: production must receive the existing
+    # Render PostgreSQL connection string; local development opts in explicitly.
+    DATABASE_URL: str
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def _normalise_db_url(cls, v: str) -> str:
-        if v.startswith("postgres://"):
-            return "postgresql+asyncpg://" + v[len("postgres://"):]
-        if v.startswith("postgresql://"):
-            return "postgresql+asyncpg://" + v[len("postgresql://"):]
-        return v
+    def _validate_database_url(cls, value: str) -> str:
+        return validate_database_url(value, production=_is_production_runtime())
 
     LOG_LEVEL: str = "INFO"
     RATE_LIMIT_ENABLED: bool = True
@@ -130,6 +131,58 @@ class Settings(BaseSettings):
             if cid and cid not in ids:
                 ids.append(cid)
         return ids
+
+
+
+def _is_production_runtime() -> bool:
+    """Detect Render or an explicitly production-configured process."""
+    return (
+        os.getenv("RENDER", "").lower() == "true"
+        or bool(os.getenv("RENDER_EXTERNAL_URL"))
+        or os.getenv("APP_ENV", "").lower() == "production"
+    )
+
+
+def validate_database_url(value: str, *, production: bool = False) -> str:
+    """Normalize and validate a DB URL before app/Alembic engine creation."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("DATABASE_URL is required and must not be empty")
+
+    value = value.strip()
+    if value.startswith("postgres://"):
+        value = "postgresql+asyncpg://" + value[len("postgres://"):]
+    elif value.startswith("postgresql://"):
+        value = "postgresql+asyncpg://" + value[len("postgresql://"):]
+
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname
+    except ValueError as exc:
+        raise ValueError("DATABASE_URL is malformed; provide a valid database URL") from exc
+
+    if parsed.scheme in {"postgresql+asyncpg", "postgresql"}:
+        if not host:
+            raise ValueError("DATABASE_URL PostgreSQL URL must include a database host")
+        if production:
+            is_loopback = host.lower() == "localhost"
+            try:
+                is_loopback = is_loopback or ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                pass
+            if is_loopback:
+                raise ValueError(
+                    "Production DATABASE_URL cannot use localhost or a loopback address; "
+                    "configure the existing Render PostgreSQL Internal Database URL."
+                )
+    elif parsed.scheme == "sqlite+aiosqlite":
+        if production:
+            raise ValueError("Production DATABASE_URL must use PostgreSQL, not SQLite")
+    else:
+        raise ValueError(
+            "DATABASE_URL must use postgresql+asyncpg:// or sqlite+aiosqlite://"
+        )
+
+    return value
 
 
 settings = Settings()
