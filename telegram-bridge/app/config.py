@@ -2,11 +2,10 @@ import ipaddress
 import os
 import re
 import secrets
-from urllib.parse import urlsplit
-
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 APP_VERSION = "1.6.0"
 
@@ -158,7 +157,7 @@ def validate_database_url(value: str, *, production: bool = False) -> str:
     try:
         parsed = make_url(value)
         host = parsed.host
-    except (TypeError, ValueError) as exc:
+    except (ArgumentError, TypeError, ValueError) as exc:
         raise ValueError("DATABASE_URL is malformed; provide a valid database URL") from exc
 
     if parsed.drivername in {"postgresql+asyncpg", "postgresql"}:
