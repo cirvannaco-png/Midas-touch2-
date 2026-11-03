@@ -119,7 +119,7 @@ warning and the rest of the service starts normally — outbound signal/trade de
 | `ADMIN_CHAT_ID`                   | ✅       | —        | The only chat the inbound bot accepts commands from (your DM) |
 | `SECRET_KEY`                      | ✅       | —        | Shared secret for EA authentication (`X-API-Key` header)     |
 | `WEBHOOK_SECRET_TOKEN`            | ✅       | —        | Shared secret Telegram must present on every inbound webhook call |
-| `DATABASE_URL`                    | ✅       | SQLite¹  | Async DB URL — use `postgresql+asyncpg://...` in production  |
+| `DATABASE_URL`                    | ✅       | —        | Explicit async DB URL; use the existing Render PostgreSQL URL in production, SQLite only for local development/tests |
 | `RENDER_EXTERNAL_URL`             | No       | —        | Set automatically by Render; used to build the webhook URL   |
 | `WEBHOOK_URL`                     | No       | `""`     | Override for the public base URL (local tunneling, custom domains) |
 | `LOG_LEVEL`                       | No       | `INFO`   | Loguru log level                                             |
@@ -141,8 +141,7 @@ warning and the rest of the service starts normally — outbound signal/trade de
 | `COPY_TRADING_CONFIRM_TTL_SECONDS` | No      | `120`    | Window for the "yes" confirmation on `/copytrading on`        |
 | `COPY_FEED_MAX_SIGNALS`           | No       | `20`     | Signals returned per `GET /copy/feed` poll                    |
 
-¹ Default `DATABASE_URL` is `postgresql+asyncpg://user:pass@localhost:5432/medis_touch`.
-  For local SQLite development set `DATABASE_URL=sqlite+aiosqlite:///./signals.db`.
+There is no default database URL. Set `DATABASE_URL` explicitly in `.env` for local work (for example, `sqlite+aiosqlite:///./signals.db`). Production startup rejects missing URLs, SQLite, and localhost/loopback PostgreSQL hosts before Alembic runs. Keep the existing Render PostgreSQL database and use its Internal Database URL; this change does not create, replace, or migrate to a different database.
 
 > **EA timeout note:** keep `TELEGRAM_TIMEOUT_SECONDS × TELEGRAM_MAX_RETRIES` (plus backoff)
 > comfortably under your EA's `WebRequest` timeout. If the EA times out first it will resend
