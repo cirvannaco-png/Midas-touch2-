@@ -42,6 +42,9 @@ TELEGRAM_SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 REQUIRED_SECRETS = ("BOT_TOKEN", "CHAT_ID", "ADMIN_CHAT_ID", "SECRET_KEY")
 GENERATED_SECRETS = ("WEBHOOK_SECRET_TOKEN",)
 LEGACY_EXECUTION_ENV_KEY = "MT5_EXECUTION_API_KEY"
+# These settings are required for the bridge to boot. Check key presence before
+# deploying auth changes; never reconstruct or replace the complete env list.
+REQUIRED_RUNTIME_KEYS = ("BOT_TOKEN", "CHAT_ID", "ADMIN_CHAT_ID", "WEBHOOK_SECRET_TOKEN")
 
 
 class RenderSyncError(RuntimeError):
@@ -128,30 +131,46 @@ def _request(method: str, path: str, api_key: str, body: object | None = None) -
 
 
 def put_env_vars(service_id: str, api_key: str, values: dict[str, str]) -> None:
-    """Replace the service's secret env vars.
+    """Update only requested keys without replacing the service env-var collection.
 
-    Render's PUT /services/{id}/env-vars replaces the whole list, so the
-    non-secret vars declared in render.yaml are re-sent unchanged by reading
-    the current list first and merging.
+    Render's collection-level PUT is destructive: omitted variables are deleted.
+    Use the per-key endpoint instead, and verify boot-critical key presence before
+    changing credentials or triggering a deploy.
     """
-    current = _request("GET", f"/services/{service_id}/env-vars", api_key)
-    existing: dict[str, str] = {}
-    if isinstance(current, list):
-        for item in current:
-            ev = item.get("envVar", item) if isinstance(item, dict) else {}
-            key = ev.get("key")
-            if key and "value" in ev:
-                existing[key] = ev["value"]
+    current = _request("GET", f"/services/{service_id}/env-vars?limit=100", api_key)
+    if not isinstance(current, list):
+        raise RenderSyncError("Render returned an unexpected environment-variable inventory; refusing to deploy.")
 
-    # Retire the obsolete second credential but preserve unrelated service settings.
-    merged = {key: value for key, value in existing.items() if key != LEGACY_EXECUTION_ENV_KEY}
-    merged.update(values)
-    _request(
-        "PUT",
-        f"/services/{service_id}/env-vars",
-        api_key,
-        [{"key": k, "value": v} for k, v in sorted(merged.items())],
-    )
+    existing_keys: set[str] = set()
+    for item in current:
+        env_var = item.get("envVar", item) if isinstance(item, dict) else {}
+        key = env_var.get("key") if isinstance(env_var, dict) else None
+        if isinstance(key, str) and key:
+            existing_keys.add(key)
+
+    missing = sorted(set(REQUIRED_RUNTIME_KEYS) - existing_keys)
+    if missing:
+        raise RenderSyncError(
+            "Missing required Render runtime env var(s): "
+            + ", ".join(missing)
+            + ". Restore these in the production service before auth synchronization; refusing to deploy."
+        )
+
+    for key, value in sorted(values.items()):
+        _request(
+            "PUT",
+            f"/services/{service_id}/env-vars/{key}",
+            api_key,
+            {"value": value},
+        )
+
+    # Retire the obsolete second credential using the non-collection endpoint.
+    # A 404 simply means the service-level key is already absent.
+    try:
+        _request("DELETE", f"/services/{service_id}/env-vars/{LEGACY_EXECUTION_ENV_KEY}", api_key)
+    except RenderSyncError as exc:
+        if "[404]" not in str(exc):
+            raise
 
 
 def trigger_deploy(service_id: str, api_key: str) -> str:
