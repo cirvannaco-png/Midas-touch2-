@@ -28,6 +28,15 @@ def test_production_rejects_sqlite():
         validate_database_url("sqlite+aiosqlite:///./signals.db", production=True)
 
 
+
+def test_malformed_database_url_fails_before_engine_creation():
+    with pytest.raises(ValueError, match="DATABASE_URL is malformed"):
+        validate_database_url(
+            "postgresql+asyncpg://user:pass@db.internal:not-a-port/midas",
+            production=True,
+        )
+
+
 def test_production_accepts_remote_postgresql_and_normalizes_scheme():
     url = validate_database_url(
         "postgresql://user:pass@db.internal:5432/midas",
