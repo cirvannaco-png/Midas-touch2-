@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 APP_VERSION = "1.6.0"
 
@@ -155,16 +156,17 @@ def validate_database_url(value: str, *, production: bool = False) -> str:
         value = "postgresql+asyncpg://" + value[len("postgresql://"):]
 
     try:
-        parsed = urlsplit(value)
-        host = parsed.hostname
-    except ValueError as exc:
+        parsed = make_url(value)
+        host = parsed.host
+    except (TypeError, ValueError) as exc:
         raise ValueError("DATABASE_URL is malformed; provide a valid database URL") from exc
 
-    if parsed.scheme in {"postgresql+asyncpg", "postgresql"}:
+    if parsed.drivername in {"postgresql+asyncpg", "postgresql"}:
         if not host:
             raise ValueError("DATABASE_URL PostgreSQL URL must include a database host")
         if production:
-            is_loopback = host.lower() == "localhost"
+            normalized_host = host.lower().rstrip(".")
+            is_loopback = normalized_host in {"localhost", "localhost.localdomain"} or normalized_host.endswith(".localhost")
             try:
                 is_loopback = is_loopback or ipaddress.ip_address(host).is_loopback
             except ValueError:
@@ -174,7 +176,7 @@ def validate_database_url(value: str, *, production: bool = False) -> str:
                     "Production DATABASE_URL cannot use localhost or a loopback address; "
                     "configure the existing Render PostgreSQL Internal Database URL."
                 )
-    elif parsed.scheme == "sqlite+aiosqlite":
+    elif parsed.drivername == "sqlite+aiosqlite":
         if production:
             raise ValueError("Production DATABASE_URL must use PostgreSQL, not SQLite")
     else:
