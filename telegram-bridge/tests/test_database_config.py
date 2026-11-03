@@ -44,7 +44,7 @@ def test_local_development_can_explicitly_use_sqlite():
 
 
 def test_docker_validates_settings_before_alembic_starts():
-    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
     validation = dockerfile.index("from app.config import settings")
     migrations = dockerfile.index("alembic upgrade head")
     assert validation < migrations
