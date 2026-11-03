@@ -90,15 +90,15 @@ def test_bridge_auth_sync_requires_protected_key():
         rss.collect_bridge_auth({})
 
 
-def test_render_env_sync_removes_legacy_mt5_key_and_preserves_other_values(monkeypatch):
+def test_render_env_sync_updates_only_requested_keys_and_deletes_legacy_key(monkeypatch):
     requests = []
 
     def fake_request(method, path, api_key, body=None):
         requests.append((method, path, body))
         if method == "GET":
             return [
-                {"key": "MT5_EXECUTION_API_KEY", "value": "old-unused-value"},
-                {"key": "UNRELATED_SETTING", "value": "preserve-me"},
+                {"envVar": {"key": key}}
+                for key in (*rss.REQUIRED_RUNTIME_KEYS, "SECRET_KEY", "UNRELATED_SETTING")
             ]
         return None
 
@@ -108,7 +108,34 @@ def test_render_env_sync_removes_legacy_mt5_key_and_preserves_other_values(monke
         "render-api-key",
         {"SECRET_KEY": "canonical", "BRIDGE_API_KEY": "canonical"},
     )
-    payload = requests[-1][2]
-    assert {entry["key"] for entry in payload} == {
-        "UNRELATED_SETTING", "SECRET_KEY", "BRIDGE_API_KEY"
-    }
+
+    assert requests[0] == (
+        "GET", "/services/srv-test/env-vars?limit=100", None
+    )
+    assert requests[1:3] == [
+        ("PUT", "/services/srv-test/env-vars/BRIDGE_API_KEY", {"value": "canonical"}),
+        ("PUT", "/services/srv-test/env-vars/SECRET_KEY", {"value": "canonical"}),
+    ]
+    assert requests[3] == (
+        "DELETE", "/services/srv-test/env-vars/MT5_EXECUTION_API_KEY", None
+    )
+    assert not any(method == "PUT" and path.endswith("/env-vars") for method, path, _ in requests)
+
+
+def test_render_env_sync_refuses_to_deploy_when_required_runtime_key_is_missing(monkeypatch):
+    requests = []
+
+    def fake_request(method, path, api_key, body=None):
+        requests.append((method, path, body))
+        if method == "GET":
+            return [{"envVar": {"key": key}} for key in ("BOT_TOKEN", "CHAT_ID", "WEBHOOK_SECRET_TOKEN")]
+        return None
+
+    monkeypatch.setattr(rss, "_request", fake_request)
+    with pytest.raises(rss.RenderSyncError, match="ADMIN_CHAT_ID"):
+        rss.put_env_vars(
+            "srv-test",
+            "render-api-key",
+            {"SECRET_KEY": "canonical", "BRIDGE_API_KEY": "canonical"},
+        )
+    assert len(requests) == 1
