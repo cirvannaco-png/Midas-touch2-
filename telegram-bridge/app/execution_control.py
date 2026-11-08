@@ -293,6 +293,7 @@ async def transition_execution(
             if current.get(key) is True and result.get(key) is False:
                 return False
         current.update(result)
+        current["last_transition_at"] = datetime.now(timezone.utc).isoformat()
         row.result_json = current
         await session.flush()
         return True
@@ -349,8 +350,9 @@ async def transition_execution(
 
     now = datetime.now(timezone.utc)
     row.state = state
+    merged_result = dict(row.result_json or {})
     if result is not None:
-        row.result_json = result
+        merged_result.update(result)
         for key, column in (
             ("broker_order_id", "broker_order_id"),
             ("broker_deal_id", "broker_deal_id"),
@@ -359,6 +361,8 @@ async def transition_execution(
             value = result.get(key)
             if value is not None:
                 setattr(row, column, str(value))
+    merged_result["last_transition_at"] = datetime.now(timezone.utc).isoformat()
+    row.result_json = merged_result
 
     if state == "CHECKED":
         row.checked_at = now
