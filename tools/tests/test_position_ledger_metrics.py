@@ -1,14 +1,16 @@
 import unittest
+import pytest
 from datetime import datetime, timezone
 
 from tools.position_ledger_metrics import LedgerError, calculate_metrics, reconstruct_positions, reject_reserved_oos_entries
 
 
-def deal(pid, stamp, entry, volume, profit=0.0, commission=0.0, risk_cash=0.0, lane="A", row=2):
+def deal(pid, stamp, entry, volume, profit=0.0, commission=0.0, risk_cash=0.0, lane="A", row=2, symbol="EURUSD", strategy="", regime=""):
     return {
         "position_id": str(pid), "time": datetime.fromisoformat(stamp).replace(tzinfo=timezone.utc),
         "entry": entry, "volume": volume, "profit": profit, "commission": commission,
-        "swap": 0.0, "fee": 0.0, "risk_cash": risk_cash, "lane": lane, "source_row": row,
+        "swap": 0.0, "fee": 0.0, "risk_cash": risk_cash, "lane": lane,
+        "symbol": symbol, "strategy": strategy, "regime": regime, "source_row": row,
     }
 
 
@@ -151,3 +153,43 @@ def test_standard_ledger_refuses_reserved_oos_entries():
 def test_standard_ledger_allows_development_only_deals():
     rows = [deal(901, "2026-08-31T10:00:00", "in", 1.0, commission=-1.0)]
     reject_reserved_oos_entries(rows)
+
+
+def test_strategy_regime_attribution_uses_completed_positions_not_exit_rows():
+    rows = [
+        deal(501, "2026-03-01T09:00:00", "in", 1.0, risk_cash=100.0,
+             symbol="EURUSD", strategy="MOMENTUM_BREAKOUT", regime="TRENDING", row=2),
+        deal(501, "2026-03-01T10:00:00", "out", 0.4, profit=30.0, commission=-0.2,
+             risk_cash=100.0, symbol="EURUSD", strategy="MOMENTUM_BREAKOUT", regime="TRENDING", row=3),
+        deal(501, "2026-03-01T11:00:00", "out", 0.6, profit=20.0, commission=-0.2,
+             risk_cash=100.0, symbol="EURUSD", strategy="MOMENTUM_BREAKOUT", regime="TRENDING", row=4),
+        deal(502, "2026-03-02T09:00:00", "in", 1.0, risk_cash=100.0,
+             symbol="XAUUSD", strategy="MEAN_REVERSION", regime="RANGING", row=5),
+        deal(502, "2026-03-02T10:00:00", "out", 1.0, profit=-20.0,
+             risk_cash=100.0, symbol="XAUUSD", strategy="MEAN_REVERSION", regime="RANGING", row=6),
+    ]
+    positions, ignored = reconstruct_positions(rows)
+    report = calculate_metrics(positions, 10000.0, ignored)
+
+    assert report["completed_positions"] == 2
+    assert report["partial_exit_rows_collapsed"] == 1
+    trend = report["by_symbol_strategy_regime"]["EURUSD|MOMENTUM_BREAKOUT|TRENDING"]
+    assert trend["positions"] == 1
+    assert trend["wins"] == 1
+    assert trend["net_pnl"] == 49.6
+    assert trend["average_realized_R"] == 0.496
+    reversal = report["by_symbol_strategy_regime"]["XAUUSD|MEAN_REVERSION|RANGING"]
+    assert reversal["positions"] == 1
+    assert reversal["losses"] == 1
+    assert reversal["net_pnl"] == -20.0
+
+
+def test_position_rejects_conflicting_strategy_or_regime_lineage():
+    rows = [
+        deal(503, "2026-03-03T09:00:00", "in", 1.0, risk_cash=100.0,
+             strategy="SMC", regime="TRENDING", row=2),
+        deal(503, "2026-03-03T10:00:00", "out", 1.0, profit=10.0, risk_cash=100.0,
+             strategy="MEAN_REVERSION", regime="RANGING", row=3),
+    ]
+    with pytest.raises(LedgerError, match="conflicting strategy labels"):
+        reconstruct_positions(rows)

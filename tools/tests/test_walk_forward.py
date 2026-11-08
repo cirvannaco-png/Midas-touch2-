@@ -116,3 +116,45 @@ def test_rolling_walk_forward_uses_signal_time_and_keeps_temporal_order(make_out
     for fold in report["folds"]:
         assert fold["train_max_signal_time"] < fold["holdout_min_signal_time"]
     assert report["asset_class"] == "fx"
+
+
+def test_walk_forward_filters_strategy_and_regime_independently(make_outcome):
+    weight = "v2.11-baseline"
+    rows = [
+        make_outcome(weight_version=weight, strategy="MOMENTUM_BREAKOUT", regime="TRENDING",
+                     outcome="win", realized_r=1.0, received_at=NOW - timedelta(hours=1)),
+        make_outcome(weight_version=weight, strategy="MOMENTUM_BREAKOUT", regime="TRENDING",
+                     outcome="loss", realized_r=-1.0, received_at=NOW - timedelta(hours=2)),
+        make_outcome(weight_version=weight, strategy="MOMENTUM_BREAKOUT", regime="RANGING",
+                     outcome="win", realized_r=1.0, received_at=NOW - timedelta(hours=3)),
+        make_outcome(weight_version=weight, strategy="MEAN_REVERSION", regime="TRENDING",
+                     outcome="win", realized_r=1.0, received_at=NOW - timedelta(hours=4)),
+    ]
+    report = compute_walk_forward_report(
+        rows, weight, reference_weeks=4, holdout_weeks=1,
+        strategy="MOMENTUM_BREAKOUT", regime="TRENDING",
+    )
+    assert report["strategy"] == "MOMENTUM_BREAKOUT"
+    assert report["regime"] == "TRENDING"
+    assert report["holdout"]["coverage"]["total_signals"] == 2
+
+
+def test_rolling_walk_forward_filters_to_one_strategy_regime_pair(make_outcome):
+    weight = "v2.11-baseline"
+    rows = []
+    for week in range(8, 0, -1):
+        stamp = NOW - timedelta(weeks=week)
+        rows.append(make_outcome(weight_version=weight, strategy="MEAN_REVERSION",
+                                 regime="RANGING", outcome="win", realized_r=1.0,
+                                 received_at=stamp))
+        rows.append(make_outcome(weight_version=weight, strategy="MOMENTUM_BREAKOUT",
+                                 regime="TRENDING", outcome="loss", realized_r=-1.0,
+                                 received_at=stamp))
+    report = compute_rolling_walk_forward_report(
+        rows, weight, train_weeks=2, holdout_weeks=1, step_weeks=1, folds=3,
+        strategy="MEAN_REVERSION", regime="RANGING",
+    )
+    assert report["strategy"] == "MEAN_REVERSION"
+    assert report["regime"] == "RANGING"
+    assert report["folds"]
+    assert all(fold["train_count"] == 2 and fold["holdout_count"] == 1 for fold in report["folds"])
