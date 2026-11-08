@@ -29,7 +29,12 @@ from app.execution_control import (
     transition_execution,
     update_position_risk,
 )
-from app.models import ExecutionDealEvent
+from app.models import (
+    ExecutionDealEvent,
+    ExecutionLedger,
+    ExecutionPositionModification,
+    PortfolioReservation,
+)
 from app.routes import verify_api_key
 
 router = APIRouter(prefix="/execution-ledger", tags=["execution-ledger"])
@@ -47,17 +52,29 @@ async def execution_ledger_health(
     accepted and a real database SELECT completed on this request.
     """
     try:
-        await session.execute(select(1))
+        # A simple SELECT 1 proves connectivity, not that the ledger schema
+        # required by reserve/sync/reconciliation routes has been migrated.
+        # SELECT of each mapped model with LIMIT 0 validates table and column
+        # availability without reading customer/order data or mutating state.
+        required_ledger_models = (
+            ExecutionLedger,
+            PortfolioReservation,
+            ExecutionDealEvent,
+            ExecutionPositionModification,
+        )
+        for model in required_ledger_models:
+            await session.execute(select(model).limit(0))
     except Exception as exc:
         await session.rollback()
         raise HTTPException(
             status_code=503,
-            detail="execution ledger database unavailable",
+            detail="execution ledger database/schema unavailable",
         ) from exc
     return {
         "status": "online",
         "database": "connected",
         "execution_ledger": "ready",
+        "ledger_schema": "ready",
     }
 
 
