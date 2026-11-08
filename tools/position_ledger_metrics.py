@@ -28,6 +28,9 @@ ALIASES = {
     "fee": ("fee", "deal_fee"),
     "risk_cash": ("risk_cash", "initial_risk_cash", "planned_risk", "risk_amount"),
     "lane": ("lane", "risk_lane", "entry_lane"),
+    "symbol": ("symbol", "instrument", "pair"),
+    "strategy": ("strategy", "selected_strategy", "strategy_name"),
+    "regime": ("regime", "market_regime"),
 }
 IN = {"in", "deal_entry_in", "entry_in", "0"}
 OUT = {"out", "deal_entry_out", "entry_out", "1"}
@@ -114,6 +117,9 @@ def read_deals(path):
                 "fee": number(row.get(cols["fee"]) if "fee" in cols else None, "fee", row_num, 0.0),
                 "risk_cash": number(row.get(cols["risk_cash"]) if "risk_cash" in cols else None, "risk_cash", row_num, 0.0),
                 "lane": str(row.get(cols["lane"], "")).strip().upper() if "lane" in cols else "",
+                "symbol": str(row.get(cols["symbol"], "")).strip().upper() if "symbol" in cols else "",
+                "strategy": str(row.get(cols["strategy"], "")).strip().upper() if "strategy" in cols else "",
+                "regime": str(row.get(cols["regime"], "")).strip().upper() if "regime" in cols else "",
                 "source_row": row_num,
             }
             deals.append(item)
@@ -159,9 +165,18 @@ def reconstruct_positions(deals, open_ids=None):
         risks = [r["risk_cash"] for r in rows if r["risk_cash"] > 0]
         if risks and max(risks) - min(risks) > max(0.01, max(risks) * 0.01):
             raise LedgerError(f"position {pid}: risk_cash differs by more than 1% between rows")
-        lanes = {r["lane"] for r in rows if r["lane"]}
+        lanes = {r["lane"] for r in rows if r.get("lane")}
         if len(lanes) > 1:
             raise LedgerError(f"position {pid}: conflicting lane labels {sorted(lanes)}")
+        symbols = {r["symbol"] for r in rows if r.get("symbol")}
+        strategies = {r["strategy"] for r in rows if r.get("strategy")}
+        regimes = {r["regime"] for r in rows if r.get("regime")}
+        if len(symbols) > 1:
+            raise LedgerError(f"position {pid}: conflicting symbol labels {sorted(symbols)}")
+        if len(strategies) > 1:
+            raise LedgerError(f"position {pid}: conflicting strategy labels {sorted(strategies)}")
+        if len(regimes) > 1:
+            raise LedgerError(f"position {pid}: conflicting regime labels {sorted(regimes)}")
         net = sum(r["profit"] + r["commission"] + r["swap"] + r["fee"] for r in rows)
         positions.append({
             "position_id": pid, "opened_at": min(r["time"] for r in entries),
@@ -172,6 +187,9 @@ def reconstruct_positions(deals, open_ids=None):
             "swap": sum(r["swap"] for r in rows), "fee": sum(r["fee"] for r in rows),
             "net_pnl": net, "risk_cash": risks[0] if risks else None,
             "lane": next(iter(lanes), "UNTAGGED"),
+            "symbol": next(iter(symbols), "UNKNOWN"),
+            "strategy": next(iter(strategies), "UNTAGGED"),
+            "regime": next(iter(regimes), "UNTAGGED"),
         })
     positions.sort(key=lambda p: (p["closed_at"], p["position_id"]))
     return positions, ignored
@@ -249,6 +267,42 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
         if avg_win_r is not None and avg_loss_r_abs is not None and avg_win_r + avg_loss_r_abs > 0
         else None
     )
+    by_symbol_strategy_regime = {}
+    group_keys = sorted({
+        (position.get("symbol", "UNKNOWN"), position.get("strategy", "UNTAGGED"),
+         position.get("regime", "UNTAGGED"))
+        for position in positions
+    })
+    for symbol, strategy, regime in group_keys:
+        group = [
+            position for position in positions
+            if (position.get("symbol", "UNKNOWN"), position.get("strategy", "UNTAGGED"),
+                position.get("regime", "UNTAGGED")) == (symbol, strategy, regime)
+        ]
+        group_wins = [position for position in group if position["net_pnl"] > EPS]
+        group_losses = [position for position in group if position["net_pnl"] < -EPS]
+        group_gross_win = sum(position["net_pnl"] for position in group_wins)
+        group_gross_loss = abs(sum(position["net_pnl"] for position in group_losses))
+        group_r = [
+            position["net_pnl"] / position["risk_cash"]
+            for position in group
+            if position.get("risk_cash") and position["risk_cash"] > 0
+        ]
+        key = f"{symbol}|{strategy}|{regime}"
+        by_symbol_strategy_regime[key] = {
+            "symbol": symbol, "strategy": strategy, "regime": regime,
+            "positions": len(group), "wins": len(group_wins),
+            "losses": len(group_losses),
+            "net_pnl": round(sum(position["net_pnl"] for position in group), 2),
+            "expectancy_per_position": round(sum(position["net_pnl"] for position in group) / len(group), 4),
+            "win_rate_pct_excluding_flats": round(100 * len(group_wins) / (len(group_wins) + len(group_losses)), 2)
+                if group_wins or group_losses else None,
+            "profit_factor": round(group_gross_win / group_gross_loss, 4)
+                if group_gross_loss else (None if not group_gross_win else "no_losses"),
+            "average_realized_R": round(sum(group_r) / len(group_r), 4) if group_r else None,
+            "positions_with_risk_cash": len(group_r),
+        }
+
     return {
         "status": "completed" if positions else "no_complete_positions",
         "initial_balance": round(initial_balance, 2), "final_balance": round(balance, 2),
@@ -272,7 +326,8 @@ def calculate_metrics(positions, initial_balance=10000.0, ignored=None):
         "max_consecutive_losses": max_consecutive_losses,
         "max_closed_position_drawdown_cash": round(max_dd, 2), "max_closed_position_drawdown_pct": round(max_dd_pct, 4),
         "average_realized_R": round(sum(r_values) / len(r_values), 4) if r_values else None,
-        "positions_with_risk_cash": len(r_values), "by_lane": lanes, "ignored_groups": ignored or {},
+        "positions_with_risk_cash": len(r_values), "by_lane": lanes,
+        "by_symbol_strategy_regime": by_symbol_strategy_regime, "ignored_groups": ignored or {},
         "drawdown_basis": "closed-position settlement sequence, not tick-level equity",
         "equity_curve": equity,
     }
