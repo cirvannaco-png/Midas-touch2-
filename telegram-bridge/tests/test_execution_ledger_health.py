@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.api.execution_ledger import execution_ledger_health
 from app.database import Base
 from app.models import (
-    ExecutionDealEvent,
     ExecutionLedger,
     ExecutionPositionModification,
     PortfolioReservation,
