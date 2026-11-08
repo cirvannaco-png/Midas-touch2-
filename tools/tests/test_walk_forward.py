@@ -157,4 +157,4 @@ def test_rolling_walk_forward_filters_to_one_strategy_regime_pair(make_outcome):
     assert report["strategy"] == "MEAN_REVERSION"
     assert report["regime"] == "RANGING"
     assert report["folds"]
-    assert all(fold["train_count"] == 1 and fold["holdout_count"] == 1 for fold in report["folds"])
+    assert all(fold["train_count"] == 2 and fold["holdout_count"] == 1 for fold in report["folds"])
