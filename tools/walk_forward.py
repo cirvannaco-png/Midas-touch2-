@@ -65,9 +65,11 @@ def _event_time(row) -> datetime | None:
     return getattr(row, "signal_time", None) or getattr(row, "received_at", None)
 
 
-def _filter_scope(rows, *, symbol: str | None = None, strategy: str | None = None):
+def _filter_scope(rows, *, symbol: str | None = None, strategy: str | None = None,
+                  regime: str | None = None):
     out = [r for r in rows if symbol is None or r.symbol == symbol]
-    return [r for r in out if strategy is None or r.strategy == strategy]
+    out = [r for r in out if strategy is None or r.strategy == strategy]
+    return [r for r in out if regime is None or r.regime == regime]
 
 
 def split_train_holdout(rows, reference_weeks: int = 4, holdout_weeks: int = 1,
@@ -89,8 +91,8 @@ def split_train_holdout(rows, reference_weeks: int = 4, holdout_weeks: int = 1,
 
 def compute_walk_forward_report(rows, weight_version: str, reference_weeks: int = 4,
                                 holdout_weeks: int = 1, *, symbol: str | None = None,
-                                strategy: str | None = None) -> dict:
-    tagged = _filter_scope([r for r in rows if r.weight_version == weight_version], symbol=symbol, strategy=strategy)
+                                strategy: str | None = None, regime: str | None = None) -> dict:
+    tagged = _filter_scope([r for r in rows if r.weight_version == weight_version], symbol=symbol, strategy=strategy, regime=regime)
     train, holdout = split_train_holdout(tagged, reference_weeks, holdout_weeks)
     train_resolved = [r for r in train if r.outcome in RESOLVED_OUTCOMES]
     holdout_resolved = [r for r in holdout if r.outcome in RESOLVED_OUTCOMES]
@@ -103,7 +105,7 @@ def compute_walk_forward_report(rows, weight_version: str, reference_weeks: int 
         "holdout_weeks": holdout_weeks,
         "symbol": symbol,
         "asset_class": classify_symbol(symbol) if symbol else "multi_asset",
-        "strategy": strategy,
+        "strategy": strategy, "regime": regime,
         "time_basis": "signal_time_with_received_at_legacy_fallback",
         "train": compute_report(train) if train else None,
         "holdout": compute_report(holdout) if holdout else None,
@@ -119,11 +121,11 @@ def compute_walk_forward_report(rows, weight_version: str, reference_weeks: int 
 def compute_rolling_walk_forward_report(rows, weight_version: str, train_weeks: int = 4,
                                         holdout_weeks: int = 1, step_weeks: int = 1,
                                         folds: int = 3, *, symbol: str | None = None,
-                                        strategy: str | None = None) -> dict:
+                                        strategy: str | None = None, regime: str | None = None) -> dict:
     """Run multiple chronological train/holdout folds without future leakage."""
     if train_weeks <= 0 or holdout_weeks <= 0 or step_weeks <= 0 or folds <= 0:
         raise ValueError("train_weeks, holdout_weeks, step_weeks, and folds must be > 0")
-    tagged = _filter_scope([r for r in rows if r.weight_version == weight_version], symbol=symbol, strategy=strategy)
+    tagged = _filter_scope([r for r in rows if r.weight_version == weight_version], symbol=symbol, strategy=strategy, regime=regime)
     events = [(r, _event_time(r)) for r in tagged if _event_time(r) is not None]
     if not events:
         return {"weight_version": weight_version, "folds": [], "verdict": "insufficient_data", "time_basis": "signal_time_with_received_at_legacy_fallback", "symbol": symbol, "asset_class": classify_symbol(symbol) if symbol else "multi_asset", "strategy": strategy}
@@ -249,7 +251,7 @@ async def run(args) -> int:
             print(f"walk_forward: OOS purity firewall rejected dataset: {exc}", file=sys.stderr)
             return 2
     if args.rolling:
-        report = compute_rolling_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks, args.step_weeks, args.folds, symbol=args.symbol, strategy=args.strategy)
+        report = compute_rolling_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks, args.step_weeks, args.folds, symbol=args.symbol, strategy=args.strategy, regime=args.regime)
     else:
         report = compute_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks, symbol=args.symbol, strategy=args.strategy)
     if args.json:
@@ -267,6 +269,7 @@ def main():
     parser.add_argument("--tester-csv")
     parser.add_argument("--symbol")
     parser.add_argument("--strategy")
+    parser.add_argument("--regime", help="optional exact regime label, e.g. TRENDING or RANGING")
     parser.add_argument("--rolling", action="store_true")
     parser.add_argument("--folds", type=int, default=3)
     parser.add_argument("--step-weeks", type=int, default=1)
