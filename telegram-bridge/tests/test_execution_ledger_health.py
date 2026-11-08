@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.api.execution_ledger import execution_ledger_health
 from app.database import Base
 from app.models import (
+    ExecutionDealEvent,
     ExecutionLedger,
     ExecutionPositionModification,
     PortfolioReservation,
@@ -22,10 +23,11 @@ def test_execution_ledger_health_reports_schema_ready(client, auth_headers):
     assert body["ledger_schema"] == "ready"
 
 
+@pytest.mark.parametrize("schema_gap", ["missing_table", "missing_column"])
 @pytest.mark.asyncio
-async def test_execution_ledger_health_fails_when_required_table_is_missing():
+async def test_execution_ledger_health_fails_when_required_schema_is_incomplete(schema_gap):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    required_but_present_tables = [
+    available_tables = [
         ExecutionLedger.__table__,
         PortfolioReservation.__table__,
         ExecutionPositionModification.__table__,
@@ -36,9 +38,14 @@ async def test_execution_ledger_health_fails_when_required_table_is_missing():
             await connection.run_sync(
                 lambda sync: Base.metadata.create_all(
                     sync,
-                    tables=required_but_present_tables,
+                    tables=available_tables,
                 )
             )
+            if schema_gap == "missing_column":
+                # Keep the table present but deliberately omit mapped columns.
+                await connection.exec_driver_sql(
+                    "CREATE TABLE execution_deal_events (id INTEGER PRIMARY KEY)"
+                )
 
         factory = async_sessionmaker(
             engine,
