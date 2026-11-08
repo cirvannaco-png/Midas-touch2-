@@ -55,6 +55,7 @@ jobs:
               "BRIDGE_BASE_URL: https://midas-touch2.onrender.com",
               "secrets.BRIDGE_API_KEY",
               "execution_ledger",
+              "ledger_schema",
               "database",
               "status",
               "401|403|422",
@@ -149,6 +150,7 @@ jobs:
               "status": "online",
               "database": "connected",
               "execution_ledger": "ready",
+              "ledger_schema": "ready",
           }
           mismatches = {
               key: payload.get(key)
