@@ -40,15 +40,29 @@ class TradeEventType(str, enum.Enum):
     CLOSED_MANUAL = "closed_manual"
 
 
-_signal_status_type = PG_ENUM(SignalStatus, name="signalstatus", create_type=False)
+_signal_status_type = PG_ENUM(
+    SignalStatus,
+    name="signalstatus",
+    create_type=False,
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
+)
 _signal_lifecycle_status_type = PG_ENUM(
-    SignalLifecycleStatus, name="signallifecyclestatus", create_type=False
+    SignalLifecycleStatus,
+    name="signallifecyclestatus",
+    create_type=False,
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
 )
 _trade_event_status_type = PG_ENUM(
-    TradeEventStatus, name="tradeeventstatus", create_type=False
+    TradeEventStatus,
+    name="tradeeventstatus",
+    create_type=False,
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
 )
 _trade_event_type_type = PG_ENUM(
-    TradeEventType, name="tradeeventtype", create_type=False
+    TradeEventType,
+    name="tradeeventtype",
+    create_type=False,
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
 )
 
 
