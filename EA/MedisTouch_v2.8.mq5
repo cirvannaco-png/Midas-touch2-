@@ -39,6 +39,7 @@
 input group "General"
 input int InpMaxHistoryBars=500;
 input string InpTesterExportRunId="matched-experiment"; // logical label; exporter adds a runtime suffix and remains tester-only
+input int InpTesterServerUtcOffsetMinutes=99999; // Verified historical broker server UTC offset; split runs at DST changes.
 input group "Structure"
 input int InpSwingStrength=3;
 input group "Per-Concept Timeframes"
@@ -825,7 +826,7 @@ int OnInit()
      }
    if(!ResolveSelectedAccountRiskProfile()) return INIT_PARAMETERS_INCORRECT;
    g_testerDealExport.Init(InpTesterExportRunId,_Symbol,InpMagicNumber,
-                           (bool)MQLInfoInteger(MQL_TESTER));
+                           (bool)MQLInfoInteger(MQL_TESTER),InpTesterServerUtcOffsetMinutes);
    if(StringLen(InpExecutionLedgerBaseUrl)>0 && StringLen(InpBridgeApiKey)>0)
       g_executionLedger.Init(InpExecutionLedgerBaseUrl,InpBridgeApiKey,InpMagicNumber,InpWebRequestTimeoutMs);
    else
