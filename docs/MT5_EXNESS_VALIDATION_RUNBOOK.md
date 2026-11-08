@@ -10,6 +10,10 @@ Status: execution procedure only. No performance test or broker test is claimed 
 - Preserve the current production trailing-stop default and all existing emergency-stop and account-risk safeguards.
 - If the terminal build, broker symbol properties, history quality, or cost assumptions cannot be verified, mark the run BLOCKED; do not fill missing facts with estimates.
 
+## Requested small-account risk profile — research-only
+
+The research branch sets `InpSmallMaxDailyLossPercent=50.0` and `InpSmallMaxDrawdownPercent=55.0` because the policy validator requires the hard drawdown ceiling to exceed the daily-loss cap. On KSh 1,500, a 50% daily loss is KSh 750 before costs; this is a catastrophic-loss allowance, not a safe operating target. These values are not approved for live use. Keep production unchanged and the pull request unmerged until the owner explicitly reviews the loss budget and all historical/demo gates pass.
+
 ## Gate A — prepare one immutable test bundle
 
 Create a dated folder outside the repository, for example `validation/2026-10-18/`, and retain:

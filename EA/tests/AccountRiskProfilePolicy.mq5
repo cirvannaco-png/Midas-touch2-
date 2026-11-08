@@ -45,6 +45,10 @@ int OnInit()
    reason="";
    AssertTrue(ValidateAccountRiskLimits(unsafeRisk,reason),
       "risk at the 20 percent hard ceiling remains valid when other limits are coherent");
+   SetLimits(unsafeRisk,20.0,3,50.0,55.0,10.0,0.75,20.0,3,3);
+   reason="";
+   AssertTrue(ValidateAccountRiskLimits(unsafeRisk,reason),
+      "research-only 50 percent daily cap validates only with a larger drawdown ceiling");
    SetLimits(unsafeRisk,20.01,3,30.0,40.0,10.0,0.75,20.01,3,3);
    reason="";
    AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
