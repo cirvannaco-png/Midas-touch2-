@@ -250,6 +250,8 @@ class PendingOrderSyncRequest(BaseModel):
     risk_r: float = Field(gt=0)
     volatility: float = Field(ge=0)
     factors: dict[str, float] = Field(default_factory=dict)
+    required_margin: float = Field(ge=0)
+    account_currency: str = Field(min_length=3, max_length=8)
     evidence_ref: str = Field(min_length=1, max_length=256)
 
 
@@ -434,6 +436,8 @@ async def sync_live_pending_order(
             volatility=body.volatility,
             factors=body.factors,
             evidence_ref=body.evidence_ref,
+            required_margin=body.required_margin,
+            account_currency=body.account_currency,
         )
         await session.commit()
     except ValueError as exc:
