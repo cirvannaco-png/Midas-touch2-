@@ -253,7 +253,7 @@ async def run(args) -> int:
     if args.rolling:
         report = compute_rolling_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks, args.step_weeks, args.folds, symbol=args.symbol, strategy=args.strategy, regime=args.regime)
     else:
-        report = compute_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks, symbol=args.symbol, strategy=args.strategy)
+        report = compute_walk_forward_report(rows, args.weight_version, args.reference_weeks, args.holdout_weeks, symbol=args.symbol, strategy=args.strategy, regime=args.regime)
     if args.json:
         print(json.dumps(report, indent=2, default=str))
     else:
