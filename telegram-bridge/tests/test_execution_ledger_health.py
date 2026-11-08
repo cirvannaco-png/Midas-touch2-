@@ -12,6 +12,17 @@ from app.models import (
 )
 
 
+def test_execution_ledger_health_requires_bridge_api_key(client):
+    missing_key = client.get("/execution-ledger/health")
+    invalid_key = client.get(
+        "/execution-ledger/health",
+        headers={"X-API-Key": "wrong"},
+    )
+
+    assert missing_key.status_code == 422
+    assert invalid_key.status_code == 401
+
+
 def test_execution_ledger_health_reports_schema_ready(client, auth_headers):
     response = client.get("/execution-ledger/health", headers=auth_headers)
 
