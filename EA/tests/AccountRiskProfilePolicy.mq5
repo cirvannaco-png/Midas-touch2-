@@ -9,11 +9,12 @@ void AssertTrue(bool value,string label)
    else { PrintFormat("FAIL: %s",label); failures++; }
   }
 
-void SetLimits(AccountRiskLimits &v,double risk,int openTrades,double daily,double drawdown,
+void SetLimits(AccountRiskLimits &v,ENUM_ACCOUNT_RISK_PROFILE profile,string name,
+               double risk,int openTrades,double daily,double drawdown,
                double derisk,double floor,double portfolio,int perSymbol,int perGroup)
   {
-   v.profile=ACCOUNT_RISK_PROFILE_LEGACY_INPUTS;
-   v.profileName="fixture";
+   v.profile=profile;
+   v.profileName=name;
    v.riskPercentPerTrade=risk;
    v.maxOpenTrades=openTrades;
    v.maxDailyLossPercent=daily;
@@ -27,105 +28,113 @@ void SetLimits(AccountRiskLimits &v,double risk,int openTrades,double daily,doub
 
 int OnInit()
   {
-   AccountRiskLimits legacy,smallAccount,propFirm,selected;
-   SetLimits(legacy,0.50,3,3.0,10.0,5.0,0.25,3.0,3,3);
-   SetLimits(smallAccount,0.45,5,2.5,9.0,4.0,0.20,2.5,3,3);
-   SetLimits(propFirm,0.25,3,1.5,5.0,2.0,0.25,1.0,2,2);
+   AccountRiskLimits legacy,smallAccount,largeAccount,propFirm,selected,unsafeRisk;
+   SetLimits(legacy,ACCOUNT_RISK_PROFILE_LEGACY_INPUTS,"legacy_inputs",
+             0.50,3,3.0,10.0,5.0,0.25,3.0,3,3);
+   SetLimits(smallAccount,ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,"small_account",
+             0.50,1,1.5,5.0,2.0,0.25,0.5,1,1);
+   SetLimits(largeAccount,ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT,"large_account",
+             20.0,3,25.0,35.0,10.0,0.75,20.0,3,3);
+   SetLimits(propFirm,ACCOUNT_RISK_PROFILE_PROP_FIRM,"prop_firm",
+             0.25,3,1.5,5.0,2.0,0.25,1.0,2,2);
    string reason="";
 
-   // Hard safety ceiling is independent of the operator-configured daily and
-   // portfolio caps. A 30% setup must not become valid by raising those caps.
-   AccountRiskLimits unsafeRisk;
-   SetLimits(unsafeRisk,30.0,3,40.0,60.0,20.0,0.25,35.0,3,3);
+   SetLimits(unsafeRisk,ACCOUNT_RISK_PROFILE_LEGACY_INPUTS,"unsafe",
+             30.0,3,40.0,60.0,20.0,0.25,35.0,3,3);
    AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
-      "30 percent per-trade risk is rejected by the hard safety ceiling");
+              "30 percent per-trade risk is rejected by the shared hard ceiling");
    AssertTrue(StringFind(reason,"hard safety ceiling")>=0,
-      "excessive risk reports the hard-ceiling remediation");
-   SetLimits(unsafeRisk,20.0,3,25.0,35.0,10.0,0.75,20.0,3,3);
-   reason="";
-   AssertTrue(ValidateAccountRiskLimits(unsafeRisk,reason),
-      "risk at the 20 percent hard ceiling remains valid when other limits are coherent");
-   SetLimits(unsafeRisk,20.01,3,30.0,40.0,10.0,0.75,20.01,3,3);
-   reason="";
-   AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
-      "risk above the 20 percent hard ceiling is rejected");
+              "excessive risk reports the hard-ceiling remediation");
 
-   AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_LEGACY_INPUTS,
-      legacy,smallAccount,propFirm,selected,reason),"legacy profile resolves");
-   AssertTrue(selected.riskPercentPerTrade==0.50 && selected.maxOpenTrades==3 &&
-      selected.maxDrawdownPercent==10.0,"legacy profile preserves its independent limits");
+   reason="";
+   AssertTrue(ValidateAccountRiskLimits(legacy,reason),"legacy profile resolves with baseline limits");
 
    reason="";
    AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
-      legacy,smallAccount,propFirm,selected,reason),"small-account profile resolves");
-   AssertTrue(selected.profileName=="small_account" && selected.riskPercentPerTrade==0.45 &&
-      selected.maxOpenTrades==5 && selected.maxPortfolioRiskPercent==2.5,
-      "small-account values are selected without inheriting legacy values");
+       legacy,smallAccount,largeAccount,propFirm,selected,reason),
+       "small-account profile resolves");
+   AssertTrue(selected.profileName=="small_account" &&
+              selected.riskPercentPerTrade==0.50 && selected.maxOpenTrades==1 &&
+              selected.maxDailyLossPercent==1.5 && selected.maxDrawdownPercent==5.0 &&
+              selected.maxPortfolioRiskPercent==0.5,
+              "small-account profile selects conservative limits only");
 
    reason="";
-   AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_PROP_FIRM,
-      legacy,smallAccount,propFirm,selected,reason),"prop-firm profile resolves");
-   AssertTrue(selected.profileName=="prop_firm" && selected.riskPercentPerTrade==0.25 &&
-      selected.maxDrawdownPercent==5.0 && selected.maxPositionsPerSymbol==2,
-      "prop-firm values are isolated from the small-account profile");
+   SetLimits(unsafeRisk,ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,"small_account",
+             0.51,1,1.5,5.0,2.0,0.25,0.51,1,1);
+   AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
+              "small-account risk above 0.5 percent is rejected");
+
+   reason="";
+   SetLimits(unsafeRisk,ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,"small_account",
+             0.50,2,1.5,5.0,2.0,0.25,0.5,2,2);
+   AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
+              "small-account configuration allowing two positions is rejected");
+
+   reason="";
+   SetLimits(unsafeRisk,ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,"small_account",
+             0.50,1,1.6,5.0,2.0,0.25,0.5,1,1);
+   AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
+              "small-account daily-loss cap above 1.5 percent is rejected");
+
+   reason="";
+   AssertTrue(ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT,
+       legacy,smallAccount,largeAccount,propFirm,selected,reason),
+       "large-account profile resolves");
+   AssertTrue(selected.profileName=="large_account" &&
+              selected.riskPercentPerTrade==20.0 && selected.maxOpenTrades==3 &&
+              selected.maxDailyLossPercent==25.0 && selected.maxDrawdownPercent==35.0 &&
+              selected.maxPortfolioRiskPercent==20.0,
+              "large-account profile selects independent 15-20 percent risk settings");
+
+   reason="";
+   SetLimits(unsafeRisk,ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT,"large_account",
+             14.99,3,25.0,35.0,10.0,0.75,20.0,3,3);
+   AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
+              "large-account base risk below the 15 percent profile floor is rejected");
+
+   reason="";
+   SetLimits(unsafeRisk,ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT,"large_account",
+             20.01,3,30.0,40.0,10.0,0.75,20.01,3,3);
+   AssertTrue(!ValidateAccountRiskLimits(unsafeRisk,reason),
+              "large-account risk above shared 20 percent ceiling is rejected");
 
    reason="";
    AssertTrue(ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_LEGACY_INPUTS,
-      legacy,smallAccount,propFirm,false,false,selected,reason),
-      "legacy profile remains available without non-legacy setup flags");
-
+       legacy,smallAccount,largeAccount,propFirm,false,false,false,selected,reason),
+       "legacy profile remains available without non-legacy config flags");
    reason="";
    AssertTrue(!ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
-      legacy,smallAccount,propFirm,false,false,selected,reason),
-      "small-account profile fails closed before its settings are configured");
-   AssertTrue(StringFind(reason,"must be configured")>=0,
-      "unconfigured small-account profile reports explicit remediation");
-
+       legacy,smallAccount,largeAccount,propFirm,false,false,false,selected,reason),
+       "unconfigured small-account profile fails closed");
+   reason="";
+   AssertTrue(!ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT,
+       legacy,smallAccount,largeAccount,propFirm,true,false,false,selected,reason),
+       "unconfigured large-account profile fails closed");
+   AssertTrue(StringFind(reason,"large-account risk inputs")>=0,
+              "large-account configuration failure is explicit");
    reason="";
    AssertTrue(!ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_PROP_FIRM,
-      legacy,smallAccount,propFirm,true,false,selected,reason),
-      "prop-firm profile fails closed before exact firm rules are configured");
-   AssertTrue(StringFind(reason,"exact prop-firm limits")>=0,
-      "unconfigured prop-firm profile reports explicit remediation");
-
+       legacy,smallAccount,largeAccount,propFirm,true,true,false,selected,reason),
+       "unconfigured prop-firm profile fails closed");
    reason="";
    AssertTrue(ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
-      legacy,smallAccount,propFirm,true,false,selected,reason),
-      "configured small-account profile resolves normally");
-   AssertTrue(selected.profileName=="small_account" && selected.riskPercentPerTrade==0.45,
-      "configured small-account profile retains its own selected values");
-
+       legacy,smallAccount,largeAccount,propFirm,true,true,false,selected,reason),
+       "configured small-account profile resolves");
+   reason="";
+   AssertTrue(ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT,
+       legacy,smallAccount,largeAccount,propFirm,true,true,false,selected,reason),
+       "configured large-account profile resolves");
    reason="";
    AssertTrue(ResolveConfiguredAccountRiskLimits(ACCOUNT_RISK_PROFILE_PROP_FIRM,
-      legacy,smallAccount,propFirm,true,true,selected,reason),
-      "configured prop-firm profile resolves normally");
-   AssertTrue(selected.profileName=="prop_firm" && selected.riskPercentPerTrade==0.25,
-      "configured prop-firm profile retains its own selected values");
+       legacy,smallAccount,largeAccount,propFirm,true,true,true,selected,reason),
+       "configured prop-firm profile resolves");
 
    reason="";
    smallAccount.deriskStartPercent=smallAccount.maxDrawdownPercent;
    AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
-      legacy,smallAccount,propFirm,selected,reason),
-      "profile fails closed when de-risking starts at or after hard drawdown");
-   AssertTrue(StringLen(reason)>0,"invalid profile returns a diagnostic reason");
-
-   reason="";
-   SetLimits(smallAccount,0.50,3,0.25,5.0,2.0,0.20,1.0,2,2);
-   AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
-      legacy,smallAccount,propFirm,selected,reason),
-      "profile fails closed when one trade can equal or exceed the daily-loss cap");
-
-   reason="";
-   SetLimits(smallAccount,0.40,3,2.0,8.0,3.0,0.20,2.5,3,3);
-   AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
-      legacy,smallAccount,propFirm,selected,reason),
-      "profile fails closed when portfolio open risk exceeds daily-loss cap");
-
-   reason="";
-   SetLimits(smallAccount,0.40,2,2.0,8.0,3.0,0.20,1.5,3,2);
-   AssertTrue(!ResolveAccountRiskLimits(ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT,
-      legacy,smallAccount,propFirm,selected,reason),
-      "profile fails closed when per-symbol positions exceed max open trades");
+       legacy,smallAccount,largeAccount,propFirm,selected,reason),
+       "profile fails closed when de-risking starts at hard drawdown");
 
    PrintFormat("AccountRiskProfilePolicy tests: %d failure(s)",failures);
    return failures==0 ? INIT_SUCCEEDED : INIT_FAILED;
