@@ -24,7 +24,7 @@ async def reserve_with_margin(session, **kwargs):
     kwargs.setdefault("required_margin", 100.0)
     kwargs.setdefault("margin_snapshot_epoch", int(datetime.now(timezone.utc).timestamp()))
     kwargs.setdefault("account_currency", "USD")
-    return await reserve_with_margin(session, **kwargs)
+    return await reserve_execution(session, **kwargs)
 
 
 TABLES = [
