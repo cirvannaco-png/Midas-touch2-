@@ -128,7 +128,7 @@ def compute_rolling_walk_forward_report(rows, weight_version: str, train_weeks: 
     tagged = _filter_scope([r for r in rows if r.weight_version == weight_version], symbol=symbol, strategy=strategy, regime=regime)
     events = [(r, _event_time(r)) for r in tagged if _event_time(r) is not None]
     if not events:
-        return {"weight_version": weight_version, "folds": [], "verdict": "insufficient_data", "time_basis": "signal_time_with_received_at_legacy_fallback", "symbol": symbol, "asset_class": classify_symbol(symbol) if symbol else "multi_asset", "strategy": strategy}
+        return {"weight_version": weight_version, "folds": [], "verdict": "insufficient_data", "time_basis": "signal_time_with_received_at_legacy_fallback", "symbol": symbol, "asset_class": classify_symbol(symbol) if symbol else "multi_asset", "strategy": strategy, "regime": regime}
     start = min(t for _, t in events)
     end = max(t for _, t in events)
     train_delta = timedelta(weeks=train_weeks)
@@ -159,7 +159,7 @@ def compute_rolling_walk_forward_report(rows, weight_version: str, train_weeks: 
             })
         cursor += step_delta
     verdict = "insufficient_data" if not reports else ("diverged" if any(f["verdict"] == "diverged" for f in reports) else ("insufficient_data" if any(f["verdict"] == "insufficient_data" for f in reports) else "consistent"))
-    return {"weight_version": weight_version, "train_weeks": train_weeks, "holdout_weeks": holdout_weeks, "step_weeks": step_weeks, "symbol": symbol, "asset_class": classify_symbol(symbol) if symbol else "multi_asset", "strategy": strategy, "time_basis": "signal_time_with_received_at_legacy_fallback", "folds": reports, "verdict": verdict}
+    return {"weight_version": weight_version, "train_weeks": train_weeks, "holdout_weeks": holdout_weeks, "step_weeks": step_weeks, "symbol": symbol, "asset_class": classify_symbol(symbol) if symbol else "multi_asset", "strategy": strategy, "regime": regime, "time_basis": "signal_time_with_received_at_legacy_fallback", "folds": reports, "verdict": verdict}
 
 def _pick(row: dict[str, str], aliases: tuple[str, ...], required: bool = False) -> str | None:
     normalized = {k.strip().lower().replace(" ", "_"): (v or "").strip() for k, v in row.items()}
