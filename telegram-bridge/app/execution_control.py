@@ -812,6 +812,8 @@ async def sync_pending_order(
                 "risk_r": risk_r,
                 "volatility": volatility,
                 "factor_exposure": factors,
+                "required_margin": required_margin,
+                "account_currency": account_currency,
             },
             result_json={},
             created_at=now,
