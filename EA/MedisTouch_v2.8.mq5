@@ -416,7 +416,7 @@ bool PrepareLedgerForSubmit(const TradeDecisionRecord &decision,const int legInd
                       decision.decision_id,0,lots,entry);
       return false;
      }
-   string direction=(decision.setup.type==ORDER_TYPE_BUY)?"BUY":"SELL";
+   string direction=IsOrderBuyDirection(decision.setup.type)?"BUY":"SELL";
    string signalId="MT#"+IntegerToString(decision.decision_id);
    if(!g_executionLedger.Reserve(decision.decision_id,legIndex,signalId,_Symbol,direction,
                                  riskR,MathMax(0.0,volatility),requiredMargin,freeMargin,
