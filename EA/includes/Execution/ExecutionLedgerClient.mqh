@@ -113,16 +113,21 @@ public:
 
    bool Reserve(const long decisionId,const int legIndex,const string signalId,
                 const string symbol,const string direction,const double riskR,
-                const double volatility,string &requestId)
+                const double volatility,const double requiredMargin,const double freeMargin,
+                const long marginSnapshotEpoch,const string accountCurrency,string &requestId)
      {
       requestId=RequestIdForDecision(decisionId,legIndex);
       if(!AdmissionReady() || StringLen(requestId)>128 || riskR<=0.0 ||
-         !MathIsValidNumber(riskR) || volatility<0.0 || !MathIsValidNumber(volatility))
+         !MathIsValidNumber(riskR) || volatility<0.0 || !MathIsValidNumber(volatility) ||
+         requiredMargin<0.0 || !MathIsValidNumber(requiredMargin) || freeMargin<=0.0 ||
+         !MathIsValidNumber(freeMargin) || marginSnapshotEpoch<=0 ||
+         StringLen(accountCurrency)<3 || StringLen(accountCurrency)>8)
          return false;
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"signal_id\":\"%s\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"max_heat_r\":3.0,\"requested_by\":\"MT5_EA\"}",
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"signal_id\":\"%s\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"free_margin\":%.8f,\"required_margin\":%.8f,\"margin_snapshot_epoch\":%I64d,\"account_currency\":\"%s\",\"factors\":{},\"max_heat_r\":3.0,\"requested_by\":\"MT5_EA\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),JsonSafe(signalId),
-         JsonSafe(symbol),JsonSafe(direction),riskR,volatility);
+         JsonSafe(symbol),JsonSafe(direction),riskR,volatility,freeMargin,requiredMargin,
+         marginSnapshotEpoch,JsonSafe(accountCurrency));
       return PostJson("/execution-ledger/reserve",payload);
      }
 
