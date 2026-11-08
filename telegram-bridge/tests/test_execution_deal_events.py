@@ -162,6 +162,7 @@ def test_execution_ledger_health_verifies_api_key_and_database(client):
         "status": "online",
         "database": "connected",
         "execution_ledger": "ready",
+        "ledger_schema": "ready",
     }
 
 def test_breakeven_protected_open_position_accepts_zero_remaining_stop_risk(client):
