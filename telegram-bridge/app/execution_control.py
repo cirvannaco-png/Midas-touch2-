@@ -117,16 +117,18 @@ def _margin_admission_allowed(
     active_rows: list[ExecutionLedger],
 ) -> bool:
     unreflected_margin = 0.0
-    broker_snapshot_origins = {"broker_pending_order_snapshot", "broker_snapshot_adoption"}
+
     for row in active_rows:
         if row.state in TERMINAL_STATES:
             continue
         event_at = _latest_execution_event_time(row)
-        if event_at is None or event_at <= snapshot_at:
-            continue
         request = row.request_json or {}
-        if request.get("origin") in broker_snapshot_origins:
-            # The broker account snapshot already contains these observed positions/orders.
+        if request.get("origin") == "broker_snapshot_adoption":
+            # Existing open positions are reflected in the broker free-margin snapshot.
+            continue
+        is_unfilled = row.state in {"RESERVED", "CHECKED", "SENT", "ACKED", "RECOVERING"}
+        filled_after_snapshot = row.state == "FILLED" and event_at is not None and event_at > snapshot_at
+        if not is_unfilled and not filled_after_snapshot:
             continue
         reserved_margin = request.get("required_margin")
         if reserved_margin is None:
@@ -161,13 +163,13 @@ async def reserve_execution(
     if not portfolio_key or len(portfolio_key) > 128:
         raise ValueError("portfolio_key must be 1-128 characters")
     _validate_risk(risk_r, volatility, factors)
+    if not 0 < max_heat_r <= MAX_PORTFOLIO_HEAT_R:
+        raise ValueError(f"max_heat_r must be in (0, {MAX_PORTFOLIO_HEAT_R}]")
+    await _portfolio_lock(session, portfolio_key)
     now = datetime.now(timezone.utc)
     snapshot_at = _validate_margin_snapshot(
         free_margin, required_margin, margin_snapshot_epoch, account_currency, now
     )
-    if not 0 < max_heat_r <= MAX_PORTFOLIO_HEAT_R:
-        raise ValueError(f"max_heat_r must be in (0, {MAX_PORTFOLIO_HEAT_R}]")
-    await _portfolio_lock(session, portfolio_key)
 
     existing = await session.scalar(
         select(ExecutionLedger)
@@ -545,6 +547,8 @@ async def reconcile_open_position(
                 "risk_r": risk_r,
                 "volatility": volatility,
                 "factor_exposure": factors,
+                "required_margin": required_margin,
+                "account_currency": account_currency,
             },
             result_json={},
             created_at=now,
@@ -772,11 +776,17 @@ async def sync_pending_order(
     volatility: float,
     factors: dict[str, float],
     evidence_ref: str,
+    required_margin: float = 0.0,
+    account_currency: str = "USD",
 ) -> tuple[str, float, bool]:
     """Import a live pending order into the account portfolio's risk book."""
     if not broker_order_id or not evidence_ref:
         raise ValueError("broker_order_id and evidence_ref are required")
     _validate_risk(risk_r, volatility, factors)
+    if not math.isfinite(required_margin) or required_margin < 0:
+        raise ValueError("required_margin must be finite and non-negative")
+    if not isinstance(account_currency, str) or not 3 <= len(account_currency.strip()) <= 8:
+        raise ValueError("account_currency must contain 3-8 characters")
     await _portfolio_lock(session, portfolio_key)
     row = await _lookup_broker_record(
         session, portfolio_key=portfolio_key, broker_order_id=broker_order_id
@@ -818,6 +828,10 @@ async def sync_pending_order(
         row.broker_order_id = broker_order_id
         row.symbol = symbol
         row.lease_until = now + timedelta(seconds=LEASE_SECONDS)
+        request_json = dict(row.request_json or {})
+        request_json["required_margin"] = required_margin
+        request_json["account_currency"] = account_currency
+        row.request_json = request_json
     merged = dict(row.result_json or {})
     merged.update(
         {
