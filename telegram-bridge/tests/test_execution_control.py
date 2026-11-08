@@ -19,6 +19,14 @@ from app.execution_control import (
 )
 from app.models import ExecutionLedger, ExecutionPositionModification, PortfolioReservation
 
+async def reserve_with_margin(session, **kwargs):
+    kwargs.setdefault("free_margin", 10000.0)
+    kwargs.setdefault("required_margin", 100.0)
+    kwargs.setdefault("margin_snapshot_epoch", int(datetime.now(timezone.utc).timestamp()))
+    kwargs.setdefault("account_currency", "USD")
+    return await reserve_execution(session, **kwargs)
+
+
 TABLES = [
     Base.metadata.tables["execution_ledger"],
     Base.metadata.tables["portfolio_reservations"],
@@ -38,7 +46,7 @@ async def test_reservation_is_idempotent_and_enforces_heat_limit():
     engine, factory = await make_session_factory()
     try:
         async with factory() as session:
-            assert await reserve_execution(
+            assert await reserve_with_margin(
                 session,
                 request_id="req-1",
                 signal_id="sig-1",
@@ -51,7 +59,7 @@ async def test_reservation_is_idempotent_and_enforces_heat_limit():
             await session.commit()
 
         async with factory() as session:
-            assert not await reserve_execution(
+            assert not await reserve_with_margin(
                 session,
                 request_id="req-1",
                 signal_id="sig-1",
@@ -62,7 +70,7 @@ async def test_reservation_is_idempotent_and_enforces_heat_limit():
                 factors={},
             )
             await session.rollback()
-            assert not await reserve_execution(
+            assert not await reserve_with_margin(
                 session,
                 request_id="req-2",
                 signal_id="sig-2",
@@ -89,7 +97,7 @@ async def test_transition_order_is_enforced_and_terminal_state_cannot_resurrect(
     engine, factory = await make_session_factory()
     try:
         async with factory() as session:
-            assert await reserve_execution(
+            assert await reserve_with_margin(
                 session,
                 request_id="req-3",
                 signal_id="sig-3",
@@ -169,7 +177,7 @@ async def test_expired_lease_requires_reconciliation_and_keeps_risk_reserved():
     engine, factory = await make_session_factory()
     try:
         async with factory() as session:
-            assert await reserve_execution(
+            assert await reserve_with_margin(
                 session,
                 request_id="req-4",
                 signal_id="sig-4",
@@ -213,7 +221,7 @@ async def test_expired_lease_requires_reconciliation_and_keeps_risk_reserved():
                 },
             )
             await session.commit()
-            assert not await reserve_execution(
+            assert not await reserve_with_margin(
                 session,
                 request_id="req-4",
                 signal_id="sig-4",
@@ -274,7 +282,7 @@ async def test_portfolio_heat_isolated_by_portfolio_key():
     engine, factory = await make_session_factory()
     try:
         async with factory() as session:
-            assert await reserve_execution(
+            assert await reserve_with_margin(
                 session,
                 portfolio_key="server-A:login-1:magic-7",
                 request_id="account-a-request",
@@ -288,7 +296,7 @@ async def test_portfolio_heat_isolated_by_portfolio_key():
             await session.commit()
 
         async with factory() as session:
-            assert await reserve_execution(
+            assert await reserve_with_margin(
                 session,
                 portfolio_key="server-B:login-2:magic-7",
                 request_id="account-b-request",
@@ -473,7 +481,7 @@ async def test_sent_intent_releases_risk_only_with_proof_no_broker_call_was_atte
     engine, factory = await make_session_factory()
     try:
         async with factory() as session:
-            assert await reserve_execution(
+            assert await reserve_with_margin(
                 session,
                 request_id="local-nonsend",
                 signal_id="local-nonsend-signal",
@@ -567,7 +575,7 @@ async def test_breakeven_protected_position_can_have_zero_remaining_stop_risk():
 
         async with factory() as session:
             with pytest.raises(ValueError, match="greater than zero"):
-                await reserve_execution(
+                await reserve_with_margin(
                     session,
                     portfolio_key="Exness:123:magic-79",
                     request_id="must-not-reserve-zero-risk",
@@ -627,7 +635,7 @@ async def test_position_modification_is_durable_idempotent_and_updates_reserved_
         async with factory() as session:
             # A modification whose broker outcome is not yet reconciled blocks
             # new admissions for the entire account portfolio.
-            assert not await reserve_execution(
+            assert not await reserve_with_margin(
                 session,
                 portfolio_key="Exness-Demo:123:magic-88",
                 request_id="new-order-1",
@@ -676,7 +684,7 @@ async def test_position_modification_is_durable_idempotent_and_updates_reserved_
                 volatility=0.2,
                 evidence_ref="mt5-stop-observed:8800:1-replay",
             )
-            assert await reserve_execution(
+            assert await reserve_with_margin(
                 session,
                 portfolio_key="Exness-Demo:123:magic-88",
                 request_id="new-order-1",
@@ -949,3 +957,60 @@ def test_invalid_bridge_key_is_rejected_before_reservation(client):
         },
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_margin_admission_serializes_unfilled_reservations_from_same_snapshot():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            snapshot = int(datetime.now(timezone.utc).timestamp())
+            base = {
+                "portfolio_key": "account:server:magic",
+                "signal_id": "margin-test",
+                "symbol": "EURUSD",
+                "direction": "BUY",
+                "risk_r": 0.25,
+                "volatility": 0.1,
+                "factors": {},
+                "free_margin": 100.0,
+                "margin_snapshot_epoch": snapshot,
+                "account_currency": "USD",
+            }
+            assert await reserve_execution(
+                session, request_id="margin-1", required_margin=60.0, **base
+            )
+            assert not await reserve_execution(
+                session, request_id="margin-2", required_margin=30.0, **base
+            )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_margin_admission_rejects_stale_snapshot_and_preserves_buffer():
+    engine, factory = await make_session_factory()
+    try:
+        async with factory() as session:
+            base = {
+                "portfolio_key": "account:server:magic",
+                "signal_id": "margin-test",
+                "symbol": "XAUUSD",
+                "direction": "BUY",
+                "risk_r": 0.25,
+                "volatility": 0.1,
+                "factors": {},
+                "free_margin": 100.0,
+                "required_margin": 81.0,
+                "margin_snapshot_epoch": int(datetime.now(timezone.utc).timestamp()),
+                "account_currency": "USD",
+            }
+            assert not await reserve_execution(session, request_id="margin-buffer", **base)
+            stale = dict(base)
+            stale["request_id"] = "margin-stale"
+            stale["required_margin"] = 1.0
+            stale["margin_snapshot_epoch"] -= 60
+            with pytest.raises(ValueError, match="stale"):
+                await reserve_execution(session, **stale)
+    finally:
+        await engine.dispose()
