@@ -45,11 +45,12 @@ async def execution_ledger_health(
     session: AsyncSession = Depends(get_session),
     _auth: bool = Depends(verify_api_key),
 ):
-    """Authenticated, non-mutating bridge-credential and database readiness probe.
+    """Authenticated, non-mutating bridge, database, and ledger-schema probe.
 
-    The response intentionally excludes credentials, connection strings, and
-    database exception details. A 200 means the supplied bridge API key was
-    accepted and a real database SELECT completed on this request.
+    A 200 means the supplied bridge API key was accepted and zero-row SELECTs
+    succeeded against every mapped table/column required by ledger admission,
+    deal synchronization, and position-modification reconciliation. No
+    customer/order rows are read and no database state is changed.
     """
     try:
         # A simple SELECT 1 proves connectivity, not that the ledger schema
