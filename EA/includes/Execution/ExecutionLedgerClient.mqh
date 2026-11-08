@@ -161,12 +161,22 @@ public:
                          const string requestIdOverride="")
      {
       if(!m_ready || orderTicket==0 || riskR<=0.0 || !MathIsValidNumber(riskR)) return false;
+      if(!OrderSelect(orderTicket)) return false;
+      ENUM_ORDER_TYPE orderType=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      double volume=OrderGetDouble(ORDER_VOLUME_CURRENT);
+      double price=OrderGetDouble(ORDER_PRICE_OPEN);
+      double requiredMargin=0.0;
+      if(volume<=0.0 || price<=0.0 || !OrderCalcMargin(orderType,symbol,volume,price,requiredMargin) ||
+         !MathIsValidNumber(requiredMargin) || requiredMargin<0.0) return false;
+      string accountCurrency=AccountInfoString(ACCOUNT_CURRENCY);
+      if(StringLen(accountCurrency)<3 || StringLen(accountCurrency)>8) return false;
       string requestId=requestIdOverride;
       if(StringLen(requestId)==0) requestId=RequestIdForPendingOrder(orderTicket);
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_order_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_order_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"required_margin\":%.8f,\"account_currency\":\"%s\",\"factors\":{},\"evidence_ref\":\"%s\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),orderTicket,
-         JsonSafe(symbol),JsonSafe(direction),riskR,MathMax(0.0,volatility),JsonSafe(evidenceRef));
+         JsonSafe(symbol),JsonSafe(direction),riskR,MathMax(0.0,volatility),
+         requiredMargin,JsonSafe(accountCurrency),JsonSafe(evidenceRef));
       return PostJson("/execution-ledger/sync-pending-order",payload);
      }
 
