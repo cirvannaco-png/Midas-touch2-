@@ -36,7 +36,7 @@ All counts below are **closed trade records**, not unique entry decisions or ind
 
 | TP1 | Period | Net P&L (USD) | Closed records | Wins | Losses | Max drawdown (USD) | Attribution |
 |---:|---|---:|---:|---:|---:|---:|---|
-| 0.25R baseline | Sep | -38.96 | 168 | 146 | 22 | See baseline run result | Invalid in related October ledger; baseline September attribution not certified here |
+| 0.25R baseline | Sep | -38.96 | 168 | 149 | 19 | 99.37 | Invalid; 2 unmatched close records and P&L reconciliation delta -15.52 |
 | 0.25R baseline | Oct | -9.05 | 130 | 114 | 16 | 67.09 | Invalid; 2 unmatched close records and P&L reconciliation delta -4.17 |
 | 0.25R baseline | Nov 1–6 | -5.66 | 9 | 7 | 2 | 18.93 | Valid |
 | 0.15R | Sep | -59.56 | 165 | 152 | 13 | 93.64 | Invalid; 1 unmatched close record and P&L reconciliation delta -15.25 |
