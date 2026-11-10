@@ -88,3 +88,35 @@ The test does not establish a positive, stable, net-of-cost trading edge. It onl
 ## Evidence boundary
 
 StrategyTune is useful for controlled exploratory ablations, but its runs are not substitutes for the MQL5 EA's actual MT5 Strategy Tester execution model or the selected broker's accounting. A profitable proxy window is not a profitability claim. This document changes no trading behavior.
+
+
+## Supplementary Gold regime-specialist review — 2026-11-10
+
+A review of the existing StrategyTune v2.12 Gold Regime-Specialist Hybrid runs adds an important warning. These are existing 15-minute StrategyTune records, not new MT5 tests. All amounts are USD on a USD 10,000 starting balance.
+
+| Period | Net P&L | Closed records | Wins / losses | Max drawdown | Attribution |
+|---|---:|---:|---:|---:|---|
+| 2025 Q1 | -34.66 | 379 | 330 / 49 | 106.76 | Invalid; 2 unmatched close records, 3 missed close events, P&L delta -7.86 |
+| 2025 Q2 | -28.96 | 384 | 338 / 46 | 96.85 | Invalid; 1 unmatched close record, 6 missed close events, P&L delta +25.56 |
+| 2025 Q3 | -167.98 | 349 | 294 / 55 | 242.37 | Invalid; 2 unmatched close records, 3 missed close events, P&L delta -6.97 |
+| 2025 Q4 | +13.16 | 388 | 347 / 41 | 95.07 | Invalid; 1 unmatched close record, 1 missed close event, P&L delta -0.61 |
+
+Run IDs:
+- Q1: `26854da3-8577-4554-8cf4-8c8ab060c773`
+- Q2: `16ca6c1a-d048-487c-b49e-f6f35a11857d`
+- Q3: `589025ed-426e-4720-b37e-077115c87866`
+- Q4: `fe60cb0f-7b33-4f08-ba42-0273c3bad26c`
+
+The 2025 full-year run (`54defed6-8f19-4cd8-86ae-29739ef976f4`) reported -68.98 USD but stopped at the 1,000 order-operation limit on 2025-04-28. It is explicitly incomplete and must not be represented as a full-year result. Each quarterly report also truncated six custom-stat keys because the strategy exceeded the platform's custom-stat limit. The position-attribution checks above are available in the returned fields; missing custom fields must not be inferred as zero.
+
+The Q3 loss is materially worse than the other quarters. Q4's small positive result does not rescue the candidate: every quarterly window failed position attribution, and the full-year run was cut short. Closed-record win counts are not unique-entry win rates.
+
+### Cross-engine LONA check and execution limits
+
+The saved LONA 1.0.5 regime-gated validator has historical XAUUSD daily reports, but they are not a valid independent confirmation of the 15-minute StrategyTune runs. The regime-enabled daily report recorded zero trades; the earlier regime-disabled report recorded only three trades. Both reports have null date bounds and the simulation's initial cash was approximately USD 345, not USD 10,000. They are too small and too poorly matched to compare meaningfully.
+
+A fresh LONA intraday XAUUSD run was refused because global intraday data is unavailable on the current Free plan. A fresh daily run was also refused for insufficient credits. StrategyTune's attempted fresh comparison was likewise blocked by insufficient credits after resolving the instrument correctly as `Gold` from IC Markets (not `XAUUSD`). No fresh cross-engine comparison is claimed here.
+
+### Decision
+
+Do not promote v2.12 or its regime logic. The available evidence is negative or inadmissible: three losing quarters, one small positive but attribution-invalid quarter, and an incomplete full-year run. The next valid experiment requires a matched baseline/challenger run with attribution repaired, fewer exported custom statistics, and enough compute to finish every planned fold. Until then, preserve the EA and risk configuration unchanged.
