@@ -1,12 +1,23 @@
 # Medis Touch / Midas Touch 2 Render Blueprint
 #
-# This Blueprint manages the existing midas-touch2 web service.
-# The PostgreSQL instance is intentionally referenced but NOT declared here:
-# it already exists in Render as midas-touch2-production-db and must not be
-# recreated or destroyed by Blueprint changes.
+# This Blueprint manages the production bridge and its dedicated production database.
+# The production database is deliberately distinct from midas-touch2-staging-db.
+# Use a paid PostgreSQL compute plan: free databases expire and do not support
+# Render point-in-time recovery. Paid Postgres enables PITR; logical exports
+# should also be created before material schema changes and retained off-service.
 #
 # Runtime is Docker so the production image is deterministic and independent
 # of Render's native Python runtime.
+
+databases:
+  - name: midas-touch2-production-db
+    databaseName: midas_touch2_production_db
+    user: midas_touch2_production_db_user
+    plan: basic-1gb
+    region: frankfurt
+    postgresMajorVersion: "18"
+    diskSizeGB: 5
+    ipAllowList: []
 
 services:
   - type: web
