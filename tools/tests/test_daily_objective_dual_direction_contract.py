@@ -28,7 +28,7 @@ def test_daily_objective_tracks_filled_entry_orders_separately_from_qualified_wi
 def test_daily_objective_is_informational_and_does_not_manufacture_entries():
     ea = read(EA)
     daily = read(DAILY)
-    assert "g_dailyTradeTarget.LogSearchProgress();TradeSetup buySetup=g_decision.GenerateBuySetup();" in ea
+    assert "g_dailyTradeTarget.LogSearchProgress();bool goldLongOnly=InpGoldLongOnlyMode&&IsGoldMarketSymbol(_Symbol);TradeSetup buySetup=g_decision.GenerateBuySetup();" in ea
     assert "continuing normal setup search, no entries forced." in daily
     assert "InpMinimumQualifiedTradesPerDay=3;" in ea
     tick_start = ea.index("void OnTick()")
