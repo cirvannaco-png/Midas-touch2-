@@ -68,7 +68,7 @@ def test_gold_long_only_policy_is_scoped_and_keeps_other_symbols_bidirectional()
     assert 'if(!goldLongOnly)sellSetup=g_decision.GenerateSellSetup();' in ea
     assert 'if(!goldLongOnly)g_topDownMTF.AdjustSetup(sellSetup);' in ea
     # The policy governs automated entries only; the operator's manual controls remain separate.
-    assert 'Manual BUY/SELL' in read(README)
+    assert '**BUY / SELL**' in read(README)
 
 
 def test_daily_goal_does_not_override_safety_gates():
