@@ -59,14 +59,19 @@ def test_concurrent_opposing_positions_default_on_but_require_retail_hedging():
     assert "retail-hedging" in readme.lower()
 
 
-def test_gold_long_only_policy_is_scoped_and_keeps_other_symbols_bidirectional():
+def test_automated_gold_sell_generation_and_execution_are_enabled_by_default():
     ea = read(EA)
-    assert 'input bool InpGoldLongOnlyMode=true;' in ea
+    assert 'input bool InpGoldLongOnlyMode=false;' in ea
     assert 'bool IsGoldMarketSymbol(const string symbol)' in ea
     assert 'baseCurrency=="XAU"' in ea
     assert 'StringFind(upper,"GOLD")>=0' in ea
     assert 'if(!goldLongOnly)sellSetup=g_decision.GenerateSellSetup();' in ea
     assert 'if(!goldLongOnly)g_topDownMTF.AdjustSetup(sellSetup);' in ea
+    # Gold SELL setups are generated, evaluated, selected and routed through the same execution pipeline by default.
+    assert 'bool goldLongOnly=InpGoldLongOnlyMode&&IsGoldMarketSymbol(_Symbol);' in ea
+    assert 'TradeSetup chosen;ZeroMemory(chosen);double delta=buySetup.confidence-sellSetup.confidence;' in ea
+    assert 'if(decision.action==POLICY_EXECUTE_ONLY||decision.action==POLICY_EXECUTE_AND_SIGNAL)' in ea
+    assert 'decision.setup.type' in ea
     # The policy governs automated entries only; the operator's manual controls remain separate.
     assert '**BUY / SELL**' in read(README)
 

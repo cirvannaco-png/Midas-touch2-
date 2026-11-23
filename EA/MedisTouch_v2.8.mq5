@@ -115,7 +115,7 @@ input double InpMaxChaseDistATR=0.75;
 input double InpFVGMaxDistATR=1.25;
 input double InpMinDirectionalAdvantage=0.0;
 input group "Automated Direction Policy"
-input bool InpGoldLongOnlyMode=true; // Gold symbols: automated SELL setups are disabled; other instruments retain both directions.
+input bool InpGoldLongOnlyMode=false; // Optional restriction; false (default) allows automated BUY and SELL setups on Gold and all other instruments.
 input group "Signal Lifecycle (v2.9)"
 input bool InpPublishLifecycleUpdates=false;
 input int InpSignalExpiryBars=12;
