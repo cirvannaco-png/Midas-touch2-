@@ -60,8 +60,8 @@ def test_user_requested_small_account_profile_is_explicit_and_prop_firm_stays_ga
     assert "InpSmallMinimumRiskPercentPerTrade=15.0" in ea
     assert "InpSmallRiskPercentPerTrade=20.0" in ea
     assert "InpSmallMaxOpenTrades=3" in ea
-    assert "InpSmallMaxDailyLossPercent=25.0" in ea
-    assert "InpSmallMaxDrawdownPercent=35.0" in ea
+    assert "InpSmallMaxDailyLossPercent=50.0" in ea
+    assert "InpSmallMaxDrawdownPercent=55.0" in ea
     assert "InpSmallDeriskFloor=0.75" in ea
     assert "InpSmallMaxPortfolioRiskPercent=20.0" in ea
     assert "InpSmallMaxPositionsPerSymbol=3" in ea
