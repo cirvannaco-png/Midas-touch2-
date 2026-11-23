@@ -38,3 +38,23 @@ def test_breakeven_or_profit_locked_position_does_not_become_unknown_risk():
     assert "if(type==POSITION_TYPE_SELL && sl<=entry) return 0.0;" in source
     assert "Gaps, slippage and broker" in source
     assert "Invalid tick metadata remains unknown, not zero risk." in source
+
+
+def test_execution_reservation_requires_fresh_account_margin_evidence():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    control = (root / "telegram-bridge/app/execution_control.py").read_text()
+    api = (root / "telegram-bridge/app/api/execution_ledger.py").read_text()
+    client = (root / "EA/includes/Execution/ExecutionLedgerClient.mqh").read_text()
+    ea = (root / "EA/MedisTouch_v2.8.mq5").read_text()
+
+    assert "MAX_MARGIN_SNAPSHOT_AGE_SECONDS = 10.0" in control
+    assert "MIN_FREE_MARGIN_BUFFER_RATIO = 0.20" in control
+    assert "required_margin" in control and "account_currency" in control
+    assert "margin_snapshot_epoch: int = Field(gt=0)" in api
+    assert "free_margin: float = Field(gt=0)" in api
+    assert "OrderCalcMargin(decision.setup.type" in ea
+    assert "ACCOUNT_MARGIN_FREE" in ea
+    assert "margin_snapshot_epoch" in client
+    assert "required_margin" in client

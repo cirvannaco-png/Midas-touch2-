@@ -88,6 +88,10 @@ class ReserveRequest(BaseModel):
     risk_r: float = Field(gt=0)
     volatility: float = Field(ge=0)
     factors: dict[str, float] = Field(default_factory=dict)
+    free_margin: float = Field(gt=0)
+    required_margin: float = Field(ge=0)
+    margin_snapshot_epoch: int = Field(gt=0)
+    account_currency: str = Field(min_length=3, max_length=8)
     # Callers cannot raise the global portfolio heat ceiling.
     max_heat_r: float = Field(default=MAX_PORTFOLIO_HEAT_R, gt=0, le=MAX_PORTFOLIO_HEAT_R)
     requested_by: Literal["MT5_EA", "AI_AGENT"]
@@ -119,12 +123,16 @@ async def reserve(
             risk_r=body.risk_r,
             volatility=body.volatility,
             factors=body.factors,
+            free_margin=body.free_margin,
+            required_margin=body.required_margin,
+            margin_snapshot_epoch=body.margin_snapshot_epoch,
+            account_currency=body.account_currency,
             max_heat_r=body.max_heat_r,
             portfolio_key=body.portfolio_key,
         )
         if not reserved:
             await session.rollback()
-            raise HTTPException(409, "duplicate request or portfolio heat limit exceeded")
+            raise HTTPException(409, "duplicate request, portfolio heat, or available-margin admission failed")
         await session.commit()
     except ValueError as exc:
         await session.rollback()
@@ -242,6 +250,8 @@ class PendingOrderSyncRequest(BaseModel):
     risk_r: float = Field(gt=0)
     volatility: float = Field(ge=0)
     factors: dict[str, float] = Field(default_factory=dict)
+    required_margin: float = Field(ge=0)
+    account_currency: str = Field(min_length=3, max_length=8)
     evidence_ref: str = Field(min_length=1, max_length=256)
 
 
@@ -426,6 +436,8 @@ async def sync_live_pending_order(
             volatility=body.volatility,
             factors=body.factors,
             evidence_ref=body.evidence_ref,
+            required_margin=body.required_margin,
+            account_currency=body.account_currency,
         )
         await session.commit()
     except ValueError as exc:

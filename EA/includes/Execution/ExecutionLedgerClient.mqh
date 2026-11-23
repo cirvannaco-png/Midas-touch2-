@@ -113,16 +113,21 @@ public:
 
    bool Reserve(const long decisionId,const int legIndex,const string signalId,
                 const string symbol,const string direction,const double riskR,
-                const double volatility,string &requestId)
+                const double volatility,const double requiredMargin,const double freeMargin,
+                const long marginSnapshotEpoch,const string accountCurrency,string &requestId)
      {
       requestId=RequestIdForDecision(decisionId,legIndex);
       if(!AdmissionReady() || StringLen(requestId)>128 || riskR<=0.0 ||
-         !MathIsValidNumber(riskR) || volatility<0.0 || !MathIsValidNumber(volatility))
+         !MathIsValidNumber(riskR) || volatility<0.0 || !MathIsValidNumber(volatility) ||
+         requiredMargin<0.0 || !MathIsValidNumber(requiredMargin) || freeMargin<=0.0 ||
+         !MathIsValidNumber(freeMargin) || marginSnapshotEpoch<=0 ||
+         StringLen(accountCurrency)<3 || StringLen(accountCurrency)>8)
          return false;
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"signal_id\":\"%s\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"max_heat_r\":3.0,\"requested_by\":\"MT5_EA\"}",
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"signal_id\":\"%s\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"free_margin\":%.8f,\"required_margin\":%.8f,\"margin_snapshot_epoch\":%I64d,\"account_currency\":\"%s\",\"factors\":{},\"max_heat_r\":3.0,\"requested_by\":\"MT5_EA\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),JsonSafe(signalId),
-         JsonSafe(symbol),JsonSafe(direction),riskR,volatility);
+         JsonSafe(symbol),JsonSafe(direction),riskR,volatility,freeMargin,requiredMargin,
+         marginSnapshotEpoch,JsonSafe(accountCurrency));
       return PostJson("/execution-ledger/reserve",payload);
      }
 
@@ -156,12 +161,22 @@ public:
                          const string requestIdOverride="")
      {
       if(!m_ready || orderTicket==0 || riskR<=0.0 || !MathIsValidNumber(riskR)) return false;
+      if(!OrderSelect(orderTicket)) return false;
+      ENUM_ORDER_TYPE orderType=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      double volume=OrderGetDouble(ORDER_VOLUME_CURRENT);
+      double price=OrderGetDouble(ORDER_PRICE_OPEN);
+      double requiredMargin=0.0;
+      if(volume<=0.0 || price<=0.0 || !OrderCalcMargin(orderType,symbol,volume,price,requiredMargin) ||
+         !MathIsValidNumber(requiredMargin) || requiredMargin<0.0) return false;
+      string accountCurrency=AccountInfoString(ACCOUNT_CURRENCY);
+      if(StringLen(accountCurrency)<3 || StringLen(accountCurrency)>8) return false;
       string requestId=requestIdOverride;
       if(StringLen(requestId)==0) requestId=RequestIdForPendingOrder(orderTicket);
       string payload=StringFormat(
-         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_order_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"factors\":{},\"evidence_ref\":\"%s\"}",
+         "{\"portfolio_key\":\"%s\",\"request_id\":\"%s\",\"broker_order_id\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"risk_r\":%.8f,\"volatility\":%.8f,\"required_margin\":%.8f,\"account_currency\":\"%s\",\"factors\":{},\"evidence_ref\":\"%s\"}",
          JsonSafe(m_portfolioKey),JsonSafe(requestId),orderTicket,
-         JsonSafe(symbol),JsonSafe(direction),riskR,MathMax(0.0,volatility),JsonSafe(evidenceRef));
+         JsonSafe(symbol),JsonSafe(direction),riskR,MathMax(0.0,volatility),
+         requiredMargin,JsonSafe(accountCurrency),JsonSafe(evidenceRef));
       return PostJson("/execution-ledger/sync-pending-order",payload);
      }
 
