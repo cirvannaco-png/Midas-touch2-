@@ -59,9 +59,20 @@ def test_concurrent_opposing_positions_default_on_but_require_retail_hedging():
     assert "retail-hedging" in readme.lower()
 
 
-def test_both_directions_remain_eligible_and_daily_goal_does_not_override_safety_gates():
+def test_gold_long_only_policy_is_scoped_and_keeps_other_symbols_bidirectional():
     ea = read(EA)
-    assert "TradeSetup buySetup=g_decision.GenerateBuySetup();TradeSetup sellSetup=g_decision.GenerateSellSetup();" in ea
+    assert 'input bool InpGoldLongOnlyMode=true;' in ea
+    assert 'bool IsGoldMarketSymbol(const string symbol)' in ea
+    assert 'baseCurrency=="XAU"' in ea
+    assert 'StringFind(upper,"GOLD")>=0' in ea
+    assert 'if(!goldLongOnly)sellSetup=g_decision.GenerateSellSetup();' in ea
+    assert 'if(!goldLongOnly)g_topDownMTF.AdjustSetup(sellSetup);' in ea
+    # The policy governs automated entries only; the operator's manual controls remain separate.
+    assert 'Manual BUY/SELL' in read(README)
+
+
+def test_daily_goal_does_not_override_safety_gates():
+    ea = read(EA)
     assert "if(g_riskGuard.IsHardHalted(haltReason))return;" in ea
     assert "if(g_riskGuard.IsDailyLossLimitHit(haltReason))return;" in ea
     assert "if(InpUseNewsFilter&&g_newsFilter.IsLocked(newsReason))return;" in ea
