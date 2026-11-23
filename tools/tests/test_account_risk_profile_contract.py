@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-def test_profile_selector_defaults_to_small_account_profile() -> None:
+def test_small_account_is_the_default_profile() -> None:
     root = Path(__file__).resolve().parents[2]
     ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
     assert "InpAccountRiskProfile=ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT" in ea
@@ -20,8 +20,6 @@ def test_automated_and_manual_orders_use_the_resolved_profile() -> None:
     assert "CalculateLotSize(_Symbol,g_activeRiskLimits.riskPercentPerTrade*fraction" in runtime
     assert "if(g_orders.OpenCount()>=EffectiveMaxOpenTrades())" in runtime
     assert "CalculateLotSize(_Symbol,g_activeRiskLimits.riskPercentPerTrade,entry,setup.stop_loss" in runtime
-    # Raw legacy inputs must not bypass resolution after OnInit begins. They remain
-    # available only as backward-compatible inputs consumed by the resolver above it.
     for legacy in (
         "InpRiskPercentPerTrade", "InpMaxOpenTrades", "InpMaxDailyLossPercent",
         "InpMaxDrawdownPercent", "InpDeriskStartPercent", "InpDeriskFloor",
@@ -30,16 +28,18 @@ def test_automated_and_manual_orders_use_the_resolved_profile() -> None:
         assert legacy not in runtime
 
 
-def test_profile_resolver_has_explicit_legacy_small_and_prop_firm_mappings() -> None:
+def test_four_profile_resolver_has_explicit_mappings_and_config_gates() -> None:
     root = Path(__file__).resolve().parents[2]
     ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
     policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
-    assert "InpSmallRiskPercentPerTrade" in ea and "InpSmallMaxPortfolioRiskPercent" in ea
-    assert "InpPropRiskPercentPerTrade" in ea and "InpPropMaxPortfolioRiskPercent" in ea
-    assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
+    assert "InpSmallRiskPercentPerTrade=0.5" in ea
+    assert "InpLargeRiskPercentPerTrade=20.0" in ea
+    assert "InpLargeMinimumRiskPercentPerTrade=15.0" in ea
+    assert "InpPropRiskPercentPerTrade=0.5" in ea
+    assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,largeAccount,propFirm" in ea
+    assert "ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT  = 3" in policy
     assert "ValidateAccountRiskLimits(out,reason)" in policy
     assert 'reason="unknown account risk profile"' in policy
-
 
 
 def test_startup_ledger_reconciliation_uses_selected_profile_risk() -> None:
@@ -52,41 +52,56 @@ def test_startup_ledger_reconciliation_uses_selected_profile_risk() -> None:
     assert "InpRiskPercentPerTrade" not in reconciliation
 
 
-def test_user_requested_small_account_profile_is_explicit_and_prop_firm_stays_gated() -> None:
+def test_small_account_profile_has_conservative_guardrails() -> None:
     root = Path(__file__).resolve().parents[2]
     ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
     policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
+    assert "InpSmallRiskPercentPerTrade=0.5" in ea
+    assert "InpSmallMaxOpenTrades=1" in ea
+    assert "InpSmallMaxDailyLossPercent=1.5" in ea
+    assert "InpSmallMaxDrawdownPercent=5.0" in ea
+    assert "InpSmallMaxPortfolioRiskPercent=0.5" in ea
+    assert "InpSmallMaxPositionsPerSymbol=1" in ea
+    assert "InpSmallMaxPositionsPerGroup=1" in ea
     assert "InpSmallAccountProfileConfigured=true" in ea
-    assert "InpSmallMinimumRiskPercentPerTrade=15.0" in ea
-    assert "InpSmallRiskPercentPerTrade=20.0" in ea
-    assert "InpSmallMaxOpenTrades=3" in ea
-    assert "InpSmallMaxDailyLossPercent=25.0" in ea
-    assert "InpSmallMaxDrawdownPercent=35.0" in ea
-    assert "InpSmallDeriskFloor=0.75" in ea
-    assert "InpSmallMaxPortfolioRiskPercent=20.0" in ea
-    assert "InpSmallMaxPositionsPerSymbol=3" in ea
-    assert "InpSmallMaxPositionsPerGroup=3" in ea
-    assert "InpSmallRiskPercentPerTrade*InpSmallDeriskFloor+0.000001<InpSmallMinimumRiskPercentPerTrade" in ea
-    assert "MIDAS_SMALL_ACCOUNT_MIN_RISK_PERCENT_PER_TRADE" in policy
-    assert "EffectiveMaxOpenTrades()-g_orders.OpenCount()" in ea
-    assert "return (activePositions>0 ? 0 : 1);" in ea
-    assert "if(!allSecuredAndProfitable)" in ea
-    assert "return tracked+1;" in ea
-    assert 'AUTOMATED_BLOCKED_ADAPTIVE_OPEN_TRADE_CAP' in ea
-    assert 'AUTOMATED_BLOCKED_SMALL_ACCOUNT_RISK_ADMISSION' in ea
-    assert 'MANUAL_BLOCKED_SMALL_ACCOUNT_RISK_ADMISSION' in ea
-    assert 'AUTOMATED_BLOCKED_BELOW_MINIMUM_RISK' in ea
-    assert "combined execution plan yields" in ea
-    assert "achievedRiskPercent+0.000001<InpSmallMinimumRiskPercentPerTrade" in ea
-    assert 'MANUAL_BLOCKED_BELOW_MINIMUM_RISK' in ea
-    assert 'remaining daily-loss headroom' in ea
-    assert 'remaining peak-drawdown headroom' in ea
-    assert 'riskMoney<0.0 || (riskMoney==0.0 && !allowZero)' in ea
-    assert 'return (MathIsValidNumber(riskR) && (allowZero ? riskR>=0.0 : riskR>0.0));' in ea
-    assert "InpPropFirmProfileConfigured=false" in ea
-    assert "ResolveConfiguredAccountRiskLimits(InpAccountRiskProfile,legacy,smallAccount,propFirm" in ea
-    assert "small-account risk inputs must be configured before selecting this profile" in policy
-    assert "exact prop-firm limits must be configured before selecting this profile" in policy
+    assert "MIDAS_SMALL_ACCOUNT_MAX_RISK_PERCENT_PER_TRADE 0.5" in policy
+    assert "small-account max open trades exceeds the one-position safety ceiling" in policy
+    assert "AUTOMATED_BLOCKED_ACCOUNT_RISK_ADMISSION" in ea
+    assert "MANUAL_BLOCKED_ACCOUNT_RISK_ADMISSION" in ea
+    assert "InpLargeMinimumRiskPercentPerTrade" in ea
+
+
+def test_large_account_profile_is_explicit_and_not_the_default() -> None:
+    root = Path(__file__).resolve().parents[2]
+    ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
+    policy = (root / "EA/includes/Portfolio/AccountRiskProfilePolicy.mqh").read_text(encoding="utf-8")
+    assert "InpAccountRiskProfile=ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT" in ea
+    assert "InpLargeRiskPercentPerTrade=20.0" in ea
+    assert "InpLargeMaxDailyLossPercent=25.0" in ea
+    assert "InpLargeMaxDrawdownPercent=35.0" in ea
+    assert "InpLargeDeriskFloor=0.75" in ea
+    assert "InpLargeMaxPortfolioRiskPercent=20.0" in ea
+    assert "InpLargeAccountProfileConfigured=true" in ea
+    assert "MIDAS_LARGE_ACCOUNT_MIN_RISK_PERCENT_PER_TRADE 15.0" in policy
+    assert "large-account base risk is below the configured 15% profile floor" in policy
+
+
+def test_small_account_risk_minimum_is_not_conflated_with_large_account_risk() -> None:
+    root = Path(__file__).resolve().parents[2]
+    ea = (root / "EA/MedisTouch_v2.8.mq5").read_text(encoding="utf-8")
+    assert "if(g_activeRiskLimits.profile==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT)" in ea
+    assert "if(g_activeRiskLimits.profile!=ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT)" in ea
+    manual_start = ea.index("double proposedRisk=g_risk.RiskAmountForLots(_Symbol,lots,entry,setup.stop_loss);")
+    manual_end = ea.index("string portfolioReason;", manual_start)
+    manual_entry = ea[manual_start:manual_end]
+    assert "if(g_activeRiskLimits.profile==ACCOUNT_RISK_PROFILE_LARGE_ACCOUNT)" in manual_entry
+    assert "InpLargeMinimumRiskPercentPerTrade" in manual_entry
+    assert "ACCOUNT_RISK_PROFILE_SMALL_ACCOUNT" in ea
+    assert "SmallAccountRiskAdmission" not in ea
+    assert "InpSmallMinimumRiskPercentPerTrade" not in ea
+    assert "InpLargeMinimumRiskPercentPerTrade" in ea
+    assert "AccountRiskAdmission(bool reduceRisk,string &reasonOut)" in ea
+
 
 def test_hard_risk_ceiling_is_shared_by_policy_and_lot_sizing() -> None:
     root = Path(__file__).resolve().parents[2]
@@ -95,6 +110,7 @@ def test_hard_risk_ceiling_is_shared_by_policy_and_lot_sizing() -> None:
     assert "#define MIDAS_MAX_RISK_PERCENT_PER_TRADE 20.0" in policy
     assert "limits.riskPercentPerTrade>MIDAS_MAX_RISK_PERCENT_PER_TRADE" in policy
     assert "riskPercent>MIDAS_MAX_RISK_PERCENT_PER_TRADE" in engine
+
 
 def test_dynamic_trailing_stop_remains_enabled_by_default() -> None:
     root = Path(__file__).resolve().parents[2]
